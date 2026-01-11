@@ -20,8 +20,15 @@ export function useCalendarNotes() {
       setIsLoading(true);
       setError(null);
 
-      // Fetch notes with lead info
-      // Using 'lead_notes' table based on LeadNotesDialog usage
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        console.error("[useCalendarNotes] User not authenticated");
+        setNotes([]);
+        return;
+      }
+
+      // Fetch notes only created by current user
       const { data: notesData, error: notesError } = await supabase
         .from("lead_notes" as any)
         .select(`
@@ -36,6 +43,7 @@ export function useCalendarNotes() {
             full_name
           )
         `)
+        .eq("created_by", user.id)
         .order("created_at", { ascending: false });
 
       if (notesError) throw notesError;
@@ -43,7 +51,7 @@ export function useCalendarNotes() {
       // Map to interface with proper typing
       const mappedNotes: CalendarNote[] = (notesData || []).map((n: any) => ({
         id: n.id,
-        note: n.note, // Field is 'note', not 'content'
+        note: n.note,
         created_at: n.created_at,
         lead_id: n.lead_id,
         lead_name: n.leads?.name,
