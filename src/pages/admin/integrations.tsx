@@ -145,39 +145,30 @@ export default function IntegrationsPage() {
   }, []);
 
   const handleSaveSettings = async () => {
+    setLoading(true);
     try {
-      setLoading(true);
-
-      // Get current user
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Usuário não autenticado");
-
-      // Update integration settings
+      // Use "as any" to bypass TypeScript errors with auto-generated types that might be outdated
       const { error } = await supabase
         .from("integration_settings" as any)
         .upsert({
-          user_id: user.id,
-          provider: "google_calendar",
+          service_name: "google_calendar",
           client_id: settings.client_id,
           client_secret: settings.client_secret,
-          redirect_uri: settings.redirect_uri || callbackUrl,
+          redirect_uri: `${window.location.origin}/api/google-calendar/callback`,
           enabled: settings.enabled,
-          scope: "https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile",
-        });
+        }, { onConflict: "service_name" });
 
       if (error) throw error;
 
       toast({
         title: "Configurações salvas",
-        description: "As configurações do Google Calendar foram atualizadas com sucesso",
+        description: "As configurações de integração foram atualizadas com sucesso.",
       });
-
-      await loadSettings();
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error saving settings:", error);
       toast({
-        title: "Erro",
-        description: "Erro ao salvar configurações",
+        title: "Erro ao salvar configurações",
+        description: error.message,
         variant: "destructive",
       });
     } finally {
@@ -222,13 +213,12 @@ export default function IntegrationsPage() {
   };
 
   const handleClearOAuthConfig = async () => {
-    if (!confirm("Tem certeza que deseja apagar a configuração OAuth global? Isso removerá todas as configurações de integração para todos os usuários.")) {
+    if (!confirm("Tem certeza que deseja apagar a configuração OAuth global? Isso removerá todas as configurações de integração para todos os utilizadores.")) {
       return;
     }
 
+    setLoading(true);
     try {
-      setLoading(true);
-
       const { error } = await supabase
         .from("integration_settings" as any)
         .delete()
@@ -236,17 +226,27 @@ export default function IntegrationsPage() {
 
       if (error) throw error;
 
-      toast({
-        title: "Configuração OAuth apagada",
-        description: "A configuração OAuth global foi apagada com sucesso",
+      // Clear local state
+      setSettings({
+        client_id: "",
+        client_secret: "",
+        redirect_uri: "",
+        enabled: false,
+        scopes: "",
       });
 
+      toast({
+        title: "Configuração OAuth apagada",
+        description: "A configuração OAuth global foi removida com sucesso.",
+      });
+
+      // Refresh settings
       await loadSettings();
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error clearing OAuth config:", error);
       toast({
-        title: "Erro",
-        description: "Erro ao apagar configuração OAuth",
+        title: "Erro ao apagar configuração",
+        description: error.message,
         variant: "destructive",
       });
     } finally {
