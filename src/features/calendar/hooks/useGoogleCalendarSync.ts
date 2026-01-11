@@ -87,8 +87,10 @@ export function useGoogleCalendarSync() {
       // Get session token for authentication
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
-        throw new Error("No active session");
+        throw new Error("Sessão não encontrada. Por favor, faça login novamente.");
       }
+
+      console.log("[useGoogleCalendarSync] Iniciando sincronização...");
 
       const response = await fetch("/api/google-calendar/sync", {
         method: "POST",
@@ -98,26 +100,44 @@ export function useGoogleCalendarSync() {
         },
       });
 
-      if (!response.ok) {
-        throw new Error("Sync failed");
-      }
-
       const result = await response.json();
 
+      if (!response.ok) {
+        console.error("[useGoogleCalendarSync] Erro na sincronização:", result);
+        
+        // Handle specific error cases
+        if (response.status === 401) {
+          throw new Error("Autenticação expirada. Por favor, reconecte sua conta Google.");
+        } else if (response.status === 404) {
+          throw new Error("Integração Google Calendar não encontrada. Por favor, conecte sua conta primeiro.");
+        } else {
+          throw new Error(result.error || "Erro desconhecido na sincronização");
+        }
+      }
+
+      console.log("[useGoogleCalendarSync] Sincronização concluída:", result);
+
       toast({
-        title: "Sincronização concluída",
-        description: `${result.synced || 0} items sincronizados com sucesso`,
+        title: "✅ Sincronização concluída",
+        description: `${result.synced || 0} eventos sincronizados com sucesso`,
       });
 
       // Refresh connection status
       await checkConnection();
+      
+      return result;
     } catch (error) {
-      console.error("Error syncing with Google Calendar:", error);
+      console.error("[useGoogleCalendarSync] Error syncing with Google Calendar:", error);
+      
+      const errorMessage = error instanceof Error ? error.message : "Não foi possível sincronizar com Google Calendar";
+      
       toast({
-        title: "Erro na sincronização",
-        description: "Não foi possível sincronizar com Google Calendar",
+        title: "❌ Erro na sincronização",
+        description: errorMessage,
         variant: "destructive",
       });
+      
+      throw error;
     } finally {
       setIsSyncing(false);
     }
@@ -137,17 +157,17 @@ export function useGoogleCalendarSync() {
       // Get settings to build auth URL
       const response = await fetch("/api/google-calendar/settings");
       if (!response.ok) {
-        throw new Error("Failed to get settings");
+        throw new Error("Falha ao obter configurações");
       }
 
       const settings = await response.json();
       if (!settings.clientId) {
-        throw new Error("Client ID not configured");
+        throw new Error("Client ID não configurado");
       }
 
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        throw new Error("User not authenticated");
+        throw new Error("Utilizador não autenticado");
       }
 
       // Build OAuth URL
@@ -163,10 +183,12 @@ export function useGoogleCalendarSync() {
       authUrl.searchParams.append("prompt", "consent");
       authUrl.searchParams.append("state", user.id);
 
+      console.log("[useGoogleCalendarSync] Redirecionando para autenticação Google...");
+
       // Redirect to Google OAuth
       window.location.href = authUrl.toString();
     } catch (error) {
-      console.error("Error connecting to Google:", error);
+      console.error("[useGoogleCalendarSync] Error connecting to Google:", error);
       toast({
         title: "Erro na conexão",
         description: error instanceof Error ? error.message : "Não foi possível conectar com Google Calendar",
@@ -174,6 +196,38 @@ export function useGoogleCalendarSync() {
       });
     }
   }, [isConfigured, toast]);
+
+  const disconnectGoogle = useCallback(async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error("Utilizador não autenticado");
+      }
+
+      // Delete the integration
+      const { error } = await supabase
+        .from("google_calendar_integrations" as any)
+        .delete()
+        .eq("user_id", user.id);
+
+      if (error) throw error;
+
+      toast({
+        title: "✅ Desconectado",
+        description: "Google Calendar desconectado com sucesso",
+      });
+
+      // Refresh connection status
+      await checkConnection();
+    } catch (error) {
+      console.error("[useGoogleCalendarSync] Error disconnecting Google:", error);
+      toast({
+        title: "Erro ao desconectar",
+        description: error instanceof Error ? error.message : "Não foi possível desconectar Google Calendar",
+        variant: "destructive",
+      });
+    }
+  }, [toast, checkConnection]);
 
   return {
     isConnected,
@@ -183,5 +237,6 @@ export function useGoogleCalendarSync() {
     checkConnection,
     syncWithGoogle,
     connectGoogle,
+    disconnectGoogle,
   };
 }
