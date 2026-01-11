@@ -2,11 +2,6 @@ import { NextApiRequest, NextApiResponse } from "next";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 
-const supabaseAdmin = createClient<Database>(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || "",
-  process.env.SUPABASE_SERVICE_ROLE_KEY || ""
-);
-
 interface GoogleCalendarEvent {
   id?: string;
   summary: string;
@@ -27,7 +22,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   console.log("[sync] ===== SYNC START =====");
-  console.log("[sync] Headers:", JSON.stringify(req.headers, null, 2));
+  console.log("[sync] 🔍 Request headers:", JSON.stringify(req.headers, null, 2));
 
   try {
     // Get user from session
@@ -39,150 +34,161 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const token = authHeader.replace("Bearer ", "");
     console.log("[sync] 📝 Token (first 50 chars):", token.substring(0, 50));
+    console.log("[sync] 📝 SUPABASE_URL:", process.env.NEXT_PUBLIC_SUPABASE_URL);
+    console.log("[sync] 📝 SUPABASE_ANON_KEY (first 20 chars):", process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.substring(0, 20));
     
-    // Try to verify the JWT token
-    try {
-      const { data, error: verifyError } = await supabaseAdmin.auth.getUser(token);
-      
-      console.log("[sync] 📝 getUser response:", {
-        hasData: !!data,
-        hasUser: !!data?.user,
-        userId: data?.user?.id,
-        error: verifyError?.message
+    // Create a Supabase client with the user's token
+    const supabase = createClient<Database>(
+      process.env.NEXT_PUBLIC_SUPABASE_URL || "",
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "",
+      {
+        global: {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      }
+    );
+
+    console.log("[sync] 🔐 Calling supabase.auth.getUser()...");
+
+    // Get the authenticated user
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+
+    console.log("[sync] 🔍 getUser() response:", {
+      hasUser: !!user,
+      userId: user?.id,
+      error: userError?.message,
+      errorDetails: JSON.stringify(userError, null, 2)
+    });
+
+    if (userError || !user) {
+      console.log("[sync] ❌ Auth error:", userError?.message);
+      return res.status(401).json({ 
+        error: "Invalid token", 
+        details: userError?.message,
+        debug: {
+          hasToken: !!token,
+          tokenLength: token.length,
+          hasSupabaseUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
+          hasAnonKey: !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+        }
       });
+    }
 
-      if (verifyError) {
-        console.log("[sync] ❌ JWT verification error:", verifyError.message);
-        console.log("[sync] ❌ Full error:", JSON.stringify(verifyError, null, 2));
-        return res.status(401).json({ 
-          error: "Invalid token", 
-          details: verifyError.message 
-        });
-      }
+    console.log("[sync] ✅ User authenticated:", user.id);
 
-      if (!data?.user) {
-        console.log("[sync] ❌ No user in response");
-        return res.status(401).json({ error: "User not found" });
-      }
+    // Get user's Google Calendar integration using user's client (not admin)
+    const { data: rawIntegration, error: integrationError } = await supabase
+      .from("google_calendar_integrations" as any)
+      .select("*")
+      .eq("user_id", user.id)
+      .single();
 
-      const user = data.user;
-      console.log("[sync] ✅ User authenticated:", user.id);
+    if (integrationError || !rawIntegration) {
+      console.log("[sync] ❌ Integration error:", integrationError);
+      return res.status(404).json({ error: "Google Calendar not connected" });
+    }
 
-      // Get user's Google Calendar integration
-      const { data: rawIntegration, error: integrationError } = await supabaseAdmin
-        .from("google_calendar_integrations" as any)
+    // Cast to known type
+    const integration = rawIntegration as any;
+    console.log("[sync] ✅ Integration found:", {
+      id: integration.id,
+      sync_direction: integration.sync_direction,
+      sync_events: integration.sync_events,
+      sync_tasks: integration.sync_tasks,
+      calendar_id: integration.calendar_id
+    });
+
+    // Check if token is expired
+    const isExpired = new Date(integration.expires_at).getTime() <= new Date().getTime();
+    let accessToken = integration.access_token;
+
+    if (isExpired && integration.refresh_token) {
+      console.log("[sync] 🔄 Token expired, refreshing...");
+      // Get OAuth settings from database using user's client
+      const { data: integrationSettings } = await supabase
+        .from("integration_settings" as any)
         .select("*")
-        .eq("user_id", user.id)
+        .eq("service_name", "google_calendar")
         .single();
 
-      if (integrationError || !rawIntegration) {
-        console.log("[sync] ❌ Integration error:", integrationError);
-        return res.status(404).json({ error: "Google Calendar not connected" });
+      if (!integrationSettings) {
+        console.log("[sync] ❌ OAuth settings not found");
+        return res.status(500).json({ error: "OAuth settings not found" });
       }
 
-      // Cast to known type
-      const integration = rawIntegration as any;
-      console.log("[sync] ✅ Integration found:", {
-        id: integration.id,
-        sync_direction: integration.sync_direction,
-        sync_events: integration.sync_events,
-        sync_tasks: integration.sync_tasks,
-        calendar_id: integration.calendar_id
+      const settings = integrationSettings as any;
+      const { client_id, client_secret } = settings;
+
+      // Refresh the access token
+      const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          client_id: client_id!,
+          client_secret: client_secret!,
+          refresh_token: integration.refresh_token,
+          grant_type: "refresh_token",
+        }),
       });
 
-      // Check if token is expired
-      const isExpired = new Date(integration.expires_at).getTime() <= new Date().getTime();
-      let accessToken = integration.access_token;
-
-      if (isExpired && integration.refresh_token) {
-        console.log("[sync] 🔄 Token expired, refreshing...");
-        // Get OAuth settings from database
-        const { data: integrationSettings } = await supabaseAdmin
-          .from("integration_settings" as any)
-          .select("*")
-          .eq("service_name", "google_calendar")
-          .single();
-
-        if (!integrationSettings) {
-          console.log("[sync] ❌ OAuth settings not found");
-          return res.status(500).json({ error: "OAuth settings not found" });
-        }
-
-        const settings = integrationSettings as any;
-        const { client_id, client_secret } = settings;
-
-        // Refresh the access token
-        const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams({
-            client_id: client_id!,
-            client_secret: client_secret!,
-            refresh_token: integration.refresh_token,
-            grant_type: "refresh_token",
-          }),
-        });
-
-        if (!tokenResponse.ok) {
-          console.log("[sync] ❌ Token refresh failed");
-          throw new Error("Failed to refresh access token");
-        }
-
-        const tokens = await tokenResponse.json();
-        accessToken = tokens.access_token;
-        console.log("[sync] ✅ Token refreshed");
-
-        // Update tokens in database
-        const expiresAt = new Date(Date.now() + tokens.expires_in * 1000);
-        await supabaseAdmin
-          .from("google_calendar_integrations" as any)
-          .update({
-            access_token: tokens.access_token,
-            expires_at: expiresAt.toISOString(),
-          })
-          .eq("id", integration.id);
+      if (!tokenResponse.ok) {
+        console.log("[sync] ❌ Token refresh failed");
+        throw new Error("Failed to refresh access token");
       }
 
-      let syncedCount = 0;
+      const tokens = await tokenResponse.json();
+      accessToken = tokens.access_token;
+      console.log("[sync] ✅ Token refreshed");
 
-      // Sync from system to Google
-      if (integration.sync_direction === "both" || integration.sync_direction === "toGoogle") {
-        console.log("[sync] 📤 Syncing TO Google...");
-        if (integration.sync_events) {
-          const eventsSynced = await syncEventsToGoogle(user.id, accessToken, integration.calendar_id || "primary");
-          console.log("[sync] ✅ Events synced to Google:", eventsSynced);
-          syncedCount += eventsSynced;
-        }
-
-        if (integration.sync_tasks) {
-          const tasksSynced = await syncTasksToGoogle(user.id, accessToken, integration.calendar_id || "primary");
-          console.log("[sync] ✅ Tasks synced to Google:", tasksSynced);
-          syncedCount += tasksSynced;
-        }
-      }
-
-      // Sync from Google to system
-      if (integration.sync_direction === "both" || integration.sync_direction === "fromGoogle") {
-        console.log("[sync] 📥 Syncing FROM Google...");
-        const googleEventsSynced = await syncEventsFromGoogle(user.id, accessToken, integration.calendar_id || "primary");
-        console.log("[sync] ✅ Events synced from Google:", googleEventsSynced);
-        syncedCount += googleEventsSynced;
-      }
-
-      // Update last sync timestamp
-      await supabaseAdmin
+      // Update tokens in database using user's client
+      const expiresAt = new Date(Date.now() + tokens.expires_in * 1000);
+      await supabase
         .from("google_calendar_integrations" as any)
-        .update({ last_sync_at: new Date().toISOString() })
+        .update({
+          access_token: tokens.access_token,
+          expires_at: expiresAt.toISOString(),
+        })
         .eq("id", integration.id);
-
-      console.log("[sync] ===== SYNC COMPLETE =====");
-      console.log("[sync] Total synced:", syncedCount);
-
-      res.status(200).json({ success: true, synced: syncedCount });
-    } catch (error) {
-      console.error("[sync] ❌ Fatal error:", error);
-      res.status(500).json({ error: "Failed to sync calendar" });
     }
+
+    let syncedCount = 0;
+
+    // Sync from system to Google
+    if (integration.sync_direction === "both" || integration.sync_direction === "toGoogle") {
+      console.log("[sync] 📤 Syncing TO Google...");
+      if (integration.sync_events) {
+        const eventsSynced = await syncEventsToGoogle(supabase, user.id, accessToken, integration.calendar_id || "primary");
+        console.log("[sync] ✅ Events synced to Google:", eventsSynced);
+        syncedCount += eventsSynced;
+      }
+
+      if (integration.sync_tasks) {
+        const tasksSynced = await syncTasksToGoogle(supabase, user.id, accessToken, integration.calendar_id || "primary");
+        console.log("[sync] ✅ Tasks synced to Google:", tasksSynced);
+        syncedCount += tasksSynced;
+      }
+    }
+
+    // Sync from Google to system
+    if (integration.sync_direction === "both" || integration.sync_direction === "fromGoogle") {
+      console.log("[sync] 📥 Syncing FROM Google...");
+      const googleEventsSynced = await syncEventsFromGoogle(supabase, user.id, accessToken, integration.calendar_id || "primary");
+      console.log("[sync] ✅ Events synced from Google:", googleEventsSynced);
+      syncedCount += googleEventsSynced;
+    }
+
+    // Update last sync timestamp using user's client
+    await supabase
+      .from("google_calendar_integrations" as any)
+      .update({ last_sync_at: new Date().toISOString() })
+      .eq("id", integration.id);
+
+    console.log("[sync] ===== SYNC COMPLETE =====");
+    console.log("[sync] Total synced:", syncedCount);
+
+    res.status(200).json({ success: true, synced: syncedCount });
   } catch (error) {
     console.error("[sync] ❌ Fatal error:", error);
     res.status(500).json({ error: "Failed to sync calendar" });
@@ -190,6 +196,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 }
 
 async function syncEventsToGoogle(
+  supabase: any,
   userId: string,
   accessToken: string,
   calendarId: string
@@ -197,7 +204,7 @@ async function syncEventsToGoogle(
   try {
     console.log("[syncEventsToGoogle] Starting...");
     // Get events from our system that need to be synced
-    const { data: rawEvents, error } = await supabaseAdmin
+    const { data: rawEvents, error } = await supabase
       .from("calendar_events" as any)
       .select("*")
       .eq("user_id", userId)
@@ -256,7 +263,7 @@ async function syncEventsToGoogle(
         console.log("[syncEventsToGoogle] ✅ Created in Google:", createdEvent.id);
 
         // Update our event with Google event ID
-        await supabaseAdmin
+        await supabase
           .from("calendar_events")
           .update({ google_event_id: createdEvent.id })
           .eq("id", event.id);
@@ -276,13 +283,14 @@ async function syncEventsToGoogle(
 }
 
 async function syncTasksToGoogle(
+  supabase: any,
   userId: string,
   accessToken: string,
   calendarId: string
 ): Promise<number> {
   try {
     // Get tasks from our system that need to be synced
-    const { data: rawTasks, error } = await supabaseAdmin
+    const { data: rawTasks, error } = await supabase
       .from("tasks" as any)
       .select("*")
       .eq("user_id", userId)
@@ -335,7 +343,7 @@ async function syncTasksToGoogle(
         const createdEvent = await response.json();
 
         // Update our task with Google event ID
-        await supabaseAdmin
+        await supabase
           .from("tasks")
           .update({ google_event_id: createdEvent.id })
           .eq("id", task.id);
@@ -354,6 +362,7 @@ async function syncTasksToGoogle(
 }
 
 async function syncEventsFromGoogle(
+  supabase: any,
   userId: string,
   accessToken: string,
   calendarId: string
@@ -404,7 +413,7 @@ async function syncEventsFromGoogle(
         }
 
         // Verificar se já existe
-        const { data: existingEvent } = await supabaseAdmin
+        const { data: existingEvent } = await supabase
           .from("calendar_events" as any)
           .select("id")
           .eq("google_event_id", googleEvent.id)
@@ -429,7 +438,7 @@ async function syncEventsFromGoogle(
         console.log(`[syncEventsFromGoogle] 📝 Creating event: ${googleEvent.summary}`);
 
         // Criar evento no sistema
-        const { error: createError } = await supabaseAdmin
+        const { error: createError } = await supabase
           .from("calendar_events" as any)
           .insert({
             user_id: userId,
