@@ -7,7 +7,7 @@ import SEO from "@/components/SEO";
 
 export default function App({ Component, pageProps }: AppProps) {
   return (
-    <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+    <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
       <SEO />
       <AppWrapper>
         <Component {...pageProps} />
