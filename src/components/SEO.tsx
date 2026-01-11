@@ -1,0 +1,54 @@
+import Head from 'next/head';
+
+interface SEOProps {
+  title?: string;
+  description?: string;
+  image?: string;
+  url?: string;
+}
+
+// SEO elements that can be used in _document.tsx (returns JSX without Head wrapper)
+export function SEOElements({
+  title = "Vyxa One - CRM Imobiliário Profissional",
+  description = "Vyxa One - Gestão completa de leads, imóveis, agenda e tarefas para profissionais do setor imobiliário",
+  image = "/og-image.png",
+  url = "",
+}: SEOProps) {
+  return (
+    <>
+      <title>{title}</title>
+      <meta name="description" content={description} />
+      <link rel="icon" href="/favicon.ico" />
+
+      {/* Open Graph */}
+      <meta property="og:title" content={title} />
+      <meta property="og:description" content={description} />
+      {image && <meta property="og:image" content={image} />}
+      {url && <meta property="og:url" content={url} />}
+      <meta property="og:type" content="website" />
+
+      {/* Twitter */}
+      <meta name="twitter:card" content="summary_large_image" />
+      <meta name="twitter:title" content={title} />
+      <meta name="twitter:description" content={description} />
+      {image && <meta name="twitter:image" content={image} />}
+
+      {/* Viewport and mobile optimization */}
+      <meta name="viewport" content="width=device-width, initial-scale=1" />
+    </>
+  );
+}
+
+// Default SEO component for use in pages/_app.tsx or individual pages (uses next/head)
+export default function SEO({
+  title = "Vyxa One - CRM Imobiliário Profissional",
+  description = "Vyxa One - Gestão completa de leads, imóveis, agenda e tarefas para profissionais do setor imobiliário",
+  image = "/og-image.png",
+  url = typeof window !== "undefined" ? window.location.href : "",
+}: SEOProps) {
+  return (
+    <Head>
+      <SEOElements {...{ title, description, image, url }} />
+    </Head>
+  );
+}

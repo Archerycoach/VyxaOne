@@ -1,0 +1,253 @@
+import React from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import type { CalendarEvent, Task } from "@/types";
+
+interface CalendarDialogsProps {
+  // Event Dialog
+  showEventForm: boolean;
+  setShowEventForm: (show: boolean) => void;
+  eventForm: Partial<CalendarEvent>;
+  setEventForm: (form: Partial<CalendarEvent>) => void;
+  handleEventSubmit: (e: React.FormEvent) => Promise<void>;
+  isEditing: boolean;
+  
+  // Task Dialog
+  showTaskForm: boolean;
+  setShowTaskForm: (show: boolean) => void;
+  taskForm: Partial<Task>;
+  setTaskForm: (form: Partial<Task>) => void;
+  handleTaskSubmit: (e: React.FormEvent) => Promise<void>;
+  isTaskEditing: boolean;
+}
+
+export function CalendarDialogs({
+  showEventForm,
+  setShowEventForm,
+  eventForm,
+  setEventForm,
+  handleEventSubmit,
+  isEditing,
+  showTaskForm,
+  setShowTaskForm,
+  taskForm,
+  setTaskForm,
+  handleTaskSubmit,
+  isTaskEditing,
+}: CalendarDialogsProps) {
+  return (
+    <>
+      {/* Event Dialog */}
+      <Dialog open={showEventForm} onOpenChange={setShowEventForm}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>
+              {isEditing ? "Editar Evento" : "Novo Evento"}
+            </DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleEventSubmit} className="space-y-4">
+            <div>
+              <Label htmlFor="event-title">Título *</Label>
+              <Input
+                id="event-title"
+                value={eventForm.title || ""}
+                onChange={(e) =>
+                  setEventForm({ ...eventForm, title: e.target.value })
+                }
+                required
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="event-description">Descrição</Label>
+              <Textarea
+                id="event-description"
+                value={eventForm.description || ""}
+                onChange={(e) =>
+                  setEventForm({ ...eventForm, description: e.target.value })
+                }
+                rows={3}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="event-start">Data/Hora Início *</Label>
+                <Input
+                  id="event-start"
+                  type="datetime-local"
+                  value={eventForm.startTime || ""}
+                  onChange={(e) =>
+                    setEventForm({ ...eventForm, startTime: e.target.value })
+                  }
+                  required
+                />
+              </div>
+              <div>
+                <Label htmlFor="event-end">Data/Hora Fim *</Label>
+                <Input
+                  id="event-end"
+                  type="datetime-local"
+                  value={eventForm.endTime || ""}
+                  onChange={(e) =>
+                    setEventForm({ ...eventForm, endTime: e.target.value })
+                  }
+                  required
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label htmlFor="event-location">Localização</Label>
+              <Input
+                id="event-location"
+                value={eventForm.location || ""}
+                onChange={(e) =>
+                  setEventForm({ ...eventForm, location: e.target.value })
+                }
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="event-type">Tipo</Label>
+              <Select
+                value={eventForm.eventType || "meeting"}
+                onValueChange={(value) =>
+                  setEventForm({ ...eventForm, eventType: value as any })
+                }
+              >
+                <SelectTrigger id="event-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="meeting">Reunião</SelectItem>
+                  <SelectItem value="viewing">Visita</SelectItem>
+                  <SelectItem value="call">Chamada</SelectItem>
+                  <SelectItem value="other">Outro</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowEventForm(false)}
+              >
+                Cancelar
+              </Button>
+              <Button type="submit">
+                {isEditing ? "Guardar" : "Criar"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Task Dialog */}
+      <Dialog open={showTaskForm} onOpenChange={setShowTaskForm}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>
+              {isTaskEditing ? "Editar Tarefa" : "Nova Tarefa"}
+            </DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleTaskSubmit} className="space-y-4">
+            <div>
+              <Label htmlFor="task-title">Título *</Label>
+              <Input
+                id="task-title"
+                value={taskForm.title || ""}
+                onChange={(e) =>
+                  setTaskForm({ ...taskForm, title: e.target.value })
+                }
+                required
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="task-description">Descrição</Label>
+              <Textarea
+                id="task-description"
+                value={taskForm.description || ""}
+                onChange={(e) =>
+                  setTaskForm({ ...taskForm, description: e.target.value })
+                }
+                rows={3}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="task-due-date">Data de Vencimento *</Label>
+                <Input
+                  id="task-due-date"
+                  type="datetime-local"
+                  value={taskForm.dueDate || ""}
+                  onChange={(e) =>
+                    setTaskForm({ ...taskForm, dueDate: e.target.value })
+                  }
+                  required
+                />
+              </div>
+              <div>
+                <Label htmlFor="task-priority">Prioridade</Label>
+                <Select
+                  value={taskForm.priority || "medium"}
+                  onValueChange={(value) =>
+                    setTaskForm({ ...taskForm, priority: value as any })
+                  }
+                >
+                  <SelectTrigger id="task-priority">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="low">Baixa</SelectItem>
+                    <SelectItem value="medium">Média</SelectItem>
+                    <SelectItem value="high">Alta</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div>
+              <Label htmlFor="task-status">Estado</Label>
+              <Select
+                value={taskForm.status || "pending"}
+                onValueChange={(value) =>
+                  setTaskForm({ ...taskForm, status: value as any })
+                }
+              >
+                <SelectTrigger id="task-status">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="pending">Pendente</SelectItem>
+                  <SelectItem value="in-progress">Em Progresso</SelectItem>
+                  <SelectItem value="completed">Concluída</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowTaskForm(false)}
+              >
+                Cancelar
+              </Button>
+              <Button type="submit">
+                {isTaskEditing ? "Guardar" : "Criar"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
