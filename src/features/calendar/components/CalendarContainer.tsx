@@ -31,6 +31,7 @@ export function CalendarContainer() {
     checkConnection,
     syncWithGoogle,
     connectGoogle,
+    disconnectGoogle,
   } = useGoogleCalendarSync();
 
   // Hooks for filters and navigation
@@ -357,6 +358,7 @@ export function CalendarContainer() {
         isSyncing={isSyncing}
         onGoogleConnect={connectGoogle}
         onGoogleSync={syncWithGoogle}
+        onGoogleDisconnect={disconnectGoogle}
       />
 
       <CalendarGrid

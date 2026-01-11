@@ -144,67 +144,71 @@ export function useGoogleCalendarSync() {
   }, [isConfigured, isConnected, toast, checkConnection]);
 
   const connectGoogle = useCallback(async () => {
-    if (!isConfigured) {
-      toast({
-        title: "Configuração necessária",
-        description: "A integração com Google Calendar precisa ser configurada por um administrador em Administração → Integrações",
-        variant: "destructive",
-      });
-      return;
-    }
-
     try {
-      // Get settings to build auth URL
-      const response = await fetch("/api/google-calendar/settings");
-      if (!response.ok) {
-        throw new Error("Falha ao obter configurações");
-      }
-
-      const settings = await response.json();
-      if (!settings.clientId) {
-        throw new Error("Client ID não configurado");
-      }
-
+      console.log("[useGoogleCalendarSync] Initiating Google OAuth flow...");
+      
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        throw new Error("Utilizador não autenticado");
+        throw new Error("User not authenticated");
       }
 
-      // Build OAuth URL
-      const redirectUrl = `${window.location.origin}/api/google-calendar/callback`;
-      const scopes = settings.scopes || "https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile";
+      // Get OAuth settings from database
+      const { data: settings } = await supabase
+        .from("integration_settings" as any)
+        .select("*")
+        .eq("service_name", "google_calendar")
+        .single();
 
-      const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
-      authUrl.searchParams.append("client_id", settings.clientId);
-      authUrl.searchParams.append("redirect_uri", redirectUrl);
-      authUrl.searchParams.append("response_type", "code");
-      authUrl.searchParams.append("scope", scopes);
-      authUrl.searchParams.append("access_type", "offline");
-      authUrl.searchParams.append("prompt", "consent");
-      authUrl.searchParams.append("state", user.id);
+      if (!settings) {
+        toast({
+          title: "Configuração não encontrada",
+          description: "Por favor, configure o Google Calendar nas definições de integração",
+          variant: "destructive",
+        });
+        return;
+      }
 
-      console.log("[useGoogleCalendarSync] Redirecionando para autenticação Google...");
+      const settingsData = settings as any;
+      const { client_id, redirect_uri } = settingsData;
+      const actualRedirectUri = redirect_uri || `${window.location.origin}/api/google-calendar/callback`;
 
-      // Redirect to Google OAuth
-      window.location.href = authUrl.toString();
+      const scope = [
+        "https://www.googleapis.com/auth/calendar",
+        "https://www.googleapis.com/auth/calendar.events",
+        "https://www.googleapis.com/auth/userinfo.email",
+      ].join(" ");
+
+      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${new URLSearchParams({
+        client_id: client_id,
+        redirect_uri: actualRedirectUri,
+        response_type: "code",
+        scope: scope,
+        access_type: "offline",
+        prompt: "consent",
+        state: user.id,
+      })}`;
+
+      console.log("[useGoogleCalendarSync] Redirecting to Google OAuth...");
+      window.location.href = authUrl;
     } catch (error) {
       console.error("[useGoogleCalendarSync] Error connecting to Google:", error);
       toast({
-        title: "Erro na conexão",
-        description: error instanceof Error ? error.message : "Não foi possível conectar com Google Calendar",
+        title: "Erro ao conectar",
+        description: error instanceof Error ? error.message : "Erro desconhecido",
         variant: "destructive",
       });
     }
-  }, [isConfigured, toast]);
+  }, [toast]);
 
   const disconnectGoogle = useCallback(async () => {
     try {
+      console.log("[useGoogleCalendarSync] Disconnecting Google Calendar...");
+      
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        throw new Error("Utilizador não autenticado");
+        throw new Error("User not authenticated");
       }
 
-      // Delete the integration
       const { error } = await supabase
         .from("google_calendar_integrations" as any)
         .delete()
@@ -212,22 +216,23 @@ export function useGoogleCalendarSync() {
 
       if (error) throw error;
 
+      setIsConnected(false);
+      
       toast({
-        title: "✅ Desconectado",
+        title: "Desconectado",
         description: "Google Calendar desconectado com sucesso",
       });
 
-      // Refresh connection status
-      await checkConnection();
+      console.log("[useGoogleCalendarSync] ✅ Successfully disconnected");
     } catch (error) {
-      console.error("[useGoogleCalendarSync] Error disconnecting Google:", error);
+      console.error("[useGoogleCalendarSync] Error disconnecting:", error);
       toast({
         title: "Erro ao desconectar",
-        description: error instanceof Error ? error.message : "Não foi possível desconectar Google Calendar",
+        description: error instanceof Error ? error.message : "Erro desconhecido",
         variant: "destructive",
       });
     }
-  }, [toast, checkConnection]);
+  }, [toast]);
 
   return {
     isConnected,

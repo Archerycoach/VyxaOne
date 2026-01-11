@@ -125,7 +125,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         .eq("id", integration.id));
       
       console.log("[sync] ✅ Token refreshed successfully");
+    } else if (isExpired && !integration.refresh_token) {
+      console.error("[sync] ❌ Token expired and no refresh token available");
+      return res.status(401).json({ 
+        error: "Token expired",
+        message: "Access token has expired and no refresh token is available. Please reconnect your Google account.",
+        requiresReconnect: true
+      });
     }
+
+    // Final validation: ensure we have a valid access token
+    if (!accessToken) {
+      console.error("[sync] ❌ No valid access token available");
+      return res.status(401).json({ 
+        error: "No valid access token",
+        message: "Unable to obtain a valid access token. Please reconnect your Google account.",
+        requiresReconnect: true
+      });
+    }
+
+    console.log("[sync] ✅ Access token validated, proceeding with sync...");
 
     let syncedCount = 0;
 
