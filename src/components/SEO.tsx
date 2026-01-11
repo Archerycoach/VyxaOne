@@ -7,15 +7,14 @@ interface SEOProps {
   url?: string;
 }
 
-// SEO elements that can be used in _document.tsx (returns JSX without Head wrapper)
-export function SEOElements({
+export default function SEO({
   title = "Vyxa One - CRM Imobiliário Profissional",
   description = "Vyxa One - Gestão completa de leads, imóveis, agenda e tarefas para profissionais do setor imobiliário",
   image = "/og-image.png",
   url = "",
 }: SEOProps) {
   return (
-    <>
+    <Head>
       <title>{title}</title>
       <meta name="description" content={description} />
       <link rel="icon" href="/favicon.ico" />
@@ -35,20 +34,6 @@ export function SEOElements({
 
       {/* Viewport and mobile optimization */}
       <meta name="viewport" content="width=device-width, initial-scale=1" />
-    </>
-  );
-}
-
-// Default SEO component for use in pages/_app.tsx or individual pages (uses next/head)
-export default function SEO({
-  title = "Vyxa One - CRM Imobiliário Profissional",
-  description = "Vyxa One - Gestão completa de leads, imóveis, agenda e tarefas para profissionais do setor imobiliário",
-  image = "/og-image.png",
-  url = typeof window !== "undefined" ? window.location.href : "",
-}: SEOProps) {
-  return (
-    <Head>
-      <SEOElements {...{ title, description, image, url }} />
     </Head>
   );
 }
