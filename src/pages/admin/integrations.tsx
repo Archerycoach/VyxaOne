@@ -221,6 +221,39 @@ export default function IntegrationsPage() {
     }
   };
 
+  const handleClearOAuthConfig = async () => {
+    if (!confirm("Tem certeza que deseja apagar a configuração OAuth global? Isso removerá todas as configurações de integração para todos os usuários.")) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      const { error } = await supabase
+        .from("integration_settings" as any)
+        .delete()
+        .eq("service_name", "google_calendar");
+
+      if (error) throw error;
+
+      toast({
+        title: "Configuração OAuth apagada",
+        description: "A configuração OAuth global foi apagada com sucesso",
+      });
+
+      await loadSettings();
+    } catch (error) {
+      console.error("Error clearing OAuth config:", error);
+      toast({
+        title: "Erro",
+        description: "Erro ao apagar configuração OAuth",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const isConfigured = !!(settings.client_id && settings.client_secret);
   const isConnected = !!integration;
   const isTokenValid = integration && new Date(integration.expires_at).getTime() > new Date().getTime();
@@ -319,6 +352,18 @@ export default function IntegrationsPage() {
                     <Settings className="w-4 h-4 mr-2" />
                     Salvar Configurações
                   </Button>
+
+                  {isConfigured && (
+                    <Button 
+                      onClick={handleClearOAuthConfig} 
+                      variant="outline"
+                      disabled={loading}
+                      className="border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                    >
+                      <XCircle className="w-4 h-4 mr-2" />
+                      Limpar Configuração OAuth
+                    </Button>
+                  )}
                 </div>
               </CardContent>
             </Card>
