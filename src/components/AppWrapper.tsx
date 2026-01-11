@@ -1,13 +1,16 @@
 import { useRouter } from "next/router";
-import { SubscriptionGuard } from "@/components/SubscriptionGuard";
+import { ProtectedRoute } from "./ProtectedRoute";
 
-// Páginas que NÃO precisam de verificação de subscrição
-const PUBLIC_PAGES = [
+interface AppWrapperProps {
+  children: React.ReactNode;
+}
+
+// Public routes that don't require authentication
+const PUBLIC_ROUTES = [
+  "/",
+  "/landing",
   "/login",
   "/forgot-password",
-  "/404",
-  "/landing",
-  "/privacy-policy",
   "/features",
   "/pricing",
   "/use-cases",
@@ -16,47 +19,50 @@ const PUBLIC_PAGES = [
   "/documentation",
   "/faq",
   "/support",
+  "/privacy-policy"
 ];
 
-// Páginas que precisam de subscrição ativa (fora do trial)
-const SUBSCRIPTION_REQUIRED_PAGES = [
-  "/properties",
-  "/documents",
-  "/financing",
-  "/reports",
-  "/performance",
-  "/team-dashboard",
-  "/team-workflows",
-  "/workflows",
-  "/templates",
-  "/bulk-messages",
-  "/admin",
+// Admin routes that require admin role
+const ADMIN_ROUTES = [
+  "/admin/dashboard",
+  "/admin/users",
+  "/admin/subscriptions",
+  "/admin/payment-settings",
+  "/admin/security",
+  "/admin/workflows",
+  "/admin/system-settings",
+  "/admin/integrations",
+  "/admin/frontend-settings"
 ];
-
-interface AppWrapperProps {
-  children: React.ReactNode;
-}
 
 export function AppWrapper({ children }: AppWrapperProps) {
   const router = useRouter();
+  const currentPath = router.pathname;
 
-  // Páginas públicas (sem guard)
-  const isPublicPage = PUBLIC_PAGES.some((path) =>
-    router.pathname.startsWith(path)
+  // Check if current route is public
+  const isPublicRoute = PUBLIC_ROUTES.some(route => 
+    currentPath === route || currentPath.startsWith(route)
   );
 
-  if (isPublicPage) {
+  // Check if current route requires admin role
+  const isAdminRoute = ADMIN_ROUTES.some(route => 
+    currentPath === route || currentPath.startsWith(route)
+  );
+
+  // Public routes don't need protection
+  if (isPublicRoute) {
     return <>{children}</>;
   }
 
-  // Verificar se a página requer subscrição
-  const requiresSubscription = SUBSCRIPTION_REQUIRED_PAGES.some((path) =>
-    router.pathname.startsWith(path)
-  );
+  // Admin routes need role check
+  if (isAdminRoute) {
+    return (
+      <ProtectedRoute allowedRoles={["admin"]}>
+        {children}
+      </ProtectedRoute>
+    );
+  }
 
-  return (
-    <SubscriptionGuard requiresSubscription={requiresSubscription}>
-      {children}
-    </SubscriptionGuard>
-  );
+  // All other routes require authentication
+  return <ProtectedRoute>{children}</ProtectedRoute>;
 }

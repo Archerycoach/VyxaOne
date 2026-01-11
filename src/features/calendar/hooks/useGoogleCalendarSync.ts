@@ -44,9 +44,11 @@ export function useGoogleCalendarSync() {
 
       // Check if token is still valid
       const integration = data as any;
-      const expiresAt = integration.expires_at;
-      const isValid = expiresAt && new Date(expiresAt) > new Date();
-      setIsConnected(!!isValid);
+      const hasRefreshToken = !!integration.refresh_token;
+      
+      // Consider connected if we have a refresh token, even if access token expired
+      // The backend will automatically refresh the token when needed
+      setIsConnected(hasRefreshToken);
     } catch (error) {
       console.error("Error checking Google Calendar connection:", error);
       setIsConnected(false);
@@ -150,7 +152,7 @@ export function useGoogleCalendarSync() {
 
       // Build OAuth URL
       const redirectUrl = `${window.location.origin}/api/google-calendar/callback`;
-      const scopes = settings.scopes || "https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events";
+      const scopes = settings.scopes || "https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile";
 
       const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
       authUrl.searchParams.append("client_id", settings.clientId);
