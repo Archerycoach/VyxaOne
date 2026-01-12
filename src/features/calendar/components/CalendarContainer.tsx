@@ -21,7 +21,7 @@ export function CalendarContainer() {
   const router = useRouter();
   
   // Hooks for data fetching
-  const { events, isLoading: eventsLoading, refetch: refetchEvents } = useCalendarEvents();
+  const { events, isLoading: eventsLoading, refetch: refetchEvents, deleteEvent } = useCalendarEvents();
   const { tasks, isLoading: tasksLoading, refetch: refetchTasks } = useCalendarTasks();
   const { interactions, isLoading: interactionsLoading, refetch: refetchInteractions } = useCalendarInteractions();
   const { notes, isLoading: notesLoading, refetch: refetchNotes } = useCalendarNotes();
@@ -370,6 +370,7 @@ export function CalendarContainer() {
         notes={showNotes ? notes : []}
         onEventClick={handleEditEvent}
         onTaskClick={handleEditTask}
+        onDeleteEvent={deleteEvent}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
         onDragOver={handleDragOver}

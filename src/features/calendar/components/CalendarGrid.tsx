@@ -1,4 +1,6 @@
-import React from "react";
+import React, { useState } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { EventCard } from "./EventCard";
 import { TaskCard } from "./TaskCard";
 import type { CalendarEvent, Task } from "@/types";
@@ -14,10 +16,12 @@ interface CalendarGridProps {
   notes: CalendarNote[];
   onEventClick: (event: CalendarEvent) => void;
   onTaskClick: (task: Task) => void;
+  onDeleteEvent?: (eventId: string) => void;
+  // Drag and Drop handlers
   onDragStart: (e: React.DragEvent, item: { id: string; type: "event" | "task"; startTime: string }) => void;
   onDragEnd: (e: React.DragEvent) => void;
   onDragOver: (e: React.DragEvent) => void;
-  onDrop: (e: React.DragEvent, targetDate: Date) => void;
+  onDrop: (e: React.DragEvent, date: Date) => void;
 }
 
 export function CalendarGrid({
@@ -29,6 +33,7 @@ export function CalendarGrid({
   notes,
   onEventClick,
   onTaskClick,
+  onDeleteEvent,
   onDragStart,
   onDragEnd,
   onDragOver,
@@ -203,6 +208,7 @@ export function CalendarGrid({
                   <EventCard 
                     event={item as CalendarEvent} 
                     onClick={() => onEventClick(item as CalendarEvent)}
+                    onDelete={onDeleteEvent}
                   />
                 </div>
               );
@@ -292,8 +298,8 @@ export function CalendarGrid({
               </div>
               <div className="space-y-1 overflow-y-auto flex-1 max-h-[500px]">
                 {dayEvents.map((event) => (
-                  <div 
-                    key={`event-${event.id}`} 
+                  <div
+                    key={`event-${event.id}`}
                     draggable
                     onDragStart={(e) => onDragStart(e, { 
                       id: event.id, 
@@ -301,16 +307,19 @@ export function CalendarGrid({
                       startTime: event.startTime 
                     })}
                     onDragEnd={onDragEnd}
-                    className="text-xs rounded p-1 truncate cursor-move transition-opacity bg-purple-100 hover:bg-purple-200 border border-purple-200"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onEventClick(event);
-                    }}
                   >
-                    <div className="font-medium text-[10px] text-purple-800">
-                      {new Date(event.startTime).toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" })}
-                    </div>
-                    <div className="truncate font-medium">{event.title}</div>
+                    <EventCard 
+                      event={event}
+                      onClick={() => onEventClick(event)}
+                      onDelete={onDeleteEvent}
+                      onDragStart={(e) => onDragStart(e, { 
+                        id: event.id, 
+                        type: "event",
+                        startTime: event.startTime 
+                      })}
+                      onDragEnd={onDragEnd}
+                      compact
+                    />
                   </div>
                 ))}
                 {dayTasks.map((task) => (
@@ -401,8 +410,8 @@ export function CalendarGrid({
               </div>
               <div className="space-y-1 overflow-hidden">
                 {dayEvents.slice(0, 2).map((event) => (
-                  <div 
-                    key={`event-${event.id}`} 
+                  <div
+                    key={`event-${event.id}`}
                     draggable
                     onDragStart={(e) => onDragStart(e, { 
                       id: event.id, 
@@ -410,13 +419,19 @@ export function CalendarGrid({
                       startTime: event.startTime 
                     })}
                     onDragEnd={onDragEnd}
-                    className="text-[10px] rounded px-1 py-0.5 truncate cursor-move transition-opacity bg-purple-100 hover:bg-purple-200 text-purple-900"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onEventClick(event);
-                    }}
                   >
-                    {event.title}
+                    <EventCard 
+                      event={event}
+                      onClick={() => onEventClick(event)}
+                      onDelete={onDeleteEvent}
+                      onDragStart={(e) => onDragStart(e, { 
+                        id: event.id, 
+                        type: "event",
+                        startTime: event.startTime 
+                      })}
+                      onDragEnd={onDragEnd}
+                      compact
+                    />
                   </div>
                 ))}
                 {dayTasks.slice(0, 1).map((task) => (

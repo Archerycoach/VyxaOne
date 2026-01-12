@@ -8,7 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { Calendar, Settings, CheckCircle2, XCircle, AlertCircle } from "lucide-react";
+import { Calendar, Settings, CheckCircle2, XCircle, AlertCircle, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
@@ -45,6 +45,7 @@ export default function IntegrationsPage() {
   });
   const [integration, setIntegration] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const [clearingConfig, setClearingConfig] = useState(false);
   const [syncSettings, setSyncSettings] = useState({
     sync_direction: "both" as "both" | "fromGoogle" | "toGoogle",
     sync_events: true,
@@ -92,6 +93,15 @@ export default function IntegrationsPage() {
           enabled: settingsData.enabled || false,
           redirect_uri: settingsData.redirect_uri || "",
           scopes: settingsData.scopes || "",
+        });
+      } else {
+        // Reset to empty if no settings found
+        setSettings({
+          client_id: "",
+          client_secret: "",
+          redirect_uri: "",
+          enabled: false,
+          scopes: "",
         });
       }
     } catch (error) {
@@ -147,6 +157,12 @@ export default function IntegrationsPage() {
   const handleSaveSettings = async () => {
     setLoading(true);
     try {
+      console.log("[Integrations] 💾 Saving settings...", {
+        client_id: settings.client_id ? "SET" : "EMPTY",
+        client_secret: settings.client_secret ? "SET" : "EMPTY",
+        enabled: settings.enabled
+      });
+
       // Use "as any" to bypass TypeScript errors with auto-generated types that might be outdated
       const { error } = await supabase
         .from("integration_settings" as any)
@@ -158,14 +174,22 @@ export default function IntegrationsPage() {
           enabled: settings.enabled,
         }, { onConflict: "service_name" });
 
-      if (error) throw error;
+      if (error) {
+        console.error("[Integrations] ❌ Error saving:", error);
+        throw error;
+      }
+
+      console.log("[Integrations] ✅ Settings saved successfully");
 
       toast({
         title: "Configurações salvas",
         description: "As configurações de integração foram atualizadas com sucesso.",
       });
+
+      // Reload settings to confirm
+      await loadSettings();
     } catch (error: any) {
-      console.error("Error saving settings:", error);
+      console.error("[Integrations] Error saving settings:", error);
       toast({
         title: "Erro ao salvar configurações",
         description: error.message,
@@ -213,18 +237,26 @@ export default function IntegrationsPage() {
   };
 
   const handleClearOAuthConfig = async () => {
-    if (!confirm("Tem certeza que deseja apagar a configuração OAuth global? Isso removerá todas as configurações de integração para todos os utilizadores.")) {
+    if (!confirm("⚠️ ATENÇÃO: Tem certeza que deseja apagar a configuração OAuth global?\n\nIsso removerá as credenciais do Google Cloud Console e impedirá que todos os utilizadores conectem suas contas ao Google Calendar.\n\nEsta ação não pode ser desfeita.")) {
       return;
     }
 
-    setLoading(true);
+    setClearingConfig(true);
     try {
-      const { error } = await supabase
+      console.log("[Integrations] 🗑️ Clearing OAuth config...");
+
+      // Delete from database
+      const { error: deleteError } = await supabase
         .from("integration_settings" as any)
         .delete()
         .eq("service_name", "google_calendar");
 
-      if (error) throw error;
+      if (deleteError) {
+        console.error("[Integrations] ❌ Delete error:", deleteError);
+        throw deleteError;
+      }
+
+      console.log("[Integrations] ✅ OAuth config deleted from database");
 
       // Clear local state
       setSettings({
@@ -235,22 +267,24 @@ export default function IntegrationsPage() {
         scopes: "",
       });
 
+      console.log("[Integrations] ✅ Local state cleared");
+
       toast({
-        title: "Configuração OAuth apagada",
-        description: "A configuração OAuth global foi removida com sucesso.",
+        title: "✅ Configuração OAuth apagada",
+        description: "A configuração OAuth global foi removida com sucesso. Os utilizadores não poderão conectar ao Google Calendar até que novas credenciais sejam configuradas.",
       });
 
-      // Refresh settings
+      // Refresh settings to confirm
       await loadSettings();
     } catch (error: any) {
-      console.error("Error clearing OAuth config:", error);
+      console.error("[Integrations] ❌ Error clearing OAuth config:", error);
       toast({
         title: "Erro ao apagar configuração",
-        description: error.message,
+        description: error.message || "Ocorreu um erro ao tentar apagar a configuração OAuth",
         variant: "destructive",
       });
     } finally {
-      setLoading(false);
+      setClearingConfig(false);
     }
   };
 
@@ -285,20 +319,20 @@ export default function IntegrationsPage() {
                     <Settings className="w-5 h-5" />
                     <CardTitle>Configuração OAuth</CardTitle>
                   </div>
-                  {settings.enabled ? (
+                  {isConfigured ? (
                     <Badge variant="default" className="bg-green-500">
                       <CheckCircle2 className="w-3 h-3 mr-1" />
-                      Ativo
+                      Configurado
                     </Badge>
                   ) : (
                     <Badge variant="secondary">
                       <XCircle className="w-3 h-3 mr-1" />
-                      Inativo
+                      Não Configurado
                     </Badge>
                   )}
                 </div>
                 <CardDescription>
-                  Configure as credenciais do Google Cloud Console
+                  Configure as credenciais do Google Cloud Console para permitir integração com Google Calendar
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -348,22 +382,42 @@ export default function IntegrationsPage() {
                     </span>
                   </div>
 
-                  <Button onClick={handleSaveSettings} disabled={loading}>
-                    <Settings className="w-4 h-4 mr-2" />
-                    Salvar Configurações
-                  </Button>
-
-                  {isConfigured && (
-                    <Button 
-                      onClick={handleClearOAuthConfig} 
-                      variant="outline"
-                      disabled={loading}
-                      className="border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground"
-                    >
-                      <XCircle className="w-4 h-4 mr-2" />
-                      Limpar Configuração OAuth
+                  <div className="flex gap-2">
+                    <Button onClick={handleSaveSettings} disabled={loading || clearingConfig}>
+                      {loading ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Salvando...
+                        </>
+                      ) : (
+                        <>
+                          <Settings className="w-4 h-4 mr-2" />
+                          Salvar Configurações
+                        </>
+                      )}
                     </Button>
-                  )}
+
+                    {isConfigured && (
+                      <Button 
+                        onClick={handleClearOAuthConfig} 
+                        variant="outline"
+                        disabled={loading || clearingConfig}
+                        className="border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                      >
+                        {clearingConfig ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            Limpando...
+                          </>
+                        ) : (
+                          <>
+                            <XCircle className="w-4 h-4 mr-2" />
+                            Limpar Configuração OAuth
+                          </>
+                        )}
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -433,7 +487,7 @@ export default function IntegrationsPage() {
                       <Button 
                         onClick={handleDisconnect} 
                         variant="destructive"
-                        disabled={loading}
+                        disabled={loading || clearingConfig}
                       >
                         <XCircle className="w-4 h-4 mr-2" />
                         Desconectar Google Calendar

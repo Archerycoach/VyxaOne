@@ -2,8 +2,18 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
-const SUPABASE_URL = "https://hantkriglxwmddbpddnw.supabase.co";
-const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhhbnRrcmlnbHh3bWRkYnBkZG53Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjcwNzkzODcsImV4cCI6MjA4MjY1NTM4N30.PfH8SnoaOCSQOGEMWOsRgRZH9UyggeQQIiZ6Elqlvtw";
+// IMPORTANT: Use environment variables instead of hardcoded values
+// The values below should come from .env.local for proper environment separation
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://hantkriglxwmddbpddnw.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhhbnRrcmlnbHh3bWRkYnBkZG53Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjcwNzkzODcsImV4cCI6MjA4MjY1NTM4N30.PfH8SnoaOCSQOGEMWOsRgRZH9UyggeQQIiZ6Elqlvtw";
+
+// Validate environment variables
+if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+  console.warn('⚠️ Supabase environment variables not found. Using fallback values from client.ts');
+  console.warn('⚠️ Please ensure .env.local is properly configured with:');
+  console.warn('   - NEXT_PUBLIC_SUPABASE_URL');
+  console.warn('   - NEXT_PUBLIC_SUPABASE_ANON_KEY');
+}
 
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";

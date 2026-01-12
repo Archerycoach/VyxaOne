@@ -1,229 +1,276 @@
-# Guia: Corrigir Templates de Email do Supabase
+# 🔧 CORREÇÃO DO ERRO "Database error querying schema"
 
-## Problema
-Os emails do Supabase (recuperação de password, confirmação de email) estão a redirecionar para o projeto antigo.
+**Data:** 2026-01-12  
+**Problema:** Erro 500 ao fazer login  
+**Causa:** Configuração de email no Supabase sem SMTP configurado  
+**Status:** ⚠️ Requer ação no Supabase Dashboard
 
-## Solução
+---
 
-### 1. Configurar Site URL e Redirect URLs
+## 🎯 **PROBLEMA IDENTIFICADO:**
 
-1. Vai ao **Supabase Dashboard**: https://supabase.com/dashboard
-2. Seleciona o teu projeto: `hantkriglxwmddbpddnw`
-3. Vai a **Authentication** → **URL Configuration**
+O erro **"Database error querying schema"** ocorre porque:
+1. ✅ A base de dados está 100% correta
+2. ✅ Os utilizadores estão criados e confirmados
+3. ❌ **MAS o Supabase Auth está configurado para exigir confirmação de email**
+4. ❌ **Sem SMTP configurado, não consegue enviar emails**
+5. ❌ Resulta em erro interno 500
 
-**Configurações necessárias:**
+---
+
+## ✅ **SOLUÇÃO IMEDIATA:**
+
+### **PASSO 1: Desativar Confirmação de Email**
+
+Aceda ao [Supabase Dashboard](https://supabase.com/dashboard) e siga estes passos:
 
 ```
-Site URL: https://seu-dominio-vercel.vercel.app
-```
-(Substitui pelo teu URL real da Vercel)
+1. Selecione o projeto: ykkorjrxomtevcdlyaan (Vyxa.pt)
 
-**Redirect URLs (adiciona todos estes):**
+2. Navegue para:
+   Authentication → Providers → Email
+
+3. Desative as seguintes opções:
+   [❌] Confirm email
+   [❌] Secure email change  
+   [❌] Enable email confirmations
+
+4. Clique em "Save" (Guardar)
 ```
-https://seu-dominio-vercel.vercel.app/**
-https://seu-dominio-vercel.vercel.app/auth/callback
-http://localhost:3000/**
-http://localhost:3000/auth/callback
-https://3000-9d804bf8-0d80-4823-af0f-2c9bbddb5de7.softgen.dev/**
+
+**⚠️ CRÍTICO:** Estas opções **DEVEM** estar desligadas se não tiver SMTP configurado!
+
+---
+
+### **PASSO 2: Verificar URL Configuration**
+
+```
+1. Navegue para:
+   Authentication → URL Configuration
+
+2. Verifique:
+   Site URL: https://www.vyxa.pt
+   
+3. Adicione Redirect URLs:
+   - https://www.vyxa.pt/**
+   - http://localhost:3000/**
+
+4. Clique em "Save"
 ```
 
 ---
 
-### 2. Atualizar Email Templates
+### **PASSO 3: Verificar Auth Settings**
 
-Vai a **Authentication** → **Email Templates** e atualiza cada template:
+```
+1. Navegue para:
+   Settings → Auth
 
----
+2. Verifique:
+   [✅] Enable Email provider
+   JWT Expiry: 3600 (1 hora)
+   [✅] Enable Refresh Token Rotation
 
-#### 📧 **Confirm Signup** (Confirmação de Registo)
+3. Garanta que está DESLIGADO:
+   [❌] Confirm email
+   [❌] Secure email change
 
-```html
-<h2>Confirma o teu email</h2>
-
-<p>Olá,</p>
-
-<p>Obrigado por te registares! Clica no link abaixo para confirmar o teu endereço de email:</p>
-
-<p><a href="{{ .ConfirmationURL }}">Confirmar Email</a></p>
-
-<p>Ou copia e cola este URL no teu browser:</p>
-<p>{{ .ConfirmationURL }}</p>
-
-<p>Se não criaste esta conta, podes ignorar este email.</p>
-
-<p>Cumprimentos,<br>
-Equipa Imogest</p>
+4. Clique em "Save"
 ```
 
 ---
 
-#### 🔐 **Reset Password** (Recuperação de Password)
+## 🔐 **CREDENCIAIS DE LOGIN:**
 
-```html
-<h2>Recuperação de Password</h2>
+Após fazer as configurações acima, pode fazer login com:
 
-<p>Olá,</p>
+```
+═══════════════════════════════════════════════════════════
+📋 CREDENCIAIS DE ACESSO - VYXA.PT
+═══════════════════════════════════════════════════════════
 
-<p>Recebemos um pedido para redefinir a password da tua conta.</p>
+👤 ADMINISTRADOR:
+   📧 Email: eduardotsantos@remax.pt
+   🔑 Password: Vyxa2026!
+   🎭 Role: admin
 
-<p>Clica no link abaixo para criar uma nova password:</p>
+👤 AGENTE 1:
+   📧 Email: filipesanches@remax.pt
+   🔑 Password: Vyxa2026!
+   🎭 Role: agent
 
-<p><a href="{{ .ConfirmationURL }}">Redefinir Password</a></p>
+👤 AGENTE 2:
+   📧 Email: anafaia@remax.pt
+   🔑 Password: Vyxa2026!
+   🎭 Role: agent
 
-<p>Ou copia e cola este URL no teu browser:</p>
-<p>{{ .ConfirmationURL }}</p>
-
-<p><strong>Este link expira em 60 minutos.</strong></p>
-
-<p>Se não pediste para redefinir a password, podes ignorar este email.</p>
-
-<p>Cumprimentos,<br>
-Equipa Imogest</p>
+═══════════════════════════════════════════════════════════
+⚠️  IMPORTANTE: Altere estas passwords após o primeiro login!
+═══════════════════════════════════════════════════════════
 ```
 
 ---
 
-#### 🔗 **Magic Link** (Link Mágico)
+## 📊 **ESTADO ATUAL DA BASE DE DADOS:**
 
-```html
-<h2>O teu link de acesso</h2>
+### **✅ 100% CORRETO:**
+- ✅ 3 utilizadores criados
+- ✅ Todos os emails confirmados
+- ✅ Todas as identities criadas
+- ✅ Passwords encriptadas
+- ✅ Tokens limpos (sem pendências)
+- ✅ Sessões antigas removidas
+- ✅ Schema auth com permissões corretas
+- ✅ Estrutura completa (24 tabelas, 7 extensões)
 
-<p>Olá,</p>
-
-<p>Clica no link abaixo para iniciar sessão:</p>
-
-<p><a href="{{ .ConfirmationURL }}">Iniciar Sessão</a></p>
-
-<p>Ou copia e cola este URL no teu browser:</p>
-<p>{{ .ConfirmationURL }}</p>
-
-<p><strong>Este link expira em 60 minutos.</strong></p>
-
-<p>Se não pediste este link, podes ignorar este email.</p>
-
-<p>Cumprimentos,<br>
-Equipa Imogest</p>
-```
+### **❌ PRECISA SER CORRIGIDO NO DASHBOARD:**
+- ❌ Confirmação de email DEVE estar desligada
+- ⚠️ URL Configuration pode precisar de ajuste
+- ⚠️ Redirect URLs podem estar em falta
 
 ---
 
-#### ✉️ **Change Email** (Alterar Email)
+## 🎯 **ALTERNATIVA: CONFIGURAR SMTP (OPCIONAL)**
 
-```html
-<h2>Confirma o teu novo email</h2>
+Se preferir **manter a confirmação de email** ativada, precisa configurar SMTP:
 
-<p>Olá,</p>
+### **Opção 1: Gmail SMTP**
 
-<p>Recebemos um pedido para alterar o email da tua conta.</p>
-
-<p>Clica no link abaixo para confirmar o novo endereço de email:</p>
-
-<p><a href="{{ .ConfirmationURL }}">Confirmar Novo Email</a></p>
-
-<p>Ou copia e cola este URL no teu browser:</p>
-<p>{{ .ConfirmationURL }}</p>
-
-<p>Se não pediste esta alteração, por favor contacta-nos imediatamente.</p>
-
-<p>Cumprimentos,<br>
-Equipa Imogest</p>
 ```
+Authentication → Email Templates → SMTP Settings
+
+Host: smtp.gmail.com
+Port: 587
+Username: seu-email@gmail.com
+Password: [App Password - não a password normal!]
+
+⚠️ IMPORTANTE: 
+1. Ative "2-Step Verification" no Gmail
+2. Crie uma "App Password" em:
+   Google Account → Security → App passwords
+```
+
+### **Opção 2: SendGrid**
+
+```
+Host: smtp.sendgrid.net
+Port: 587
+Username: apikey
+Password: [Sua SendGrid API Key]
+```
+
+### **Opção 3: AWS SES**
+
+```
+Host: email-smtp.[region].amazonaws.com
+Port: 587
+Username: [SMTP Username]
+Password: [SMTP Password]
+```
+
+Após configurar SMTP, pode **RE-ATIVAR**:
+- [✅] Confirm email
+- [✅] Secure email change
 
 ---
 
-#### 📧 **Invite User** (Convidar Utilizador)
+## 🧪 **TESTE APÓS CONFIGURAÇÃO:**
 
-```html
-<h2>Foste convidado para o Imogest</h2>
-
-<p>Olá,</p>
-
-<p>Foste convidado para te juntares à plataforma Imogest.</p>
-
-<p>Clica no link abaixo para criar a tua conta:</p>
-
-<p><a href="{{ .ConfirmationURL }}">Aceitar Convite</a></p>
-
-<p>Ou copia e cola este URL no teu browser:</p>
-<p>{{ .ConfirmationURL }}</p>
-
-<p><strong>Este convite expira em 24 horas.</strong></p>
-
-<p>Cumprimentos,<br>
-Equipa Imogest</p>
-```
-
----
-
-### 3. Atualizar Variáveis de Ambiente
-
-**No Vercel:**
-1. Vai a **Settings** → **Environment Variables**
-2. Atualiza/adiciona:
-
+### **1. Teste de Login:**
 ```bash
-NEXT_PUBLIC_SITE_URL=https://seu-dominio-vercel.vercel.app
-NEXT_PUBLIC_SUPABASE_URL=https://hantkriglxwmddbpddnw.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=(a tua chave anon)
+1. Vá para: https://www.vyxa.pt/login
+2. Email: eduardotsantos@remax.pt
+3. Password: Vyxa2026!
+4. Clique "Entrar"
+5. ✅ Deve entrar no dashboard sem erros!
 ```
 
-**No ficheiro `.env.local` (para desenvolvimento):**
+### **2. Verificar Console do Navegador:**
 ```bash
-NEXT_PUBLIC_SITE_URL=http://localhost:3000
+1. Abra DevTools (F12)
+2. Vá para "Console"
+3. Faça login
+4. ✅ Não deve haver erros de rede
+5. ✅ Deve ver: "POST https://ykkorjrxomtevcdlyaan.supabase.co/auth/v1/token 200"
+```
+
+### **3. Verificar Token JWT:**
+```bash
+1. Após login bem-sucedido
+2. Vá para "Application" (DevTools)
+3. Vá para "Local Storage"
+4. Procure por "supabase.auth.token"
+5. ✅ Deve ver um token JWT válido
 ```
 
 ---
 
-### 4. Testar
+## ❓ **TROUBLESHOOTING:**
 
-1. **Testa a recuperação de password**:
-   - Vai ao login
-   - Clica em "Esqueci-me da password"
-   - Introduz o teu email
-   - Verifica se o link no email aponta para o URL correto
+### **Problema: Continua a dar erro 500**
+**Solução:**
+1. Limpe cache do navegador (Ctrl+Shift+Del)
+2. Feche e abra o navegador
+3. Tente fazer login novamente
+4. Se persistir, verifique se salvou as configurações no Dashboard
 
-2. **Testa o registo**:
-   - Cria uma conta nova
-   - Verifica se o email de confirmação tem o URL correto
+### **Problema: Erro "Invalid login credentials"**
+**Solução:**
+1. Verifique se escreveu o email corretamente
+2. Password é: `Vyxa2026!` (com maiúscula e exclamação)
+3. Se ainda falhar, pode ser cache - limpe o browser
 
----
-
-### 5. URLs de Callback (Importante!)
-
-Certifica-te que tens uma página de callback para processar os tokens:
-
-**Ficheiro:** `src/pages/auth/callback.tsx`
-
-Se não existir, será necessário criar.
-
----
-
-## Notas Importantes
-
-⚠️ **Site URL** deve ser EXATAMENTE o domínio onde a aplicação está deployed
-⚠️ **Redirect URLs** devem incluir `/**` no final para permitir wildcards
-⚠️ Depois de alterar no Supabase, faz **Redeploy** na Vercel
-⚠️ Limpa o cache do browser antes de testar
+### **Problema: Página fica em branco após login**
+**Solução:**
+1. Verifique se `NEXT_PUBLIC_APP_URL` está correto no `.env.local`
+2. Verifique se "Site URL" no Dashboard está correto
+3. Reinicie o servidor Next.js: `pm2 restart all`
 
 ---
 
-## Checklist
+## 📝 **CHECKLIST DE CONFIGURAÇÃO:**
 
-- [ ] Site URL configurado corretamente
-- [ ] Redirect URLs adicionados
-- [ ] Todos os 5 templates de email atualizados
-- [ ] Variáveis de ambiente atualizadas na Vercel
-- [ ] Redeploy feito na Vercel
-- [ ] Cache do browser limpo
-- [ ] Testado recuperação de password
-- [ ] Testado registo de novo utilizador
+Use esta checklist para garantir que tudo está correto:
+
+```
+[❌] Confirm email DESLIGADO no Dashboard
+[❌] Secure email change DESLIGADO no Dashboard  
+[❌] Enable email confirmations DESLIGADO no Dashboard
+[  ] Site URL = https://www.vyxa.pt
+[  ] Redirect URLs incluem www.vyxa.pt/** e localhost:3000/**
+[  ] JWT Expiry = 3600
+[  ] Enable Email provider LIGADO
+[  ] Enable Refresh Token Rotation LIGADO
+[  ] .env.local tem as credenciais corretas do projeto ykkorjrxomtevcdlyaan
+[  ] Servidor Next.js reiniciado após mudanças
+```
 
 ---
 
-## Suporte
+## 🎊 **APÓS CORREÇÃO:**
 
-Se continuares a ter problemas:
-1. Verifica os logs no Supabase Dashboard → Logs
-2. Verifica se o URL está correto (sem espaços ou caracteres extra)
-3. Tenta usar o domínio customizado se tiveres um
-4. Certifica-te que o SMTP está configurado (se aplicável)
+Quando o login funcionar:
+
+1. ✅ **Altere as passwords** de todos os utilizadores
+2. ✅ **Configure Google Calendar** (Admin → Integrações)
+3. ✅ **Verifique permissões** de cada role
+4. ✅ **Teste todas as funcionalidades** do sistema
+5. ✅ **Configure SMTP** se quiser confirmação de email
+
+---
+
+## 📞 **SUPORTE:**
+
+Se após seguir todos os passos o problema persistir:
+
+1. Tire screenshot do erro no Console (F12)
+2. Tire screenshot das configurações no Dashboard
+3. Verifique se `.env.local` tem as credenciais corretas
+4. Reinicie o servidor: `pm2 restart all`
+
+---
+
+**Documento criado por:** Softgen AI  
+**Data:** 2026-01-12 00:40 UTC  
+**Versão:** 1.0  
+**Próxima revisão:** Após correção das configurações

@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback } from "react";
-import { getCalendarEvents } from "@/services/calendarService";
+import { getCalendarEvents, deleteCalendarEvent } from "@/services/calendarService";
 import type { CalendarEvent } from "@/types";
+import { useToast } from "@/hooks/use-toast";
 
 export function useCalendarEvents() {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const { toast } = useToast();
 
   const fetchEvents = useCallback(async (forceRefresh = false) => {
     try {
@@ -26,6 +28,34 @@ export function useCalendarEvents() {
     }
   }, []);
 
+  const deleteEvent = useCallback(async (eventId: string) => {
+    try {
+      console.log("[useCalendarEvents] 🗑️ Deleting event:", eventId);
+      await deleteCalendarEvent(eventId);
+      
+      // Optimistic update - remove from local state immediately
+      setEvents(prev => prev.filter(e => e.id !== eventId));
+      
+      toast({
+        title: "Evento eliminado",
+        description: "O evento foi eliminado com sucesso",
+      });
+      
+      console.log("[useCalendarEvents] ✅ Event deleted successfully");
+      
+      // Refresh to ensure consistency
+      await fetchEvents(true);
+    } catch (err) {
+      console.error("[useCalendarEvents] ❌ Error deleting event:", err);
+      toast({
+        title: "Erro ao eliminar",
+        description: "Não foi possível eliminar o evento",
+        variant: "destructive",
+      });
+      throw err;
+    }
+  }, [fetchEvents, toast]);
+
   useEffect(() => {
     fetchEvents();
   }, [fetchEvents]);
@@ -35,5 +65,6 @@ export function useCalendarEvents() {
     isLoading,
     error,
     refetch: () => fetchEvents(true),
+    deleteEvent,
   };
 }
