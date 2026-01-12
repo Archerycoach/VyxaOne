@@ -195,18 +195,11 @@ export function Navigation() {
   return (
     <div className="flex h-screen w-64 flex-col border-r bg-card">
       <div className="flex h-16 items-center justify-center border-b px-6">
-        {branding.logo ? (
-          <img 
-            src="/vyxa-logo.png"
-            alt={branding.companyName}
-            className="h-10 w-auto object-contain"
-          />
-        ) : (
-          <div className="flex items-center gap-2">
-            <Building2 className="h-8 w-8 text-primary" />
-            <span className="text-xl font-bold truncate max-w-[180px]">{branding.companyName}</span>
-          </div>
-        )}
+        <img 
+          src="/vyxa-logo.png"
+          alt={branding.companyName}
+          className="h-14 w-auto object-contain"
+        />
       </div>
 
       <ScrollArea className="flex-1 px-3 py-4">

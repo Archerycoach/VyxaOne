@@ -61,6 +61,9 @@ export default async function handler(
         user: smtpSettings.smtp_username,
         pass: smtpSettings.smtp_password,
       },
+      tls: {
+        rejectUnauthorized: smtpSettings.reject_unauthorized ?? true,
+      },
     });
 
     // Send email

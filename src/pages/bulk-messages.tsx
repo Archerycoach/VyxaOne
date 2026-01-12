@@ -22,6 +22,7 @@ import { Send, Mail, MessageSquare, Loader2, Users, Filter } from "lucide-react"
 import { getAllLeads, type LeadWithContacts } from "@/services/leadsService";
 import { getAllContacts, type Contact } from "@/services/contactsService";
 import { getCurrentUser } from "@/services/authService";
+import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 
 export default function BulkMessages() {
@@ -253,22 +254,93 @@ export default function BulkMessages() {
 
       const selectedData = recipients.filter((r) => selectedRecipients.has(r.id));
 
-      // Here you would call your backend API to send the messages
-      // For now, we'll simulate the sending
-      console.log("Sending messages:", {
-        type: messageType,
-        subject: messageType === "email" ? subject : undefined,
-        message,
-        recipients: selectedData,
-      });
+      if (messageType === "email") {
+        // Get authentication token
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          throw new Error("Sessão expirada. Por favor, faça login novamente.");
+        }
 
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+        let successCount = 0;
+        let failCount = 0;
+        const errors: string[] = [];
 
-      toast({
-        title: "Sucesso!",
-        description: `${selectedRecipients.size} mensagem${selectedRecipients.size > 1 ? "s" : ""} enviada${selectedRecipients.size > 1 ? "s" : ""} com sucesso.`,
-      });
+        // Send emails sequentially to avoid overwhelming the SMTP server
+        for (const recipient of selectedData) {
+          if (!recipient.email) {
+            failCount++;
+            errors.push(`${recipient.name}: Email não disponível`);
+            continue;
+          }
+
+          try {
+            // Replace variables in message
+            const personalizedMessage = message
+              .replace(/\{nome\}/g, recipient.name)
+              .replace(/\{email\}/g, recipient.email || "")
+              .replace(/\{telefone\}/g, recipient.phone || "");
+
+            const personalizedSubject = subject
+              .replace(/\{nome\}/g, recipient.name)
+              .replace(/\{email\}/g, recipient.email || "")
+              .replace(/\{telefone\}/g, recipient.phone || "");
+
+            const response = await fetch("/api/smtp/send", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${session.access_token}`,
+              },
+              body: JSON.stringify({
+                to: recipient.email,
+                subject: personalizedSubject,
+                html: personalizedMessage.replace(/\n/g, "<br>"),
+                text: personalizedMessage,
+              }),
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+              successCount++;
+            } else {
+              failCount++;
+              errors.push(`${recipient.name}: ${result.message}`);
+            }
+          } catch (error) {
+            failCount++;
+            errors.push(`${recipient.name}: ${error instanceof Error ? error.message : "Erro desconhecido"}`);
+          }
+
+          // Small delay between emails to avoid rate limiting
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+
+        // Show results
+        if (successCount > 0) {
+          toast({
+            title: "Emails Enviados",
+            description: `${successCount} email${successCount > 1 ? "s enviados" : " enviado"} com sucesso${failCount > 0 ? `. ${failCount} falharam.` : "."}`,
+          });
+        }
+
+        if (failCount > 0) {
+          console.error("Failed emails:", errors);
+          toast({
+            title: "Alguns emails falharam",
+            description: `${failCount} email${failCount > 1 ? "s" : ""} não ${failCount > 1 ? "foram enviados" : "foi enviado"}. Verifique as configurações SMTP.`,
+            variant: "destructive",
+          });
+        }
+      } else {
+        // WhatsApp implementation (to be done)
+        toast({
+          title: "Em desenvolvimento",
+          description: "O envio de mensagens WhatsApp em massa ainda não está implementado.",
+          variant: "destructive",
+        });
+        return;
+      }
 
       // Reset form
       setSubject("");
@@ -278,7 +350,7 @@ export default function BulkMessages() {
       console.error("Error sending messages:", error);
       toast({
         title: "Erro",
-        description: "Erro ao enviar mensagens. Tente novamente.",
+        description: error instanceof Error ? error.message : "Erro ao enviar mensagens. Tente novamente.",
         variant: "destructive",
       });
     } finally {

@@ -89,7 +89,15 @@ export function SMTPSettingsDialog({ open, onOpenChange }: SMTPSettingsDialogPro
         return;
       }
 
-      await saveSMTPSettings(settings);
+      // Clean hostname: remove trailing dots and whitespace
+      const cleanedHost = settings.smtp_host.trim().replace(/\.+$/, "");
+
+      const settingsToSave = {
+        ...settings,
+        smtp_host: cleanedHost,
+      };
+
+      await saveSMTPSettings(settingsToSave);
 
       toast({
         title: "Configurações guardadas",
@@ -123,7 +131,15 @@ export function SMTPSettingsDialog({ open, onOpenChange }: SMTPSettingsDialogPro
         return;
       }
 
-      const result = await testSMTPConnection(settings);
+      // Clean hostname: remove trailing dots and whitespace
+      const cleanedHost = settings.smtp_host.trim().replace(/\.+$/, "");
+
+      const settingsToTest = {
+        ...settings,
+        smtp_host: cleanedHost,
+      };
+
+      const result = await testSMTPConnection(settingsToTest);
       setTestResult(result);
 
       if (result.success) {
@@ -230,6 +246,9 @@ export function SMTPSettingsDialog({ open, onOpenChange }: SMTPSettingsDialogPro
                     value={settings.smtp_host}
                     onChange={(e) => setSettings({ ...settings, smtp_host: e.target.value })}
                   />
+                  <p className="text-xs text-muted-foreground">
+                    <strong>RE/MAX:</strong> Use <code className="bg-gray-100 px-1 rounded">mail.remax.pt</code> em vez de smtp.remax.pt
+                  </p>
                 </div>
 
                 <div className="space-y-2">
