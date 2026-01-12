@@ -14,6 +14,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { pt } from "date-fns/locale";
+import { deleteNote } from "@/services/notesService";
 
 interface LeadNote {
   id: string;
@@ -152,22 +153,22 @@ export function LeadNotesDialog({ leadId, leadName, open: controlledOpen, onOpen
   };
 
   const handleDeleteNote = async (noteId: string) => {
-    if (!confirm("Tem certeza que deseja apagar esta nota?")) return;
+    if (!confirm("Tem a certeza que deseja eliminar esta nota?")) {
+      return;
+    }
 
     try {
-      const { error } = await supabase
-        .from("lead_notes" as any)
-        .delete()
-        .eq("id", noteId);
-
-      if (error) throw error;
-
-      toast({ title: "Nota apagada com sucesso!" });
+      await deleteNote(noteId);
+      toast({
+        title: "Sucesso",
+        description: "Nota eliminada com sucesso",
+      });
       await loadNotes();
     } catch (error) {
       console.error("Error deleting note:", error);
       toast({
-        title: "Erro ao apagar nota",
+        title: "Erro",
+        description: "Erro ao eliminar nota",
         variant: "destructive",
       });
     }

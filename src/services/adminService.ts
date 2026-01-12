@@ -102,9 +102,11 @@ export const getAdminStats = async () => {
 // Get all users (admin only)
 export async function getAllUsers() {
   try {
-    // Use RPC function that bypasses RLS for admins
+    // Query profiles table directly with proper ordering
     const { data, error } = await supabase
-      .rpc('get_all_profiles_for_admin');
+      .from("profiles")
+      .select("*")
+      .order("created_at", { ascending: false });
 
     if (error) throw error;
 

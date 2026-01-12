@@ -3,6 +3,10 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EventCard } from "./EventCard";
 import { TaskCard } from "./TaskCard";
+import { InteractionCard } from "./InteractionCard";
+import { NoteCard } from "./NoteCard";
+import { InteractionDetailsDialog } from "./InteractionDetailsDialog";
+import { NoteDetailsDialog } from "./NoteDetailsDialog";
 import type { CalendarEvent, Task } from "@/types";
 import type { InteractionWithDetails } from "@/services/interactionsService";
 import type { CalendarNote } from "../hooks/useCalendarNotes";
@@ -17,6 +21,8 @@ interface CalendarGridProps {
   onEventClick: (event: CalendarEvent) => void;
   onTaskClick: (task: Task) => void;
   onDeleteEvent?: (eventId: string) => void;
+  onDeleteInteraction?: (interactionId: string) => void;
+  onDeleteNote?: (noteId: string) => void;
   // Drag and Drop handlers
   onDragStart: (e: React.DragEvent, item: { id: string; type: "event" | "task"; startTime: string }) => void;
   onDragEnd: (e: React.DragEvent) => void;
@@ -34,11 +40,16 @@ export function CalendarGrid({
   onEventClick,
   onTaskClick,
   onDeleteEvent,
+  onDeleteInteraction,
+  onDeleteNote,
   onDragStart,
   onDragEnd,
   onDragOver,
   onDrop,
 }: CalendarGridProps) {
+  const [selectedInteraction, setSelectedInteraction] = useState<InteractionWithDetails | null>(null);
+  const [selectedNote, setSelectedNote] = useState<CalendarNote | null>(null);
+
   // Debug: Log dos eventos recebidos
   console.log("[CalendarGrid] ===== DEBUG START =====");
   console.log("[CalendarGrid] Events received:", events.length);
@@ -170,316 +181,312 @@ export function CalendarGrid({
     });
 
     return (
-      <div className="space-y-2">
-        {allItems.length === 0 ? (
-          <p className="text-gray-500 text-center py-8">Sem eventos para hoje</p>
-        ) : (
-          allItems.map((item) => {
-            if (item.itemType === "task") {
-              return (
-                <div
-                  key={`task-${item.id}`}
-                  draggable
-                  onDragStart={(e) => onDragStart(e, { 
-                    id: item.id, 
-                    type: "task",
-                    startTime: (item as Task).dueDate || (item as Task).createdAt 
-                  })}
-                  onDragEnd={onDragEnd}
-                >
-                  <TaskCard 
-                    task={item as Task} 
-                    onClick={() => onTaskClick(item as Task)}
-                  />
-                </div>
-              );
-            } else if (item.itemType === "event") {
-              return (
-                <div
-                  key={`event-${item.id}`}
-                  draggable
-                  onDragStart={(e) => onDragStart(e, { 
-                    id: item.id, 
-                    type: "event",
-                    startTime: (item as CalendarEvent).startTime 
-                  })}
-                  onDragEnd={onDragEnd}
-                >
-                  <EventCard 
-                    event={item as CalendarEvent} 
-                    onClick={() => onEventClick(item as CalendarEvent)}
-                    onDelete={onDeleteEvent}
-                  />
-                </div>
-              );
-            } else if (item.itemType === "interaction") {
-              const interaction = item as InteractionWithDetails;
-              return (
-                <div
-                  key={`interaction-${item.id}`}
-                  className="p-3 border rounded-lg bg-orange-50 border-orange-200 hover:bg-orange-100 transition-colors cursor-pointer"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-xs font-medium text-orange-700 uppercase">
-                          {interaction.interaction_type || "Interação"}
-                        </span>
-                        <span className="text-xs text-gray-500">
-                          {new Date(interaction.interaction_date!).toLocaleTimeString("pt-PT", { 
-                            hour: "2-digit", 
-                            minute: "2-digit" 
-                          })}
-                        </span>
-                      </div>
-                      <p className="text-sm font-medium text-gray-900 mb-1">
-                        {interaction.lead?.name || interaction.contact?.name || "Sem nome"}
-                      </p>
-                      {interaction.content && (
-                        <p className="text-sm text-gray-600 line-clamp-2">{interaction.content}</p>
-                      )}
-                    </div>
+      <>
+        <div className="space-y-2">
+          {allItems.length === 0 ? (
+            <p className="text-gray-500 text-center py-8">Sem eventos para hoje</p>
+          ) : (
+            allItems.map((item) => {
+              if (item.itemType === "task") {
+                return (
+                  <div
+                    key={`task-${item.id}`}
+                    draggable
+                    onDragStart={(e) => onDragStart(e, { 
+                      id: item.id, 
+                      type: "task",
+                      startTime: (item as Task).dueDate || (item as Task).createdAt 
+                    })}
+                    onDragEnd={onDragEnd}
+                  >
+                    <TaskCard 
+                      task={item as Task} 
+                      onClick={() => onTaskClick(item as Task)}
+                    />
                   </div>
-                </div>
-              );
-            } else {
-              const note = item as CalendarNote;
-              return (
-                <div
-                  key={`note-${item.id}`}
-                  className="p-3 border rounded-lg bg-yellow-50 border-yellow-200 hover:bg-yellow-100 transition-colors cursor-pointer"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-xs font-medium text-yellow-700">📝 Nota</span>
-                        <span className="text-xs text-gray-500">
-                          {new Date(note.created_at).toLocaleTimeString("pt-PT", { 
-                            hour: "2-digit", 
-                            minute: "2-digit" 
-                          })}
-                        </span>
-                      </div>
-                      <p className="text-sm font-medium text-gray-900 mb-1">
-                        {note.lead_name || "Lead sem nome"}
-                      </p>
-                      <p className="text-sm text-gray-600 line-clamp-2">{note.note}</p>
-                    </div>
+                );
+              } else if (item.itemType === "event") {
+                return (
+                  <div
+                    key={`event-${item.id}`}
+                    draggable
+                    onDragStart={(e) => onDragStart(e, { 
+                      id: item.id, 
+                      type: "event",
+                      startTime: (item as CalendarEvent).startTime 
+                    })}
+                    onDragEnd={onDragEnd}
+                  >
+                    <EventCard 
+                      event={item as CalendarEvent} 
+                      onClick={() => onEventClick(item as CalendarEvent)}
+                      onDelete={onDeleteEvent}
+                    />
                   </div>
-                </div>
-              );
-            }
-          })
-        )}
-      </div>
+                );
+              } else if (item.itemType === "interaction") {
+                return (
+                  <InteractionCard
+                    key={`interaction-${item.id}`}
+                    interaction={item as InteractionWithDetails}
+                    onClick={() => setSelectedInteraction(item as InteractionWithDetails)}
+                    onDelete={onDeleteInteraction}
+                  />
+                );
+              } else {
+                return (
+                  <NoteCard
+                    key={`note-${item.id}`}
+                    note={item as CalendarNote}
+                    onClick={() => setSelectedNote(item as CalendarNote)}
+                    onDelete={onDeleteNote}
+                  />
+                );
+              }
+            })
+          )}
+        </div>
+
+        <InteractionDetailsDialog
+          interaction={selectedInteraction}
+          open={!!selectedInteraction}
+          onOpenChange={(open) => !open && setSelectedInteraction(null)}
+        />
+
+        <NoteDetailsDialog
+          note={selectedNote}
+          open={!!selectedNote}
+          onOpenChange={(open) => !open && setSelectedNote(null)}
+        />
+      </>
     );
   }
 
   // Week View
   if (viewMode === "week") {
     return (
-      <div className="grid grid-cols-7 gap-2">
-        {getWeekDays().map((day, index) => {
-          const dayEvents = getEventsForDay(day);
-          const dayTasks = getTasksForDay(day);
-          const dayInteractions = getInteractionsForDay(day);
-          const dayNotes = getNotesForDay(day);
-          const isToday = day.toDateString() === new Date().toDateString();
-          
-          return (
-            <div 
-              key={index} 
-              className={`border rounded-lg p-2 min-h-[200px] flex flex-col gap-1 ${isToday ? "bg-purple-50 border-purple-300" : ""}`}
-              onDragOver={onDragOver}
-              onDrop={(e) => onDrop(e, day)}
-            >
-              <div className="font-semibold text-sm mb-2 text-center sticky top-0 bg-inherit pb-1 border-b">
-                {day.toLocaleDateString("pt-PT", { weekday: "short", day: "numeric" })}
-              </div>
-              <div className="space-y-1 overflow-y-auto flex-1 max-h-[500px]">
-                {dayEvents.map((event) => (
-                  <div
-                    key={`event-${event.id}`}
-                    draggable
-                    onDragStart={(e) => onDragStart(e, { 
-                      id: event.id, 
-                      type: "event",
-                      startTime: event.startTime 
-                    })}
-                    onDragEnd={onDragEnd}
-                  >
-                    <EventCard 
-                      event={event}
-                      onClick={() => onEventClick(event)}
-                      onDelete={onDeleteEvent}
+      <>
+        <div className="grid grid-cols-7 gap-2">
+          {getWeekDays().map((day, index) => {
+            const dayEvents = getEventsForDay(day);
+            const dayTasks = getTasksForDay(day);
+            const dayInteractions = getInteractionsForDay(day);
+            const dayNotes = getNotesForDay(day);
+            const isToday = day.toDateString() === new Date().toDateString();
+            
+            return (
+              <div 
+                key={index} 
+                className={`border rounded-lg p-2 min-h-[200px] flex flex-col gap-1 ${isToday ? "bg-purple-50 border-purple-300" : ""}`}
+                onDragOver={onDragOver}
+                onDrop={(e) => onDrop(e, day)}
+              >
+                <div className="font-semibold text-sm mb-2 text-center sticky top-0 bg-inherit pb-1 border-b">
+                  {day.toLocaleDateString("pt-PT", { weekday: "short", day: "numeric" })}
+                </div>
+                <div className="space-y-1 overflow-y-auto flex-1 max-h-[500px]">
+                  {dayEvents.map((event) => (
+                    <div
+                      key={`event-${event.id}`}
+                      draggable
                       onDragStart={(e) => onDragStart(e, { 
                         id: event.id, 
                         type: "event",
                         startTime: event.startTime 
                       })}
                       onDragEnd={onDragEnd}
+                    >
+                      <EventCard 
+                        event={event}
+                        onClick={() => onEventClick(event)}
+                        onDelete={onDeleteEvent}
+                        onDragStart={(e) => onDragStart(e, { 
+                          id: event.id, 
+                          type: "event",
+                          startTime: event.startTime 
+                        })}
+                        onDragEnd={onDragEnd}
+                        compact
+                      />
+                    </div>
+                  ))}
+                  {dayTasks.map((task) => (
+                    <div 
+                      key={`task-${task.id}`} 
+                      draggable
+                      onDragStart={(e) => onDragStart(e, { 
+                        id: task.id, 
+                        type: "task",
+                        startTime: task.dueDate || task.createdAt 
+                      })}
+                      onDragEnd={onDragEnd}
+                      className="text-xs rounded p-1 truncate cursor-move transition-opacity bg-blue-100 hover:bg-blue-200 border border-blue-200"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onTaskClick(task);
+                      }}
+                    >
+                      <div className="truncate font-medium">✓ {task.title}</div>
+                    </div>
+                  ))}
+                  {dayInteractions.map((interaction) => (
+                    <InteractionCard
+                      key={`interaction-${interaction.id}`}
+                      interaction={interaction}
+                      onClick={() => setSelectedInteraction(interaction)}
+                      onDelete={onDeleteInteraction}
                       compact
                     />
-                  </div>
-                ))}
-                {dayTasks.map((task) => (
-                  <div 
-                    key={`task-${task.id}`} 
-                    draggable
-                    onDragStart={(e) => onDragStart(e, { 
-                      id: task.id, 
-                      type: "task",
-                      startTime: task.dueDate || task.createdAt 
-                    })}
-                    onDragEnd={onDragEnd}
-                    className="text-xs rounded p-1 truncate cursor-move transition-opacity bg-blue-100 hover:bg-blue-200 border border-blue-200"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onTaskClick(task);
-                    }}
-                  >
-                    <div className="truncate font-medium">✓ {task.title}</div>
-                  </div>
-                ))}
-                {dayInteractions.map((interaction) => (
-                  <div 
-                    key={`interaction-${interaction.id}`}
-                    className="text-xs rounded p-1 truncate bg-orange-100 hover:bg-orange-200 border border-orange-200 cursor-pointer"
-                  >
-                    <div className="truncate text-orange-800">
-                      <span className="mr-1">
-                        {interaction.interaction_type === "email" && "📧"}
-                        {interaction.interaction_type === "call" && "📞"}
-                        {interaction.interaction_type === "meeting" && "🤝"}
-                        {(!interaction.interaction_type || !["email", "call", "meeting"].includes(interaction.interaction_type)) && "💬"}
-                      </span>
-                      {interaction.lead?.name || interaction.contact?.name}
-                    </div>
-                  </div>
-                ))}
-                {dayNotes.map((note) => (
-                  <div 
-                    key={`note-${note.id}`}
-                    className="text-xs rounded p-1 truncate bg-yellow-100 hover:bg-yellow-200 border border-yellow-200 cursor-pointer"
-                  >
-                    <div className="truncate text-yellow-800">
-                      <span className="mr-1">📝</span> 
-                      {note.lead_name}
-                    </div>
-                  </div>
-                ))}
+                  ))}
+                  {dayNotes.map((note) => (
+                    <NoteCard
+                      key={`note-${note.id}`}
+                      note={note}
+                      onClick={() => setSelectedNote(note)}
+                      onDelete={onDeleteNote}
+                      compact
+                    />
+                  ))}
+                </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+
+        <InteractionDetailsDialog
+          interaction={selectedInteraction}
+          open={!!selectedInteraction}
+          onOpenChange={(open) => !open && setSelectedInteraction(null)}
+        />
+
+        <NoteDetailsDialog
+          note={selectedNote}
+          open={!!selectedNote}
+          onOpenChange={(open) => !open && setSelectedNote(null)}
+        />
+      </>
     );
   }
 
   // Month View
   return (
-    <div>
-      <div className="grid grid-cols-7 gap-1 mb-2">
-        {["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"].map((day) => (
-          <div key={day} className="text-center font-semibold text-sm text-gray-600 py-2">
-            {day}
-          </div>
-        ))}
-      </div>
-      <div className="grid grid-cols-7 gap-1">
-        {getMonthDays().map((day, index) => {
-          const dayEvents = getEventsForDay(day);
-          const dayTasks = getTasksForDay(day);
-          const dayInteractions = getInteractionsForDay(day);
-          const dayNotes = getNotesForDay(day);
-          const isCurrentMonth = day.getMonth() === currentDate.getMonth();
-          const isToday = day.toDateString() === new Date().toDateString();
-          const totalItems = dayEvents.length + dayTasks.length + dayInteractions.length + dayNotes.length;
-          
-          return (
-            <div
-              key={index}
-              className={`border rounded-lg p-2 min-h-[100px] flex flex-col gap-1 ${
-                !isCurrentMonth ? "bg-gray-50 text-gray-400" : ""
-              } ${isToday ? "bg-purple-50 border-purple-300" : ""}`}
-              onDragOver={onDragOver}
-              onDrop={(e) => onDrop(e, day)}
-            >
-              <div className="font-semibold text-sm mb-1 text-right">
-                {day.getDate()}
-              </div>
-              <div className="space-y-1 overflow-hidden">
-                {dayEvents.slice(0, 2).map((event) => (
-                  <div
-                    key={`event-${event.id}`}
-                    draggable
-                    onDragStart={(e) => onDragStart(e, { 
-                      id: event.id, 
-                      type: "event",
-                      startTime: event.startTime 
-                    })}
-                    onDragEnd={onDragEnd}
-                  >
-                    <EventCard 
-                      event={event}
-                      onClick={() => onEventClick(event)}
-                      onDelete={onDeleteEvent}
+    <>
+      <div>
+        <div className="grid grid-cols-7 gap-1 mb-2">
+          {["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"].map((day) => (
+            <div key={day} className="text-center font-semibold text-sm text-gray-600 py-2">
+              {day}
+            </div>
+          ))}
+        </div>
+        <div className="grid grid-cols-7 gap-1">
+          {getMonthDays().map((day, index) => {
+            const dayEvents = getEventsForDay(day);
+            const dayTasks = getTasksForDay(day);
+            const dayInteractions = getInteractionsForDay(day);
+            const dayNotes = getNotesForDay(day);
+            const isCurrentMonth = day.getMonth() === currentDate.getMonth();
+            const isToday = day.toDateString() === new Date().toDateString();
+            const totalItems = dayEvents.length + dayTasks.length + dayInteractions.length + dayNotes.length;
+            
+            return (
+              <div
+                key={index}
+                className={`border rounded-lg p-2 min-h-[100px] flex flex-col gap-1 ${
+                  !isCurrentMonth ? "bg-gray-50 text-gray-400" : ""
+                } ${isToday ? "bg-purple-50 border-purple-300" : ""}`}
+                onDragOver={onDragOver}
+                onDrop={(e) => onDrop(e, day)}
+              >
+                <div className="font-semibold text-sm mb-1 text-right">
+                  {day.getDate()}
+                </div>
+                <div className="space-y-1 overflow-hidden">
+                  {dayEvents.slice(0, 2).map((event) => (
+                    <div
+                      key={`event-${event.id}`}
+                      draggable
                       onDragStart={(e) => onDragStart(e, { 
                         id: event.id, 
                         type: "event",
                         startTime: event.startTime 
                       })}
                       onDragEnd={onDragEnd}
+                    >
+                      <EventCard 
+                        event={event}
+                        onClick={() => onEventClick(event)}
+                        onDelete={onDeleteEvent}
+                        onDragStart={(e) => onDragStart(e, { 
+                          id: event.id, 
+                          type: "event",
+                          startTime: event.startTime 
+                        })}
+                        onDragEnd={onDragEnd}
+                        compact
+                      />
+                    </div>
+                  ))}
+                  {dayTasks.slice(0, 1).map((task) => (
+                    <div 
+                      key={`task-${task.id}`} 
+                      draggable
+                      onDragStart={(e) => onDragStart(e, { 
+                        id: task.id, 
+                        type: "task",
+                        startTime: task.dueDate || task.createdAt 
+                      })}
+                      onDragEnd={onDragEnd}
+                      className="text-[10px] rounded px-1 py-0.5 truncate cursor-move transition-opacity bg-blue-100 hover:bg-blue-200 text-blue-900"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onTaskClick(task);
+                      }}
+                    >
+                      ✓ {task.title}
+                    </div>
+                  ))}
+                  {dayInteractions.slice(0, 1).map((interaction) => (
+                    <InteractionCard
+                      key={`interaction-${interaction.id}`}
+                      interaction={interaction}
+                      onClick={() => setSelectedInteraction(interaction)}
+                      onDelete={onDeleteInteraction}
                       compact
                     />
-                  </div>
-                ))}
-                {dayTasks.slice(0, 1).map((task) => (
-                  <div 
-                    key={`task-${task.id}`} 
-                    draggable
-                    onDragStart={(e) => onDragStart(e, { 
-                      id: task.id, 
-                      type: "task",
-                      startTime: task.dueDate || task.createdAt 
-                    })}
-                    onDragEnd={onDragEnd}
-                    className="text-[10px] rounded px-1 py-0.5 truncate cursor-move transition-opacity bg-blue-100 hover:bg-blue-200 text-blue-900"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onTaskClick(task);
-                    }}
-                  >
-                    ✓ {task.title}
-                  </div>
-                ))}
-                {dayInteractions.slice(0, 1).map((interaction) => (
-                  <div 
-                    key={`interaction-${interaction.id}`}
-                    className="text-[10px] rounded px-1 py-0.5 truncate bg-orange-100 hover:bg-orange-200 text-orange-900"
-                  >
-                    <span className="mr-1">📞</span>
-                    {interaction.lead?.name}
-                  </div>
-                ))}
-                {dayNotes.slice(0, 1).map((note) => (
-                  <div 
-                    key={`note-${note.id}`}
-                    className="text-[10px] rounded px-1 py-0.5 truncate bg-yellow-100 hover:bg-yellow-200 text-yellow-900"
-                  >
-                    <span className="mr-1">📝</span> Nota
-                  </div>
-                ))}
-                {totalItems > 4 && (
-                  <div className="text-[10px] text-gray-500 font-medium text-center">
-                    +{totalItems - 4} mais
-                  </div>
-                )}
+                  ))}
+                  {dayNotes.slice(0, 1).map((note) => (
+                    <NoteCard
+                      key={`note-${note.id}`}
+                      note={note}
+                      onClick={() => setSelectedNote(note)}
+                      onDelete={onDeleteNote}
+                      compact
+                    />
+                  ))}
+                  {totalItems > 4 && (
+                    <div className="text-[10px] text-gray-500 font-medium text-center">
+                      +{totalItems - 4} mais
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
-    </div>
+
+      <InteractionDetailsDialog
+        interaction={selectedInteraction}
+        open={!!selectedInteraction}
+        onOpenChange={(open) => !open && setSelectedInteraction(null)}
+      />
+
+      <NoteDetailsDialog
+        note={selectedNote}
+        open={!!selectedNote}
+        onOpenChange={(open) => !open && setSelectedNote(null)}
+      />
+    </>
   );
 }

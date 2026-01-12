@@ -1,6 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
 import type { CalendarEvent } from "@/types";
+import { deleteGoogleCalendarEvent } from "@/lib/googleCalendar";
 
 type DbCalendarEvent = Database["public"]["Tables"]["calendar_events"]["Row"];
 type CalendarEventInsert = Database["public"]["Tables"]["calendar_events"]["Insert"];
@@ -164,13 +165,34 @@ export const updateCalendarEvent = async (id: string, updates: CalendarEventUpda
 
 // Delete calendar event (Local Only)
 export const deleteCalendarEvent = async (id: string): Promise<void> => {
-  const { error } = await supabase
-    .from("calendar_events")
-    .delete()
-    .eq("id", id);
+  try {
+    // First, get the event to check if it has a google_event_id
+    const { data: event } = await supabase
+      .from("calendar_events")
+      .select("google_event_id")
+      .eq("id", id)
+      .single();
 
-  if (error) {
-    console.error("Error deleting event:", error);
+    // Delete from Google Calendar if synced
+    if (event && event.google_event_id) {
+      console.log("[calendarService] 🗑️ Deleting from Google Calendar:", event.google_event_id);
+      await deleteGoogleCalendarEvent(event.google_event_id);
+    }
+
+    // Delete from local database
+    const { error } = await supabase
+      .from("calendar_events")
+      .delete()
+      .eq("id", id);
+
+    if (error) {
+      console.error("Error deleting event:", error);
+      throw error;
+    }
+
+    console.log("[calendarService] ✅ Event deleted successfully");
+  } catch (error) {
+    console.error("Error in deleteCalendarEvent:", error);
     throw error;
   }
 };

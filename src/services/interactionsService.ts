@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
+import { deleteGoogleCalendarEvent } from "@/lib/googleCalendar";
 
 export type Interaction = Database["public"]["Tables"]["interactions"]["Row"];
 export type InteractionInsert = Database["public"]["Tables"]["interactions"]["Insert"];
@@ -207,11 +208,34 @@ export async function updateInteraction(
  * Delete an interaction
  */
 export async function deleteInteraction(id: string): Promise<void> {
-  const { error } = await supabase.from("interactions").delete().eq("id", id);
+  try {
+    // First, get the interaction to check if it has a google_event_id
+    const { data } = await supabase
+      .from("interactions" as any)
+      .select("google_event_id")
+      .eq("id", id)
+      .single();
+    
+    const interaction = data as any;
 
-  if (error) {
-    console.error("Error deleting interaction:", error);
-    throw new Error("Failed to delete interaction");
+    // Delete from Google Calendar if synced
+    if (interaction && interaction.google_event_id) {
+      console.log("[interactionsService] 🗑️ Deleting from Google Calendar:", interaction.google_event_id);
+      await deleteGoogleCalendarEvent(interaction.google_event_id);
+    }
+
+    // Delete from local database
+    const { error } = await supabase.from("interactions").delete().eq("id", id);
+
+    if (error) {
+      console.error("Error deleting interaction:", error);
+      throw new Error("Failed to delete interaction");
+    }
+
+    console.log("[interactionsService] ✅ Interaction deleted successfully");
+  } catch (error) {
+    console.error("Error in deleteInteraction:", error);
+    throw error;
   }
 }
 
