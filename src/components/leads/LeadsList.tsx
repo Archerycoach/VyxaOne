@@ -97,12 +97,15 @@ export function LeadsList({ leads, onEdit, onDelete, isLoading, onRefresh }: Lea
 
   const loadCurrentUserRole = async () => {
     try {
+      console.log("[LeadsList] Loading user role...");
       const profile = await getUserProfile();
+      console.log("[LeadsList] Profile loaded:", profile);
       if (profile) {
+        console.log("[LeadsList] Setting role to:", profile.role);
         setCurrentUserRole(profile.role);
       }
     } catch (error) {
-      console.error("Error loading user role:", error);
+      console.error("[LeadsList] Error loading user role:", error);
     }
   };
   
@@ -399,6 +402,8 @@ export function LeadsList({ leads, onEdit, onDelete, isLoading, onRefresh }: Lea
   }, [selectedLead, selectedAgentId, toast, onRefresh, executeOperation, resetAllStates]);
 
   const canAssignLeads = currentUserRole === "admin" || currentUserRole === "team_lead";
+  
+  console.log("[LeadsList] Current user role:", currentUserRole, "Can assign leads:", canAssignLeads);
 
   const handleViewDetails = useCallback(async (lead: LeadWithContacts) => {
     setSelectedLead(lead);

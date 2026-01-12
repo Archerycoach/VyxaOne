@@ -2,6 +2,8 @@ import React, { useState } from "react";
 import { LeadCard } from "./LeadCard";
 import { LeadFilters } from "./LeadFilters";
 import { LeadDialogs } from "./LeadDialogs";
+import { LeadNotesDialog } from "@/components/leads/LeadNotesDialog";
+import { AssignLeadDialog } from "@/components/leads/AssignLeadDialog";
 import {
   useLeads,
   useLeadFilters,
@@ -24,6 +26,15 @@ export function LeadsListContainer({
 }: LeadsListContainerProps) {
   // Fetch leads data
   const { leads, isLoading, error, refetch } = useLeads();
+
+  // Debounced refetch to prevent cascade re-renders
+  const [isRefetching, setIsRefetching] = useState(false);
+  const debouncedRefetch = async () => {
+    if (isRefetching) return;
+    setIsRefetching(true);
+    await refetch();
+    setTimeout(() => setIsRefetching(false), 500);
+  };
 
   // Filter logic
   const {
@@ -59,6 +70,7 @@ export function LeadsListContainer({
   const [eventDialogOpen, setEventDialogOpen] = useState(false);
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
+  const [notesDialogOpen, setNotesDialogOpen] = useState(false);
   const [selectedLead, setSelectedLead] = useState<LeadWithContacts | null>(null);
   const [selectedAgent, setSelectedAgent] = useState("");
 
@@ -137,6 +149,11 @@ export function LeadsListContainer({
   const handleInteraction = (lead: LeadWithContacts) => {
     setSelectedLead(lead);
     setInteractionDialogOpen(true);
+  };
+
+  const handleNotes = (lead: LeadWithContacts) => {
+    setSelectedLead(lead);
+    setNotesDialogOpen(true);
   };
 
   const handleCreateTask = async () => {
@@ -253,10 +270,10 @@ export function LeadsListContainer({
               onConvert={handleConvert}
               onViewDetails={handleViewDetails}
               onAssign={handleAssign}
-              onAssignSuccess={refetch}
               onTask={handleTask}
               onEvent={handleEvent}
               onInteraction={handleInteraction}
+              onNotes={handleNotes}
               onEmail={sendEmail}
               onSMS={sendSMS}
               onWhatsApp={sendWhatsApp}
@@ -291,6 +308,28 @@ export function LeadsListContainer({
         setDetailsDialogOpen={setDetailsDialogOpen}
         selectedLead={selectedLead}
       />
+
+      {/* Notes Dialog - Managed at container level */}
+      {selectedLead && (
+        <LeadNotesDialog
+          leadId={selectedLead.id}
+          leadName={selectedLead.name}
+          open={notesDialogOpen}
+          onOpenChange={setNotesDialogOpen}
+        />
+      )}
+
+      {/* Assign Dialog - Managed at container level */}
+      {selectedLead && canAssignLeads && (
+        <AssignLeadDialog
+          leadId={selectedLead.id}
+          leadName={selectedLead.name}
+          currentAssignedUserId={selectedLead.assigned_to}
+          onAssignSuccess={debouncedRefetch}
+          open={assignDialogOpen}
+          onOpenChange={setAssignDialogOpen}
+        />
+      )}
     </div>
   );
 }

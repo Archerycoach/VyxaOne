@@ -51,15 +51,21 @@ export default function Leads() {
         router.push("/login");
         return;
       }
+      
+      console.log("[Leads Page] Current user loaded:", { id: currentUser.id, role: currentUser.role, email: currentUser.email });
       setUser(currentUser);
       
       // Check if user can assign leads (admin or team_lead)
       const role = currentUser.role;
-      setCanAssignLeads(role === "admin" || role === "team_lead");
+      const canAssign = role === "admin" || role === "team_lead";
+      console.log("[Leads Page] Role check:", { role, canAssignLeads: canAssign });
+      setCanAssignLeads(canAssign);
       
       // Load team members for assignment dropdown
       if (role === "admin" || role === "team_lead") {
+        console.log("[Leads Page] Loading team members for role:", role);
         const members = await getTeamMembers();
+        console.log("[Leads Page] Team members loaded:", members.length);
         setTeamMembers(members);
       }
     } catch (error) {

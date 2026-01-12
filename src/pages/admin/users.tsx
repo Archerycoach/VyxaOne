@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Search, UserPlus, Trash2, Edit, Mail, Phone } from "lucide-react";
-import { getAllUsers, createUser, deleteUser, updateUserRole } from "@/services/adminService";
+import { getAllUsers, createUser, deleteUser, updateUserRole, getTeamLeads, assignAgentToTeamLead } from "@/services/adminService";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
@@ -45,12 +45,13 @@ interface Profile {
 export default function UsersManagement() {
   const [users, setUsers] = useState<Profile[]>([]);
   const [filteredUsers, setFilteredUsers] = useState<Profile[]>([]);
+  const [teamLeads, setTeamLeads] = useState<Profile[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(true);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
-  const [selectedUser, setSelectedUser] = useState<Profile | null>(null);
+  const [selectedUser, setSelectedUser] = useState<any>(null); // Changed to any to support joined fields
   const { toast } = useToast();
 
   const [newUser, setNewUser] = useState({
@@ -59,32 +60,36 @@ export default function UsersManagement() {
     full_name: "",
     phone: "",
     role: "agent" as "admin" | "team_lead" | "agent",
+    teamLeadId: undefined as string | undefined,
   });
 
   useEffect(() => {
-    const fetchUsers = async () => {
+    const fetchData = async () => {
       try {
-        const result = await getAllUsers();
+        const [usersResult, teamLeadsData] = await Promise.all([
+          getAllUsers(),
+          getTeamLeads()
+        ]);
         
-        if (result.error) {
-          console.error("Error fetching users:", result.error);
+        if (usersResult.error) {
+          console.error("Error fetching users:", usersResult.error);
           toast({
             title: "Erro",
             description: "Erro ao carregar utilizadores",
             variant: "destructive",
           });
-          return;
+        } else {
+          const usersData = usersResult.data || [];
+          setUsers(usersData);
+          setFilteredUsers(usersData);
         }
 
-        const usersData = result.data || [];
-        console.log("Users loaded:", usersData.length);
-        setUsers(usersData);
-        setFilteredUsers(usersData);
+        setTeamLeads(teamLeadsData || []);
       } catch (error) {
-        console.error("Error fetching users:", error);
+        console.error("Error fetching data:", error);
         toast({
           title: "Erro",
-          description: "Erro ao carregar utilizadores",
+          description: "Erro ao carregar dados",
           variant: "destructive",
         });
       } finally {
@@ -92,7 +97,7 @@ export default function UsersManagement() {
       }
     };
 
-    fetchUsers();
+    fetchData();
   }, [toast]);
 
   useEffect(() => {
@@ -114,6 +119,7 @@ export default function UsersManagement() {
         phone: newUser.phone,
         role: newUser.role,
         isActive: true,
+        teamLeadId: newUser.role === 'agent' ? newUser.teamLeadId : undefined,
       });
       
       if (result.error) {
@@ -137,6 +143,7 @@ export default function UsersManagement() {
         full_name: "",
         phone: "",
         role: "agent",
+        teamLeadId: undefined,
       });
 
       // Refresh users list
@@ -228,6 +235,39 @@ export default function UsersManagement() {
       toast({
         title: "Erro",
         description: "Erro ao atualizar role",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleUpdateTeamLead = async (teamLeadId: string | null) => {
+    if (!selectedUser) return;
+
+    try {
+      await assignAgentToTeamLead(selectedUser.id, teamLeadId === "none" ? null : teamLeadId);
+      
+      toast({
+        title: "Sucesso",
+        description: "Team Lead atualizado com sucesso",
+      });
+
+      // Refresh users list
+      const usersResult = await getAllUsers();
+      if (usersResult.data) {
+        setUsers(usersResult.data);
+        setFilteredUsers(usersResult.data);
+        
+        // Update selected user with new data
+        const updatedUser = usersResult.data.find(u => u.id === selectedUser.id);
+        if (updatedUser) {
+          setSelectedUser(updatedUser);
+        }
+      }
+    } catch (error: any) {
+      console.error("Error updating team lead:", error);
+      toast({
+        title: "Erro",
+        description: error.message || "Erro ao atualizar Team Lead",
         variant: "destructive",
       });
     }
@@ -415,6 +455,30 @@ export default function UsersManagement() {
                     </SelectContent>
                   </Select>
                 </div>
+
+                {newUser.role === 'agent' && (
+                  <div>
+                    <Label htmlFor="team-lead">Team Lead (Opcional)</Label>
+                    <Select
+                      value={newUser.teamLeadId || "none"}
+                      onValueChange={(value) =>
+                        setNewUser({ ...newUser, teamLeadId: value === "none" ? undefined : value })
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione um Team Lead" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Nenhum</SelectItem>
+                        {teamLeads.map((lead) => (
+                          <SelectItem key={lead.id} value={lead.id}>
+                            {lead.full_name || lead.email}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               </div>
               <DialogFooter>
                 <Button
@@ -432,14 +496,14 @@ export default function UsersManagement() {
           <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Editar Role</DialogTitle>
+                <DialogTitle>Editar Utilizador</DialogTitle>
                 <DialogDescription>
-                  Alterar o role de {selectedUser?.full_name}
+                  Editar permissões e equipa de {selectedUser?.full_name}
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
                 <div>
-                  <Label htmlFor="edit-role">Novo Role</Label>
+                  <Label htmlFor="edit-role">Role</Label>
                   <Select
                     defaultValue={selectedUser?.role}
                     onValueChange={handleUpdateRole}
@@ -454,13 +518,35 @@ export default function UsersManagement() {
                     </SelectContent>
                   </Select>
                 </div>
+
+                {selectedUser?.role === 'agent' && (
+                  <div>
+                    <Label htmlFor="edit-team-lead">Team Lead</Label>
+                    <Select
+                      value={selectedUser?.team_lead_id || "none"}
+                      onValueChange={handleUpdateTeamLead}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione um Team Lead" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Nenhum</SelectItem>
+                        {teamLeads.map((lead) => (
+                          <SelectItem key={lead.id} value={lead.id}>
+                            {lead.full_name || lead.email}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               </div>
               <DialogFooter>
                 <Button
                   variant="outline"
                   onClick={() => setIsEditDialogOpen(false)}
                 >
-                  Cancelar
+                  Fechar
                 </Button>
               </DialogFooter>
             </DialogContent>

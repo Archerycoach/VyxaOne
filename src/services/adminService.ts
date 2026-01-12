@@ -103,9 +103,13 @@ export const getAdminStats = async () => {
 export async function getAllUsers() {
   try {
     // Query profiles table directly with proper ordering
+    // For self-joins, use column name directly instead of constraint name
     const { data, error } = await supabase
       .from("profiles")
-      .select("*")
+      .select(`
+        *,
+        team_lead:profiles!team_lead_id(id, full_name, email)
+      `)
       .order("created_at", { ascending: false });
 
     if (error) throw error;
@@ -504,8 +508,14 @@ export const getTeamMembers = async () => {
   }));
 };
 
-// Assign agent to team lead
+// Assign agent to team lead (admin only)
 export const assignAgentToTeamLead = async (agentId: string, teamLeadId: string | null) => {
+  // Verify admin permission
+  const isAdminUser = await isAdmin();
+  if (!isAdminUser) {
+    throw new Error("Apenas administradores podem associar agentes a team leads");
+  }
+
   const { error } = await supabase
     .from("profiles")
     .update({ team_lead_id: teamLeadId })
@@ -524,6 +534,27 @@ export const getTeamLeadAgents = async (teamLeadId: string): Promise<Profile[]> 
     .eq("team_lead_id", teamLeadId)
     .eq("role", "agent")
     .order("full_name", { ascending: true });
+
+  if (error) throw error;
+  return data || [];
+};
+
+// Get available agents (agents without a team lead or belonging to current team lead)
+export const getAvailableAgents = async (teamLeadId?: string): Promise<Profile[]> => {
+  let query = supabase
+    .from("profiles")
+    .select("*")
+    .eq("role", "agent")
+    .eq("is_active", true);
+
+  if (teamLeadId) {
+    // Get agents without team lead OR agents assigned to this team lead
+    query = query.or(`team_lead_id.is.null,team_lead_id.eq.${teamLeadId}`);
+  } else {
+    // For admins, show all agents
+  }
+
+  const { data, error } = await query.order("full_name", { ascending: true });
 
   if (error) throw error;
   return data || [];

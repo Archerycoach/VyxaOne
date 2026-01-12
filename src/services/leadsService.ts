@@ -27,14 +27,46 @@ export interface LeadWithDetails extends Lead {
 
 export type LeadWithContacts = LeadWithDetails;
 
-// Get all leads with filters
+// Get current user profile with role and team_lead_id
+const getCurrentUserProfile = async () => {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not authenticated");
+
+  const { data: profile, error } = await supabase
+    .from("profiles")
+    .select("id, role, team_lead_id")
+    .eq("id", user.id)
+    .single();
+
+  if (error) throw error;
+  return profile;
+};
+
+// Get team member IDs for a team lead
+const getTeamMemberIds = async (teamLeadId: string): Promise<string[]> => {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id")
+    .eq("team_lead_id", teamLeadId)
+    .eq("role", "agent");
+
+  if (error) throw error;
+  return (data || []).map(p => p.id);
+};
+
+// Get all leads with proper visibility rules
 export const getLeads = async (useCache = true) => {
   try {
     console.log("[leadsService] getLeads called, useCache:", useCache);
     
+    // Get current user profile
+    const profile = await getCurrentUserProfile();
+    console.log("[leadsService] Current user profile:", profile);
+
     // Check cache first only if useCache is true
+    const cacheKey = `${LEADS_CACHE_KEY}_${profile.id}`;
     if (useCache) {
-      const cached = getCachedData<Lead[]>(LEADS_CACHE_KEY, CACHE_TTL);
+      const cached = getCachedData<Lead[]>(cacheKey, CACHE_TTL);
       if (cached) {
         console.log("[leadsService] Returning cached leads:", cached.length);
         return cached;
@@ -42,14 +74,33 @@ export const getLeads = async (useCache = true) => {
     }
 
     console.log("[leadsService] Fetching leads from database...");
-    const { data, error } = await supabase
+    
+    let query = supabase
       .from("leads")
       .select(`
         *,
-        contact:contacts!leads_contact_id_fkey (*)
+        contact:contacts!leads_contact_id_fkey (*),
+        assigned_user:profiles!leads_assigned_to_fkey(id, full_name, email)
       `)
-      .is("archived_at", null)
-      .order("created_at", { ascending: false });
+      .is("archived_at", null);
+
+    // Apply visibility rules based on role
+    if (profile.role === "admin") {
+      // Admins see all leads - no filter needed
+      console.log("[leadsService] Admin user - fetching all leads");
+    } else if (profile.role === "team_lead") {
+      // Team leads see their leads + their team members' leads
+      const teamMemberIds = await getTeamMemberIds(profile.id);
+      const visibleUserIds = [profile.id, ...teamMemberIds];
+      console.log("[leadsService] Team lead - visible user IDs:", visibleUserIds);
+      query = query.in("assigned_to", visibleUserIds);
+    } else {
+      // Agents see only their own leads
+      console.log("[leadsService] Agent - fetching own leads only");
+      query = query.eq("assigned_to", profile.id);
+    }
+
+    const { data, error } = await query.order("created_at", { ascending: false });
 
     if (error) {
       console.error("[leadsService] Error fetching leads:", error);
@@ -59,8 +110,8 @@ export const getLeads = async (useCache = true) => {
     const leads = data || [];
     console.log("[leadsService] Leads fetched successfully:", leads.length);
     
-    // Always update cache with fresh data
-    setCachedData(LEADS_CACHE_KEY, leads);
+    // Cache with user-specific key
+    setCachedData(cacheKey, leads);
     
     return leads;
   } catch (e) {
@@ -71,46 +122,7 @@ export const getLeads = async (useCache = true) => {
 
 // Alias for compatibility with existing code
 export const getAllLeads = async (useCache = true): Promise<Lead[]> => {
-  try {
-    console.log("[leadsService] getAllLeads called, useCache:", useCache);
-    
-    // Check cache first
-    if (useCache) {
-      const cached = getCachedData<Lead[]>(LEADS_CACHE_KEY, CACHE_TTL);
-      if (cached) {
-        console.log("[leadsService] getAllLeads returning cached:", cached.length);
-        return cached;
-      }
-    }
-    
-    console.log("[leadsService] getAllLeads fetching from database...");
-    const { data, error } = await supabase
-      .from("leads")
-      .select(`
-        *,
-        contact:contacts!leads_contact_id_fkey (*)
-      `)
-      .is("archived_at", null)
-      .order("created_at", { ascending: false });
-
-    if (error) {
-      console.error("[leadsService] getAllLeads error:", error);
-      throw error;
-    }
-    
-    const leads = data || [];
-    console.log("[leadsService] getAllLeads fetched:", leads.length, "leads");
-    
-    // Cache the result
-    if (useCache) {
-      setCachedData(LEADS_CACHE_KEY, leads);
-    }
-    
-    return leads;
-  } catch (e) {
-    console.error("[leadsService] getAllLeads exception:", e);
-    throw e;
-  }
+  return getLeads(useCache);
 };
 
 // Get single lead with full details
@@ -198,6 +210,9 @@ export const updateLead = async (id: string, updates: Partial<Lead>) => {
     }
   }
 
+  // Invalidate cache
+  CacheManager.invalidateLeadsRelated();
+
   return data;
 };
 
@@ -229,16 +244,32 @@ export const restoreLead = async (id: string): Promise<void> => {
   CacheManager.invalidateLeadsRelated();
 };
 
-// Get archived leads
+// Get archived leads with visibility rules
 export const getArchivedLeads = async (): Promise<Lead[]> => {
-  const { data, error } = await supabase
+  const profile = await getCurrentUserProfile();
+
+  let query = supabase
     .from("leads")
     .select(`
       *,
-      contact:contacts!leads_contact_id_fkey (*)
+      contact:contacts!leads_contact_id_fkey (*),
+      assigned_user:profiles!leads_assigned_to_fkey(id, full_name, email)
     `)
-    .not("archived_at", "is", null)
-    .order("archived_at", { ascending: false });
+    .not("archived_at", "is", null);
+
+  // Apply visibility rules
+  if (profile.role === "admin") {
+    // Admins see all archived leads
+  } else if (profile.role === "team_lead") {
+    const teamMemberIds = await getTeamMemberIds(profile.id);
+    const visibleUserIds = [profile.id, ...teamMemberIds];
+    query = query.in("assigned_to", visibleUserIds);
+  } else {
+    // Agents see only their own archived leads
+    query = query.eq("assigned_to", profile.id);
+  }
+
+  const { data, error } = await query.order("archived_at", { ascending: false });
 
   if (error) throw error;
   return (data as unknown) as Lead[];
@@ -308,6 +339,10 @@ export const updateLeadStatus = async (id: string, status: string) => {
     .single();
 
   if (error) throw error;
+
+  // Invalidate cache
+  CacheManager.invalidateLeadsRelated();
+
   return data;
 };
 
@@ -327,25 +362,21 @@ export const getLeadsByStage = async (): Promise<Record<string, LeadWithDetails[
 
 // Get lead statistics
 export const getLeadStats = async () => {
-  const { data, error } = await supabase
-    .from("leads")
-    .select("status, lead_type"); 
-
-  if (error) throw error;
+  const leads = await getLeads(); // This already applies visibility rules
 
   const stats = {
-    total: data.length,
-    new: data.filter(l => l.status === "new").length,
-    contacted: data.filter(l => l.status === "contacted").length,
-    qualified: data.filter(l => l.status === "qualified").length,
-    proposal: data.filter(l => l.status === "proposal").length,
-    won: data.filter(l => l.status === "won").length,
-    lost: data.filter(l => l.status === "lost").length,
-    negotiation: data.filter(l => l.status === "negotiation").length,
-    buyers: data.filter(l => l.lead_type === "buyer" || l.lead_type === "both").length,
-    sellers: data.filter(l => l.lead_type === "seller" || l.lead_type === "both").length,
-    conversionRate: data.length > 0 
-      ? ((data.filter(l => l.status === "won").length / data.length) * 100).toFixed(1)
+    total: leads.length,
+    new: leads.filter(l => l.status === "new").length,
+    contacted: leads.filter(l => l.status === "contacted").length,
+    qualified: leads.filter(l => l.status === "qualified").length,
+    proposal: leads.filter(l => l.status === "proposal").length,
+    won: leads.filter(l => l.status === "won").length,
+    lost: leads.filter(l => l.status === "lost").length,
+    negotiation: leads.filter(l => l.status === "negotiation").length,
+    buyers: leads.filter(l => l.lead_type === "buyer" || l.lead_type === "both").length,
+    sellers: leads.filter(l => l.lead_type === "seller" || l.lead_type === "both").length,
+    conversionRate: leads.length > 0 
+      ? ((leads.filter(l => l.status === "won").length / leads.length) * 100).toFixed(1)
       : "0.0",
   };
 
@@ -354,6 +385,23 @@ export const getLeadStats = async () => {
 
 // Assign lead to user
 export const assignLead = async (leadId: string, userId: string): Promise<void> => {
+  // Verify current user has permission to assign
+  const profile = await getCurrentUserProfile();
+  
+  if (profile.role !== "admin" && profile.role !== "team_lead") {
+    throw new Error("Não tem permissão para atribuir leads");
+  }
+
+  // If team_lead, verify they can assign to this user
+  if (profile.role === "team_lead") {
+    const teamMemberIds = await getTeamMemberIds(profile.id);
+    const canAssignToUser = userId === profile.id || teamMemberIds.includes(userId);
+    
+    if (!canAssignToUser) {
+      throw new Error("Não pode atribuir leads a utilizadores fora da sua equipa");
+    }
+  }
+
   // Cast query builder to bypass type checking
   const query: any = supabase.from("leads");
   

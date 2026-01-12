@@ -115,6 +115,15 @@ export function AssignLeadDialog({
     }
   };
 
+  const getRoleBadge = (role: string) => {
+    const roleLabels: Record<string, string> = {
+      admin: "Admin",
+      team_lead: "Team Lead",
+      agent: "Agente",
+    };
+    return roleLabels[role] || role;
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       {!isControlled && (
@@ -133,17 +142,17 @@ export function AssignLeadDialog({
         <DialogHeader>
           <DialogTitle>Atribuir Lead</DialogTitle>
           <DialogDescription>
-            Selecione um agente para atribuir a lead &quot;{leadName}&quot;.
+            Selecione um utilizador para atribuir a lead &quot;{leadName}&quot;.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4">
           <div className="space-y-2">
             <label htmlFor="user-select" className="text-sm font-medium">
-              Agente
+              Utilizador
             </label>
             <Select value={selectedUserId} onValueChange={setSelectedUserId}>
               <SelectTrigger id="user-select">
-                <SelectValue placeholder="Selecione um agente" />
+                <SelectValue placeholder="Selecione um utilizador" />
               </SelectTrigger>
               <SelectContent>
                 {users.length === 0 ? (
@@ -154,9 +163,14 @@ export function AssignLeadDialog({
                   users.map((user) => (
                     <SelectItem key={user.id} value={user.id}>
                       <div className="flex flex-col">
-                        <span className="font-medium">
-                          {user.full_name || user.email}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">
+                            {user.full_name || user.email}
+                          </span>
+                          <span className="text-xs text-gray-500">
+                            ({getRoleBadge(user.role)})
+                          </span>
+                        </div>
                         <span className="text-xs text-gray-500">
                           {user.email}
                         </span>

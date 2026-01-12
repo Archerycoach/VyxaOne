@@ -58,6 +58,29 @@ export const getCurrentUser = async (): Promise<User | null> => {
       console.error("Error getting user:", error);
       return null;
     }
+    
+    // Fetch user profile to get the correct role
+    if (user) {
+      try {
+        const profile = await getUserProfile(user.id);
+        if (profile) {
+          // Merge profile data (especially role) with user data
+          return {
+            ...user,
+            role: profile.role,
+            user_metadata: {
+              ...user.user_metadata,
+              role: profile.role,
+              full_name: profile.full_name,
+            }
+          } as User;
+        }
+      } catch (profileError) {
+        console.error("Error fetching user profile:", profileError);
+        // Return user without profile data if profile fetch fails
+      }
+    }
+    
     return user;
   } catch (error) {
     console.error("Unexpected error in getCurrentUser:", error);

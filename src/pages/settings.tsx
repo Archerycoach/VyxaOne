@@ -107,7 +107,7 @@ export default function Settings() {
     
     setLoading(true);
     try {
-      await updateUserProfile(profile.id, {
+      await updateUserProfile({
         full_name: profile.full_name,
         email: profile.email,
         phone: profile.phone,

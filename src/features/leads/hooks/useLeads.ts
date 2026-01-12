@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { getAllLeads } from "@/services/leadsService";
 import type { LeadWithContacts } from "@/services/leadsService";
 
@@ -11,7 +11,7 @@ export function useLeads() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
-  const fetchLeads = async (forceRefresh = false) => {
+  const fetchLeads = useCallback(async (forceRefresh = false) => {
     setIsLoading(true);
     setError(null);
     
@@ -26,11 +26,11 @@ export function useLeads() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchLeads();
-  }, []);
+  }, [fetchLeads]);
 
   return {
     leads,

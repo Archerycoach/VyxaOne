@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,9 +25,6 @@ import {
   Users,
   StickyNote,
 } from "lucide-react";
-import { LeadNotesDialog } from "@/components/leads/LeadNotesDialog";
-import { AssignLeadDialog } from "@/components/leads/AssignLeadDialog";
-import { getUserProfile } from "@/services/profileService";
 
 interface Lead {
   id: string;
@@ -61,8 +58,8 @@ interface LeadCardProps {
   onTask: (lead: Lead) => void;
   onEvent: (lead: Lead) => void;
   onInteraction: (lead: Lead) => void;
+  onNotes: (lead: Lead) => void;
   onAssign?: (lead: Lead) => void;
-  onAssignSuccess?: () => void;
   showArchived?: boolean;
   canAssignLeads?: boolean;
 }
@@ -80,13 +77,18 @@ export function LeadCard({
   onTask,
   onEvent,
   onInteraction,
+  onNotes,
   onAssign,
-  onAssignSuccess,
   showArchived = false,
   canAssignLeads = false,
 }: LeadCardProps) {
-  const [notesDialogOpen, setNotesDialogOpen] = useState(false);
-  const [assignDialogOpen, setAssignDialogOpen] = useState(false);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+
+  const handleMenuItemClick = (action: () => void) => {
+    setDropdownOpen(false);
+    // Pequeno delay para garantir que o dropdown fecha completamente
+    setTimeout(action, 100);
+  };
 
   const formatCurrency = (value: number | null | undefined) => {
     if (!value) return "N/A";
@@ -156,7 +158,7 @@ export function LeadCard({
         <h3 className="text-lg font-semibold text-gray-900 pr-20">{lead.name}</h3>
         <div className="flex gap-1">
           {/* Actions Dropdown Menu */}
-          <DropdownMenu>
+          <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
             <DropdownMenuTrigger asChild>
               <button className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-colors">
                 <MoreVertical className="h-4 w-4" />
@@ -167,15 +169,15 @@ export function LeadCard({
               <div className="px-2 py-1.5 text-xs font-semibold text-gray-500 uppercase">
                 Comunicação
               </div>
-              <DropdownMenuItem onClick={() => onEmail(lead)}>
+              <DropdownMenuItem onClick={() => handleMenuItemClick(() => onEmail(lead))}>
                 <Mail className="h-4 w-4 mr-2" />
                 Email
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onSMS(lead)}>
+              <DropdownMenuItem onClick={() => handleMenuItemClick(() => onSMS(lead))}>
                 <MessageSquare className="h-4 w-4 mr-2" />
                 SMS
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onWhatsApp(lead)}>
+              <DropdownMenuItem onClick={() => handleMenuItemClick(() => onWhatsApp(lead))}>
                 <MessageCircle className="h-4 w-4 mr-2" />
                 WhatsApp
               </DropdownMenuItem>
@@ -186,15 +188,15 @@ export function LeadCard({
               <div className="px-2 py-1.5 text-xs font-semibold text-gray-500 uppercase">
                 Calendário
               </div>
-              <DropdownMenuItem onClick={() => onTask(lead)}>
+              <DropdownMenuItem onClick={() => handleMenuItemClick(() => onTask(lead))}>
                 <CalendarDays className="h-4 w-4 mr-2" />
                 Tarefa
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onEvent(lead)}>
+              <DropdownMenuItem onClick={() => handleMenuItemClick(() => onEvent(lead))}>
                 <Calendar className="h-4 w-4 mr-2" />
                 Evento
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onInteraction(lead)}>
+              <DropdownMenuItem onClick={() => handleMenuItemClick(() => onInteraction(lead))}>
                 <FileText className="h-4 w-4 mr-2" />
                 Interação
               </DropdownMenuItem>
@@ -205,24 +207,24 @@ export function LeadCard({
               <div className="px-2 py-1.5 text-xs font-semibold text-gray-500 uppercase">
                 Gestão
               </div>
-              <DropdownMenuItem onClick={() => onViewDetails(lead)}>
+              <DropdownMenuItem onClick={() => handleMenuItemClick(() => onViewDetails(lead))}>
                 <Eye className="h-4 w-4 mr-2" />
                 Ver Detalhes
               </DropdownMenuItem>
               {!showArchived && (
-                <DropdownMenuItem onClick={() => setNotesDialogOpen(true)}>
+                <DropdownMenuItem onClick={() => handleMenuItemClick(() => onNotes(lead))}>
                   <StickyNote className="h-4 w-4 mr-2" />
                   Notas
                 </DropdownMenuItem>
               )}
               {!showArchived && onConvert && (
-                <DropdownMenuItem onClick={() => onConvert(lead)}>
+                <DropdownMenuItem onClick={() => handleMenuItemClick(() => onConvert(lead))}>
                   <UserCheck className="h-4 w-4 mr-2" />
                   Converter em Contacto
                 </DropdownMenuItem>
               )}
-              {canAssignLeads && !showArchived && (
-                <DropdownMenuItem onClick={() => setAssignDialogOpen(true)}>
+              {canAssignLeads && !showArchived && onAssign && (
+                <DropdownMenuItem onClick={() => handleMenuItemClick(() => onAssign(lead))}>
                   <Users className="h-4 w-4 mr-2" />
                   Atribuir Agente
                 </DropdownMenuItem>
@@ -308,27 +310,6 @@ export function LeadCard({
       <div className="text-xs text-gray-500">
         📅 Criado a {formatDate(lead.created_at)}
       </div>
-
-      {/* Notes Dialog - Controlled */}
-      <LeadNotesDialog
-        leadId={lead.id}
-        leadName={lead.name}
-        open={notesDialogOpen}
-        onOpenChange={setNotesDialogOpen}
-        trigger={<></>}
-      />
-
-      {/* Assign Dialog - Controlled */}
-      {canAssignLeads && !showArchived && (
-        <AssignLeadDialog
-          leadId={lead.id}
-          leadName={lead.name}
-          currentAssignedUserId={lead.assigned_to}
-          onAssignSuccess={onAssignSuccess}
-          open={assignDialogOpen}
-          onOpenChange={setAssignDialogOpen}
-        />
-      )}
     </Card>
   );
 }
