@@ -24,8 +24,11 @@ export function LeadsListContainer({
   canAssignLeads,
   teamMembers,
 }: LeadsListContainerProps) {
-  // Fetch leads data
-  const { leads, isLoading, error, refetch } = useLeads();
+  // Filter states
+  const [showArchived, setShowArchived] = useState(false);
+
+  // Fetch leads data with archived support
+  const { leads, isLoading, error, refetch } = useLeads(showArchived);
 
   // Debounced refetch to prevent cascade re-renders
   const [isRefetching, setIsRefetching] = useState(false);
@@ -42,13 +45,11 @@ export function LeadsListContainer({
     setSearchTerm,
     filterType,
     setFilterType,
-    showArchived,
-    setShowArchived,
     filteredLeads,
   } = useLeadFilters(leads);
 
   // CRUD operations
-  const { convertLead, deleteLead, restore, assign, isProcessing } =
+  const { convertLead, deleteLead, permanentlyDelete, restore, assign, isProcessing } =
     useLeadMutations(refetch);
 
   // Interactions
@@ -103,6 +104,10 @@ export function LeadsListContainer({
 
   const handleRestore = async (id: string) => {
     await restore(id);
+  };
+
+  const handlePermanentlyDelete = async (lead: LeadWithContacts) => {
+    await permanentlyDelete(lead.id, lead.name);
   };
 
   const handleViewDetails = (lead: LeadWithContacts) => {
@@ -266,6 +271,7 @@ export function LeadsListContainer({
               canAssignLeads={canAssignLeads}
               onEdit={onEdit}
               onDelete={(lead) => handleDelete(lead.id)}
+              onPermanentlyDelete={handlePermanentlyDelete}
               onRestore={(lead) => handleRestore(lead.id)}
               onConvert={handleConvert}
               onViewDetails={handleViewDetails}

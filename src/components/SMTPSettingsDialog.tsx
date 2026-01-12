@@ -42,6 +42,7 @@ export function SMTPSettingsDialog({ open, onOpenChange }: SMTPSettingsDialogPro
     from_email: "",
     from_name: "",
     is_active: true,
+    reject_unauthorized: true,
   });
 
   useEffect(() => {
@@ -64,6 +65,7 @@ export function SMTPSettingsDialog({ open, onOpenChange }: SMTPSettingsDialogPro
           from_email: data.from_email,
           from_name: data.from_name || "",
           is_active: data.is_active,
+          reject_unauthorized: data.reject_unauthorized ?? true,
         });
       }
     } catch (error) {
@@ -253,6 +255,22 @@ export function SMTPSettingsDialog({ open, onOpenChange }: SMTPSettingsDialogPro
                 <Label htmlFor="smtp_secure" className="flex items-center gap-2">
                   <Shield className="h-4 w-4" />
                   Usar SSL/TLS (porta 465)
+                </Label>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="reject_unauthorized"
+                  checked={settings.reject_unauthorized ?? true}
+                  onCheckedChange={(checked) => setSettings({ ...settings, reject_unauthorized: checked })}
+                />
+                <Label htmlFor="reject_unauthorized" className="flex flex-col gap-1">
+                  <span className="flex items-center gap-2">
+                    Verificar certificado SSL
+                  </span>
+                  <span className="text-xs text-muted-foreground font-normal">
+                    Desative apenas se tiver erros de certificado (menos seguro)
+                  </span>
                 </Label>
               </div>
             </div>

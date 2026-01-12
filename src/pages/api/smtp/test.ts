@@ -16,6 +16,7 @@ export default async function handler(
       smtp_secure,
       smtp_username,
       smtp_password,
+      reject_unauthorized = true,
     } = req.body;
 
     if (!smtp_host || !smtp_port || !smtp_username || !smtp_password) {
@@ -33,6 +34,9 @@ export default async function handler(
       auth: {
         user: smtp_username,
         pass: smtp_password,
+      },
+      tls: {
+        rejectUnauthorized: reject_unauthorized,
       },
     });
 

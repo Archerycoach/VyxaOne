@@ -7,14 +7,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { useToast } from "@/hooks/use-toast";
 import { frontendSettingsService, type FrontendSetting } from "@/services/frontendSettingsService";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Save } from "lucide-react";
+import { Loader2, Save, Check } from "lucide-react";
 
 export default function FrontendSettingsPage() {
   const router = useRouter();
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [saving, setSaving] = useState<string | null>(null);
   const [settings, setSettings] = useState<FrontendSetting[]>([]);
+  const [editedValues, setEditedValues] = useState<Record<string, string>>({});
 
   useEffect(() => {
     loadSettings();
@@ -25,6 +26,13 @@ export default function FrontendSettingsPage() {
       setLoading(true);
       const data = await frontendSettingsService.getAllSettings();
       setSettings(data);
+      
+      // Initialize edited values with current values
+      const initialValues: Record<string, string> = {};
+      data.forEach(setting => {
+        initialValues[setting.id] = String(setting.value || "");
+      });
+      setEditedValues(initialValues);
     } catch (error) {
       console.error("Error loading settings:", error);
       toast({
@@ -37,16 +45,25 @@ export default function FrontendSettingsPage() {
     }
   };
 
-  const handleSave = async (setting: FrontendSetting, newValue: any) => {
+  const handleValueChange = (settingId: string, newValue: string) => {
+    setEditedValues(prev => ({
+      ...prev,
+      [settingId]: newValue
+    }));
+  };
+
+  const handleSave = async (setting: FrontendSetting) => {
     try {
-      setSaving(true);
+      setSaving(setting.id);
+      const newValue = editedValues[setting.id];
+      
       await frontendSettingsService.updateSetting(setting.id, {
         value: newValue,
       });
 
       toast({
         title: "Sucesso",
-        description: "Configuração atualizada com sucesso",
+        description: `${setting.description || setting.key} atualizado com sucesso`,
       });
 
       await loadSettings();
@@ -58,48 +75,117 @@ export default function FrontendSettingsPage() {
         variant: "destructive",
       });
     } finally {
-      setSaving(false);
+      setSaving(null);
     }
   };
 
   const renderSettingInput = (setting: FrontendSetting) => {
-    const value = typeof setting.value === "string" ? setting.value.replace(/"/g, "") : setting.value;
+    const currentValue = editedValues[setting.id] || "";
+    const hasChanged = currentValue !== String(setting.value || "");
+    const isSaving = saving === setting.id;
 
     if (setting.key.includes("color")) {
       return (
-        <div className="flex gap-4 items-center">
-          <Input
-            type="color"
-            defaultValue={value}
-            onBlur={(e) => handleSave(setting, `"${e.target.value}"`)}
-            className="w-24 h-12"
-          />
-          <Input
-            type="text"
-            defaultValue={value}
-            onBlur={(e) => handleSave(setting, `"${e.target.value}"`)}
-            placeholder="#000000"
-            className="flex-1"
-          />
+        <div className="space-y-2">
+          <div className="flex gap-4 items-center">
+            <Input
+              type="color"
+              value={currentValue}
+              onChange={(e) => handleValueChange(setting.id, e.target.value)}
+              className="w-24 h-12"
+            />
+            <Input
+              type="text"
+              value={currentValue}
+              onChange={(e) => handleValueChange(setting.id, e.target.value)}
+              placeholder="#000000"
+              className="flex-1"
+            />
+          </div>
+          {hasChanged && (
+            <Button
+              onClick={() => handleSave(setting)}
+              disabled={isSaving}
+              size="sm"
+              className="w-full"
+            >
+              {isSaving ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  A guardar...
+                </>
+              ) : (
+                <>
+                  <Save className="h-4 w-4 mr-2" />
+                  Guardar alteração
+                </>
+              )}
+            </Button>
+          )}
         </div>
       );
     }
 
     if (setting.key.includes("title") || setting.key.includes("subtitle") || setting.key.includes("tagline")) {
       return (
-        <Textarea
-          defaultValue={value}
-          onBlur={(e) => handleSave(setting, `"${e.target.value}"`)}
-          rows={3}
-        />
+        <div className="space-y-2">
+          <Textarea
+            value={currentValue}
+            onChange={(e) => handleValueChange(setting.id, e.target.value)}
+            rows={3}
+            className="resize-none"
+          />
+          {hasChanged && (
+            <Button
+              onClick={() => handleSave(setting)}
+              disabled={isSaving}
+              size="sm"
+              className="w-full"
+            >
+              {isSaving ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  A guardar...
+                </>
+              ) : (
+                <>
+                  <Save className="h-4 w-4 mr-2" />
+                  Guardar alteração
+                </>
+              )}
+            </Button>
+          )}
+        </div>
       );
     }
 
     return (
-      <Input
-        defaultValue={value}
-        onBlur={(e) => handleSave(setting, `"${e.target.value}"`)}
-      />
+      <div className="space-y-2">
+        <Input
+          value={currentValue}
+          onChange={(e) => handleValueChange(setting.id, e.target.value)}
+        />
+        {hasChanged && (
+          <Button
+            onClick={() => handleSave(setting)}
+            disabled={isSaving}
+            size="sm"
+            className="w-full"
+          >
+            {isSaving ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                A guardar...
+              </>
+            ) : (
+              <>
+                <Save className="h-4 w-4 mr-2" />
+                Guardar alteração
+              </>
+            )}
+          </Button>
+        )}
+      </div>
     );
   };
 
@@ -212,7 +298,7 @@ export default function FrontendSettingsPage() {
           💡 Dica
         </h3>
         <p className="text-blue-800 text-sm">
-          As alterações são aplicadas automaticamente ao clicar fora do campo. 
+          Edite os campos e clique em "Guardar alteração" para aplicar as mudanças. 
           Visite a <a href="/landing" target="_blank" className="underline font-medium">landing page</a> para ver as alterações.
         </p>
       </div>

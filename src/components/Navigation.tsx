@@ -114,6 +114,8 @@ export function Navigation() {
     { icon: Settings, label: "Pagamentos", path: "/admin/payment-settings", section: "admin" },
     { icon: Palette, label: "Personalização", path: "/admin/system-settings", section: "admin" },
     { icon: Zap, label: "Workflows", path: "/admin/workflows", section: "admin" },
+    { icon: Palette, label: "Frontend", path: "/admin/frontend-settings", section: "admin" },
+    { icon: Plug, label: "Integrações", path: "/admin/integrations", section: "admin" },
   ] : [];
 
   const adminLinks = [
@@ -124,6 +126,8 @@ export function Navigation() {
     { href: "/admin/security", label: "Segurança" },
     { href: "/admin/system-settings", label: "Sistema" },
     { href: "/admin/workflows", label: "Workflows" },
+    { href: "/admin/frontend-settings", label: "Frontend" },
+    { href: "/admin/integrations", label: "Integrações" },
   ];
 
   const mainItems: NavItem[] = [
@@ -236,57 +240,6 @@ export function Navigation() {
           })}
         </nav>
       </ScrollArea>
-
-      {/* Admin Links */}
-      {isUserAdmin && (
-        <>
-          <Link
-            href="/admin/dashboard"
-            className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${
-              router.pathname === "/admin/dashboard"
-                ? "bg-primary text-primary-foreground"
-                : "hover:bg-accent"
-            }`}
-          >
-            <LayoutDashboard className="h-4 w-4" />
-            <span className="text-sm font-medium">Admin Dashboard</span>
-          </Link>
-          <Link
-            href="/admin/integrations"
-            className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${
-              router.pathname === "/admin/integrations"
-                ? "bg-primary text-primary-foreground"
-                : "hover:bg-accent"
-            }`}
-          >
-            <Plug className="h-4 w-4" />
-            <span className="text-sm font-medium">Integrações</span>
-          </Link>
-        </>
-      )}
-
-      {profile?.role === "admin" && (
-        <>
-          <DropdownMenuSeparator />
-          <DropdownMenuLabel>Administração</DropdownMenuLabel>
-          <DropdownMenuItem onClick={() => router.push("/admin/dashboard")}>
-            <LayoutDashboard className="h-4 w-4 mr-2" />
-            Dashboard Admin
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => router.push("/admin/users")}>
-            <Users className="h-4 w-4 mr-2" />
-            Utilizadores
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => router.push("/admin/subscriptions")}>
-            <CreditCard className="h-4 w-4 mr-2" />
-            Subscrições
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => router.push("/admin/frontend-settings")}>
-            <Settings className="h-4 w-4 mr-2" />
-            Configurações Frontend
-          </DropdownMenuItem>
-        </>
-      )}
 
       <div className="border-t p-3">
         <Button

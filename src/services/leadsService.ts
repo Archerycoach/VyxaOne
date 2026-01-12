@@ -244,6 +244,33 @@ export const restoreLead = async (id: string): Promise<void> => {
   CacheManager.invalidateLeadsRelated();
 };
 
+// Permanently delete lead (hard delete) - only for archived leads
+export const permanentlyDeleteLead = async (id: string): Promise<void> => {
+  // First verify the lead is archived
+  const { data: lead, error: fetchError } = await supabase
+    .from("leads")
+    .select("archived_at")
+    .eq("id", id)
+    .single();
+
+  if (fetchError) throw fetchError;
+  
+  if (!lead?.archived_at) {
+    throw new Error("Apenas leads arquivadas podem ser eliminadas permanentemente. Arquive a lead primeiro.");
+  }
+
+  // Proceed with hard delete
+  const { error } = await supabase
+    .from("leads")
+    .delete()
+    .eq("id", id);
+
+  if (error) throw error;
+
+  // Invalidar caches relacionados
+  CacheManager.invalidateLeadsRelated();
+};
+
 // Get archived leads with visibility rules
 export const getArchivedLeads = async (): Promise<Lead[]> => {
   const profile = await getCurrentUserProfile();

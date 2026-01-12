@@ -11,6 +11,7 @@ export interface SMTPSettings {
   from_email: string;
   from_name?: string;
   is_active: boolean;
+  reject_unauthorized?: boolean;
 }
 
 export interface EmailData {

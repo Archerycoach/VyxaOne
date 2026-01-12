@@ -1,7 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
-import type { Database } from "@/integrations/supabase/types";
 
-// Tipos manuais temporários até que os tipos globais sejam atualizados
 export type FrontendSetting = {
   id: string;
   key: string;
@@ -22,7 +20,16 @@ export const frontendSettingsService = {
       .order("key", { ascending: true });
 
     if (error) throw error;
-    return (data || []) as unknown as FrontendSetting[];
+    
+    // Normalize values - remove quotes if present
+    const normalizedData = (data || []).map((setting: any) => ({
+      ...setting,
+      value: typeof setting.value === 'string' && setting.value.startsWith('"') && setting.value.endsWith('"')
+        ? setting.value.slice(1, -1)
+        : setting.value
+    }));
+
+    return normalizedData as unknown as FrontendSetting[];
   },
 
   // Get public settings (everyone)
@@ -36,7 +43,12 @@ export const frontendSettingsService = {
 
     const settings: Record<string, any> = {};
     (data as any[])?.forEach((setting: any) => {
-      settings[setting.key] = setting.value;
+      let value = setting.value;
+      // Remove quotes if present
+      if (typeof value === 'string' && value.startsWith('"') && value.endsWith('"')) {
+        value = value.slice(1, -1);
+      }
+      settings[setting.key] = value;
     });
 
     return settings;
@@ -51,7 +63,13 @@ export const frontendSettingsService = {
       .single();
 
     if (error) throw error;
-    return (data as any)?.value;
+    
+    let value = (data as any)?.value;
+    // Remove quotes if present
+    if (typeof value === 'string' && value.startsWith('"') && value.endsWith('"')) {
+      value = value.slice(1, -1);
+    }
+    return value;
   },
 
   // Update setting
@@ -61,10 +79,17 @@ export const frontendSettingsService = {
   ): Promise<FrontendSetting> {
     const { data: { user } } = await supabase.auth.getUser();
     
+    // Prepare the value - ensure it's stored as plain string in the database
+    const preparedUpdates = { ...updates };
+    if ('value' in preparedUpdates) {
+      // Store as plain string
+      preparedUpdates.value = String(preparedUpdates.value);
+    }
+    
     const { data, error } = await supabase
       .from("frontend_settings" as any)
       .update({
-        ...updates,
+        ...preparedUpdates,
         updated_at: new Date().toISOString(),
         updated_by: user?.id,
       })

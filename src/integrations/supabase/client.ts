@@ -18,7 +18,7 @@ if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_A
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
 
-// Create a singleton instance with proper configuration
+// Create a singleton instance with proper configuration and error handling
 export const supabase = createClient<Database>(
   SUPABASE_URL, 
   SUPABASE_PUBLISHABLE_KEY,
@@ -27,7 +27,110 @@ export const supabase = createClient<Database>(
       persistSession: true,
       autoRefreshToken: true,
       detectSessionInUrl: true,
-      flowType: 'pkce'
-    }
+      flowType: 'pkce',
+      // Handle storage errors gracefully
+      storage: {
+        getItem: (key: string) => {
+          try {
+            return localStorage.getItem(key);
+          } catch (error) {
+            console.error('Error reading from localStorage:', error);
+            return null;
+          }
+        },
+        setItem: (key: string, value: string) => {
+          try {
+            localStorage.setItem(key, value);
+          } catch (error) {
+            console.error('Error writing to localStorage:', error);
+          }
+        },
+        removeItem: (key: string) => {
+          try {
+            localStorage.removeItem(key);
+          } catch (error) {
+            console.error('Error removing from localStorage:', error);
+          }
+        },
+      },
+    },
+    global: {
+      headers: {
+        'X-Client-Info': 'supabase-js-web',
+      },
+    },
   }
 );
+
+// Handle auth errors globally
+supabase.auth.onAuthStateChange((event, session) => {
+  if (event === 'TOKEN_REFRESHED') {
+    console.log('✅ Token refreshed successfully');
+  }
+  
+  if (event === 'SIGNED_OUT') {
+    console.log('👋 User signed out');
+    // Clear any stale data
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem('supabase.auth.token');
+      } catch (error) {
+        console.error('Error clearing auth token:', error);
+      }
+    }
+  }
+  
+  // Handle token refresh errors
+  if (event === 'USER_UPDATED' && !session) {
+    console.warn('⚠️ Session lost - user needs to re-authenticate');
+  }
+});
+
+// Add error interceptor for auth errors
+const originalFrom = supabase.from.bind(supabase);
+supabase.from = ((table: string) => {
+  const query = originalFrom(table);
+  
+  // Intercept errors
+  const originalThen = query.then?.bind(query);
+  if (originalThen) {
+    query.then = function(onFulfilled?: any, onRejected?: any) {
+      return originalThen(
+        (value: any) => {
+          // Check for auth errors in response
+          if (value?.error?.message?.includes('refresh_token')) {
+            console.error('🔴 Refresh token error detected - clearing session');
+            handleSessionExpired();
+          }
+          return onFulfilled ? onFulfilled(value) : value;
+        },
+        onRejected
+      );
+    };
+  }
+  
+  return query;
+}) as any;
+
+// Handle expired sessions
+function handleSessionExpired() {
+  if (typeof window !== 'undefined') {
+    try {
+      // Clear all auth-related data
+      localStorage.removeItem('supabase.auth.token');
+      
+      // Sign out silently
+      supabase.auth.signOut({ scope: 'local' }).catch(() => {
+        // Ignore errors during cleanup
+      });
+      
+      // Redirect to login
+      const currentPath = window.location.pathname;
+      if (currentPath !== '/login' && currentPath !== '/') {
+        window.location.href = '/login';
+      }
+    } catch (error) {
+      console.error('Error handling session expiration:', error);
+    }
+  }
+}

@@ -2,6 +2,7 @@ import { useState, useRef, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { 
   deleteLead as archiveLead, 
+  permanentlyDeleteLead,
   restoreLead,
   assignLead 
 } from "@/services/leadsService";
@@ -86,6 +87,18 @@ export function useLeadMutations(onSuccess?: () => Promise<void>) {
     });
   }, [executeOperation, toast]);
 
+  const permanentlyDelete = useCallback(async (id: string, leadName: string) => {
+    await executeOperation("permanently delete lead", async () => {
+      await permanentlyDeleteLead(id);
+      
+      toast({
+        title: "Lead eliminada permanentemente!",
+        description: `${leadName} foi removida definitivamente do sistema.`,
+        variant: "destructive",
+      });
+    });
+  }, [executeOperation, toast]);
+
   const restore = useCallback(async (id: string) => {
     await executeOperation("restore lead", async () => {
       await restoreLead(id);
@@ -111,6 +124,7 @@ export function useLeadMutations(onSuccess?: () => Promise<void>) {
   return {
     convertLead,
     deleteLead,
+    permanentlyDelete,
     restore,
     assign,
     isProcessing,

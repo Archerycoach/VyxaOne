@@ -25,6 +25,7 @@ import {
   Users,
   StickyNote,
 } from "lucide-react";
+import type { LeadWithContacts } from "@/services/leadsService";
 
 interface Lead {
   id: string;
@@ -46,47 +47,48 @@ interface Lead {
 }
 
 interface LeadCardProps {
-  lead: Lead;
-  onViewDetails: (lead: Lead) => void;
-  onEdit: (lead: Lead) => void;
-  onDelete: (lead: Lead) => void;
-  onRestore?: (lead: Lead) => void;
-  onConvert?: (lead: Lead) => void;
-  onEmail: (lead: Lead) => void;
-  onSMS: (lead: Lead) => void;
-  onWhatsApp: (lead: Lead) => void;
-  onTask: (lead: Lead) => void;
-  onEvent: (lead: Lead) => void;
-  onInteraction: (lead: Lead) => void;
-  onNotes: (lead: Lead) => void;
-  onAssign?: (lead: Lead) => void;
-  showArchived?: boolean;
-  canAssignLeads?: boolean;
+  lead: LeadWithContacts;
+  showArchived: boolean;
+  canAssignLeads: boolean;
+  onEdit: (lead: LeadWithContacts) => void;
+  onDelete: (lead: LeadWithContacts) => void;
+  onPermanentlyDelete?: (lead: LeadWithContacts) => void;
+  onRestore: (lead: LeadWithContacts) => void;
+  onConvert: (lead: LeadWithContacts) => void;
+  onViewDetails: (lead: LeadWithContacts) => void;
+  onAssign?: (lead: LeadWithContacts) => void;
+  onTask: (lead: LeadWithContacts) => void;
+  onEvent: (lead: LeadWithContacts) => void;
+  onInteraction: (lead: LeadWithContacts) => void;
+  onNotes: (lead: LeadWithContacts) => void;
+  onEmail: (lead: LeadWithContacts) => void;
+  onSMS: (lead: LeadWithContacts) => void;
+  onWhatsApp: (lead: LeadWithContacts) => void;
 }
 
 export function LeadCard({
   lead,
-  onViewDetails,
+  showArchived,
+  canAssignLeads,
   onEdit,
   onDelete,
+  onPermanentlyDelete,
   onRestore,
   onConvert,
-  onEmail,
-  onSMS,
-  onWhatsApp,
+  onViewDetails,
+  onAssign,
   onTask,
   onEvent,
   onInteraction,
   onNotes,
-  onAssign,
-  showArchived = false,
-  canAssignLeads = false,
+  onEmail,
+  onSMS,
+  onWhatsApp,
 }: LeadCardProps) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
   const handleMenuItemClick = (action: () => void) => {
     setDropdownOpen(false);
-    // Pequeno delay para garantir que o dropdown fecha completamente
     setTimeout(action, 100);
   };
 
@@ -152,12 +154,22 @@ export function LeadCard({
   };
 
   return (
-    <Card className="p-4 hover:shadow-md transition-shadow relative">
-      {/* Header with Actions Dropdown, Edit and Delete Buttons */}
-      <div className="flex items-start justify-between mb-3">
-        <h3 className="text-lg font-semibold text-gray-900 pr-20">{lead.name}</h3>
+    <Card className="p-6 hover:shadow-lg transition-shadow">
+      <div className="flex items-start justify-between mb-4">
+        <div className="flex-1">
+          <div className="flex items-center gap-2 mb-1">
+            <h3 className="text-lg font-semibold text-gray-900">{lead.name}</h3>
+            {showArchived && (
+              <Badge variant="secondary" className="text-xs">
+                Arquivada
+              </Badge>
+            )}
+          </div>
+          {lead.email && (
+            <p className="text-sm text-gray-600">{lead.email}</p>
+          )}
+        </div>
         <div className="flex gap-1">
-          {/* Actions Dropdown Menu */}
           <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
             <DropdownMenuTrigger asChild>
               <button className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-colors">
@@ -165,7 +177,6 @@ export function LeadCard({
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
-              {/* Communication Section */}
               <div className="px-2 py-1.5 text-xs font-semibold text-gray-500 uppercase">
                 Comunicação
               </div>
@@ -184,7 +195,6 @@ export function LeadCard({
 
               <DropdownMenuSeparator />
 
-              {/* Calendar Section */}
               <div className="px-2 py-1.5 text-xs font-semibold text-gray-500 uppercase">
                 Calendário
               </div>
@@ -203,7 +213,6 @@ export function LeadCard({
 
               <DropdownMenuSeparator />
 
-              {/* Management Section */}
               <div className="px-2 py-1.5 text-xs font-semibold text-gray-500 uppercase">
                 Gestão
               </div>
@@ -229,10 +238,19 @@ export function LeadCard({
                   Atribuir Agente
                 </DropdownMenuItem>
               )}
+              {showArchived && (
+                <DropdownMenuItem onClick={() => handleMenuItemClick(() => onRestore(lead))} className="text-green-600">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="23 4 23 10 17 10"></polyline>
+                    <polyline points="1 20 1 14 7 14"></polyline>
+                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                  </svg>
+                  Restaurar Lead
+                </DropdownMenuItem>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* Edit Button */}
           <button
             onClick={() => onEdit(lead)}
             className="p-1.5 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded-md transition-colors"
@@ -240,17 +258,30 @@ export function LeadCard({
             <Edit className="h-4 w-4" />
           </button>
 
-          {/* Delete Button */}
-          <button
-            onClick={() => onDelete(lead)}
-            className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-md transition-colors"
-          >
-            <Trash2 className="h-4 w-4" />
-          </button>
+          {showArchived && onPermanentlyDelete ? (
+            <button
+              onClick={() => {
+                if (confirm(`⚠️ ATENÇÃO: Esta ação é irreversível!\n\nTem a certeza que deseja eliminar PERMANENTEMENTE "${lead.name}"?\n\nA lead será removida definitivamente do sistema e não poderá ser recuperada.`)) {
+                  onPermanentlyDelete(lead);
+                }
+              }}
+              className="p-1.5 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-md transition-colors border border-red-300"
+              title="Eliminar permanentemente (irreversível)"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          ) : (
+            <button
+              onClick={() => onDelete(lead)}
+              className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-md transition-colors"
+              title="Arquivar lead"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Badges */}
       <div className="flex flex-wrap gap-2 mb-3">
         <Badge variant={getStatusBadgeVariant(lead.status)}>
           {getStatusLabel(lead.status)}
@@ -258,7 +289,6 @@ export function LeadCard({
         <Badge variant="outline">{getLeadTypeLabel(lead.lead_type)}</Badge>
       </div>
 
-      {/* Contact Info */}
       <div className="space-y-2 mb-4 text-sm text-gray-600">
         {lead.email && (
           <div className="flex items-center gap-2">
@@ -274,39 +304,38 @@ export function LeadCard({
         )}
       </div>
 
-      {/* Lead Details */}
-      {lead.lead_type === "buyer" && (
+      {(lead.lead_type === "buyer" || lead.lead_type === "both") && (
         <div className="space-y-1 mb-4 text-sm text-gray-600">
           <div className="font-medium text-gray-700">Preferências de Compra:</div>
           {lead.property_type && <div>🏠 {lead.property_type}</div>}
-          {lead.location && <div>📍 {lead.location}</div>}
+          {lead.location_preference && <div>📍 {lead.location_preference}</div>}
           {lead.bedrooms && <div>🛏️ {lead.bedrooms}</div>}
-          {lead.area_min && <div>📏 {lead.area_min}m²</div>}
-          {(lead.budget_min || lead.budget_max) && (
+          {lead.min_area && <div>📏 {lead.min_area}m²</div>}
+          {(typeof lead.budget_min === "number" || typeof lead.budget_max === "number") && (
             <div>
               💰 {formatCurrency(lead.budget_min)} - {formatCurrency(lead.budget_max)}
             </div>
           )}
-          {lead.requires_financing && <div>💳 Recorre a Crédito</div>}
+          {lead.needs_financing && <div>💳 Recorre a Crédito</div>}
         </div>
       )}
 
-      {lead.lead_type === "seller" && (
-        <div className="space-y-1 mb-4 text-sm text-gray-600">
-          <div className="font-medium text-gray-700">Propriedade:</div>
-          {lead.property_type && <div>🏠 {lead.property_type}</div>}
-          {lead.location && <div>📍 {lead.location}</div>}
-          {lead.bedrooms && <div>🛏️ {lead.bedrooms}</div>}
-          {lead.area_min && <div>📏 {lead.area_min}m²</div>}
-          {(lead.budget_min || lead.budget_max) && (
-            <div>
-              💰 {formatCurrency(lead.budget_min)} - {formatCurrency(lead.budget_max)}
-            </div>
-          )}
-        </div>
+      {(lead.lead_type === "seller" || lead.lead_type === "both") && (
+        (lead.bathrooms || lead.property_area || lead.desired_price) && (
+          <div className="space-y-1 mb-4 text-sm text-gray-600">
+            <div className="font-medium text-gray-700">Propriedade:</div>
+            {lead.property_type && <div>🏠 {lead.property_type}</div>}
+            {lead.location_preference && <div>📍 {lead.location_preference}</div>}
+            {lead.bedrooms && <div>🛏️ {lead.bedrooms}</div>}
+            {lead.bathrooms && <div>🛁 {lead.bathrooms}</div>}
+            {lead.property_area && <div>📏 {lead.property_area}m²</div>}
+            {lead.desired_price && (
+              <div>💰 {formatCurrency(lead.desired_price)}</div>
+            )}
+          </div>
+        )
       )}
 
-      {/* Creation Date */}
       <div className="text-xs text-gray-500">
         📅 Criado a {formatDate(lead.created_at)}
       </div>

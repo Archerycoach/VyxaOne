@@ -92,6 +92,13 @@ export function LeadFormContainer({ initialData, onSuccess, onCancel }: LeadForm
         return;
       }
 
+      const parsedBudget = parseFloat(formData.budget) || 0;
+      const parsedBedrooms = parseInt(formData.bedrooms) || 0;
+      const parsedBathrooms = parseInt(formData.bathrooms) || 0;
+      const parsedMinArea = parseFloat(formData.min_area) || 0;
+      const parsedPropertyArea = parseFloat(formData.property_area) || 0;
+      const parsedDesiredPrice = parseFloat(formData.desired_price) || 0;
+
       const leadData = {
         name: formData.name,
         email: formData.email || null,
@@ -99,25 +106,28 @@ export function LeadFormContainer({ initialData, onSuccess, onCancel }: LeadForm
         status: formData.status,
         lead_type: formData.lead_type,
         notes: formData.notes || null,
-        budget: parseFloat(formData.budget) || 0,
-        location_preference: formData.location_preference || null,
         source: formData.source,
+        // Preferências de compra (Comprador)
         property_type: formData.property_type || null,
-        bedrooms: parseInt(formData.bedrooms) || 0,
-        bathrooms: parseInt(formData.bathrooms) || 0,
-        min_area: parseFloat(formData.min_area) || 0,
-        max_area: parseFloat(formData.property_area) || 0,
-        property_area: parseFloat(formData.property_area) || 0,
+        location_preference: formData.location_preference || null,
+        bedrooms: parsedBedrooms,
+        min_area: parsedMinArea,
         needs_financing: formData.needs_financing,
+        // Campos de vendedor
+        bathrooms: parsedBathrooms,
+        property_area: parsedPropertyArea,
+        desired_price: parsedDesiredPrice,
         is_development: formData.is_development,
-        development_name: formData.development_name,
-        desired_price: parseFloat(formData.desired_price) || 0,
+        development_name: formData.development_name || null,
+        // Orçamento (usado pelo cartão)
+        budget: parsedBudget,
+        budget_min: 0,
+        budget_max: parsedBudget,
+        // Campos genéricos já existentes
         contact_id: null,
         custom_fields: {},
         tags: [],
-        assigned_to: null,
-        budget_max: parseFloat(formData.budget) || 0,
-        budget_min: 0,
+        assigned_to: user.id,
         last_contact_date: null,
         next_follow_up: null,
         score: 0,

@@ -53,15 +53,40 @@ export interface UserProfile {
  * @returns Promise<User> Dados do utilizador autenticado
  */
 export const requireAuth = async (): Promise<User> => {
-  const { data: { user }, error } = await supabase.auth.getUser();
+  try {
+    const { data: { user }, error } = await supabase.auth.getUser();
 
-  if (error || !user) {
+    if (error) {
+      // Check if it's a refresh token error
+      if (error.message?.includes('refresh_token') || 
+          error.message?.includes('Refresh Token Not Found')) {
+        // Clear invalid session
+        await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
+        throw new AuthError(
+          "Sessão expirada. Por favor, faça login novamente."
+        );
+      }
+      
+      throw new AuthError(
+        "Erro ao verificar autenticação. Por favor, faça login novamente."
+      );
+    }
+
+    if (!user) {
+      throw new AuthError(
+        "Autenticação necessária. Por favor, faça login novamente."
+      );
+    }
+
+    return user;
+  } catch (error) {
+    if (error instanceof AuthError) {
+      throw error;
+    }
     throw new AuthError(
-      "Autenticação necessária. Por favor, faça login novamente."
+      "Erro ao verificar autenticação. Por favor, faça login novamente."
     );
   }
-
-  return user;
 };
 
 /**
@@ -84,9 +109,21 @@ export const requireAuth = async (): Promise<User> => {
  */
 export const checkAuth = async (): Promise<User | null> => {
   try {
-    const { data: { user } } = await supabase.auth.getUser();
+    const { data: { user }, error } = await supabase.auth.getUser();
+    
+    if (error) {
+      // Check if it's a refresh token error
+      if (error.message?.includes('refresh_token') || 
+          error.message?.includes('Refresh Token Not Found')) {
+        // Clear invalid session silently
+        await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
+      }
+      return null;
+    }
+    
     return user;
   } catch (error) {
+    console.error('Error checking auth:', error);
     return null;
   }
 };
