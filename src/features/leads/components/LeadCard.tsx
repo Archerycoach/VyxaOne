@@ -50,6 +50,7 @@ interface LeadCardProps {
   lead: LeadWithContacts;
   showArchived: boolean;
   canAssignLeads: boolean;
+  viewMode: "grid" | "list";
   onEdit: (lead: LeadWithContacts) => void;
   onDelete: (lead: LeadWithContacts) => void;
   onPermanentlyDelete?: (lead: LeadWithContacts) => void;
@@ -70,6 +71,7 @@ export function LeadCard({
   lead,
   showArchived,
   canAssignLeads,
+  viewMode,
   onEdit,
   onDelete,
   onPermanentlyDelete,
@@ -153,6 +155,188 @@ export function LeadCard({
     return typeMap[type || ""] || type || "N/A";
   };
 
+  // Grid view - Compact card
+  if (viewMode === "grid") {
+    return (
+      <Card className="p-4 hover:shadow-lg transition-shadow">
+        <div className="flex items-start justify-between mb-3">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-1">
+              <h3 className="text-base font-semibold text-gray-900 truncate">{lead.name}</h3>
+              {showArchived && (
+                <Badge variant="secondary" className="text-xs flex-shrink-0">
+                  Arquivada
+                </Badge>
+              )}
+            </div>
+            {lead.email && (
+              <p className="text-xs text-gray-600 truncate">{lead.email}</p>
+            )}
+          </div>
+          <div className="flex gap-1 flex-shrink-0">
+            <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
+              <DropdownMenuTrigger asChild>
+                <button className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-colors">
+                  <MoreVertical className="h-4 w-4" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <div className="px-2 py-1.5 text-xs font-semibold text-gray-500 uppercase">
+                  Comunicação
+                </div>
+                <DropdownMenuItem onClick={() => handleMenuItemClick(() => onEmail(lead))}>
+                  <Mail className="h-4 w-4 mr-2" />
+                  Email
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleMenuItemClick(() => onSMS(lead))}>
+                  <MessageSquare className="h-4 w-4 mr-2" />
+                  SMS
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleMenuItemClick(() => onWhatsApp(lead))}>
+                  <MessageCircle className="h-4 w-4 mr-2" />
+                  WhatsApp
+                </DropdownMenuItem>
+
+                <DropdownMenuSeparator />
+
+                <div className="px-2 py-1.5 text-xs font-semibold text-gray-500 uppercase">
+                  Calendário
+                </div>
+                <DropdownMenuItem onClick={() => handleMenuItemClick(() => onTask(lead))}>
+                  <CalendarDays className="h-4 w-4 mr-2" />
+                  Tarefa
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleMenuItemClick(() => onEvent(lead))}>
+                  <Calendar className="h-4 w-4 mr-2" />
+                  Evento
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleMenuItemClick(() => onInteraction(lead))}>
+                  <FileText className="h-4 w-4 mr-2" />
+                  Interação
+                </DropdownMenuItem>
+
+                <DropdownMenuSeparator />
+
+                <div className="px-2 py-1.5 text-xs font-semibold text-gray-500 uppercase">
+                  Gestão
+                </div>
+                <DropdownMenuItem onClick={() => handleMenuItemClick(() => onViewDetails(lead))}>
+                  <Eye className="h-4 w-4 mr-2" />
+                  Ver Detalhes
+                </DropdownMenuItem>
+                {!showArchived && (
+                  <DropdownMenuItem onClick={() => handleMenuItemClick(() => onNotes(lead))}>
+                    <StickyNote className="h-4 w-4 mr-2" />
+                    Notas
+                  </DropdownMenuItem>
+                )}
+                {!showArchived && onConvert && (
+                  <DropdownMenuItem onClick={() => handleMenuItemClick(() => onConvert(lead))}>
+                    <UserCheck className="h-4 w-4 mr-2" />
+                    Converter em Contacto
+                  </DropdownMenuItem>
+                )}
+                {canAssignLeads && !showArchived && onAssign && (
+                  <DropdownMenuItem onClick={() => handleMenuItemClick(() => onAssign(lead))}>
+                    <Users className="h-4 w-4 mr-2" />
+                    Atribuir Agente
+                  </DropdownMenuItem>
+                )}
+                {showArchived && (
+                  <DropdownMenuItem onClick={() => handleMenuItemClick(() => onRestore(lead))} className="text-green-600">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="23 4 23 10 17 10"></polyline>
+                      <polyline points="1 20 1 14 7 14"></polyline>
+                      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                    </svg>
+                    Restaurar Lead
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <button
+              onClick={() => onEdit(lead)}
+              className="p-1.5 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded-md transition-colors"
+            >
+              <Edit className="h-4 w-4" />
+            </button>
+
+            {showArchived && onPermanentlyDelete ? (
+              <button
+                onClick={() => {
+                  if (confirm(`⚠️ ATENÇÃO: Esta ação é irreversível!\n\nTem a certeza que deseja eliminar PERMANENTEMENTE "${lead.name}"?\n\nA lead será removida definitivamente do sistema e não poderá ser recuperada.`)) {
+                    onPermanentlyDelete(lead);
+                  }
+                }}
+                className="p-1.5 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-md transition-colors border border-red-300"
+                title="Eliminar permanentemente (irreversível)"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            ) : (
+              <button
+                onClick={() => onDelete(lead)}
+                className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-md transition-colors"
+                title="Arquivar lead"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-1.5 mb-3">
+          <Badge variant={getStatusBadgeVariant(lead.status)} className="text-xs">
+            {getStatusLabel(lead.status)}
+          </Badge>
+          <Badge variant="outline" className="text-xs">{getLeadTypeLabel(lead.lead_type)}</Badge>
+        </div>
+
+        <div className="space-y-1.5 text-xs text-gray-600">
+          {lead.phone && (
+            <div className="flex items-center gap-2">
+              <Phone className="h-3.5 w-3.5 flex-shrink-0" />
+              <span className="truncate">{lead.phone}</span>
+            </div>
+          )}
+          
+          {(lead.lead_type === "buyer" || lead.lead_type === "both") && (
+            lead.property_type || lead.location_preference || (lead.budget_min || lead.budget_max)
+          ) && (
+            <div className="pt-2 border-t">
+              <div className="font-medium text-gray-700 mb-1">Compra:</div>
+              {lead.property_type && <div className="truncate">🏠 {lead.property_type}</div>}
+              {lead.location_preference && <div className="truncate">📍 {lead.location_preference}</div>}
+              {(typeof lead.budget_min === "number" || typeof lead.budget_max === "number") && (
+                <div className="truncate">
+                  💰 {formatCurrency(lead.budget_min)} - {formatCurrency(lead.budget_max)}
+                </div>
+              )}
+            </div>
+          )}
+
+          {(lead.lead_type === "seller" || lead.lead_type === "both") && (
+            lead.desired_price || lead.property_area
+          ) && (
+            <div className="pt-2 border-t">
+              <div className="font-medium text-gray-700 mb-1">Venda:</div>
+              {lead.desired_price && (
+                <div className="truncate">💰 {formatCurrency(lead.desired_price)}</div>
+              )}
+              {lead.property_area && <div className="truncate">📏 {lead.property_area}m²</div>}
+            </div>
+          )}
+        </div>
+
+        <div className="text-xs text-gray-500 mt-3 pt-2 border-t">
+          📅 {formatDate(lead.created_at)}
+        </div>
+      </Card>
+    );
+  }
+
+  // List view - Full details card
   return (
     <Card className="p-6 hover:shadow-lg transition-shadow">
       <div className="flex items-start justify-between mb-4">

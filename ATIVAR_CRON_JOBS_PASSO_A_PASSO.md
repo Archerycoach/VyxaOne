@@ -403,5 +403,60 @@ Se continuar com problemas:
 
 ---
 
+### **Job 2: Automação de Workflows (Verificação de Gatilhos)**
+
+Este job verifica diariamente:
+- 🎂 Aniversários de leads
+- 📅 Datas importantes personalizadas
+- ⏰ Leads sem contacto há 3+ dias
+- 💤 Leads sem atividade há 7+ dias
+
+```sql
+SELECT cron.schedule(
+  'workflow-automation-check',
+  '0 7 * * *',  -- Todos os dias às 07:00 UTC
+  $$
+  SELECT
+    net.http_post(
+      url := 'https://SEU_PROJECT_REF.supabase.co/functions/v1/workflow-automation',
+      headers := jsonb_build_object(
+        'Authorization', 'Bearer SUA_ANON_KEY',
+        'Content-Type', 'application/json'
+      )
+    ) AS request_id;
+  $$
+);
+```
+
+**⚠️ IMPORTANTE:** Substitua `SEU_PROJECT_REF` e `SUA_ANON_KEY` pelos valores reais!
+
+---
+
+## ✅ CHECKLIST FINAL
+
+Antes de considerar a configuração completa, verifique:
+
+- [ ] ✅ SMTP configurado e testado em `/settings`
+- [ ] ✅ Notificações ativadas no perfil
+- [ ] ✅ Teste manual via cURL funcionou
+- [ ] ✅ Extensão `pg_cron` ativada
+- [ ] ✅ Cron job criado no SQL Editor
+- [ ] ✅ Cron job aparece como `active = true`
+- [ ] ✅ Email de teste recebido
+- [ ] ✅ Logs da Edge Function sem erros
+
+---
+
+## 📞 SUPORTE
+
+Se continuar com problemas:
+
+1. **Verifique os logs** da Edge Function no Dashboard
+2. **Execute o teste manual** via cURL para ver erro detalhado
+3. **Verifique a tabela** `cron.job_run_details` para ver histórico
+4. **Consulte a documentação** oficial do Supabase sobre [pg_cron](https://supabase.com/docs/guides/database/extensions/pg_cron)
+
+---
+
 **Última atualização:** 2026-01-12  
 **Versão:** 1.0

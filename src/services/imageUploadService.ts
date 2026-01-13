@@ -1,6 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 
-export type EntityType = "profile" | "property";
+export type EntityType = "profile" | "property" | "system";
 
 interface UploadResult {
   success: boolean;

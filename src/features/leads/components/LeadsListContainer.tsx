@@ -1,9 +1,18 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { LeadCard } from "./LeadCard";
 import { LeadFilters } from "./LeadFilters";
 import { LeadDialogs } from "./LeadDialogs";
 import { LeadNotesDialog } from "@/components/leads/LeadNotesDialog";
 import { AssignLeadDialog } from "@/components/leads/AssignLeadDialog";
+import { Button } from "@/components/ui/button";
+import { LayoutGrid, List, Edit, MoreVertical, Eye } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Badge } from "@/components/ui/badge";
 import {
   useLeads,
   useLeadFilters,
@@ -11,6 +20,7 @@ import {
   useLeadInteractions,
   useLeadActions,
 } from "../hooks";
+import { getLeadColumnsConfig, type LeadColumnConfig } from "@/services/leadColumnsService";
 import type { LeadWithContacts } from "@/services/leadsService";
 
 interface LeadsListContainerProps {
@@ -26,6 +36,39 @@ export function LeadsListContainer({
 }: LeadsListContainerProps) {
   // Filter states
   const [showArchived, setShowArchived] = useState(false);
+  
+  // View mode state with localStorage persistence
+  const [viewMode, setViewMode] = useState<"grid" | "list">(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("leadsViewMode");
+      return (saved === "grid" || saved === "list") ? saved : "grid";
+    }
+    return "grid";
+  });
+
+  // Columns configuration
+  const [columnsConfig, setColumnsConfig] = useState<LeadColumnConfig[]>([]);
+
+  // Save view mode preference
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("leadsViewMode", viewMode);
+    }
+  }, [viewMode]);
+
+  // Load columns configuration
+  useEffect(() => {
+    loadColumnsConfig();
+  }, []);
+
+  const loadColumnsConfig = async () => {
+    try {
+      const config = await getLeadColumnsConfig();
+      setColumnsConfig(config.filter((col) => col.is_visible));
+    } catch (error) {
+      console.error("Failed to load columns config:", error);
+    }
+  };
 
   // Fetch leads data with archived support
   const { leads, isLoading, error, refetch } = useLeads(showArchived);
@@ -216,6 +259,91 @@ export function LeadsListContainer({
     await createNewInteraction(selectedLead.id);
   };
 
+  // Helper functions for table
+  const formatCurrency = (value: number | null | undefined) => {
+    if (!value) return "-";
+    return new Intl.NumberFormat("pt-PT", {
+      style: "currency",
+      currency: "EUR",
+      maximumFractionDigits: 0,
+    }).format(value);
+  };
+
+  const formatDate = (date: string | null | undefined) => {
+    if (!date) return "-";
+    return new Date(date).toLocaleDateString("pt-PT", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
+  const getStatusBadge = (status: string | null | undefined) => {
+    const statusMap: Record<string, { label: string; variant: "default" | "secondary" | "destructive" }> = {
+      new: { label: "Novo", variant: "default" },
+      contacted: { label: "Contactado", variant: "secondary" },
+      qualified: { label: "Qualificado", variant: "default" },
+      proposal: { label: "Proposta", variant: "default" },
+      negotiation: { label: "Negociação", variant: "default" },
+      won: { label: "Ganho", variant: "default" },
+      lost: { label: "Perdido", variant: "destructive" },
+    };
+    const config = statusMap[status || ""] || { label: status || "-", variant: "secondary" as const };
+    return <Badge variant={config.variant}>{config.label}</Badge>;
+  };
+
+  const getLeadTypeLabel = (type: string | null | undefined) => {
+    const typeMap: Record<string, string> = {
+      buyer: "Comprador",
+      seller: "Vendedor",
+      both: "Ambos",
+    };
+    return typeMap[type || ""] || type || "-";
+  };
+
+  const getCellValue = (lead: LeadWithContacts, columnKey: string) => {
+    switch (columnKey) {
+      case "name":
+        return lead.name;
+      case "email":
+        return lead.email || "-";
+      case "phone":
+        return lead.phone || "-";
+      case "status":
+        return getStatusBadge(lead.status);
+      case "lead_type":
+        return getLeadTypeLabel(lead.lead_type);
+      case "location_preference":
+        return lead.location_preference || "-";
+      case "property_type":
+        return lead.property_type || "-";
+      case "budget_min":
+        return formatCurrency(lead.budget_min);
+      case "budget_max":
+        return formatCurrency(lead.budget_max);
+      case "bedrooms":
+        return lead.bedrooms || "-";
+      case "bathrooms":
+        return lead.bathrooms || "-";
+      case "min_area":
+        return lead.min_area ? `${lead.min_area}m²` : "-";
+      case "property_area":
+        return lead.property_area ? `${lead.property_area}m²` : "-";
+      case "desired_price":
+        return formatCurrency(lead.desired_price);
+      case "needs_financing":
+        return lead.needs_financing ? "Sim" : "Não";
+      case "created_at":
+        return formatDate(lead.created_at);
+      case "assigned_to":
+        return lead.assigned_to || "-";
+      default:
+        return "-";
+    }
+  };
+
   // Loading and error states
   if (isLoading) {
     return (
@@ -242,14 +370,38 @@ export function LeadsListContainer({
 
   return (
     <div className="space-y-6">
-      <LeadFilters
-        searchTerm={searchTerm}
-        onSearchChange={setSearchTerm}
-        filterType={filterType}
-        onFilterChange={setFilterType}
-        showArchived={showArchived}
-        onToggleArchived={() => setShowArchived(!showArchived)}
-      />
+      <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+        <LeadFilters
+          searchTerm={searchTerm}
+          onSearchChange={setSearchTerm}
+          filterType={filterType}
+          onFilterChange={setFilterType}
+          showArchived={showArchived}
+          onToggleArchived={() => setShowArchived(!showArchived)}
+        />
+        
+        {/* View Mode Toggle */}
+        <div className="flex gap-1 border rounded-lg p-1 bg-gray-50">
+          <Button
+            variant={viewMode === "grid" ? "default" : "ghost"}
+            size="sm"
+            onClick={() => setViewMode("grid")}
+            className="gap-2"
+          >
+            <LayoutGrid className="h-4 w-4" />
+            <span className="hidden sm:inline">Grelha</span>
+          </Button>
+          <Button
+            variant={viewMode === "list" ? "default" : "ghost"}
+            size="sm"
+            onClick={() => setViewMode("list")}
+            className="gap-2"
+          >
+            <List className="h-4 w-4" />
+            <span className="hidden sm:inline">Lista</span>
+          </Button>
+        </div>
+      </div>
 
       {filteredLeads.length === 0 ? (
         <div className="text-center py-12 text-gray-500">
@@ -261,14 +413,15 @@ export function LeadsListContainer({
             <p>Ainda não existem leads. Crie a primeira!</p>
           )}
         </div>
-      ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      ) : viewMode === "grid" ? (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {filteredLeads.map((lead) => (
             <LeadCard
               key={lead.id}
               lead={lead}
               showArchived={showArchived}
               canAssignLeads={canAssignLeads}
+              viewMode={viewMode}
               onEdit={onEdit}
               onDelete={(lead) => handleDelete(lead.id)}
               onPermanentlyDelete={handlePermanentlyDelete}
@@ -285,6 +438,99 @@ export function LeadsListContainer({
               onWhatsApp={sendWhatsApp}
             />
           ))}
+        </div>
+      ) : (
+        <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-800 text-white text-sm">
+                <tr>
+                  {columnsConfig.map((column) => (
+                    <th
+                      key={column.column_key}
+                      className="px-4 py-3 text-left font-medium"
+                      style={{ width: column.column_width }}
+                    >
+                      {column.column_label}
+                    </th>
+                  ))}
+                  <th className="px-4 py-3 text-left font-medium w-32">Ações</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {filteredLeads.map((lead, index) => {
+                  const bgClass = index % 2 === 0 ? "bg-white" : "bg-gray-50";
+                  return (
+                    <tr key={lead.id} className={`${bgClass} hover:bg-blue-50 transition-colors`}>
+                      {columnsConfig.map((column) => (
+                        <td key={column.column_key} className="px-4 py-3 text-sm text-gray-700">
+                          {getCellValue(lead, column.column_key)}
+                        </td>
+                      ))}
+                      <td className="px-4 py-3">
+                        <div className="flex gap-1">
+                          <button
+                            onClick={() => onEdit(lead)}
+                            className="p-1.5 text-blue-500 hover:bg-blue-100 rounded transition-colors"
+                            title="Editar"
+                          >
+                            <Edit className="h-4 w-4" />
+                          </button>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <button className="p-1.5 text-gray-500 hover:bg-gray-100 rounded transition-colors">
+                                <MoreVertical className="h-4 w-4" />
+                              </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-56">
+                              <DropdownMenuItem onClick={() => handleViewDetails(lead)}>
+                                <Eye className="h-4 w-4 mr-2" />
+                                Ver Detalhes
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleTask(lead)}>
+                                Criar Tarefa
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleEvent(lead)}>
+                                Criar Evento
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleInteraction(lead)}>
+                                Registar Interação
+                              </DropdownMenuItem>
+                              {!showArchived && (
+                                <DropdownMenuItem onClick={() => handleNotes(lead)}>
+                                  Ver Notas
+                                </DropdownMenuItem>
+                              )}
+                              {canAssignLeads && !showArchived && (
+                                <DropdownMenuItem onClick={() => handleAssign(lead)}>
+                                  Atribuir Agente
+                                </DropdownMenuItem>
+                              )}
+                              {showArchived ? (
+                                <DropdownMenuItem
+                                  onClick={() => handleRestore(lead.id)}
+                                  className="text-green-600"
+                                >
+                                  Restaurar
+                                </DropdownMenuItem>
+                              ) : (
+                                <DropdownMenuItem
+                                  onClick={() => handleDelete(lead.id)}
+                                  className="text-red-600"
+                                >
+                                  Arquivar
+                                </DropdownMenuItem>
+                              )}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -315,7 +561,6 @@ export function LeadsListContainer({
         selectedLead={selectedLead}
       />
 
-      {/* Notes Dialog - Managed at container level */}
       {selectedLead && (
         <LeadNotesDialog
           leadId={selectedLead.id}
@@ -325,7 +570,6 @@ export function LeadsListContainer({
         />
       )}
 
-      {/* Assign Dialog - Managed at container level */}
       {selectedLead && canAssignLeads && (
         <AssignLeadDialog
           leadId={selectedLead.id}

@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { SMTPClient } from "https://deno.land/x/denomailer@1.6.0/mod.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -10,7 +11,8 @@ interface WorkflowRule {
   id: string;
   trigger_type: string;
   trigger_config: any;
-  actions: any[];
+  action_type: string;
+  action_config: any;
   is_active: boolean;
   user_id: string;
 }
@@ -24,7 +26,13 @@ interface Lead {
   important_dates: any[];
   last_contact_date: string | null;
   last_activity_date: string | null;
-  user_id: string;
+  assigned_to: string;
+}
+
+interface UserProfile {
+  id: string;
+  email: string;
+  full_name: string;
 }
 
 serve(async (req) => {
@@ -50,43 +58,76 @@ serve(async (req) => {
     console.log(`📋 Found ${rules?.length || 0} active workflow rules`);
 
     let totalExecutions = 0;
+    const executionResults: any[] = [];
 
     // Process each rule
     for (const rule of rules || []) {
       try {
         const leadsToProcess = await getLeadsForTrigger(supabase, rule);
         
-        console.log(`🎯 Rule "${rule.trigger_type}": Found ${leadsToProcess.length} leads to process`);
+        console.log(`🎯 Rule "${rule.trigger_type}" (User: ${rule.user_id}): Found ${leadsToProcess.length} leads to process`);
 
         for (const lead of leadsToProcess) {
-          // Check if workflow was already executed recently (avoid duplicates)
-          const { data: recentExecution } = await supabase
-            .from("workflow_executions")
-            .select("id")
-            .eq("rule_id", rule.id)
-            .eq("lead_id", lead.id)
-            .gte("executed_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()) // Last 24h
-            .limit(1)
-            .single();
+          try {
+            // Check if workflow was already executed recently (avoid duplicates)
+            const { data: recentExecution } = await supabase
+              .from("workflow_executions")
+              .select("id")
+              .eq("workflow_id", rule.id)
+              .eq("lead_id", lead.id)
+              .gte("executed_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()) // Last 24h
+              .limit(1)
+              .single();
 
-          if (recentExecution) {
-            console.log(`⏭️  Skipping lead ${lead.id} - already executed in last 24h`);
-            continue;
+            if (recentExecution) {
+              console.log(`⏭️  Skipping lead ${lead.id} - already executed in last 24h`);
+              continue;
+            }
+
+            // Execute workflow action
+            await executeWorkflowAction(supabase, rule, lead);
+            totalExecutions++;
+
+            // Log execution
+            await supabase.from("workflow_executions").insert({
+              workflow_id: rule.id,
+              lead_id: lead.id,
+              user_id: rule.user_id,
+              executed_at: new Date().toISOString(),
+              status: "success",
+            });
+
+            executionResults.push({
+              workflow_id: rule.id,
+              lead_id: lead.id,
+              lead_name: lead.name,
+              trigger: rule.trigger_type,
+              status: "success"
+            });
+
+            console.log(`✅ Executed workflow for lead: ${lead.name}`);
+          } catch (leadError) {
+            console.error(`❌ Error processing lead ${lead.id}:`, leadError);
+            
+            // Log failed execution
+            await supabase.from("workflow_executions").insert({
+              workflow_id: rule.id,
+              lead_id: lead.id,
+              user_id: rule.user_id,
+              executed_at: new Date().toISOString(),
+              status: "failed",
+              error_message: leadError instanceof Error ? leadError.message : String(leadError),
+            });
+
+            executionResults.push({
+              workflow_id: rule.id,
+              lead_id: lead.id,
+              lead_name: lead.name,
+              trigger: rule.trigger_type,
+              status: "failed",
+              error: leadError instanceof Error ? leadError.message : String(leadError)
+            });
           }
-
-          // Execute workflow actions
-          await executeWorkflowActions(supabase, rule, lead);
-          totalExecutions++;
-
-          // Log execution
-          await supabase.from("workflow_executions").insert({
-            rule_id: rule.id,
-            lead_id: lead.id,
-            executed_at: new Date().toISOString(),
-            status: "success",
-          });
-
-          console.log(`✅ Executed workflow for lead: ${lead.name}`);
         }
       } catch (error) {
         console.error(`❌ Error processing rule ${rule.id}:`, error);
@@ -99,13 +140,16 @@ serve(async (req) => {
       JSON.stringify({
         success: true,
         message: `Processed ${rules?.length || 0} rules, executed ${totalExecutions} workflows`,
+        totalRules: rules?.length || 0,
+        totalExecutions,
+        executionResults,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {
     console.error("❌ Workflow automation error:", error);
     return new Response(
-      JSON.stringify({ success: false, error: error.message }),
+      JSON.stringify({ success: false, error: error instanceof Error ? error.message : String(error) }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 }
     );
   }
@@ -116,11 +160,16 @@ async function getLeadsForTrigger(supabase: any, rule: WorkflowRule): Promise<Le
   const now = new Date();
   const today = now.toISOString().split("T")[0];
 
-  let query = supabase.from("leads").select("*").eq("user_id", user_id);
+  // Base query - filter by assigned user, not creator
+  let query = supabase
+    .from("leads")
+    .select("*")
+    .eq("assigned_to", user_id)
+    .is("archived_at", null); // Only active leads
 
   switch (trigger_type) {
     case "birthday": {
-      // Check birthdays in next 7 days
+      // Check birthdays in next N days
       const daysAhead = trigger_config?.days_before || 7;
       const targetDate = new Date(now);
       targetDate.setDate(targetDate.getDate() + daysAhead);
@@ -138,7 +187,7 @@ async function getLeadsForTrigger(supabase: any, rule: WorkflowRule): Promise<Le
     }
 
     case "custom_date": {
-      // Check important dates in next 7 days
+      // Check important dates in next N days
       const daysAhead = trigger_config?.days_before || 7;
       const targetDate = new Date(now);
       targetDate.setDate(targetDate.getDate() + daysAhead);
@@ -155,26 +204,52 @@ async function getLeadsForTrigger(supabase: any, rule: WorkflowRule): Promise<Le
       });
     }
 
-    case "no_contact_3_days":
-    case "no_activity_7_days": {
-      const days = trigger_type === "no_contact_3_days" ? 3 : 7;
+    case "no_contact_3_days": {
+      const days = 3;
       const cutoffDate = new Date(now);
       cutoffDate.setDate(cutoffDate.getDate() - days);
       const cutoffDateStr = cutoffDate.toISOString();
 
-      const field = trigger_type === "no_contact_3_days" ? "last_contact_date" : "last_activity_date";
-      
-      const { data } = await query.or(`${field}.is.null,${field}.lt.${cutoffDateStr}`);
+      const { data } = await query.or(`last_contact_date.is.null,last_contact_date.lt.${cutoffDateStr}`);
+      return data || [];
+    }
+
+    case "no_activity_7_days": {
+      const days = 7;
+      const cutoffDate = new Date(now);
+      cutoffDate.setDate(cutoffDate.getDate() - days);
+      const cutoffDateStr = cutoffDate.toISOString();
+
+      const { data } = await query.or(`last_activity_date.is.null,last_activity_date.lt.${cutoffDateStr}`);
       return data || [];
     }
 
     case "visit_scheduled": {
-      // This is handled by database trigger, not cron
-      return [];
+      // Check for visits scheduled today or tomorrow
+      const tomorrow = new Date(now);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const tomorrowStr = tomorrow.toISOString().split("T")[0];
+
+      // Get leads with calendar events scheduled
+      const { data: events } = await supabase
+        .from("calendar_events")
+        .select("lead_id")
+        .eq("user_id", user_id)
+        .gte("start_time", today)
+        .lte("start_time", tomorrowStr + "T23:59:59")
+        .not("lead_id", "is", null);
+
+      if (!events || events.length === 0) return [];
+
+      const leadIds = [...new Set(events.map((e: any) => e.lead_id))];
+      
+      const { data } = await query.in("id", leadIds);
+      return data || [];
     }
 
     case "lead_created": {
-      // Check leads created today
+      // This trigger is handled immediately when lead is created, not by cron
+      // But we can still check for leads created today that might have missed workflow
       const { data } = await query.gte("created_at", today);
       return data || [];
     }
@@ -184,108 +259,126 @@ async function getLeadsForTrigger(supabase: any, rule: WorkflowRule): Promise<Le
   }
 }
 
-async function executeWorkflowActions(supabase: any, rule: WorkflowRule, lead: Lead) {
-  const actions = rule.actions || [];
+async function executeWorkflowAction(supabase: any, rule: WorkflowRule, lead: Lead) {
+  if (rule.action_type === "send_email") {
+    await sendEmailAction(supabase, rule, lead);
+  } else {
+    console.warn(`Action type ${rule.action_type} not supported in cron automation`);
+  }
+}
 
-  for (const action of actions) {
-    try {
-      switch (action.type) {
-        case "send_email":
-          await sendEmail(supabase, rule.user_id, lead, action.config);
-          break;
+async function sendEmailAction(supabase: any, rule: WorkflowRule, lead: Lead) {
+  try {
+    // Get user profile
+    const { data: userProfile, error: profileError } = await supabase
+      .from("profiles")
+      .select("id, email, full_name")
+      .eq("id", rule.user_id)
+      .single();
 
-        case "create_task":
-          await createTask(supabase, rule.user_id, lead, action.config);
-          break;
-
-        case "create_calendar_event":
-          await createCalendarEvent(supabase, rule.user_id, lead, action.config);
-          break;
-
-        case "send_notification":
-          await sendNotification(supabase, rule.user_id, lead, action.config);
-          break;
-
-        default:
-          console.warn(`Unknown action type: ${action.type}`);
-      }
-    } catch (error) {
-      console.error(`Error executing action ${action.type}:`, error);
+    if (profileError || !userProfile) {
+      throw new Error("User profile not found");
     }
+
+    // Get user's SMTP settings
+    const { data: smtpSettings, error: smtpError } = await supabase
+      .from("user_smtp_settings")
+      .select("*")
+      .eq("user_id", rule.user_id)
+      .single();
+
+    if (smtpError || !smtpSettings) {
+      console.warn("No SMTP settings found for user:", rule.user_id);
+      throw new Error("SMTP settings not configured");
+    }
+
+    // Determine recipient based on workflow trigger
+    let recipientEmail = "";
+    let recipientName = "";
+    
+    switch (rule.trigger_type) {
+      case "lead_created":
+      case "birthday":
+      case "custom_date":
+        // Send to lead/contact
+        recipientEmail = lead.email;
+        recipientName = lead.name;
+        break;
+        
+      case "visit_scheduled":
+        // Send to both user and lead
+        // For now, send two separate emails
+        await sendSingleEmail(smtpSettings, userProfile.email, userProfile.full_name, rule, lead);
+        recipientEmail = lead.email;
+        recipientName = lead.name;
+        break;
+        
+      case "no_contact_3_days":
+      case "no_activity_7_days":
+        // Send to user only
+        recipientEmail = userProfile.email;
+        recipientName = userProfile.full_name;
+        break;
+        
+      default:
+        recipientEmail = userProfile.email;
+        recipientName = userProfile.full_name;
+    }
+
+    if (!recipientEmail) {
+      throw new Error("Recipient email not found");
+    }
+
+    await sendSingleEmail(smtpSettings, recipientEmail, recipientName, rule, lead);
+
+    console.log(`✅ Email sent to ${recipientEmail} for workflow: ${rule.trigger_type}`);
+  } catch (error) {
+    console.error("❌ Failed to send email:", error);
+    throw error;
   }
 }
 
-async function sendEmail(supabase: any, userId: string, lead: Lead, config: any) {
-  // Get user's SMTP settings
-  const { data: smtpSettings } = await supabase
-    .from("user_smtp_settings")
-    .select("*")
-    .eq("user_id", userId)
-    .single();
+async function sendSingleEmail(
+  smtpSettings: any,
+  recipientEmail: string,
+  recipientName: string,
+  rule: WorkflowRule,
+  lead: Lead
+) {
+  const config = rule.action_config || {};
+  
+  // Get subject and body from action_config
+  const subject = replaceVariables(config.subject || "Notificação Automática", lead);
+  const body = replaceVariables(config.body || "Esta é uma mensagem automática.", lead);
 
-  if (!smtpSettings) {
-    console.warn("No SMTP settings found for user:", userId);
-    return;
+  // Create SMTP client
+  const client = new SMTPClient({
+    connection: {
+      hostname: smtpSettings.smtp_host,
+      port: smtpSettings.smtp_port,
+      tls: smtpSettings.smtp_secure,
+      auth: {
+        username: smtpSettings.smtp_user,
+        password: smtpSettings.smtp_password,
+      },
+    },
+  });
+
+  try {
+    await client.send({
+      from: smtpSettings.smtp_from_email || smtpSettings.smtp_user,
+      to: recipientEmail,
+      subject: subject,
+      content: body.replace(/\n/g, "<br>"),
+      html: body.replace(/\n/g, "<br>"),
+    });
+
+    await client.close();
+    console.log(`📧 Email sent successfully to: ${recipientEmail}`);
+  } catch (error) {
+    await client.close();
+    throw error;
   }
-
-  // Replace variables in subject and body
-  const subject = replaceVariables(config.subject, lead);
-  const body = replaceVariables(config.body, lead);
-
-  // Call SMTP send API (this would need to be implemented as another edge function or API endpoint)
-  console.log(`📧 Would send email to ${lead.email}: ${subject}`);
-  // TODO: Implement actual email sending via SMTP
-}
-
-async function createTask(supabase: any, userId: string, lead: Lead, config: any) {
-  const title = replaceVariables(config.title, lead);
-  const description = replaceVariables(config.description || "", lead);
-
-  const { error } = await supabase.from("tasks").insert({
-    user_id: userId,
-    related_lead_id: lead.id,
-    title,
-    description,
-    status: "pending",
-    priority: config.priority || "medium",
-    due_date: config.due_date || null,
-  });
-
-  if (error) throw error;
-  console.log(`✅ Created task for lead: ${lead.name}`);
-}
-
-async function createCalendarEvent(supabase: any, userId: string, lead: Lead, config: any) {
-  const title = replaceVariables(config.title, lead);
-  const description = replaceVariables(config.description || "", lead);
-
-  const { error } = await supabase.from("calendar_events").insert({
-    user_id: userId,
-    lead_id: lead.id,
-    title,
-    description,
-    start_time: config.start_time,
-    end_time: config.end_time,
-    event_type: config.event_type || "meeting",
-  });
-
-  if (error) throw error;
-  console.log(`📅 Created calendar event for lead: ${lead.name}`);
-}
-
-async function sendNotification(supabase: any, userId: string, lead: Lead, config: any) {
-  const message = replaceVariables(config.message, lead);
-
-  const { error } = await supabase.from("notifications").insert({
-    user_id: userId,
-    title: config.title || "Workflow Notification",
-    message,
-    type: "workflow",
-    is_read: false,
-  });
-
-  if (error) throw error;
-  console.log(`🔔 Created notification for user: ${userId}`);
 }
 
 function replaceVariables(text: string, lead: Lead): string {
@@ -293,5 +386,6 @@ function replaceVariables(text: string, lead: Lead): string {
     .replace(/{nome}/g, lead.name || "")
     .replace(/{email}/g, lead.email || "")
     .replace(/{telefone}/g, lead.phone || "")
-    .replace(/{lead_name}/g, lead.name || "");
+    .replace(/{lead_name}/g, lead.name || "")
+    .replace(/{empresa}/g, "REMAX"); // Default company name
 }

@@ -14,7 +14,9 @@ import {
   TrendingUp,
   AlertCircle,
   CheckCircle,
-  ArrowRight
+  ArrowRight,
+  Palette,
+  Plug
 } from "lucide-react";
 import { getAllUsers } from "@/services/adminService";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
@@ -84,6 +86,22 @@ export default function AdminDashboard() {
       bgColor: "bg-blue-50",
     },
     {
+      title: "Subscrições",
+      description: "Gerir planos e subscrições",
+      icon: CreditCard,
+      href: "/admin/subscriptions",
+      color: "text-green-600",
+      bgColor: "bg-green-50",
+    },
+    {
+      title: "Métodos de Pagamento",
+      description: "Configurar Stripe, EuPago e outros",
+      icon: CreditCard,
+      href: "/admin/payment-settings",
+      color: "text-indigo-600",
+      bgColor: "bg-indigo-50",
+    },
+    {
       title: "Segurança e Permissões",
       description: "Configurar roles e políticas de segurança",
       icon: Shield,
@@ -100,28 +118,44 @@ export default function AdminDashboard() {
       bgColor: "bg-slate-50",
     },
     {
-      title: "Subscrições",
-      description: "Gerir planos e subscrições",
-      icon: CreditCard,
-      href: "/admin/subscriptions",
-      color: "text-green-600",
-      bgColor: "bg-green-50",
-    },
-    {
-      title: "Workflows",
-      description: "Automatizações e processos",
+      title: "Workflows Admin",
+      description: "Automatizações e processos administrativos",
       icon: Workflow,
       href: "/admin/workflows",
       color: "text-orange-600",
       bgColor: "bg-orange-50",
     },
     {
-      title: "Métodos de Pagamento",
-      description: "Configurar Stripe, EuPago e outros",
-      icon: CreditCard,
-      href: "/admin/payment-settings",
-      color: "text-indigo-600",
-      bgColor: "bg-indigo-50",
+      title: "Workflows Pessoal",
+      description: "Gerir workflows pessoais",
+      icon: Workflow,
+      href: "/workflows",
+      color: "text-purple-600",
+      bgColor: "bg-purple-50",
+    },
+    {
+      title: "Workflows Equipa",
+      description: "Gerir workflows da equipa",
+      icon: Workflow,
+      href: "/team-workflows",
+      color: "text-pink-600",
+      bgColor: "bg-pink-50",
+    },
+    {
+      title: "Configurações Frontend",
+      description: "Personalizar interface e colunas",
+      icon: Palette,
+      href: "/admin/frontend-settings",
+      color: "text-cyan-600",
+      bgColor: "bg-cyan-50",
+    },
+    {
+      title: "Integrações",
+      description: "Configurar integrações externas",
+      icon: Plug,
+      href: "/admin/integrations",
+      color: "text-teal-600",
+      bgColor: "bg-teal-50",
     },
   ];
 

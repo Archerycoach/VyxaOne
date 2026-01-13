@@ -171,6 +171,15 @@ export const createLead = async (lead: LeadInsert): Promise<Lead> => {
   CacheManager.invalidateLeadsRelated();
   console.log("[leadsService] Cache invalidated");
 
+  // ✅ Process workflows automatically for new lead
+  try {
+    await processLeadWorkflows(data.id, "lead_created");
+    console.log("[leadsService] Workflows processed for new lead:", data.id);
+  } catch (workflowError) {
+    console.error("[leadsService] Error processing workflows:", workflowError);
+    // Don't throw - workflow errors shouldn't block lead creation
+  }
+
   return data as Lead;
 };
 

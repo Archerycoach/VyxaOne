@@ -61,7 +61,82 @@ export const deleteWorkflowRule = async (id: string) => {
 
 export const processLeadWorkflows = async (leadId: string, triggerType: string) => {
   console.log(`Processing workflows for lead ${leadId} with trigger ${triggerType}`);
-  return true;
+  
+  try {
+    // Get current user
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      console.log("No authenticated user, skipping workflow processing");
+      return false;
+    }
+
+    // Get lead data
+    const { data: lead, error: leadError } = await supabase
+      .from("leads")
+      .select("*")
+      .eq("id", leadId)
+      .single();
+
+    if (leadError || !lead) {
+      console.error("Failed to fetch lead:", leadError);
+      return false;
+    }
+
+    // Get active workflows for this trigger type and user
+    // Cast supabase to any to avoid TS2589 (excessively deep type instantiation)
+    const query = (supabase as any)
+      .from("lead_workflow_rules")
+      .select("*")
+      .eq("trigger_type", triggerType)
+      .eq("is_active", true)
+      .eq("user_id", user.id);
+
+    const { data: workflows, error: workflowsError } = await query;
+
+    if (workflowsError) {
+      console.error("Failed to fetch workflows:", workflowsError);
+      return false;
+    }
+
+    if (!workflows || workflows.length === 0) {
+      console.log(`No active workflows found for trigger: ${triggerType}`);
+      return true;
+    }
+
+    console.log(`Found ${workflows.length} active workflows for trigger: ${triggerType}`);
+
+    // Execute each workflow
+    for (const workflow of workflows) {
+      try {
+        // Check if workflow was already executed recently (avoid duplicates)
+        const { data: recentExecution } = await supabase
+          .from("workflow_executions")
+          .select("id")
+          .eq("workflow_id", workflow.id)
+          .eq("lead_id", leadId)
+          .gte("executed_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+          .limit(1)
+          .single();
+
+        if (recentExecution) {
+          console.log(`Skipping workflow ${workflow.id} - already executed in last 24h`);
+          continue;
+        }
+
+        // Execute workflow
+        await executeWorkflowForLead(workflow.id, leadId, user.id);
+        console.log(`✅ Successfully executed workflow ${workflow.id} for lead ${leadId}`);
+      } catch (error) {
+        console.error(`Failed to execute workflow ${workflow.id}:`, error);
+        // Continue with next workflow
+      }
+    }
+
+    return true;
+  } catch (error) {
+    console.error("Error in processLeadWorkflows:", error);
+    return false;
+  }
 };
 
 export const executeWorkflowForLead = async (
@@ -174,6 +249,11 @@ async function sendEmailAction(action: any, lead: any, content: string, userId: 
       throw new Error("Sessão não encontrada");
     }
 
+    // Get email configuration from action config
+    const config = action.config || action;
+    const subject = personalizeContent(config.subject || action.subject || "Mensagem automática", lead);
+    const body = personalizeContent(config.body || action.body || content, lead);
+
     const response = await fetch("/api/smtp/send", {
       method: "POST",
       headers: {
@@ -182,9 +262,9 @@ async function sendEmailAction(action: any, lead: any, content: string, userId: 
       },
       body: JSON.stringify({
         to: lead.email,
-        subject: personalizeContent(action.subject || "Mensagem automática", lead),
-        html: content.replace(/\n/g, "<br>"),
-        text: content,
+        subject: subject,
+        html: body.replace(/\n/g, "<br>"),
+        text: body,
       }),
     });
 
@@ -288,5 +368,6 @@ function personalizeContent(content: string, lead: any): string {
     .replace(/{nome}/g, lead.name || "")
     .replace(/{email}/g, lead.email || "")
     .replace(/{telefone}/g, lead.phone || "")
-    .replace(/{lead_name}/g, lead.name || "");
+    .replace(/{lead_name}/g, lead.name || "")
+    .replace(/{empresa}/g, "REMAX"); // Default company name
 }

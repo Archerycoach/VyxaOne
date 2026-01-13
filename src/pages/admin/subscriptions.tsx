@@ -110,7 +110,7 @@ export default function SubscriptionsManagement() {
     description: "",
     price: 0,
     currency: "EUR",
-    billing_interval: "month" as "month" | "year",
+    billing_interval: "monthly" as "monthly" | "yearly",
     features: [] as string[],
     is_active: true,
   });
@@ -343,7 +343,7 @@ export default function SubscriptionsManagement() {
         description: "",
         price: 0,
         currency: "EUR",
-        billing_interval: "month",
+        billing_interval: "monthly",
         features: [],
         is_active: true,
       });
@@ -448,7 +448,7 @@ export default function SubscriptionsManagement() {
       description: plan.description || "",
       price: plan.price,
       currency: plan.currency,
-      billing_interval: plan.billing_interval as "month" | "year",
+      billing_interval: plan.billing_interval as "monthly" | "yearly",
       features: features,
       is_active: plan.is_active,
     });
@@ -673,7 +673,7 @@ export default function SubscriptionsManagement() {
                         <div className="text-3xl font-bold mb-4">
                           {plan.price}€
                           <span className="text-sm font-normal text-gray-500">
-                            /{plan.billing_interval === "month" ? "mês" : "ano"}
+                            /{plan.billing_interval === "monthly" ? "mês" : "ano"}
                           </span>
                         </div>
                         {Array.isArray(plan.features) && plan.features.length > 0 && (
@@ -726,7 +726,7 @@ export default function SubscriptionsManagement() {
                         <TableCell className="font-medium">{plan.name}</TableCell>
                         <TableCell>{plan.price}€</TableCell>
                         <TableCell>
-                          {plan.billing_interval === "month" ? "Mensal" : "Anual"}
+                          {plan.billing_interval === "monthly" ? "Mensal" : "Anual"}
                         </TableCell>
                         <TableCell>
                           <Badge variant={plan.is_active ? "default" : "secondary"}>
@@ -834,7 +834,7 @@ export default function SubscriptionsManagement() {
                       <SelectContent>
                         {plans.filter(p => p.is_active).map((plan) => (
                           <SelectItem key={plan.id} value={plan.id}>
-                            {plan.name} - {plan.price}€/{plan.billing_interval === "month" ? "mês" : "ano"}
+                            {plan.name} - {plan.price}€/{plan.billing_interval === "monthly" ? "mês" : "ano"}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -992,7 +992,7 @@ export default function SubscriptionsManagement() {
                   <Label htmlFor="planInterval">Intervalo</Label>
                   <Select
                     value={planForm.billing_interval}
-                    onValueChange={(value: "month" | "year") =>
+                    onValueChange={(value: "monthly" | "yearly") =>
                       setPlanForm({ ...planForm, billing_interval: value })
                     }
                   >
@@ -1000,8 +1000,8 @@ export default function SubscriptionsManagement() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="month">Mensal</SelectItem>
-                      <SelectItem value="year">Anual</SelectItem>
+                      <SelectItem value="monthly">Mensal</SelectItem>
+                      <SelectItem value="yearly">Anual</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -1068,7 +1068,7 @@ export default function SubscriptionsManagement() {
                     <Label htmlFor="editPlanInterval">Intervalo</Label>
                     <Select
                       value={planForm.billing_interval}
-                      onValueChange={(value: "month" | "year") =>
+                      onValueChange={(value: "monthly" | "yearly") =>
                         setPlanForm({ ...planForm, billing_interval: value })
                       }
                     >
@@ -1076,8 +1076,8 @@ export default function SubscriptionsManagement() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="month">Mensal</SelectItem>
-                        <SelectItem value="year">Anual</SelectItem>
+                        <SelectItem value="monthly">Mensal</SelectItem>
+                        <SelectItem value="yearly">Anual</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

@@ -109,26 +109,9 @@ export function Navigation() {
 
   const adminItems: NavItem[] = isUserAdmin ? [
     { icon: Shield, label: "Admin", path: "/admin/dashboard", section: "admin" },
-    { icon: Users, label: "Utilizadores", path: "/admin/users", section: "admin" },
-    { icon: CreditCard, label: "Subscrições", path: "/admin/subscriptions", section: "admin" },
-    { icon: Settings, label: "Pagamentos", path: "/admin/payment-settings", section: "admin" },
-    { icon: Palette, label: "Personalização", path: "/admin/system-settings", section: "admin" },
-    { icon: Zap, label: "Workflows", path: "/admin/workflows", section: "admin" },
-    { icon: Palette, label: "Frontend", path: "/admin/frontend-settings", section: "admin" },
-    { icon: Plug, label: "Integrações", path: "/admin/integrations", section: "admin" },
   ] : [];
 
-  const adminLinks = [
-    { href: "/admin/dashboard", label: "Dashboard" },
-    { href: "/admin/users", label: "Utilizadores" },
-    { href: "/admin/subscriptions", label: "Subscrições" },
-    { href: "/admin/payment-settings", label: "Pagamentos" },
-    { href: "/admin/security", label: "Segurança" },
-    { href: "/admin/system-settings", label: "Sistema" },
-    { href: "/admin/workflows", label: "Workflows" },
-    { href: "/admin/frontend-settings", label: "Frontend" },
-    { href: "/admin/integrations", label: "Integrações" },
-  ];
+  const adminLinks = [];
 
   const mainItems: NavItem[] = [
     { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard", section: "main" },
@@ -139,7 +122,7 @@ export function Navigation() {
     { icon: Calendar, label: "Agenda", path: "/calendar", section: "main" },
     { icon: CheckSquare, label: "Tarefas", path: "/tasks", section: "main" },
     { icon: MessageSquare, label: "Interações", path: "/interactions", section: "main" },
-    { icon: Mail, label: "Mensagens em Massa", path: "/bulk-messages", section: "main" },
+    { icon: Mail, label: "Mensagens", path: "/bulk-messages", section: "main" },
     { icon: FileText, label: "Templates", path: "/templates", section: "main" },
     { icon: BarChart3, label: "Relatórios", path: "/reports", section: "main" },
   ];
@@ -180,17 +163,12 @@ export function Navigation() {
     { icon: FolderOpen, label: "Documentos", path: "/documents", section: "tools" },
   ];
 
-  const automationItems: NavItem[] = [
-    { icon: Zap, label: "Workflows", path: "/workflows", section: "automation" },
-    { icon: Zap, label: "Workflows Equipa", path: "/team-workflows", section: "automation" },
-  ];
-
   const settingsItems: NavItem[] = [
     { icon: CreditCard, label: "Subscrição", path: "/subscription", section: "settings" },
     { icon: Settings, label: "Definições", path: "/settings", section: "settings" },
   ];
 
-  const allNavItems = [...adminItems, ...mainItems, ...toolsItems, ...automationItems, ...settingsItems];
+  const allNavItems = [...adminItems, ...mainItems, ...toolsItems, ...settingsItems];
 
   return (
     <div className="flex h-screen w-64 flex-col border-r bg-card">

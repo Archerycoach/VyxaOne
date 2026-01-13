@@ -114,6 +114,17 @@ export default function TeamWorkflowsPage() {
 
       if (profileError) throw profileError;
 
+      // Verificar se é admin
+      if (!profile || profile.role !== "admin") {
+        toast({
+          title: "Acesso Negado",
+          description: "Apenas administradores podem aceder a esta página.",
+          variant: "destructive",
+        });
+        router.push("/dashboard");
+        return;
+      }
+
       setUserId(session.user.id);
       setUserRole(profile.role || "user");
       

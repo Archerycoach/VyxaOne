@@ -194,7 +194,9 @@ export default function WorkflowsPage() {
     delay_days: 0,
     delay_hours: 0,
     target_type: "lead" as "lead" | "contact",
-    target_id: ""
+    target_id: "",
+    email_subject: "",
+    email_body: ""
   });
 
   const [executeFormState, setExecuteFormState] = useState({
@@ -212,6 +214,23 @@ export default function WorkflowsPage() {
 
       if (sessionError || !session) {
         router.push("/login");
+        return;
+      }
+
+      // Verificar se é admin
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", session.user.id)
+        .single();
+
+      if (profileError || !profile || profile.role !== "admin") {
+        toast({
+          title: "Acesso Negado",
+          description: "Apenas administradores podem aceder a esta página.",
+          variant: "destructive",
+        });
+        router.push("/dashboard");
         return;
       }
 
@@ -335,6 +354,38 @@ export default function WorkflowsPage() {
 
   const handleUseTemplate = (template: WorkflowTemplate) => {
     setSelectedTemplate(template);
+    
+    // Valores padrão de email baseados no template
+    let defaultSubject = "";
+    let defaultBody = "";
+    
+    switch (template.trigger) {
+      case "lead_created":
+        defaultSubject = "Bem-vindo à {empresa}!";
+        defaultBody = "Olá {nome},\n\nObrigado por entrar em contacto connosco!\n\nEstamos à disposição para ajudar.\n\nCumprimentos,\nEquipa {empresa}";
+        break;
+      case "visit_scheduled":
+        defaultSubject = "Lembrete: Visita Agendada";
+        defaultBody = "Olá,\n\nLembrete de visita agendada com {nome}.\n\nContacto: {telefone}\nEmail: {email}\n\nBoa visita!";
+        break;
+      case "no_contact_3_days":
+        defaultSubject = "Follow-up: {nome}";
+        defaultBody = "Olá,\n\nLembrete para fazer follow-up com {nome}.\n\nÚltimo contacto há 3+ dias.\n\nContacto: {telefone}";
+        break;
+      case "no_activity_7_days":
+        defaultSubject = "Lead Inativo: {nome}";
+        defaultBody = "Olá,\n\nA lead {nome} está sem atividade há mais de 7 dias.\n\nConsidere fazer um contacto.\n\nTelefone: {telefone}";
+        break;
+      case "birthday":
+        defaultSubject = "Feliz Aniversário, {nome}! 🎂";
+        defaultBody = "Olá {nome},\n\nA equipa da {empresa} deseja-lhe um feliz aniversário! 🎉\n\nQue este novo ano lhe traga muitas alegrias!\n\nCumprimentos,\nEquipa {empresa}";
+        break;
+      case "custom_date":
+        defaultSubject = "Lembrete: Data Importante - {nome}";
+        defaultBody = "Olá {nome},\n\nLembramos que hoje é uma data importante!\n\nEstamos à disposição.\n\nCumprimentos,\nEquipa {empresa}";
+        break;
+    }
+    
     setFormState({
       name: template.name,
       description: template.description,
@@ -343,7 +394,9 @@ export default function WorkflowsPage() {
       delay_days: 0,
       delay_hours: 0,
       target_type: "lead",
-      target_id: ""
+      target_id: "",
+      email_subject: defaultSubject,
+      email_body: defaultBody
     });
     setIsNewWorkflowOpen(true);
   };
@@ -359,13 +412,27 @@ export default function WorkflowsPage() {
         return;
       }
 
+      if (formState.action_type === "send_email" && (!formState.email_subject || !formState.email_body)) {
+        toast({
+          title: "Erro",
+          description: "Preencha o assunto e corpo do email.",
+          variant: "destructive",
+        });
+        return;
+      }
+
       const workflowData = {
         user_id: userId,
         name: formState.name,
         description: formState.description,
         trigger_status: formState.trigger,
         action_type: formState.action_type,
-        action_config: {},
+        action_config: formState.action_type === "send_email" 
+          ? {
+              subject: formState.email_subject,
+              body: formState.email_body
+            }
+          : {},
         delay_days: formState.delay_days,
         delay_hours: formState.delay_hours,
         enabled: true
@@ -397,7 +464,9 @@ export default function WorkflowsPage() {
         delay_days: 0,
         delay_hours: 0,
         target_type: "lead",
-        target_id: ""
+        target_id: "",
+        email_subject: "",
+        email_body: ""
       });
 
       await Promise.all([
@@ -674,6 +743,38 @@ export default function WorkflowsPage() {
                     </SelectContent>
                   </Select>
                 </div>
+                {formState.action_type === "send_email" && (
+                  <div className="space-y-4 p-4 border rounded-lg bg-blue-50/50">
+                    <h4 className="font-semibold text-sm text-blue-900">Configuração do Email</h4>
+                    <div className="space-y-2">
+                      <Label htmlFor="email_subject">Assunto do Email *</Label>
+                      <Input
+                        id="email_subject"
+                        value={formState.email_subject}
+                        onChange={(e) => setFormState({ ...formState, email_subject: e.target.value })}
+                        placeholder="Ex: Bem-vindo à nossa equipa, {nome}!"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="email_body">Corpo do Email *</Label>
+                      <Textarea
+                        id="email_body"
+                        value={formState.email_body}
+                        onChange={(e) => setFormState({ ...formState, email_body: e.target.value })}
+                        placeholder="Ex: Olá {nome},&#10;&#10;Obrigado por entrar em contacto connosco!&#10;&#10;Telefone: {telefone}&#10;Email: {email}"
+                        rows={8}
+                      />
+                    </div>
+                    <div className="text-xs text-gray-600 space-y-1">
+                      <p className="font-semibold">Variáveis disponíveis:</p>
+                      <ul className="list-disc list-inside space-y-1">
+                        <li><code className="bg-white px-1 rounded">{"{nome}"}</code> - Nome da lead/contacto</li>
+                        <li><code className="bg-white px-1 rounded">{"{email}"}</code> - Email da lead/contacto</li>
+                        <li><code className="bg-white px-1 rounded">{"{telefone}"}</code> - Telefone da lead/contacto</li>
+                      </ul>
+                    </div>
+                  </div>
+                )}
                 <div className="border-t pt-4 space-y-4">
                   <Label className="text-base font-semibold">Associar a Lead/Contacto (Opcional)</Label>
                   <p className="text-sm text-muted-foreground">
