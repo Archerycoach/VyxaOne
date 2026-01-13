@@ -8,21 +8,20 @@ import {
 import { Button } from "@/components/ui/button";
 import { Phone, Mail, MessageSquare, Users, Calendar, User, FileText, ExternalLink } from "lucide-react";
 import type { InteractionWithDetails } from "@/services/interactionsService";
-import { useRouter } from "next/router";
 
 interface InteractionDetailsDialogProps {
   interaction: InteractionWithDetails | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onOpenLeadDetails?: (leadId: string) => void;
 }
 
 export function InteractionDetailsDialog({
   interaction,
   open,
   onOpenChange,
+  onOpenLeadDetails,
 }: InteractionDetailsDialogProps) {
-  const router = useRouter();
-
   if (!interaction) return null;
 
   const getInteractionIcon = () => {
@@ -56,12 +55,13 @@ export function InteractionDetailsDialog({
   const contactPhone = interaction.lead?.phone || interaction.contact?.phone;
 
   const handleGoToContact = () => {
-    if (interaction.lead_id) {
-      router.push(`/leads?highlight=${interaction.lead_id}`);
+    if (interaction.lead_id && onOpenLeadDetails) {
+      onOpenLeadDetails(interaction.lead_id);
+      onOpenChange(false);
     } else if (interaction.contact_id) {
-      router.push(`/contacts?highlight=${interaction.contact_id}`);
+      // TODO: Implement contact details dialog
+      console.log("Contact details not yet implemented");
     }
-    onOpenChange(false);
   };
 
   return (

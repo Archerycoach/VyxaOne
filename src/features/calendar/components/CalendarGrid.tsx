@@ -23,6 +23,7 @@ interface CalendarGridProps {
   onDeleteEvent?: (eventId: string) => void;
   onDeleteInteraction?: (interactionId: string) => void;
   onDeleteNote?: (noteId: string) => void;
+  onOpenLeadDetails?: (leadId: string) => void;
   // Drag and Drop handlers
   onDragStart: (e: React.DragEvent, item: { id: string; type: "event" | "task"; startTime: string }) => void;
   onDragEnd: (e: React.DragEvent) => void;
@@ -42,6 +43,7 @@ export function CalendarGrid({
   onDeleteEvent,
   onDeleteInteraction,
   onDeleteNote,
+  onOpenLeadDetails,
   onDragStart,
   onDragEnd,
   onDragOver,
@@ -251,12 +253,14 @@ export function CalendarGrid({
           interaction={selectedInteraction}
           open={!!selectedInteraction}
           onOpenChange={(open) => !open && setSelectedInteraction(null)}
+          onOpenLeadDetails={onOpenLeadDetails}
         />
 
         <NoteDetailsDialog
           note={selectedNote}
           open={!!selectedNote}
           onOpenChange={(open) => !open && setSelectedNote(null)}
+          onOpenLeadDetails={onOpenLeadDetails}
         />
       </>
     );
@@ -357,12 +361,14 @@ export function CalendarGrid({
           interaction={selectedInteraction}
           open={!!selectedInteraction}
           onOpenChange={(open) => !open && setSelectedInteraction(null)}
+          onOpenLeadDetails={onOpenLeadDetails}
         />
 
         <NoteDetailsDialog
           note={selectedNote}
           open={!!selectedNote}
           onOpenChange={(open) => !open && setSelectedNote(null)}
+          onOpenLeadDetails={onOpenLeadDetails}
         />
       </>
     );
@@ -480,12 +486,14 @@ export function CalendarGrid({
         interaction={selectedInteraction}
         open={!!selectedInteraction}
         onOpenChange={(open) => !open && setSelectedInteraction(null)}
+        onOpenLeadDetails={onOpenLeadDetails}
       />
 
       <NoteDetailsDialog
         note={selectedNote}
         open={!!selectedNote}
         onOpenChange={(open) => !open && setSelectedNote(null)}
+        onOpenLeadDetails={onOpenLeadDetails}
       />
     </>
   );

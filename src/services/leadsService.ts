@@ -132,10 +132,9 @@ export const getLead = async (id: string): Promise<LeadWithDetails | null> => {
     .select(`
       *,
       assigned_user:profiles!leads_assigned_to_fkey(id, full_name, email),
-      property:properties(id, title, address),
       interactions(
         *,
-        user:profiles!interactions_created_by_fkey(id, full_name, email)
+        user:profiles!interactions_user_id_fkey(id, full_name, email)
       )
     `)
     .eq("id", id)
@@ -341,7 +340,7 @@ export const getLeadInteractions = async (leadId: string): Promise<Interaction[]
     .from("interactions")
     .select(`
       *,
-      user:profiles!interactions_created_by_fkey(id, full_name, email)
+      user:profiles!interactions_user_id_fkey(id, full_name, email)
     `)
     .eq("lead_id", leadId)
     .order("created_at", { ascending: false });

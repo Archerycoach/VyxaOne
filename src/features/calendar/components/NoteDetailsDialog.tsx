@@ -8,26 +8,25 @@ import {
 import { Button } from "@/components/ui/button";
 import { StickyNote, Calendar, User, FileText, ExternalLink } from "lucide-react";
 import type { CalendarNote } from "../hooks/useCalendarNotes";
-import { useRouter } from "next/router";
 
 interface NoteDetailsDialogProps {
   note: CalendarNote | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onOpenLeadDetails?: (leadId: string) => void;
 }
 
 export function NoteDetailsDialog({
   note,
   open,
   onOpenChange,
+  onOpenLeadDetails,
 }: NoteDetailsDialogProps) {
-  const router = useRouter();
-
   if (!note) return null;
 
   const handleGoToLead = () => {
-    if (note.lead_id) {
-      router.push(`/leads?highlight=${note.lead_id}`);
+    if (note.lead_id && onOpenLeadDetails) {
+      onOpenLeadDetails(note.lead_id);
       onOpenChange(false);
     }
   };

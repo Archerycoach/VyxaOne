@@ -23,6 +23,17 @@ import {
 import { getLeadColumnsConfig, type LeadColumnConfig } from "@/services/leadColumnsService";
 import type { LeadWithContacts } from "@/services/leadsService";
 
+// Default columns configuration for fallback
+const DEFAULT_COLUMNS: LeadColumnConfig[] = [
+  { id: "default-1", column_key: "name", column_label: "Nome", column_width: "200px", column_order: 1, is_visible: true },
+  { id: "default-2", column_key: "email", column_label: "Email", column_width: "200px", column_order: 2, is_visible: true },
+  { id: "default-3", column_key: "phone", column_label: "Telefone", column_width: "150px", column_order: 3, is_visible: true },
+  { id: "default-4", column_key: "status", column_label: "Estado", column_width: "120px", column_order: 4, is_visible: true },
+  { id: "default-5", column_key: "lead_type", column_label: "Tipo", column_width: "120px", column_order: 5, is_visible: true },
+  { id: "default-6", column_key: "budget_min", column_label: "Orçamento Mín.", column_width: "130px", column_order: 6, is_visible: true },
+  { id: "default-7", column_key: "budget_max", column_label: "Orçamento Máx.", column_width: "130px", column_order: 7, is_visible: true },
+];
+
 interface LeadsListContainerProps {
   onEdit: (lead: LeadWithContacts) => void;
   canAssignLeads: boolean;
@@ -64,9 +75,19 @@ export function LeadsListContainer({
   const loadColumnsConfig = async () => {
     try {
       const config = await getLeadColumnsConfig();
-      setColumnsConfig(config.filter((col) => col.is_visible));
+      const visibleColumns = config.filter((col) => col.is_visible);
+      
+      // Use default columns if no visible columns are configured
+      if (visibleColumns.length === 0) {
+        console.warn("No visible columns configured, using default columns");
+        setColumnsConfig(DEFAULT_COLUMNS);
+      } else {
+        setColumnsConfig(visibleColumns);
+      }
     } catch (error) {
-      console.error("Failed to load columns config:", error);
+      console.error("Failed to load columns config, using default columns:", error);
+      // Use default columns as fallback
+      setColumnsConfig(DEFAULT_COLUMNS);
     }
   };
 
