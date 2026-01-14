@@ -342,6 +342,9 @@ export function invalidateRelatedCaches(pattern: string): void {
   }
 }
 
+// Constants
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
 function getCachedData<T>(key: string): T | null {
   if (typeof window === 'undefined') {
     return null;

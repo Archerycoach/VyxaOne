@@ -3,6 +3,9 @@
  * Ensures data is always fresh after mutations
  */
 
+// Constants
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
 /**
  * Get cached data from localStorage
  */
