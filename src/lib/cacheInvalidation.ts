@@ -49,6 +49,9 @@ export class CacheManager {
     const keys = Array.isArray(key) ? key : [key];
     keys.forEach((k) => {
       try {
+        if (typeof window === 'undefined') {
+          return;
+        }
         localStorage.removeItem(k);
         console.log(`🗑️ Cache invalidated: ${k}`);
       } catch (error) {
@@ -155,6 +158,9 @@ export class CacheManager {
   static invalidateAll(): void {
     Object.values(CacheKey).forEach((key) => {
       try {
+        if (typeof window === 'undefined') {
+          return;
+        }
         localStorage.removeItem(key);
       } catch (error) {
         console.warn(`⚠️ Failed to invalidate cache: ${key}`, error);
@@ -175,6 +181,9 @@ export class CacheManager {
 
     Object.values(CacheKey).forEach((key) => {
       try {
+        if (typeof window === 'undefined') {
+          return;
+        }
         const cached = localStorage.getItem(key);
         const cacheData = cached ? JSON.parse(cached) : null;
 
@@ -205,6 +214,9 @@ export class CacheManager {
    */
   static isValid(key: CacheKey, maxAge?: number): boolean {
     try {
+      if (typeof window === 'undefined') {
+        return false;
+      }
       const cached = localStorage.getItem(key);
       if (!cached) return false;
 
@@ -230,6 +242,9 @@ export class CacheManager {
 
     Object.values(CacheKey).forEach((key) => {
       try {
+        if (typeof window === 'undefined') {
+          return;
+        }
         const cached = localStorage.getItem(key);
         if (cached) {
           totalSize += new Blob([cached]).size;
@@ -309,3 +324,60 @@ export const useCacheManager = () => {
     getTotalSize,
   };
 };
+
+export function invalidateRelatedCaches(pattern: string): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  
+  try {
+    const keys = Object.keys(localStorage);
+    keys.forEach(key => {
+      if (key.includes(pattern)) {
+        localStorage.removeItem(key);
+      }
+    });
+  } catch (error) {
+    console.error(`Error invalidating caches for pattern ${pattern}:`, error);
+  }
+}
+
+function getCachedData<T>(key: string): T | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  
+  try {
+    const cached = localStorage.getItem(key);
+    if (!cached) return null;
+
+    const { data, timestamp } = JSON.parse(cached);
+    const now = Date.now();
+
+    if (now - timestamp < CACHE_DURATION) {
+      return data as T;
+    }
+
+    localStorage.removeItem(key);
+    return null;
+  } catch (error) {
+    console.error(`Error getting cache for key ${key}:`, error);
+    return null;
+  }
+}
+
+function setCachedData<T>(key: string, data: T): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  
+  try {
+    const cacheData = {
+      data,
+      timestamp: Date.now(),
+    };
+    localStorage.setItem(key, JSON.stringify(cacheData));
+  } catch (error) {
+    console.error(`Error setting cache for key ${key}:`, error);
+  }
+}

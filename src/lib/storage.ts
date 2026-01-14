@@ -54,6 +54,8 @@ const STORAGE_KEYS = {
   TEAMS: "crm_teams",
 };
 
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
 // Generic storage functions
 export const getFromStorage = <T>(key: string): T[] => {
   if (typeof window === "undefined") return [];
@@ -72,6 +74,83 @@ export const saveToStorage = <T>(key: string, data: T[]): void => {
   localStorage.setItem(key, JSON.stringify(data));
 };
 
+export const setItem = <T>(key: string, value: T, ttl?: number): void => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  
+  try {
+    const item = {
+      value,
+      expiresAt: ttl ? Date.now() + ttl : null,
+    };
+    localStorage.setItem(key, JSON.stringify(item));
+  } catch (error) {
+    console.error(`Error setting item ${key}:`, error);
+  }
+};
+
+export const getItem = <T>(key: string): T | null => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  
+  try {
+    const item = localStorage.getItem(key);
+    if (!item) return null;
+
+    const parsed = JSON.parse(item);
+    
+    // Check if item has expired
+    if (parsed.expiresAt && Date.now() > parsed.expiresAt) {
+      removeItem(key);
+      return null;
+    }
+
+    return parsed.value;
+  } catch (error) {
+    console.error(`Error getting item ${key}:`, error);
+    return null;
+  }
+};
+
+export const removeItem = (key: string): void => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  
+  try {
+    localStorage.removeItem(key);
+  } catch (error) {
+    console.error(`Error removing item ${key}:`, error);
+  }
+};
+
+export const clear = (): void => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  
+  try {
+    localStorage.clear();
+  } catch (error) {
+    console.error("Error clearing storage:", error);
+  }
+};
+
+export const getAllKeys = (): string[] => {
+  if (typeof window === 'undefined') {
+    return [];
+  }
+  
+  try {
+    return Object.keys(localStorage);
+  } catch (error) {
+    console.error("Error getting all keys:", error);
+    return [];
+  }
+};
+
 // Leads
 export const getLeads = (): Lead[] => {
   const data = getFromStorage<Lead>(STORAGE_KEYS.LEADS);
@@ -81,6 +160,7 @@ export const getLeads = (): Lead[] => {
     lead_type: lead.lead_type || "buyer"
   } as Lead));
 };
+
 export const saveLeads = (leads: Lead[]): void => saveToStorage(STORAGE_KEYS.LEADS, leads);
 
 export const addLead = (lead: Lead): void => {
@@ -179,6 +259,47 @@ export const addInteraction = (interaction: Interaction): void => {
   const interactions = getInteractions();
   saveInteractions([...interactions, interaction]);
 };
+
+// Cache utilities
+function getCachedData<T>(key: string): T | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  
+  try {
+    const cached = localStorage.getItem(key);
+    if (!cached) return null;
+
+    const { data, timestamp } = JSON.parse(cached);
+    const now = Date.now();
+
+    if (now - timestamp < CACHE_DURATION) {
+      return data as T;
+    }
+
+    localStorage.removeItem(key);
+    return null;
+  } catch (error) {
+    console.error(`Error getting cache for key ${key}:`, error);
+    return null;
+  }
+}
+
+function setCachedData<T>(key: string, data: T): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  
+  try {
+    const cacheData = {
+      data,
+      timestamp: Date.now(),
+    };
+    localStorage.setItem(key, JSON.stringify(cacheData));
+  } catch (error) {
+    console.error(`Error setting cache for key ${key}:`, error);
+  }
+}
 
 // Initialize demo data
 export const initializeDemoData = (): void => {

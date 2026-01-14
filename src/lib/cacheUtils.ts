@@ -117,3 +117,74 @@ export const fetchWithNoCache = async (
     },
   });
 };
+
+export const getCache = <T>(key: string): T | null => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  
+  try {
+    const cached = localStorage.getItem(key);
+    if (!cached) return null;
+
+    const { data, timestamp } = JSON.parse(cached);
+    const now = Date.now();
+
+    // Cache válido por 5 minutos
+    if (now - timestamp < CACHE_DURATION) {
+      return data as T;
+    }
+
+    // Cache expirado, remover
+    localStorage.removeItem(key);
+    return null;
+  } catch (error) {
+    console.error(`Error getting cache for key ${key}:`, error);
+    return null;
+  }
+};
+
+export const setCache = <T>(key: string, data: T): void => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  
+  try {
+    const cacheData = {
+      data,
+      timestamp: Date.now(),
+    };
+    localStorage.setItem(key, JSON.stringify(cacheData));
+  } catch (error) {
+    console.error(`Error setting cache for key ${key}:`, error);
+  }
+};
+
+export const invalidateCache = (key: string): void => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  
+  try {
+    localStorage.removeItem(key);
+  } catch (error) {
+    console.error(`Error invalidating cache for key ${key}:`, error);
+  }
+};
+
+export const clearAllCache = (): void => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  
+  try {
+    const keys = Object.keys(localStorage);
+    keys.forEach(key => {
+      if (key.startsWith('cache_')) {
+        localStorage.removeItem(key);
+      }
+    });
+  } catch (error) {
+    console.error('Error clearing all cache:', error);
+  }
+};

@@ -51,11 +51,11 @@ export function LeadsListContainer({
   
   // View mode state with localStorage persistence
   const [viewMode, setViewMode] = useState<"grid" | "list">(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("leadsViewMode");
-      return (saved === "grid" || saved === "list") ? saved : "grid";
+    if (typeof window === 'undefined') {
+      return "grid";
     }
-    return "grid";
+    const saved = localStorage.getItem("leadsViewMode");
+    return (saved as "grid" | "list") || "grid";
   });
 
   // Columns configuration
