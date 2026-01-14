@@ -40,7 +40,8 @@ interface LeadDialogsProps {
   setInteractionDialogOpen: (open: boolean) => void;
   interactionForm: {
     type: string;
-    notes: string;
+    subject: string;
+    content: string;
     outcome: string;
     date?: string;
   };
@@ -54,11 +55,7 @@ interface LeadDialogsProps {
   selectedAgent: string;
   setSelectedAgent: (id: string) => void;
   onAssignLead: () => void;
-  
-  // Details Dialog
-  detailsDialogOpen: boolean;
-  setDetailsDialogOpen: (open: boolean) => void;
-  selectedLead: LeadWithContacts | null;
+  selectedLead: any;
 }
 
 export function LeadDialogs({
@@ -83,8 +80,6 @@ export function LeadDialogs({
   selectedAgent,
   setSelectedAgent,
   onAssignLead,
-  detailsDialogOpen,
-  setDetailsDialogOpen,
   selectedLead,
 }: LeadDialogsProps) {
   return (
@@ -236,12 +231,21 @@ export function LeadDialogs({
               />
             </div>
             <div>
-              <Label htmlFor="interaction-notes">Notas</Label>
+              <Label htmlFor="interaction-subject">Assunto</Label>
+              <Input
+                id="interaction-subject"
+                value={interactionForm.subject}
+                onChange={(e) => setInteractionForm({ ...interactionForm, subject: e.target.value })}
+                placeholder="Assunto da interação"
+              />
+            </div>
+            <div>
+              <Label htmlFor="interaction-content">Conteúdo</Label>
               <Textarea
-                id="interaction-notes"
-                value={interactionForm.notes}
-                onChange={(e) => setInteractionForm({ ...interactionForm, notes: e.target.value })}
-                placeholder="Notas da interação"
+                id="interaction-content"
+                value={interactionForm.content}
+                onChange={(e) => setInteractionForm({ ...interactionForm, content: e.target.value })}
+                placeholder="Detalhes da interação"
               />
             </div>
             <div>
@@ -294,12 +298,7 @@ export function LeadDialogs({
         </DialogContent>
       </Dialog>
 
-      {/* Details Dialog - NEW DETAILED VERSION */}
-      <LeadDetailsDialog
-        open={detailsDialogOpen}
-        onOpenChange={setDetailsDialogOpen}
-        lead={selectedLead}
-      />
+      {/* Details Dialog removed - handled separately in LeadsListContainer */}
     </>
   );
 }

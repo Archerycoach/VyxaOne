@@ -23,9 +23,6 @@ interface CalendarDialogsProps {
   setTaskForm: (form: Partial<Task>) => void;
   handleTaskSubmit: (e: React.FormEvent) => Promise<void>;
   isTaskEditing: boolean;
-  
-  // Actions
-  onOpenLeadDetails?: (leadId: string) => void;
 }
 
 export function CalendarDialogs({
@@ -41,7 +38,6 @@ export function CalendarDialogs({
   setTaskForm,
   handleTaskSubmit,
   isTaskEditing,
-  onOpenLeadDetails,
 }: CalendarDialogsProps) {
   return (
     <>
@@ -137,19 +133,6 @@ export function CalendarDialogs({
             </div>
 
             <DialogFooter>
-              {isEditing && eventForm.leadId && onOpenLeadDetails && (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() => {
-                    onOpenLeadDetails(eventForm.leadId!);
-                    setShowEventForm(false);
-                  }}
-                  className="mr-auto"
-                >
-                  Ver Lead
-                </Button>
-              )}
               <Button
                 type="button"
                 variant="outline"
@@ -251,19 +234,6 @@ export function CalendarDialogs({
             </div>
 
             <DialogFooter>
-              {isTaskEditing && taskForm.leadId && onOpenLeadDetails && (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() => {
-                    onOpenLeadDetails(taskForm.leadId!);
-                    setShowTaskForm(false);
-                  }}
-                  className="mr-auto"
-                >
-                  Ver Lead
-                </Button>
-              )}
               <Button
                 type="button"
                 variant="outline"

@@ -1,456 +1,369 @@
-import { useState, useEffect } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import React from "react";
+import { useState, useEffect, useRef } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Loader2, Mail, Phone, MapPin, Euro, Calendar, FileText, CheckCircle, Clock } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  User,
+  Mail,
+  Phone,
+  MapPin,
+  Home,
+  Euro,
+  Bed,
+  Bath,
+  Maximize,
+  Calendar,
+  TrendingUp,
+  MessageSquare,
+  FileText,
+  X,
+} from "lucide-react";
+import { getLeadById } from "@/services/leadsService";
+import { getInteractionsByLead } from "@/services/interactionsService";
+import { getNotesByLead } from "@/services/notesService";
 import type { LeadWithContacts } from "@/services/leadsService";
-import { formatDistanceToNow } from "date-fns";
-import { ptBR } from "date-fns/locale";
+import type { InteractionWithDetails } from "@/services/interactionsService";
+import type { LeadNote } from "@/services/notesService";
 
 interface LeadDetailsDialogProps {
+  leadId: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  lead: LeadWithContacts | null;
 }
 
-interface Interaction {
-  id: string;
-  interaction_type: string;
-  content: string;
-  outcome: string;
-  created_at: string;
-  user_id: string;
-  user_name?: string;
-}
-
-interface Task {
-  id: string;
-  title: string;
-  description: string;
-  due_date: string;
-  priority: string;
-  status: string;
-  created_at: string;
-}
-
-const getStatusColor = (status: string) => {
-  const colors: Record<string, string> = {
-    new: "bg-blue-100 text-blue-800",
-    contacted: "bg-yellow-100 text-yellow-800",
-    qualified: "bg-purple-100 text-purple-800",
-    proposal: "bg-indigo-100 text-indigo-800",
-    negotiation: "bg-orange-100 text-orange-800",
-    won: "bg-green-100 text-green-800",
-    lost: "bg-red-100 text-red-800",
-  };
-  return colors[status] || "bg-gray-100 text-gray-800";
-};
-
-const getTypeColor = (type: string) => {
-  const colors: Record<string, string> = {
-    buyer: "bg-blue-100 text-blue-800",
-    seller: "bg-green-100 text-green-800",
-    both: "bg-purple-100 text-purple-800",
-  };
-  return colors[type] || "bg-gray-100 text-gray-800";
-};
-
-const getInteractionIcon = (type: string) => {
-  const icons: Record<string, any> = {
-    call: Phone,
-    email: Mail,
-    meeting: Calendar,
-    whatsapp: Phone,
-    sms: Phone,
-  };
-  const Icon = icons[type] || FileText;
-  return <Icon className="h-4 w-4" />;
-};
-
-const formatDate = (dateString: string) => {
-  const date = new Date(dateString);
-  return new Intl.DateTimeFormat("pt-PT", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
-};
-
-const formatCurrency = (value: number | null) => {
-  if (!value) return "-";
-  return new Intl.NumberFormat("pt-PT", {
-    style: "currency",
-    currency: "EUR",
-    minimumFractionDigits: 0,
-  }).format(value);
-};
-
-export function LeadDetailsDialog({ open, onOpenChange, lead }: LeadDetailsDialogProps) {
-  const [interactions, setInteractions] = useState<Interaction[]>([]);
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [loading, setLoading] = useState(false);
+export function LeadDetailsDialog({
+  leadId,
+  open,
+  onOpenChange,
+}: LeadDetailsDialogProps) {
+  const [lead, setLead] = useState<LeadWithContacts | null>(null);
+  const [interactions, setInteractions] = useState<InteractionWithDetails[]>([]);
+  const [notes, setNotes] = useState<LeadNote[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  
+  // Use ref to prevent multiple fetches
+  const fetchingRef = useRef(false);
+  const currentLeadIdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (open && lead) {
-      fetchLeadData();
+    // Only fetch if dialog is open, we have a leadId, and we're not already fetching
+    if (!open || !leadId || fetchingRef.current || currentLeadIdRef.current === leadId) {
+      console.log("[LeadDetailsDialog] Skipping fetch:", { open, leadId, fetching: fetchingRef.current, current: currentLeadIdRef.current });
+      return;
     }
-  }, [open, lead]);
 
-  const fetchLeadData = async () => {
-    if (!lead) return;
+    const fetchData = async () => {
+      console.log("[LeadDetailsDialog] Starting fetch for lead:", leadId);
+      fetchingRef.current = true;
+      currentLeadIdRef.current = leadId;
+      setIsLoading(true);
 
-    setLoading(true);
-    try {
-      // Fetch interactions without joins to avoid TS2589
-      // Casting to any to break type inference chain
-      const { data: interactionsData, error: interactionsError } = await (supabase
-        .from("interactions") as any)
-        .select("*")
-        .eq("lead_id", lead.id)
-        .order("created_at", { ascending: false });
+      try {
+        console.log("[LeadDetailsDialog] Fetching data for lead:", leadId);
+        
+        // Fetch all data in parallel
+        const [leadData, interactionsData, notesData] = await Promise.all([
+          getLeadById(leadId),
+          getInteractionsByLead(leadId),
+          getNotesByLead(leadId),
+        ]);
 
-      if (interactionsError) throw interactionsError;
+        console.log("[LeadDetailsDialog] Data fetched successfully:", { leadData, interactions: interactionsData.length, notes: notesData.length });
+        setLead(leadData);
+        setInteractions(interactionsData);
+        setNotes(notesData);
+        
+        console.log("[LeadDetailsDialog] Data set in state");
+      } catch (error) {
+        console.error("[LeadDetailsDialog] Error fetching data:", error);
+        setLead(null);
+        setInteractions([]);
+        setNotes([]);
+      } finally {
+        setIsLoading(false);
+        fetchingRef.current = false;
+        console.log("[LeadDetailsDialog] Fetch completed");
+      }
+    };
 
-      // Fetch user profiles separately
-      const userIds = [...new Set((interactionsData || []).map((i: any) => i.user_id))] as string[];
+    fetchData();
+  }, [open, leadId]);
+
+  // Reset state when dialog closes
+  useEffect(() => {
+    if (!open) {
+      // Clear data after animation completes
+      const timer = setTimeout(() => {
+        setLead(null);
+        setInteractions([]);
+        setNotes([]);
+        currentLeadIdRef.current = null;
+      }, 150);
       
-      const { data: profilesData } = await (supabase
-        .from("profiles") as any)
-        .select("id, full_name")
-        .in("id", userIds);
-
-      // Map profiles to interactions
-      const profilesMap = new Map((profilesData || []).map((p: any) => [p.id, p.full_name]));
-      const enrichedInteractions: Interaction[] = (interactionsData || []).map((i: any) => ({
-        id: i.id,
-        interaction_type: i.interaction_type,
-        content: i.content,
-        outcome: i.outcome,
-        created_at: i.created_at,
-        user_id: i.user_id,
-        user_name: profilesMap.get(i.user_id) || undefined,
-      }));
-
-      setInteractions(enrichedInteractions);
-
-      // Fetch tasks
-      const { data: tasksData, error: tasksError } = await (supabase
-        .from("tasks") as any)
-        .select("*")
-        .eq("related_lead_id", lead.id)
-        .order("due_date", { ascending: true });
-
-      if (tasksError) throw tasksError;
-      setTasks(tasksData || []);
-    } catch (error) {
-      console.error("Error fetching lead data:", error);
-    } finally {
-      setLoading(false);
+      return () => clearTimeout(timer);
     }
+  }, [open]);
+
+  const formatCurrency = (value: number | null | undefined) => {
+    if (!value) return "-";
+    return new Intl.NumberFormat("pt-PT", {
+      style: "currency",
+      currency: "EUR",
+      maximumFractionDigits: 0,
+    }).format(value);
   };
 
-  if (!lead) return null;
+  const formatDate = (date: string | null | undefined) => {
+    if (!date) return "-";
+    return new Date(date).toLocaleDateString("pt-PT", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+  };
+
+  const getStatusBadge = (status: string | null | undefined) => {
+    const statusMap: Record<string, { label: string; variant: "default" | "secondary" | "destructive" }> = {
+      new: { label: "Novo", variant: "default" },
+      contacted: { label: "Contactado", variant: "secondary" },
+      qualified: { label: "Qualificado", variant: "default" },
+      proposal: { label: "Proposta", variant: "default" },
+      negotiation: { label: "Negociação", variant: "default" },
+      won: { label: "Ganho", variant: "default" },
+      lost: { label: "Perdido", variant: "destructive" },
+    };
+    const config = statusMap[status || ""] || { label: status || "-", variant: "secondary" as const };
+    return <Badge variant={config.variant}>{config.label}</Badge>;
+  };
+
+  const getLeadTypeLabel = (type: string | null | undefined) => {
+    const typeMap: Record<string, string> = {
+      buyer: "Comprador",
+      seller: "Vendedor",
+      both: "Ambos",
+    };
+    return typeMap[type || ""] || "-";
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh]">
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-3">
-            <span>{lead.name}</span>
-            <Badge variant="outline" className={getTypeColor(lead.lead_type)}>
-              {lead.lead_type === "buyer" ? "Comprador" : lead.lead_type === "seller" ? "Vendedor" : "Ambos"}
-            </Badge>
-            <Badge variant="outline" className={getStatusColor(lead.status)}>
-              {lead.status}
-            </Badge>
+          <DialogTitle className="flex items-center justify-between">
+            <span className="flex items-center gap-2">
+              <User className="h-5 w-5" />
+              {isLoading ? "A carregar..." : lead?.name || "Detalhes do Lead"}
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => onOpenChange(false)}
+            >
+              <X className="h-4 w-4" />
+            </Button>
           </DialogTitle>
         </DialogHeader>
 
-        <Tabs defaultValue="details" className="w-full">
-          <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="details">Detalhes</TabsTrigger>
-            <TabsTrigger value="interactions">
-              Interações ({interactions.length})
-            </TabsTrigger>
-            <TabsTrigger value="notes">Notas</TabsTrigger>
-            <TabsTrigger value="tasks">Tarefas ({tasks.length})</TabsTrigger>
-          </TabsList>
+        {isLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
+          </div>
+        ) : lead ? (
+          <Tabs defaultValue="info" className="w-full">
+            <TabsList className="grid w-full grid-cols-4">
+              <TabsTrigger value="info">Informações</TabsTrigger>
+              <TabsTrigger value="interactions">
+                Interações ({interactions.length})
+              </TabsTrigger>
+              <TabsTrigger value="notes">Notas ({notes.length})</TabsTrigger>
+              <TabsTrigger value="timeline">Cronologia</TabsTrigger>
+            </TabsList>
 
-          {/* DETAILS TAB */}
-          <TabsContent value="details">
-            <ScrollArea className="h-[500px] pr-4">
-              <div className="space-y-6">
-                {/* Contact Info */}
-                <Card>
-                  <CardContent className="pt-6 space-y-3">
-                    <h3 className="font-semibold text-lg mb-4">Informação de Contacto</h3>
-                    {lead.email && (
-                      <div className="flex items-center gap-2 text-sm">
-                        <Mail className="h-4 w-4 text-gray-400" />
-                        <span>{lead.email}</span>
-                      </div>
-                    )}
-                    {lead.phone && (
-                      <div className="flex items-center gap-2 text-sm">
-                        <Phone className="h-4 w-4 text-gray-400" />
-                        <span>{lead.phone}</span>
-                      </div>
-                    )}
-                    {lead.source && (
-                      <div className="flex items-center gap-2 text-sm">
-                        <FileText className="h-4 w-4 text-gray-400" />
-                        <span>Origem: {lead.source}</span>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-
-                {/* Buyer Preferences */}
-                {(lead.lead_type === "buyer" || lead.lead_type === "both") && (
-                  <Card>
-                    <CardContent className="pt-6">
-                      <h3 className="font-semibold text-lg mb-4">Preferências de Compra</h3>
-                      <div className="grid grid-cols-2 gap-4">
-                        {lead.property_type && (
-                          <div>
-                            <p className="text-sm text-gray-500">Tipo de Imóvel</p>
-                            <p className="font-medium capitalize">{lead.property_type}</p>
-                          </div>
-                        )}
-                        {lead.location_preference && (
-                          <div>
-                            <p className="text-sm text-gray-500">Localização Preferida</p>
-                            <p className="font-medium">{lead.location_preference}</p>
-                          </div>
-                        )}
-                        {lead.is_development && lead.development_name && (
-                          <div>
-                            <p className="text-sm text-gray-500">Empreendimento</p>
-                            <p className="font-medium">🏢 {lead.development_name}</p>
-                          </div>
-                        )}
-                        {lead.bedrooms && (
-                          <div>
-                            <p className="text-sm text-gray-500">Quartos</p>
-                            <p className="font-medium">T{lead.bedrooms}</p>
-                          </div>
-                        )}
-                        {lead.min_area && (
-                          <div>
-                            <p className="text-sm text-gray-500">Área Mínima</p>
-                            <p className="font-medium">{lead.min_area} m²</p>
-                          </div>
-                        )}
-                        {lead.budget && (
-                          <div>
-                            <p className="text-sm text-gray-500">Orçamento</p>
-                            <p className="font-medium">{formatCurrency(lead.budget)}</p>
-                          </div>
-                        )}
-                        {lead.needs_financing !== null && (
-                          <div>
-                            <p className="text-sm text-gray-500">Necessita Financiamento</p>
-                            <p className="font-medium">{lead.needs_financing ? "Sim" : "Não"}</p>
-                          </div>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
-                )}
-
-                {/* Seller Property */}
-                {(lead.lead_type === "seller" || lead.lead_type === "both") && (
-                  <Card>
-                    <CardContent className="pt-6">
-                      <h3 className="font-semibold text-lg mb-4">Imóvel para Venda</h3>
-                      <div className="grid grid-cols-2 gap-4">
-                        {lead.location_preference && (
-                          <div>
-                            <p className="text-sm text-gray-500">Localização</p>
-                            <p className="font-medium">{lead.location_preference}</p>
-                          </div>
-                        )}
-                        {lead.bedrooms && (
-                          <div>
-                            <p className="text-sm text-gray-500">Quartos</p>
-                            <p className="font-medium">T{lead.bedrooms}</p>
-                          </div>
-                        )}
-                        {lead.bathrooms && (
-                          <div>
-                            <p className="text-sm text-gray-500">Casas de Banho</p>
-                            <p className="font-medium">{lead.bathrooms}</p>
-                          </div>
-                        )}
-                        {lead.property_area && (
-                          <div>
-                            <p className="text-sm text-gray-500">Área</p>
-                            <p className="font-medium">{lead.property_area} m²</p>
-                          </div>
-                        )}
-                        {lead.desired_price && (
-                          <div>
-                            <p className="text-sm text-gray-500">Preço Desejado</p>
-                            <p className="font-medium">{formatCurrency(lead.desired_price)}</p>
-                          </div>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
-                )}
-
-                {/* Notes */}
-                {lead.notes && (
-                  <Card>
-                    <CardContent className="pt-6">
-                      <h3 className="font-semibold text-lg mb-4">Notas Gerais</h3>
-                      <p className="text-sm text-gray-700 whitespace-pre-wrap">{lead.notes}</p>
-                    </CardContent>
-                  </Card>
-                )}
-              </div>
-            </ScrollArea>
-          </TabsContent>
-
-          {/* INTERACTIONS TAB */}
-          <TabsContent value="interactions">
-            <ScrollArea className="h-[500px] pr-4">
-              {loading ? (
-                <div className="flex items-center justify-center h-40">
-                  <Loader2 className="h-6 w-6 animate-spin" />
-                </div>
-              ) : interactions.length === 0 ? (
-                <div className="text-center py-12 text-gray-500">
-                  <FileText className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                  <p>Nenhuma interação registada</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {interactions.map((interaction) => (
-                    <Card key={interaction.id}>
-                      <CardContent className="pt-6">
-                        <div className="flex items-start gap-3">
-                          <div className="p-2 bg-blue-50 rounded-lg">
-                            {getInteractionIcon(interaction.interaction_type)}
-                          </div>
-                          <div className="flex-1">
-                            <div className="flex items-center justify-between mb-2">
-                              <h4 className="font-semibold capitalize">{interaction.interaction_type}</h4>
-                              <Badge variant="outline">
-                                {interaction.outcome === "successful"
-                                  ? "Sucesso"
-                                  : interaction.outcome === "follow_up"
-                                  ? "Follow-up"
-                                  : interaction.outcome === "not_interested"
-                                  ? "Sem Interesse"
-                                  : "Sem Resposta"}
-                              </Badge>
-                            </div>
-                            <p className="text-sm text-gray-700 mb-2">{interaction.content}</p>
-                            <div className="flex items-center gap-4 text-xs text-gray-500">
-                              <span>{formatDate(interaction.created_at)}</span>
-                              {interaction.user_name && (
-                                <span>Por: {interaction.user_name}</span>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              )}
-            </ScrollArea>
-          </TabsContent>
-
-          {/* NOTES TAB */}
-          <TabsContent value="notes">
-            <ScrollArea className="h-[500px] pr-4">
+            <TabsContent value="info" className="space-y-4 mt-4">
               <Card>
-                <CardContent className="pt-6">
-                  <h3 className="font-semibold text-lg mb-4">Notas da Lead</h3>
-                  {lead.notes ? (
-                    <p className="text-sm text-gray-700 whitespace-pre-wrap">{lead.notes}</p>
-                  ) : (
-                    <p className="text-sm text-gray-500 text-center py-8">Nenhuma nota adicionada</p>
-                  )}
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <User className="h-5 w-5" />
+                    Informações Básicas
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="flex items-center gap-2">
+                    <User className="h-4 w-4 text-gray-400" />
+                    <div>
+                      <p className="text-sm text-gray-500">Nome</p>
+                      <p className="font-medium">{lead.name}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Mail className="h-4 w-4 text-gray-400" />
+                    <div>
+                      <p className="text-sm text-gray-500">Email</p>
+                      <p className="font-medium">{lead.email || "-"}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Phone className="h-4 w-4 text-gray-400" />
+                    <div>
+                      <p className="text-sm text-gray-500">Telefone</p>
+                      <p className="font-medium">{lead.phone || "-"}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <TrendingUp className="h-4 w-4 text-gray-400" />
+                    <div>
+                      <p className="text-sm text-gray-500">Estado</p>
+                      <div>{getStatusBadge(lead.status)}</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <User className="h-4 w-4 text-gray-400" />
+                    <div>
+                      <p className="text-sm text-gray-500">Tipo</p>
+                      <p className="font-medium">{getLeadTypeLabel(lead.lead_type)}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Calendar className="h-4 w-4 text-gray-400" />
+                    <div>
+                      <p className="text-sm text-gray-500">Criado em</p>
+                      <p className="font-medium">{formatDate(lead.created_at)}</p>
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
-            </ScrollArea>
-          </TabsContent>
 
-          {/* TASKS TAB */}
-          <TabsContent value="tasks">
-            <ScrollArea className="h-[500px] pr-4">
-              {loading ? (
-                <div className="flex items-center justify-center h-40">
-                  <Loader2 className="h-6 w-6 animate-spin" />
-                </div>
-              ) : tasks.length === 0 ? (
+              {lead.lead_type === "buyer" && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Home className="h-5 w-5" />
+                      Preferências (Comprador)
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="flex items-center gap-2">
+                      <MapPin className="h-4 w-4 text-gray-400" />
+                      <div>
+                        <p className="text-sm text-gray-500">Localização</p>
+                        <p className="font-medium">{lead.location_preference || "-"}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Home className="h-4 w-4 text-gray-400" />
+                      <div>
+                        <p className="text-sm text-gray-500">Tipo de Imóvel</p>
+                        <p className="font-medium">{lead.property_type || "-"}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Euro className="h-4 w-4 text-gray-400" />
+                      <div>
+                        <p className="text-sm text-gray-500">Orçamento</p>
+                        <p className="font-medium">
+                          {formatCurrency(lead.budget_min)} - {formatCurrency(lead.budget_max)}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Bed className="h-4 w-4 text-gray-400" />
+                      <div>
+                        <p className="text-sm text-gray-500">Quartos</p>
+                        <p className="font-medium">{lead.bedrooms || "-"}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Bath className="h-4 w-4 text-gray-400" />
+                      <div>
+                        <p className="text-sm text-gray-500">Casas de Banho</p>
+                        <p className="font-medium">{lead.bathrooms || "-"}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Maximize className="h-4 w-4 text-gray-400" />
+                      <div>
+                        <p className="text-sm text-gray-500">Área Mínima</p>
+                        <p className="font-medium">
+                          {lead.min_area ? `${lead.min_area}m²` : "-"}
+                        </p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {lead.lead_type === "seller" && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Home className="h-5 w-5" />
+                      Informações do Imóvel (Vendedor)
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="flex items-center gap-2">
+                      <MapPin className="h-4 w-4 text-gray-400" />
+                      <div>
+                        <p className="text-sm text-gray-500">Localização</p>
+                        <p className="font-medium">{(lead as any).property_location || lead.location_preference || "-"}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Home className="h-4 w-4 text-gray-400" />
+                      <div>
+                        <p className="text-sm text-gray-500">Tipo de Imóvel</p>
+                        <p className="font-medium">{lead.property_type || "-"}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Euro className="h-4 w-4 text-gray-400" />
+                      <div>
+                        <p className="text-sm text-gray-500">Preço Desejado</p>
+                        <p className="font-medium">{formatCurrency(lead.desired_price)}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Maximize className="h-4 w-4 text-gray-400" />
+                      <div>
+                        <p className="text-sm text-gray-500">Área</p>
+                        <p className="font-medium">
+                          {lead.property_area ? `${lead.property_area}m²` : "-"}
+                        </p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </TabsContent>
+
+            <TabsContent value="interactions" className="space-y-4 mt-4">
+              {interactions.length === 0 ? (
                 <div className="text-center py-12 text-gray-500">
-                  <CheckCircle className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                  <p>Nenhuma tarefa associada</p>
+                  <MessageSquare className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                  <p>Sem interações registadas</p>
                 </div>
               ) : (
-                <div className="space-y-4">
-                  {tasks.map((task) => (
-                    <Card key={task.id}>
-                      <CardContent className="pt-6">
-                        <div className="flex items-start gap-3">
-                          <div className="p-2 bg-purple-50 rounded-lg">
-                            {task.status === "completed" ? (
-                              <CheckCircle className="h-4 w-4 text-green-600" />
-                            ) : (
-                              <Clock className="h-4 w-4 text-orange-600" />
-                            )}
-                          </div>
+                <div className="space-y-3">
+                  {interactions.map((interaction) => (
+                    <Card key={interaction.id}>
+                      <CardContent className="pt-4">
+                        <div className="flex items-start justify-between">
                           <div className="flex-1">
-                            <div className="flex items-center justify-between mb-2">
-                              <h4 className="font-semibold">{task.title}</h4>
-                              <div className="flex gap-2">
-                                <Badge
-                                  variant="outline"
-                                  className={
-                                    task.priority === "high"
-                                      ? "border-red-200 text-red-700"
-                                      : task.priority === "medium"
-                                      ? "border-yellow-200 text-yellow-700"
-                                      : "border-gray-200"
-                                  }
-                                >
-                                  {task.priority === "high"
-                                    ? "Alta"
-                                    : task.priority === "medium"
-                                    ? "Média"
-                                    : "Baixa"}
-                                </Badge>
-                                <Badge
-                                  variant="outline"
-                                  className={
-                                    task.status === "completed"
-                                      ? "border-green-200 text-green-700"
-                                      : "border-blue-200 text-blue-700"
-                                  }
-                                >
-                                  {task.status === "completed" ? "Concluída" : "Pendente"}
-                                </Badge>
-                              </div>
+                            <div className="flex items-center gap-2 mb-2">
+                              <Badge>{interaction.interaction_type}</Badge>
+                              <span className="text-sm text-gray-500">
+                                {formatDate(interaction.interaction_date)}
+                              </span>
                             </div>
-                            {task.description && (
-                              <p className="text-sm text-gray-700 mb-2">{task.description}</p>
-                            )}
-                            <div className="flex items-center gap-4 text-xs text-gray-500">
-                              <div className="flex items-center gap-1">
-                                <Calendar className="h-3 w-3" />
-                                <span>Vencimento: {formatDate(task.due_date)}</span>
-                              </div>
-                            </div>
+                            <p className="text-sm text-gray-700">{interaction.content || "-"}</p>
                           </div>
                         </div>
                       </CardContent>
@@ -458,9 +371,93 @@ export function LeadDetailsDialog({ open, onOpenChange, lead }: LeadDetailsDialo
                   ))}
                 </div>
               )}
-            </ScrollArea>
-          </TabsContent>
-        </Tabs>
+            </TabsContent>
+
+            <TabsContent value="notes" className="space-y-4 mt-4">
+              {notes.length === 0 ? (
+                <div className="text-center py-12 text-gray-500">
+                  <FileText className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                  <p>Sem notas registadas</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {notes.map((note) => (
+                    <Card key={note.id}>
+                      <CardContent className="pt-4">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-2">
+                              <span className="text-sm font-medium">Nota</span>
+                              <span className="text-sm text-gray-500">
+                                {formatDate(note.created_at)}
+                              </span>
+                            </div>
+                            <p className="text-sm text-gray-700 whitespace-pre-wrap">
+                              {note.note}
+                            </p>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="timeline" className="space-y-4 mt-4">
+              <div className="space-y-3">
+                {[...interactions, ...notes]
+                  .sort((a, b) => {
+                    const dateA = new Date(
+                      "interaction_date" in a ? a.interaction_date : a.created_at
+                    );
+                    const dateB = new Date(
+                      "interaction_date" in b ? b.interaction_date : b.created_at
+                    );
+                    return dateB.getTime() - dateA.getTime();
+                  })
+                  .map((item) => {
+                    const isInteraction = "interaction_date" in item;
+                    return (
+                      <Card key={item.id}>
+                        <CardContent className="pt-4">
+                          <div className="flex items-start gap-3">
+                            {isInteraction ? (
+                              <MessageSquare className="h-5 w-5 text-blue-500 mt-0.5" />
+                            ) : (
+                              <FileText className="h-5 w-5 text-purple-500 mt-0.5" />
+                            )}
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-2">
+                                <Badge variant={isInteraction ? "default" : "secondary"}>
+                                  {isInteraction ? item.interaction_type : "Nota"}
+                                </Badge>
+                                <span className="text-sm text-gray-500">
+                                  {formatDate(
+                                    isInteraction ? item.interaction_date : item.created_at
+                                  )}
+                                </span>
+                              </div>
+                              {!isInteraction && (
+                                <p className="text-sm font-medium mb-1">Nota</p>
+                              )}
+                              <p className="text-sm text-gray-700 whitespace-pre-wrap">
+                                {isInteraction ? (item as InteractionWithDetails).content : (item as LeadNote).note}
+                              </p>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+              </div>
+            </TabsContent>
+          </Tabs>
+        ) : (
+          <div className="text-center py-12 text-gray-500">
+            <p>Não foi possível carregar os detalhes do lead</p>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );

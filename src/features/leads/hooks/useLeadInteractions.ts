@@ -7,7 +7,8 @@ import {
 
 interface InteractionForm {
   type: string;
-  notes: string;
+  subject: string;
+  content: string;
   outcome: string;
   date?: string;
 }
@@ -23,7 +24,8 @@ export function useLeadInteractions() {
   const [interactionDialogOpen, setInteractionDialogOpen] = useState(false);
   const [interactionForm, setInteractionForm] = useState<InteractionForm>({
     type: "call",
-    notes: "",
+    subject: "",
+    content: "",
     outcome: "",
     date: "",
   });
@@ -53,8 +55,8 @@ export function useLeadInteractions() {
     try {
       await createInteraction({
         interaction_type: interactionForm.type,
-        subject: null,
-        content: interactionForm.notes || null,
+        subject: interactionForm.subject || null,
+        content: interactionForm.content || null,
         outcome: interactionForm.outcome || null,
         lead_id: leadId,
         contact_id: null,
@@ -70,7 +72,8 @@ export function useLeadInteractions() {
       // Reset form
       setInteractionForm({
         type: "call",
-        notes: "",
+        subject: "",
+        content: "",
         outcome: "",
         date: "",
       });
@@ -93,7 +96,8 @@ export function useLeadInteractions() {
   const resetForm = useCallback(() => {
     setInteractionForm({
       type: "call",
-      notes: "",
+      subject: "",
+      content: "",
       outcome: "",
       date: "",
     });

@@ -116,6 +116,17 @@ export interface Interaction {
   timestamp: string;
 }
 
+// Note type for lead notes
+export interface Note {
+  id: string;
+  title: string;
+  content: string;
+  lead_id?: string | null;
+  created_at: string;
+  updated_at?: string;
+  created_by: string;
+}
+
 // Task Types
 export type TaskPriority = "low" | "medium" | "high" | "urgent";
 export type TaskStatus = "pending" | "in-progress" | "completed" | "cancelled";

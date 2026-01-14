@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { LeadCard } from "./LeadCard";
 import { LeadFilters } from "./LeadFilters";
 import { LeadDialogs } from "./LeadDialogs";
 import { LeadNotesDialog } from "@/components/leads/LeadNotesDialog";
+import { LeadDetailsDialog } from "@/components/leads/LeadDetailsDialog";
 import { AssignLeadDialog } from "@/components/leads/AssignLeadDialog";
 import { Button } from "@/components/ui/button";
 import { LayoutGrid, List, Edit, MoreVertical, Eye } from "lucide-react";
@@ -59,7 +60,7 @@ export function LeadsListContainer({
 
   // Columns configuration
   const [columnsConfig, setColumnsConfig] = useState<LeadColumnConfig[]>([]);
-
+  
   // Save view mode preference
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -77,31 +78,34 @@ export function LeadsListContainer({
       const config = await getLeadColumnsConfig();
       const visibleColumns = config.filter((col) => col.is_visible);
       
-      // Use default columns if no visible columns are configured
       if (visibleColumns.length === 0) {
-        console.warn("No visible columns configured, using default columns");
         setColumnsConfig(DEFAULT_COLUMNS);
       } else {
         setColumnsConfig(visibleColumns);
       }
     } catch (error) {
-      console.error("Failed to load columns config, using default columns:", error);
-      // Use default columns as fallback
       setColumnsConfig(DEFAULT_COLUMNS);
     }
   };
 
   // Fetch leads data with archived support
   const { leads, isLoading, error, refetch } = useLeads(showArchived);
+  
+  // Stabilize refetch callback
+  const stableRefetch = useCallback(async () => {
+    await refetch();
+  }, [refetch]);
 
   // Debounced refetch to prevent cascade re-renders
   const [isRefetching, setIsRefetching] = useState(false);
-  const debouncedRefetch = async () => {
+  const debouncedRefetch = useCallback(async () => {
     if (isRefetching) return;
     setIsRefetching(true);
     await refetch();
-    setTimeout(() => setIsRefetching(false), 500);
-  };
+    setTimeout(() => {
+      setIsRefetching(false);
+    }, 500);
+  }, [isRefetching, refetch]);
 
   // Filter logic
   const {
@@ -114,7 +118,7 @@ export function LeadsListContainer({
 
   // CRUD operations
   const { convertLead, deleteLead, permanentlyDelete, restore, assign, isProcessing } =
-    useLeadMutations(refetch);
+    useLeadMutations(stableRefetch);
 
   // Interactions
   const {
@@ -134,11 +138,20 @@ export function LeadsListContainer({
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
   const [eventDialogOpen, setEventDialogOpen] = useState(false);
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
-  const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
   const [notesDialogOpen, setNotesDialogOpen] = useState(false);
+  const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
   const [selectedLead, setSelectedLead] = useState<LeadWithContacts | null>(null);
+  const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
   const [selectedAgent, setSelectedAgent] = useState("");
-
+  
+  // Anti-freeze control
+  const openingDetailsRef = useRef(false);
+  const openingTaskRef = useRef(false);
+  const openingEventRef = useRef(false);
+  const openingInteractionRef = useRef(false);
+  const openingNotesRef = useRef(false);
+  const openingAssignRef = useRef(false);
+  
   // Task form state
   const [taskForm, setTaskForm] = useState({
     title: "",
@@ -174,58 +187,145 @@ export function LeadsListContainer({
     await permanentlyDelete(lead.id, lead.name);
   };
 
-  const handleViewDetails = (lead: LeadWithContacts) => {
-    setSelectedLead(lead);
-    setDetailsDialogOpen(true);
-  };
+  const handleViewDetails = useCallback((lead: LeadWithContacts) => {
+    // Prevent multiple simultaneous opens
+    if (openingDetailsRef.current) {
+      console.log("[LeadsListContainer] Already opening details, ignoring duplicate call");
+      return;
+    }
 
-  const handleAssign = (lead: LeadWithContacts) => {
-    setSelectedLead(lead);
-    setAssignDialogOpen(true);
-  };
+    openingDetailsRef.current = true;
+    
+    // Use setTimeout to break out of current render cycle
+    setTimeout(() => {
+      console.log("[LeadsListContainer] Opening details for lead:", lead.id);
+      setSelectedLeadId(lead.id);
+      setDetailsDialogOpen(true);
+      
+      // Reset flag after a delay to allow next open
+      setTimeout(() => {
+        openingDetailsRef.current = false;
+      }, 300);
+    }, 0);
+  }, []);
 
-  const handleAssignLead = async () => {
+  const handleAssign = useCallback((lead: LeadWithContacts) => {
+    if (openingAssignRef.current) {
+      console.log("[LeadsListContainer] Already opening assign dialog, ignoring duplicate call");
+      return;
+    }
+
+    openingAssignRef.current = true;
+    
+    setTimeout(() => {
+      console.log("[LeadsListContainer] Opening assign dialog for lead:", lead.id);
+      setSelectedLead(lead);
+      setAssignDialogOpen(true);
+      
+      setTimeout(() => {
+        openingAssignRef.current = false;
+      }, 300);
+    }, 0);
+  }, []);
+
+  const handleAssignLead = useCallback(async () => {
     if (!selectedLead || !selectedAgent) return;
     await assign(selectedLead.id, selectedAgent);
     setAssignDialogOpen(false);
     setSelectedAgent("");
-  };
+  }, [selectedLead, selectedAgent, assign]);
 
-  const handleTask = (lead: LeadWithContacts) => {
-    setSelectedLead(lead);
-    setTaskForm({
-      title: `Seguimento: ${lead.name}`,
-      description: "",
-      due_date: "",
-      priority: "medium",
-      status: "pending",
-    });
-    setTaskDialogOpen(true);
-  };
+  const handleTask = useCallback((lead: LeadWithContacts) => {
+    if (openingTaskRef.current) {
+      console.log("[LeadsListContainer] Already opening task dialog, ignoring duplicate call");
+      return;
+    }
 
-  const handleEvent = (lead: LeadWithContacts) => {
-    setSelectedLead(lead);
-    setEventForm({
-      title: `Reunião: ${lead.name}`,
-      description: "",
-      start_date: "",
-      end_date: "",
-      location: "",
-    });
-    setEventDialogOpen(true);
-  };
+    openingTaskRef.current = true;
+    
+    setTimeout(() => {
+      console.log("[LeadsListContainer] Opening task dialog for lead:", lead.id);
+      setSelectedLead(lead);
+      setTaskForm({
+        title: `Seguimento: ${lead.name}`,
+        description: "",
+        due_date: "",
+        priority: "medium",
+        status: "pending",
+      });
+      setTaskDialogOpen(true);
+      
+      setTimeout(() => {
+        openingTaskRef.current = false;
+      }, 300);
+    }, 0);
+  }, []);
 
-  const handleInteraction = (lead: LeadWithContacts) => {
-    setSelectedLead(lead);
-    setInteractionDialogOpen(true);
-  };
+  const handleEvent = useCallback((lead: LeadWithContacts) => {
+    if (openingEventRef.current) {
+      console.log("[LeadsListContainer] Already opening event dialog, ignoring duplicate call");
+      return;
+    }
 
-  const handleNotes = (lead: LeadWithContacts) => {
-    setSelectedLead(lead);
-    setNotesDialogOpen(true);
-  };
+    openingEventRef.current = true;
+    
+    setTimeout(() => {
+      console.log("[LeadsListContainer] Opening event dialog for lead:", lead.id);
+      setSelectedLead(lead);
+      setEventForm({
+        title: `Reunião: ${lead.name}`,
+        description: "",
+        start_date: "",
+        end_date: "",
+        location: "",
+      });
+      setEventDialogOpen(true);
+      
+      setTimeout(() => {
+        openingEventRef.current = false;
+      }, 300);
+    }, 0);
+  }, []);
 
-  const handleCreateTask = async () => {
+  const handleInteraction = useCallback((lead: LeadWithContacts) => {
+    if (openingInteractionRef.current) {
+      console.log("[LeadsListContainer] Already opening interaction dialog, ignoring duplicate call");
+      return;
+    }
+
+    openingInteractionRef.current = true;
+    
+    setTimeout(() => {
+      console.log("[LeadsListContainer] Opening interaction dialog for lead:", lead.id);
+      setSelectedLead(lead);
+      setInteractionDialogOpen(true);
+      
+      setTimeout(() => {
+        openingInteractionRef.current = false;
+      }, 300);
+    }, 0);
+  }, []);
+
+  const handleNotes = useCallback((lead: LeadWithContacts) => {
+    if (openingNotesRef.current) {
+      console.log("[LeadsListContainer] Already opening notes dialog, ignoring duplicate call");
+      return;
+    }
+
+    openingNotesRef.current = true;
+    
+    setTimeout(() => {
+      console.log("[LeadsListContainer] Opening notes dialog for lead:", lead.id);
+      setSelectedLead(lead);
+      setNotesDialogOpen(true);
+      
+      setTimeout(() => {
+        openingNotesRef.current = false;
+      }, 300);
+    }, 0);
+  }, []);
+
+  const handleCreateTask = useCallback(async () => {
     if (!selectedLead) return;
     
     const { createTask } = await import("@/services/tasksService");
@@ -237,7 +337,7 @@ export function LeadsListContainer({
       priority: taskForm.priority as any,
       status: taskForm.status as any,
       related_lead_id: selectedLead.id,
-      user_id: "", // Will be set by service
+      user_id: "",
     });
 
     setTaskDialogOpen(false);
@@ -248,9 +348,9 @@ export function LeadsListContainer({
       priority: "medium",
       status: "pending",
     });
-  };
+  }, [selectedLead, taskForm]);
 
-  const handleCreateEvent = async () => {
+  const handleCreateEvent = useCallback(async () => {
     if (!selectedLead) return;
     
     const { createEvent } = await import("@/services/calendarService");
@@ -262,7 +362,7 @@ export function LeadsListContainer({
       end_time: eventForm.end_date,
       location: eventForm.location,
       lead_id: selectedLead.id,
-      user_id: "", // Will be set by service
+      user_id: "",
     });
 
     setEventDialogOpen(false);
@@ -273,12 +373,12 @@ export function LeadsListContainer({
       end_date: "",
       location: "",
     });
-  };
+  }, [selectedLead, eventForm]);
 
-  const handleCreateInteraction = async () => {
+  const handleCreateInteraction = useCallback(async () => {
     if (!selectedLead) return;
     await createNewInteraction(selectedLead.id);
-  };
+  }, [selectedLead, createNewInteraction]);
 
   // Helper functions for table
   const formatCurrency = (value: number | null | undefined) => {
@@ -577,8 +677,6 @@ export function LeadsListContainer({
         selectedAgent={selectedAgent}
         setSelectedAgent={setSelectedAgent}
         onAssignLead={handleAssignLead}
-        detailsDialogOpen={detailsDialogOpen}
-        setDetailsDialogOpen={setDetailsDialogOpen}
         selectedLead={selectedLead}
       />
 
@@ -601,6 +699,12 @@ export function LeadsListContainer({
           onOpenChange={setAssignDialogOpen}
         />
       )}
+
+      <LeadDetailsDialog
+        leadId={selectedLeadId}
+        open={detailsDialogOpen}
+        onOpenChange={setDetailsDialogOpen}
+      />
     </div>
   );
 }

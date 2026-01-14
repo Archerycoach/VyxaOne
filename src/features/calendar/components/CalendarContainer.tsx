@@ -3,7 +3,6 @@ import { useRouter } from "next/router";
 import { CalendarHeader } from "./CalendarHeader";
 import { CalendarGrid } from "./CalendarGrid";
 import { CalendarDialogs } from "./CalendarDialogs";
-import { LeadDetailsDialog } from "@/components/leads/LeadDetailsDialog";
 import {
   useCalendarEvents,
   useCalendarTasks,
@@ -14,9 +13,8 @@ import {
 } from "../hooks";
 import { createCalendarEvent, updateCalendarEvent } from "@/services/calendarService";
 import { updateTask, createTask } from "@/services/tasksService";
-import { getLead, type LeadWithDetails } from "@/services/leadsService";
 import { useToast } from "@/hooks/use-toast";
-import type { CalendarEvent, Task, Lead } from "@/types";
+import type { CalendarEvent, Task } from "@/types";
 
 export function CalendarContainer() {
   const { toast } = useToast();
@@ -60,11 +58,6 @@ export function CalendarContainer() {
   const [showTaskForm, setShowTaskForm] = useState(false);
   const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
-
-  // Lead details dialog state
-  const [selectedLead, setSelectedLead] = useState<LeadWithDetails | null>(null);
-  const [showLeadDetails, setShowLeadDetails] = useState(false);
-  const [loadingLead, setLoadingLead] = useState(false);
 
   // Event form state
   const [eventForm, setEventForm] = useState<Partial<CalendarEvent>>({
@@ -143,33 +136,6 @@ export function CalendarContainer() {
 
     handleGoogleConnection();
   }, [router.query, toast, checkConnection, syncWithGoogle, router]);
-
-  // Handler to open lead details
-  const handleOpenLeadDetails = async (leadId: string) => {
-    setLoadingLead(true);
-    try {
-      const lead = await getLead(leadId);
-      if (lead) {
-        setSelectedLead(lead);
-        setShowLeadDetails(true);
-      } else {
-        toast({
-          title: "Lead não encontrada",
-          description: "Não foi possível carregar os detalhes da lead",
-          variant: "destructive",
-        });
-      }
-    } catch (error) {
-      console.error("Error loading lead:", error);
-      toast({
-        title: "Erro ao carregar lead",
-        description: "Ocorreu um erro ao carregar os detalhes da lead",
-        variant: "destructive",
-      });
-    } finally {
-      setLoadingLead(false);
-    }
-  };
 
   // Helpers
   const formatDate = (date: Date) => {
@@ -362,7 +328,6 @@ export function CalendarContainer() {
   const filteredEvents = React.useMemo(() => {
     const filtered = filterEventsByDate(events, currentDate);
     
-    // Debug: Log de eventos
     console.log("[CalendarContainer] Total events fetched:", events.length);
     console.log("[CalendarContainer] Current date:", currentDate);
     console.log("[CalendarContainer] View mode:", viewMode);
@@ -405,7 +370,6 @@ export function CalendarContainer() {
         onEventClick={handleEditEvent}
         onTaskClick={handleEditTask}
         onDeleteEvent={deleteEvent}
-        onOpenLeadDetails={handleOpenLeadDetails}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
         onDragOver={handleDragOver}
@@ -426,13 +390,6 @@ export function CalendarContainer() {
         setTaskForm={setTaskForm}
         handleTaskSubmit={handleTaskSubmit}
         isTaskEditing={!!editingTask}
-        onOpenLeadDetails={handleOpenLeadDetails}
-      />
-
-      <LeadDetailsDialog
-        lead={selectedLead}
-        open={showLeadDetails}
-        onOpenChange={setShowLeadDetails}
       />
     </div>
   );

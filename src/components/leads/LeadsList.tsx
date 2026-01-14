@@ -48,18 +48,16 @@ interface LeadsListProps {
   onDelete: (id: string) => void;
   isLoading?: boolean;
   onRefresh?: () => Promise<void>;
+  onViewDetails?: (lead: LeadWithContacts) => void;
 }
 
-export function LeadsList({ leads, onEdit, onDelete, isLoading, onRefresh }: LeadsListProps) {
+export function LeadsList({ leads, onEdit, onDelete, isLoading, onRefresh, onViewDetails }: LeadsListProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterType, setFilterType] = useState<string>("all");
   const [showArchived, setShowArchived] = useState(false);
   const [selectedLead, setSelectedLead] = useState<LeadWithContacts | null>(null);
   const [convertDialogOpen, setConvertDialogOpen] = useState(false);
   const [interactionDialogOpen, setInteractionDialogOpen] = useState(false);
-  const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
-  const [leadInteractions, setLeadInteractions] = useState<any[]>([]);
-  const [loadingInteractions, setLoadingInteractions] = useState(false);
   const [interactionForm, setInteractionForm] = useState({
     type: "phone_call",
     subject: "",
@@ -172,15 +170,12 @@ export function LeadsList({ leads, onEdit, onDelete, isLoading, onRefresh }: Lea
     console.log("[LeadsList] Resetting all states");
     setConvertDialogOpen(false);
     setInteractionDialogOpen(false);
-    setDetailsDialogOpen(false);
     setAssignDialogOpen(false);
     setTaskDialogOpen(false);
     setEventDialogOpen(false);
     setSelectedLead(null);
     setSelectedLeadForTask(null);
     setSelectedAgentId("");
-    setLeadInteractions([]);
-    setLoadingInteractions(false);
     setInteractionForm({
       type: "phone_call",
       subject: "",
@@ -404,27 +399,6 @@ export function LeadsList({ leads, onEdit, onDelete, isLoading, onRefresh }: Lea
   const canAssignLeads = currentUserRole === "admin" || currentUserRole === "team_lead";
   
   console.log("[LeadsList] Current user role:", currentUserRole, "Can assign leads:", canAssignLeads);
-
-  const handleViewDetails = useCallback(async (lead: LeadWithContacts) => {
-    setSelectedLead(lead);
-    setDetailsDialogOpen(true);
-    setLoadingInteractions(true);
-    
-    try {
-      const interactions = await getInteractionsByLead(lead.id);
-      setLeadInteractions(interactions);
-    } catch (error) {
-      console.error("Error loading interactions:", error);
-      toast({
-        title: "Erro ao carregar interações",
-        description: "Não foi possível carregar o histórico de interações.",
-        variant: "destructive",
-      });
-      setLeadInteractions([]);
-    } finally {
-      setLoadingInteractions(false);
-    }
-  }, [toast]);
 
   const handleTaskClick = useCallback((lead: LeadWithContacts) => {
     setSelectedLeadForTask(lead);
@@ -867,7 +841,7 @@ export function LeadsList({ leads, onEdit, onDelete, isLoading, onRefresh }: Lea
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => handleViewDetails(lead)}
+                      onClick={() => onViewDetails?.(lead)}
                       className="flex-1"
                       title="Ver Detalhes"
                       type="button"
@@ -1051,168 +1025,7 @@ export function LeadsList({ leads, onEdit, onDelete, isLoading, onRefresh }: Lea
         </DialogContent>
       </Dialog>
 
-      <Dialog open={detailsDialogOpen} onOpenChange={(open) => !open && resetAllStates()}>
-        <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
-          <DialogHeader>
-            <DialogTitle>Detalhes da Lead - {selectedLead?.name}</DialogTitle>
-          </DialogHeader>
-          
-          <div className="flex-1 overflow-y-auto space-y-6">
-            <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
-              <div>
-                <p className="text-sm text-gray-500">Nome</p>
-                <p className="font-medium">{selectedLead?.name}</p>
-              </div>
-              {selectedLead?.email && (
-                <div>
-                  <p className="text-sm text-gray-500">Email</p>
-                  <p className="font-medium">{selectedLead.email}</p>
-                </div>
-              )}
-              {selectedLead?.phone && (
-                <div>
-                  <p className="text-sm text-gray-500">Telefone</p>
-                  <p className="font-medium">{selectedLead.phone}</p>
-                </div>
-              )}
-              <div>
-                <p className="text-sm text-gray-500">Tipo</p>
-                <Badge variant="outline" className={getTypeColor(selectedLead?.lead_type || "")}>
-                  {getTypeLabel(selectedLead?.lead_type || "")}
-                </Badge>
-              </div>
-              <div>
-                <p className="text-sm text-gray-500">Status</p>
-                <Badge variant="outline" className={getStatusColor(selectedLead?.status || "")}>
-                  {getStatusLabel(selectedLead?.status || "")}
-                </Badge>
-              </div>
-              {selectedLead?.budget && (
-                <div>
-                  <p className="text-sm text-gray-500">Orçamento</p>
-                  <p className="font-medium">{formatBudget(selectedLead.budget)}</p>
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-2 text-sm">
-              {selectedLead?.email && (
-                <div className="flex items-center gap-2 text-gray-600">
-                  <Mail className="h-4 w-4" />
-                  <span>{selectedLead.email}</span>
-                </div>
-              )}
-              {selectedLead?.phone && (
-                <div className="flex items-center gap-2 text-gray-600">
-                  <Phone className="h-4 w-4" />
-                  <span>{selectedLead.phone}</span>
-                </div>
-              )}
-              {selectedLead?.budget && (
-                <div className="flex items-center gap-2 text-gray-600">
-                  <DollarSign className="h-4 w-4" />
-                  <span>Até €{selectedLead.budget.toLocaleString()}</span>
-                </div>
-              )}
-              {selectedLead?.created_at && (
-                <div className="flex items-center gap-2 text-gray-600">
-                  <Calendar className="h-4 w-4" />
-                  <span>
-                    Criado a {new Date(selectedLead.created_at).toLocaleDateString()}
-                  </span>
-                </div>
-              )}
-              {selectedLead?.assigned_user && (
-                <div className="flex items-center gap-2 text-gray-600">
-                  <User className="h-4 w-4" />
-                  <span className="font-medium">
-                    Atribuído a: {selectedLead.assigned_user.full_name || selectedLead.assigned_user.email}
-                  </span>
-                </div>
-              )}
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold flex items-center gap-2">
-                  <Clock className="h-5 w-5 text-primary" />
-                  Histórico de Comunicação
-                </h3>
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    resetAllStates();
-                    setTimeout(() => handleInteractionClick(selectedLead!), 100);
-                  }}
-                  type="button"
-                >
-                  <Plus className="h-4 w-4 mr-1" />
-                  Nova Interação
-                </Button>
-              </div>
-
-              {loadingInteractions ? (
-                <div className="flex justify-center p-8">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-                </div>
-              ) : leadInteractions.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  <FileText className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                  <p>Nenhuma interação registrada ainda</p>
-                  <p className="text-sm">Clique em "Nova Interação" para começar</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {leadInteractions.map((interaction) => (
-                    <Card key={interaction.id} className="p-4">
-                      <div className="flex items-start gap-3">
-                        <div className={`p-2 rounded-full ${getInteractionTypeColor(interaction.interaction_type)}`}>
-                          {getInteractionIcon(interaction.interaction_type)}
-                        </div>
-                        <div className="flex-1">
-                          <div className="flex items-start justify-between mb-2">
-                            <div>
-                              <p className="font-medium">
-                                {getInteractionTypeLabel(interaction.interaction_type)}
-                                {interaction.subject && ` - ${interaction.subject}`}
-                              </p>
-                              <p className="text-xs text-gray-500">
-                                {new Date(interaction.interaction_date).toLocaleString("pt-PT", {
-                                  day: "2-digit",
-                                  month: "2-digit",
-                                  year: "numeric",
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                })}
-                              </p>
-                            </div>
-                            {interaction.outcome && (
-                              <Badge variant="secondary" className="text-xs">
-                                {interaction.outcome}
-                              </Badge>
-                            )}
-                          </div>
-                          {interaction.content && (
-                            <p className="text-sm text-gray-600 whitespace-pre-wrap">
-                              {interaction.content}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </Card>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button onClick={() => resetAllStates()} type="button">
-              Fechar
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* REMOVED: detailsDialog - now handled by parent LeadsListContainer */}
 
       <Dialog open={assignDialogOpen} onOpenChange={(open) => !open && resetAllStates()}>
         <DialogContent className="max-w-md">

@@ -144,6 +144,9 @@ export const getLead = async (id: string): Promise<LeadWithDetails | null> => {
   return data as LeadWithDetails;
 };
 
+// Alias for compatibility
+export const getLeadById = getLead;
+
 // Create new lead
 export const createLead = async (lead: LeadInsert): Promise<Lead> => {
   console.log("[leadsService] createLead called with:", lead);

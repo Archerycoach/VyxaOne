@@ -13,6 +13,7 @@ export function useLeads(showArchived = false) {
   const [error, setError] = useState<Error | null>(null);
 
   const fetchLeads = useCallback(async (forceRefresh = false) => {
+    console.log("[useLeads] fetchLeads START - archived:", showArchived, "forceRefresh:", forceRefresh, "timestamp:", Date.now());
     setIsLoading(true);
     setError(null);
     
@@ -24,16 +25,18 @@ export function useLeads(showArchived = false) {
         : await getAllLeads(!forceRefresh);
         
       setLeads(data as unknown as LeadWithContacts[]);
-      console.log("[useLeads] Leads fetched successfully:", data.length);
+      console.log("[useLeads] Leads fetched successfully:", data.length, "timestamp:", Date.now());
     } catch (err) {
       console.error("[useLeads] Error fetching leads:", err);
       setError(err as Error);
     } finally {
       setIsLoading(false);
+      console.log("[useLeads] fetchLeads END - timestamp:", Date.now());
     }
   }, [showArchived]);
 
   useEffect(() => {
+    console.log("[useLeads] useEffect triggered - calling fetchLeads");
     fetchLeads();
   }, [fetchLeads]);
 
@@ -41,6 +44,9 @@ export function useLeads(showArchived = false) {
     leads,
     isLoading,
     error,
-    refetch: () => fetchLeads(true),
+    refetch: () => {
+      console.log("[useLeads] refetch called manually");
+      return fetchLeads(true);
+    },
   };
 }
