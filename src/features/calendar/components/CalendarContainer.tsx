@@ -66,7 +66,7 @@ export function CalendarContainer() {
     startTime: "",
     endTime: "",
     location: "",
-    eventType: "visita",
+    eventType: "viewing",
     leadId: "",
   });
 
@@ -161,7 +161,7 @@ export function CalendarContainer() {
       startTime: "",
       endTime: "",
       location: "",
-      eventType: "visita",
+      eventType: "viewing",
       leadId: "",
     });
     setShowEventForm(true);
@@ -187,7 +187,7 @@ export function CalendarContainer() {
       startTime: event.startTime,
       endTime: event.endTime,
       location: event.location || "",
-      eventType: event.eventType || "visita",
+      eventType: event.eventType || "viewing",
       leadId: event.leadId || "",
     });
     setShowEventForm(true);
@@ -229,7 +229,7 @@ export function CalendarContainer() {
           start_time: eventForm.startTime!,
           end_time: eventForm.endTime,
           location: eventForm.location,
-          event_type: eventForm.eventType || "visita",
+          event_type: eventForm.eventType || "viewing",
           lead_id: eventForm.leadId || null,
           user_id: user?.id || "",
         });
