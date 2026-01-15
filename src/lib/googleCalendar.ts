@@ -156,3 +156,48 @@ export async function isGoogleCalendarConnected(): Promise<boolean> {
     return false;
   }
 }
+
+/**
+ * Triggers manual synchronization with Google Calendar
+ * Uses the existing /api/google-calendar/sync endpoint
+ */
+export async function triggerManualSync(): Promise<{ success: boolean; synced?: number; error?: string }> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    if (!session?.access_token) {
+      return { 
+        success: false, 
+        error: "No active session. Please log in again." 
+      };
+    }
+
+    const response = await fetch('/api/google-calendar/sync', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${session.access_token}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+      return { 
+        success: false, 
+        error: errorData.error || `HTTP ${response.status}` 
+      };
+    }
+
+    const result = await response.json();
+    return { 
+      success: true, 
+      synced: result.synced || 0 
+    };
+  } catch (error) {
+    console.error('Manual sync error:', error);
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Unknown error' 
+    };
+  }
+}

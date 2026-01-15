@@ -397,3 +397,254 @@ Antes de considerar a instância completa:
 ---
 
 **🎉 Parabéns! A sua nova instância está pronta para usar!**
+
+---
+
+## 📦 **EXTRA: Exportar Estrutura da BD (Schema) SEM Dados**
+
+Se já tem uma base de dados Supabase funcional e quer criar uma cópia **apenas da estrutura** (tabelas, colunas, tipos, funções, políticas RLS) **sem os dados dos utilizadores**, tem várias opções:
+
+### **OPÇÃO 1: Usar Supabase CLI (RECOMENDADO)**
+
+Esta é a forma mais limpa e profissional de exportar o schema.
+
+#### **1.1. Instalar Supabase CLI**
+
+```bash
+# macOS/Linux
+brew install supabase/tap/supabase
+
+# Windows (via Scoop)
+scoop bucket add supabase https://github.com/supabase/scoop-bucket.git
+scoop install supabase
+
+# Ou via npm (qualquer SO)
+npm install -g supabase
+```
+
+#### **1.2. Login no Supabase**
+
+```bash
+supabase login
+```
+
+Isto vai abrir o browser para autenticar.
+
+#### **1.3. Link ao Projeto Existente**
+
+```bash
+# Na raiz do seu projeto
+supabase link --project-ref SEU_PROJECT_REF
+```
+
+**Como encontrar o `project-ref`:**
+- Vá ao dashboard do Supabase
+- URL será: `https://supabase.com/dashboard/project/[SEU_PROJECT_REF]`
+- Ou Settings → General → Reference ID
+
+#### **1.4. Gerar Migrações do Estado Atual**
+
+```bash
+# Isto cria ficheiros SQL com TODO o schema atual
+supabase db pull
+```
+
+**Resultado:**
+- Cria ficheiros em `supabase/migrations/` com timestamp
+- Inclui: tabelas, colunas, índices, funções, triggers, RLS policies
+- **NÃO inclui dados** dos utilizadores
+
+#### **1.5. Aplicar no Novo Projeto**
+
+```bash
+# Link ao NOVO projeto
+supabase link --project-ref NOVO_PROJECT_REF
+
+# Aplicar todas as migrações
+supabase db push
+```
+
+---
+
+### **OPÇÃO 2: Export via pg_dump (Schema Only)**
+
+Se preferir usar PostgreSQL diretamente:
+
+#### **2.1. Obter Connection String**
+
+No Supabase Dashboard:
+- **Settings** → **Database** → **Connection string** → **URI**
+- Copie a connection string (formato: `postgresql://...`)
+
+#### **2.2. Exportar Schema (sem dados)**
+
+```bash
+pg_dump "postgresql://postgres:[PASSWORD]@[HOST]:5432/postgres" \
+  --schema-only \
+  --no-owner \
+  --no-privileges \
+  > schema_only.sql
+```
+
+**Flags importantes:**
+- `--schema-only`: Apenas estrutura, sem dados
+- `--no-owner`: Remove instruções de ownership
+- `--no-privileges`: Remove instruções GRANT/REVOKE
+
+#### **2.3. Limpar o Ficheiro (Opcional)**
+
+Remova estas linhas do `schema_only.sql` se existirem:
+```sql
+-- Remover extensões que Supabase já tem
+DROP EXTENSION IF EXISTS ...;
+CREATE EXTENSION IF NOT EXISTS ...;
+
+-- Remover schemas do sistema
+CREATE SCHEMA IF NOT EXISTS auth;
+CREATE SCHEMA IF NOT EXISTS storage;
+```
+
+#### **2.4. Importar no Novo Projeto**
+
+```bash
+psql "postgresql://postgres:[NEW_PASSWORD]@[NEW_HOST]:5432/postgres" \
+  < schema_only.sql
+```
+
+---
+
+### **OPÇÃO 3: Export Manual via Supabase Dashboard**
+
+Método visual, bom para projetos pequenos:
+
+#### **3.1. Exportar Schema de Cada Tabela**
+
+1. Vá ao **Table Editor**
+2. Para cada tabela, clique no menu (⋮) → **View SQL**
+3. Copie o SQL de criação da tabela
+4. Guarde num ficheiro `.sql`
+
+#### **3.2. Exportar Políticas RLS**
+
+1. Vá ao **Authentication** → **Policies**
+2. Para cada tabela:
+   - Copie o SQL de cada policy
+   - Guarde junto com o schema da tabela
+
+#### **3.3. Exportar Funções e Triggers**
+
+1. Vá ao **Database** → **Functions**
+2. Copie o código de cada função
+3. Guarde num ficheiro separado
+
+#### **3.4. Organizar Ficheiros**
+
+Estrutura recomendada:
+```
+database-schema/
+├── 01_tables.sql          # Criação de todas as tabelas
+├── 02_rls_policies.sql    # Todas as políticas RLS
+├── 03_functions.sql       # Funções personalizadas
+├── 04_triggers.sql        # Triggers
+└── 05_indexes.sql         # Índices adicionais
+```
+
+#### **3.5. Executar no Novo Projeto**
+
+No **SQL Editor** do novo projeto Supabase:
+1. Execute `01_tables.sql`
+2. Execute `02_rls_policies.sql`
+3. Execute `03_functions.sql`
+4. Execute `04_triggers.sql`
+5. Execute `05_indexes.sql`
+
+---
+
+### **OPÇÃO 4: Usar Ficheiros de Migração Existentes**
+
+Se já tem o projeto organizado com migrações (como este projeto tem em `supabase/migrations/`):
+
+#### **4.1. Copiar Ficheiros de Migração**
+
+```bash
+# Copie TODOS os ficheiros .sql de supabase/migrations/
+cp -r supabase/migrations/* /caminho/para/novo/projeto/supabase/migrations/
+```
+
+#### **4.2. Aplicar no Novo Projeto**
+
+```bash
+cd /caminho/para/novo/projeto
+supabase link --project-ref NOVO_PROJECT_REF
+supabase db push
+```
+
+**Vantagem:**
+- ✅ Mantém histórico completo de mudanças
+- ✅ Fácil de versionar no Git
+- ✅ Reproduzível em qualquer ambiente
+
+---
+
+### **⚠️ IMPORTANTE: O Que NÃO Será Exportado**
+
+Nenhuma destas opções exporta:
+- ❌ **Dados dos utilizadores** (registos nas tabelas)
+- ❌ **Utilizadores do Auth** (emails, passwords)
+- ❌ **Ficheiros do Storage** (imagens, PDFs, etc.)
+- ❌ **Secrets** (API keys, tokens)
+
+Se precisar migrar dados também, terá que fazer:
+```bash
+# Export COM dados
+pg_dump "postgresql://..." > full_backup.sql
+
+# Ou export selectivo de tabelas específicas
+pg_dump "postgresql://..." -t users -t properties > data_backup.sql
+```
+
+---
+
+### **🎯 Recomendação Final**
+
+**Para este projeto especificamente:**
+
+✅ **Use OPÇÃO 4** (Ficheiros de Migração Existentes):
+- Já tem 200+ ficheiros de migração em `supabase/migrations/`
+- Estão organizados cronologicamente
+- Incluem TODO o schema necessário
+- Basta copiar e executar `supabase db push`
+
+Se quiser **uma versão "limpa"** sem histórico:
+✅ **Use OPÇÃO 1** (Supabase CLI com `db pull`):
+- Gera um ficheiro SQL limpo com estado atual
+- Remove histórico de mudanças antigas
+- Mais fácil de ler e manter
+
+---
+
+### **📝 Checklist de Exportação**
+
+Antes de exportar, verifique se tem tudo:
+
+- [ ] Schema de todas as tabelas
+- [ ] Políticas RLS (Row Level Security)
+- [ ] Índices personalizados
+- [ ] Funções SQL personalizadas
+- [ ] Triggers
+- [ ] Tipos ENUM personalizados
+- [ ] Foreign Keys e constraints
+- [ ] Default values
+- [ ] Comentários nas tabelas (opcional)
+
+Depois de importar no novo projeto:
+
+- [ ] Todas as tabelas existem
+- [ ] RLS está ativado (`ALTER TABLE ... ENABLE ROW LEVEL SECURITY`)
+- [ ] Políticas RLS estão criadas
+- [ ] Foreign Keys funcionam corretamente
+- [ ] Funções e triggers estão operacionais
+- [ ] Autenticação configurada (email, OAuth, etc.)
+- [ ] Storage configurado (buckets e policies)
+
+---

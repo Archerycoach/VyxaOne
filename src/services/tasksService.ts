@@ -5,49 +5,6 @@ type Task = Database["public"]["Tables"]["tasks"]["Row"];
 type TaskInsert = Database["public"]["Tables"]["tasks"]["Insert"];
 type TaskUpdate = Database["public"]["Tables"]["tasks"]["Update"];
 
-// Helper to sync task to Google Calendar as an event
-const syncTaskToGoogleCalendar = async (task: Task): Promise<string | null> => {
-  try {
-    // Only sync tasks with due dates
-    if (!task.due_date) return null;
-
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) return null;
-
-    // Create a 1-hour event for the task
-    const startTime = new Date(task.due_date);
-    const endTime = new Date(startTime);
-    endTime.setHours(endTime.getHours() + 1);
-
-    const response = await fetch("/api/google-calendar/create-event", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${session.access_token}`,
-      },
-      body: JSON.stringify({
-        event: {
-          summary: `📋 Tarefa: ${task.title}`,
-          description: task.description || `Prioridade: ${task.priority}\nEstado: ${task.status}`,
-          start: startTime.toISOString(),
-          end: endTime.toISOString(),
-        },
-      }),
-    });
-
-    if (!response.ok) {
-      console.error("Failed to sync task to Google Calendar");
-      return null;
-    }
-
-    const data = await response.json();
-    return data.googleEventId;
-  } catch (error) {
-    console.error("Error syncing task to Google Calendar:", error);
-    return null;
-  }
-};
-
 // Get all tasks for current user
 export const getTasks = async (): Promise<Task[]> => {
   const { data, error } = await supabase
@@ -84,11 +41,23 @@ export const getTask = async (id: string): Promise<Task | null> => {
 
 // Create new task with Google Calendar sync
 export const createTask = async (task: TaskInsert & { lead_id?: string | null, contact_id?: string | null }) => {
+  // Get current user ID if not provided or empty
+  let userId = task.user_id;
+  if (!userId || userId === "") {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      throw new Error("User not authenticated");
+    }
+    userId = user.id;
+  }
+
   // Map frontend IDs to database columns
+  // Convert empty strings to null to prevent UUID errors
   const dbTask = {
     ...task,
-    related_lead_id: task.lead_id || task.related_lead_id,
-    related_contact_id: task.contact_id || task.related_contact_id,
+    user_id: userId,
+    related_lead_id: (task.lead_id && task.lead_id !== "" ? task.lead_id : task.related_lead_id) || null,
+    related_contact_id: (task.contact_id && task.contact_id !== "" ? task.contact_id : task.related_contact_id) || null,
     status: task.status as any,
     priority: task.priority as any,
     is_synced: false,
@@ -105,23 +74,6 @@ export const createTask = async (task: TaskInsert & { lead_id?: string | null, c
     .single();
 
   if (error) throw error;
-
-  // Try to sync to Google Calendar in background
-  syncTaskToGoogleCalendar(data).then(async (googleEventId) => {
-    if (googleEventId) {
-      await supabase
-        .from("tasks")
-        .update({ 
-          google_event_id: googleEventId,
-          is_synced: true 
-        })
-        .eq("id", data.id);
-      
-      console.log("✅ Task synced to Google Calendar:", googleEventId);
-    }
-  }).catch(err => {
-    console.error("Background sync failed:", err);
-  });
 
   return data;
 };
@@ -149,43 +101,6 @@ export const updateTask = async (id: string, updates: TaskUpdate) => {
 
   if (error) throw error;
 
-  // If task is synced to Google, update it there too
-  if (currentTask?.google_event_id && data.due_date) {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session) {
-      const startTime = new Date(data.due_date);
-      const endTime = new Date(startTime);
-      endTime.setHours(endTime.getHours() + 1);
-
-      fetch("/api/google-calendar/update-event", {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
-          googleEventId: currentTask.google_event_id,
-          event: {
-            summary: `📋 Tarefa: ${data.title}`,
-            description: data.description || `Prioridade: ${data.priority}\nEstado: ${data.status}`,
-            start: startTime.toISOString(),
-            end: endTime.toISOString(),
-          },
-        }),
-      }).then(async (response) => {
-        if (response.ok) {
-          await supabase
-            .from("tasks")
-            .update({ is_synced: true })
-            .eq("id", id);
-          console.log("✅ Task updated in Google Calendar");
-        }
-      }).catch(err => {
-        console.error("Failed to update Google Calendar event:", err);
-      });
-    }
-  }
-
   return data;
 };
 
@@ -204,25 +119,6 @@ export const deleteTask = async (id: string): Promise<void> => {
     .eq("id", id);
 
   if (error) throw error;
-
-  // If task is synced to Google, delete it there too
-  if (task?.google_event_id) {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session) {
-      fetch("/api/google-calendar/delete-event", {
-        method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
-          googleEventId: task.google_event_id,
-        }),
-      }).catch(err => {
-        console.error("Failed to delete Google Calendar event:", err);
-      });
-    }
-  }
 };
 
 // Toggle task completion
@@ -309,4 +205,16 @@ export const getOverdueTasks = async (): Promise<Task[]> => {
   }
 
   return data || [];
+};
+
+// Manual sync function that uses the existing /api/google-calendar/sync endpoint
+export const manualSync = async () => {
+  const { data, error } = await supabase.functions.invoke("google-calendar-sync");
+
+  if (error) {
+    console.error("Error during manual sync:", error);
+    throw error;
+  }
+
+  return data;
 };

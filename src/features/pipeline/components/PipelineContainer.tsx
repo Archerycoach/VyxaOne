@@ -105,6 +105,21 @@ export function PipelineContainer() {
     (lead) => lead.lead_type === pipelineView || lead.lead_type === "both"
   );
 
+  // Debug logging
+  console.log("[PipelineContainer] Total leads:", leads.length);
+  console.log("[PipelineContainer] Current view:", pipelineView);
+  console.log("[PipelineContainer] Filtered leads:", filteredLeads.length);
+  console.log("[PipelineContainer] Lead types:", {
+    buyer: leads.filter(l => l.lead_type === "buyer").length,
+    seller: leads.filter(l => l.lead_type === "seller").length,
+    both: leads.filter(l => l.lead_type === "both").length
+  });
+  console.log("[PipelineContainer] Sample leads:", leads.slice(0, 3).map(l => ({
+    name: l.name,
+    lead_type: l.lead_type,
+    status: l.status
+  })));
+
   return (
     <div className="space-y-6">
       {/* Header */}

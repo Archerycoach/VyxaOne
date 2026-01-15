@@ -103,12 +103,12 @@ export const getLeads = async (useCache = true) => {
     const { data, error } = await query.order("created_at", { ascending: false });
 
     if (error) {
-      console.error("[leadsService] Error fetching leads:", error);
+      console.log("[leadsService] ❌ Error fetching leads:", error);
       throw error;
     }
     
     const leads = data || [];
-    console.log("[leadsService] Leads fetched successfully:", leads.length);
+    console.log("[leadsService] ✅ Leads fetched successfully:", leads.length);
     
     // Cache with user-specific key
     setCachedData(cacheKey, leads);
