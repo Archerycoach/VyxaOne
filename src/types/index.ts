@@ -98,6 +98,9 @@ export interface Property {
   rental_price?: number;
   district?: string;
   postal_code?: string;
+  // Association fields
+  lead_id?: string | null;
+  contact_id?: string | null;
   // Compatibility fields
   typology?: string;
   energy_rating?: string;

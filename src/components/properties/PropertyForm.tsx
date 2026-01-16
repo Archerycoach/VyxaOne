@@ -21,16 +21,45 @@ import { createProperty, updateProperty } from "@/services/propertiesService";
 import { supabase } from "@/integrations/supabase/client";
 import type { Property } from "@/types";
 
+// Tipos simplificados para os seletores
+interface SimpleLead {
+  id: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  lead_type: string;
+}
+
+interface SimpleContact {
+  id: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  company: string | null;
+}
+
 interface PropertyFormProps {
   property?: Property | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess: () => void;
+  preselectedLeadId?: string;
+  preselectedContactId?: string;
 }
 
-export function PropertyForm({ property, open, onOpenChange, onSuccess }: PropertyFormProps) {
+export function PropertyForm({ 
+  property, 
+  open, 
+  onOpenChange, 
+  onSuccess,
+  preselectedLeadId,
+  preselectedContactId 
+}: PropertyFormProps) {
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
+  const [loadingData, setLoadingData] = useState(false);
+  const [leads, setLeads] = useState<SimpleLead[]>([]);
+  const [contacts, setContacts] = useState<SimpleContact[]>([]);
   const [formData, setFormData] = useState({
     title: "",
     description: "",
@@ -44,8 +73,72 @@ export function PropertyForm({ property, open, onOpenChange, onSuccess }: Proper
     bedrooms: "",
     bathrooms: "",
     area: "",
-    status: "available"
+    status: "available",
+    lead_id: preselectedLeadId || "none",
+    contact_id: preselectedContactId || "none"
   });
+
+  // Fetch leads and contacts whenever modal opens
+  useEffect(() => {
+    if (open) {
+      fetchLeadsAndContacts();
+    }
+  }, [open]);
+
+  const fetchLeadsAndContacts = async () => {
+    setLoadingData(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        console.error("No user found");
+        toast({
+          title: "Erro",
+          description: "Utilizador não autenticado",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Fetch leads
+      const { data: leadsData, error: leadsError } = await supabase
+        .from("leads")
+        .select("id, name, email, phone, lead_type")
+        .eq("user_id", user.id)
+        .order("name");
+
+      if (leadsError) {
+        console.error("Error fetching leads:", leadsError);
+        throw leadsError;
+      }
+      
+      setLeads((leadsData || []) as unknown as SimpleLead[]);
+      console.log("Loaded leads:", leadsData?.length || 0);
+
+      // Fetch contacts
+      const { data: contactsData, error: contactsError } = await supabase
+        .from("contacts")
+        .select("id, name, email, phone, company")
+        .eq("user_id", user.id)
+        .order("name");
+
+      if (contactsError) {
+        console.error("Error fetching contacts:", contactsError);
+        throw contactsError;
+      }
+      
+      setContacts((contactsData || []) as unknown as SimpleContact[]);
+      console.log("Loaded contacts:", contactsData?.length || 0);
+    } catch (error) {
+      console.error("Error fetching leads and contacts:", error);
+      toast({
+        title: "Erro",
+        description: "Erro ao carregar leads e contactos",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingData(false);
+    }
+  };
 
   useEffect(() => {
     if (property) {
@@ -62,7 +155,9 @@ export function PropertyForm({ property, open, onOpenChange, onSuccess }: Proper
         bedrooms: property.bedrooms ? property.bedrooms.toString() : "",
         bathrooms: property.bathrooms ? property.bathrooms.toString() : "",
         area: property.area ? property.area.toString() : "",
-        status: property.status || "available"
+        status: property.status || "available",
+        lead_id: property.lead_id || "none",
+        contact_id: property.contact_id || "none"
       });
     } else {
       resetForm();
@@ -83,7 +178,9 @@ export function PropertyForm({ property, open, onOpenChange, onSuccess }: Proper
       bedrooms: "",
       bathrooms: "",
       area: "",
-      status: "available"
+      status: "available",
+      lead_id: preselectedLeadId || "none",
+      contact_id: preselectedContactId || "none"
     });
   };
 
@@ -116,6 +213,8 @@ export function PropertyForm({ property, open, onOpenChange, onSuccess }: Proper
         bathrooms: formData.bathrooms ? Number(formData.bathrooms) : null,
         area: formData.area ? Number(formData.area) : null,
         status: formData.status as "available" | "reserved" | "sold" | "rented" | "off_market",
+        lead_id: formData.lead_id && formData.lead_id !== "none" ? formData.lead_id : null,
+        contact_id: formData.contact_id && formData.contact_id !== "none" ? formData.contact_id : null,
         user_id: user.id
       };
 
@@ -207,6 +306,56 @@ export function PropertyForm({ property, open, onOpenChange, onSuccess }: Proper
               </Select>
             </div>
           </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="lead_id">Lead Associada (opcional)</Label>
+              <Select
+                value={formData.lead_id}
+                onValueChange={(value) => setFormData({ ...formData, lead_id: value, contact_id: value === "none" ? "none" : "none" })}
+                disabled={loadingData}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={loadingData ? "A carregar..." : "Selecione uma lead"} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Nenhuma</SelectItem>
+                  {leads.map((lead) => (
+                    <SelectItem key={lead.id} value={lead.id}>
+                      {lead.name} {lead.email ? `(${lead.email})` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="contact_id">Contacto Associado (opcional)</Label>
+              <Select
+                value={formData.contact_id}
+                onValueChange={(value) => setFormData({ ...formData, contact_id: value, lead_id: value === "none" ? "none" : "none" })}
+                disabled={loadingData}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={loadingData ? "A carregar..." : "Selecione um contacto"} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Nenhum</SelectItem>
+                  {contacts.map((contact) => (
+                    <SelectItem key={contact.id} value={contact.id}>
+                      {contact.name} {contact.email ? `(${contact.email})` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {(formData.lead_id && formData.lead_id !== "none") || (formData.contact_id && formData.contact_id !== "none") ? (
+            <div className="text-sm text-muted-foreground bg-muted p-2 rounded">
+              ℹ️ Este imóvel será associado a {formData.lead_id && formData.lead_id !== "none" ? "uma lead" : "um contacto"}
+            </div>
+          ) : null}
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">

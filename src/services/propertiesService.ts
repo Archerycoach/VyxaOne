@@ -68,13 +68,19 @@ export const createProperty = async (propertyData: Omit<Property, "id" | "create
     // Invalidate cache
     localStorage.removeItem(PROPERTIES_CACHE_KEY);
     
+    // Explicitly type the insert payload to avoid deep recursion issues
+    const payload = {
+      ...propertyData,
+      property_type: propertyData.property_type,
+      status: propertyData.status,
+      // Ensure optional fields are handled correctly
+      lead_id: propertyData.lead_id || null,
+      contact_id: propertyData.contact_id || null
+    };
+
     const { data, error } = await supabase
       .from("properties")
-      .insert({
-        ...propertyData,
-        property_type: propertyData.property_type as any,
-        status: propertyData.status as any
-      })
+      .insert(payload as any) // Use any for payload to bypass complex type checks on insert
       .select()
       .single();
 
@@ -94,11 +100,7 @@ export const updateProperty = async (id: string, updates: Partial<Property>): Pr
     
     const { data, error } = await supabase
       .from("properties")
-      .update({
-        ...updates,
-        property_type: updates.property_type as any,
-        status: updates.status as any
-      })
+      .update(updates as any) // Use any for updates to bypass complex type checks
       .eq("id", id)
       .select()
       .single();
@@ -231,4 +233,64 @@ export const getAllProperties = async (useCache = true): Promise<Property[]> => 
   } catch (e) {
     throw e;
   }
+};
+
+// Get properties by lead ID
+export const getPropertiesByLead = async (leadId: string): Promise<Property[]> => {
+  const { data, error } = await (supabase as any)
+    .from("properties")
+    .select("*")
+    .eq("lead_id", leadId)
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+  return (data || []) as Property[];
+};
+
+// Get properties by contact ID
+export const getPropertiesByContact = async (contactId: string): Promise<Property[]> => {
+  const { data, error } = await (supabase as any)
+    .from("properties")
+    .select("*")
+    .eq("contact_id", contactId)
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+  return (data || []) as Property[];
+};
+
+// Associate property with lead
+export const associatePropertyWithLead = async (propertyId: string, leadId: string): Promise<void> => {
+  localStorage.removeItem(PROPERTIES_CACHE_KEY);
+  
+  const { error } = await supabase
+    .from("properties")
+    .update({ lead_id: leadId, contact_id: null } as any)
+    .eq("id", propertyId);
+
+  if (error) throw error;
+};
+
+// Associate property with contact
+export const associatePropertyWithContact = async (propertyId: string, contactId: string): Promise<void> => {
+  localStorage.removeItem(PROPERTIES_CACHE_KEY);
+  
+  const { error } = await supabase
+    .from("properties")
+    .update({ contact_id: contactId, lead_id: null } as any)
+    .eq("id", propertyId);
+
+  if (error) throw error;
+};
+
+// Remove property association
+export const removePropertyAssociation = async (propertyId: string): Promise<void> => {
+  localStorage.removeItem(PROPERTIES_CACHE_KEY);
+  
+  const { error } = await supabase
+    .from("properties")
+    .update({ lead_id: null, contact_id: null } as any)
+    .eq("id", propertyId);
+
+  if (error) throw error;
 };
