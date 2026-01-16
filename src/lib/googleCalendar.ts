@@ -457,3 +457,40 @@ export async function triggerManualSync(): Promise<{ success: boolean; synced?: 
     };
   }
 }
+
+/**
+ * Setup automatic polling sync (runs every 5 minutes)
+ * Returns cleanup function to stop polling
+ */
+export function setupAutoSync(
+  onSyncComplete?: (result: { success: boolean; synced?: number }) => void
+): () => void {
+  console.log("[googleCalendar:autoSync] 🔄 Setting up automatic sync (every 5 minutes)");
+  
+  let isRunning = true;
+  
+  const runSync = async () => {
+    if (!isRunning) return;
+    
+    console.log("[googleCalendar:autoSync] ⏰ Running scheduled sync...");
+    const result = await triggerManualSync();
+    
+    if (result.success && result.synced && result.synced > 0) {
+      console.log(`[googleCalendar:autoSync] ✅ Auto-synced ${result.synced} item(s)`);
+      onSyncComplete?.(result);
+    }
+  };
+  
+  // Run immediately on setup
+  runSync();
+  
+  // Then run every 5 minutes
+  const intervalId = setInterval(runSync, 5 * 60 * 1000);
+  
+  // Return cleanup function
+  return () => {
+    console.log("[googleCalendar:autoSync] 🛑 Stopping automatic sync");
+    isRunning = false;
+    clearInterval(intervalId);
+  };
+}

@@ -11,6 +11,7 @@ import {
 } from "../hooks";
 import { createCalendarEvent, updateCalendarEvent } from "@/services/calendarService";
 import { updateTask, createTask } from "@/services/tasksService";
+import { setupAutoSync } from "@/lib/googleCalendar";
 import { useToast } from "@/hooks/use-toast";
 import type { CalendarEvent, Task } from "@/types";
 
@@ -128,6 +129,40 @@ export function CalendarContainer() {
 
     handleGoogleConnection();
   }, [router.query, toast, checkConnection, syncWithGoogle, router]);
+
+  // Setup automatic polling sync when Google Calendar is connected
+  useEffect(() => {
+    if (!isConnected) {
+      console.log("[CalendarContainer] Google Calendar not connected, skipping auto-sync");
+      return;
+    }
+
+    console.log("[CalendarContainer] 🔄 Setting up automatic sync (every 5 minutes)");
+
+    // Setup polling with callback to refresh data
+    const cleanup = setupAutoSync((result: { success: boolean; synced?: number }) => {
+      if (result.success && result.synced && result.synced > 0) {
+        console.log(`[CalendarContainer] ✅ Auto-synced ${result.synced} item(s), refreshing...`);
+        
+        // Refresh events and tasks to show new data
+        refetchEvents();
+        refetchTasks();
+        
+        // Show subtle notification
+        toast({
+          title: "Sincronização automática",
+          description: `${result.synced} item(s) sincronizado(s) com Google Calendar`,
+          duration: 3000,
+        });
+      }
+    });
+
+    // Cleanup on unmount or when connection status changes
+    return () => {
+      console.log("[CalendarContainer] 🛑 Cleaning up automatic sync");
+      cleanup();
+    };
+  }, [isConnected, refetchEvents, refetchTasks, toast]);
 
   // Helpers
   const formatDate = (date: Date) => {
