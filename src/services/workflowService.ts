@@ -87,8 +87,8 @@ export const processLeadWorkflows = async (leadId: string, triggerType: string) 
     const query = (supabase as any)
       .from("lead_workflow_rules")
       .select("*")
-      .eq("trigger_type", triggerType)
-      .eq("is_active", true)
+      .eq("trigger_status", triggerType)
+      .eq("enabled", true)
       .eq("user_id", user.id);
 
     const { data: workflows, error: workflowsError } = await query;

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import {
@@ -8,7 +8,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { CurrencyInput } from "@/components/CurrencyInput";
+import { getBuyerStages, getSellerStages, PipelineStage } from "@/services/pipelineSettingsService";
 
 interface LeadFormBasicFieldsProps {
   formData: {
@@ -23,6 +23,52 @@ interface LeadFormBasicFieldsProps {
 }
 
 export function LeadFormBasicFields({ formData, onChange }: LeadFormBasicFieldsProps) {
+  const [availableStatuses, setAvailableStatuses] = useState<PipelineStage[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  // Load pipeline stages based on lead_type
+  useEffect(() => {
+    const loadPipelineStages = async () => {
+      setLoading(true);
+      try {
+        let stages: PipelineStage[] = [];
+
+        if (formData.lead_type === "buyer") {
+          // Only buyer stages
+          stages = await getBuyerStages();
+        } else if (formData.lead_type === "seller") {
+          // Only seller stages
+          stages = await getSellerStages();
+        } else if (formData.lead_type === "both") {
+          // Both buyer and seller stages
+          const buyerStages = await getBuyerStages();
+          const sellerStages = await getSellerStages();
+          
+          // Combine with labels to distinguish
+          stages = [
+            ...buyerStages.map(s => ({ ...s, name: `🏠 ${s.name}` })),
+            ...sellerStages.map(s => ({ ...s, name: `🏡 ${s.name}` }))
+          ];
+        }
+
+        setAvailableStatuses(stages);
+
+        // If current status is not in the new list, reset it
+        if (formData.status && !stages.some(s => s.id === formData.status)) {
+          onChange("status", stages.length > 0 ? stages[0].id : "new");
+        }
+      } catch (error) {
+        console.error("Error loading pipeline stages:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (formData.lead_type) {
+      loadPipelineStages();
+    }
+  }, [formData.lead_type]);
+
   return (
     <div className="space-y-4">
       <h3 className="text-lg font-semibold text-gray-900 border-b pb-2">Informação Básica</h3>
@@ -44,8 +90,9 @@ export function LeadFormBasicFields({ formData, onChange }: LeadFormBasicFieldsP
             id="phone"
             value={formData.phone}
             onChange={(e) => onChange("phone", e.target.value)}
-            placeholder="+351..."
+            placeholder="+351912345678 (9-15 dígitos)"
           />
+          <p className="text-xs text-gray-500">Formato: +351912345678 (espaços e caracteres especiais serão removidos automaticamente)</p>
         </div>
       </div>
 
@@ -79,24 +126,31 @@ export function LeadFormBasicFields({ formData, onChange }: LeadFormBasicFieldsP
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="status">Estado</Label>
+          <Label htmlFor="status">Estado do Pipeline</Label>
           <Select
             value={formData.status}
             onValueChange={(value) => onChange("status", value)}
+            disabled={!formData.lead_type || loading}
           >
             <SelectTrigger>
-              <SelectValue placeholder="Selecione estado" />
+              <SelectValue placeholder={loading ? "Carregando..." : "Selecione estado"} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="new">Novo</SelectItem>
-              <SelectItem value="contacted">Contactado</SelectItem>
-              <SelectItem value="qualified">Qualificado</SelectItem>
-              <SelectItem value="proposal">Proposta</SelectItem>
-              <SelectItem value="negotiation">Negociação</SelectItem>
-              <SelectItem value="won">Ganho</SelectItem>
-              <SelectItem value="lost">Perdido</SelectItem>
+              {availableStatuses.length === 0 && !loading && (
+                <SelectItem value="none" disabled>Selecione primeiro o tipo de lead</SelectItem>
+              )}
+              {availableStatuses.map((stage) => (
+                <SelectItem key={stage.id} value={stage.id}>
+                  {stage.name}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
+          {formData.lead_type === "both" && (
+            <p className="text-xs text-gray-500">
+              🏠 = Estado de comprador | 🏡 = Estado de vendedor
+            </p>
+          )}
         </div>
 
         <div className="space-y-2">

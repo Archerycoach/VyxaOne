@@ -26,14 +26,15 @@ interface LeadFormBuyerFieldsProps {
 
 export function LeadFormBuyerFields({ formData, onChange }: LeadFormBuyerFieldsProps) {
   return (
-    <div className="space-y-4 bg-blue-50 p-4 rounded-lg">
-      <h3 className="text-lg font-semibold text-blue-900 border-b border-blue-200 pb-2">
+    <div className="space-y-4 bg-blue-50 p-4 rounded-lg border-2 border-blue-200">
+      <h3 className="text-lg font-semibold text-blue-900 border-b border-blue-200 pb-2 flex items-center gap-2">
+        <span className="text-xl">🏠</span>
         Informação do Comprador
       </h3>
       
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
-          <Label htmlFor="property_type">Tipo de Imóvel</Label>
+          <Label htmlFor="property_type">Tipo de Imóvel Pretendido</Label>
           <Select
             value={formData.property_type}
             onValueChange={(value) => onChange("property_type", value)}
@@ -53,7 +54,7 @@ export function LeadFormBuyerFields({ formData, onChange }: LeadFormBuyerFieldsP
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="bedrooms">Número de Quartos</Label>
+          <Label htmlFor="bedrooms">Número de Quartos (Pretendido)</Label>
           <Input
             id="bedrooms"
             type="number"
@@ -67,7 +68,7 @@ export function LeadFormBuyerFields({ formData, onChange }: LeadFormBuyerFieldsP
 
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
-          <Label htmlFor="min_area">Área Mínima (m²)</Label>
+          <Label htmlFor="min_area">Área Mínima Pretendida (m²)</Label>
           <Input
             id="min_area"
             type="number"
@@ -91,9 +92,9 @@ export function LeadFormBuyerFields({ formData, onChange }: LeadFormBuyerFieldsP
 
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
-          <Label htmlFor="location_preference">Localização Preferida</Label>
+          <Label htmlFor="buyer_location_preference">Localização Preferida (para Compra)</Label>
           <Input
-            id="location_preference"
+            id="buyer_location_preference"
             value={formData.location_preference}
             onChange={(e) => onChange("location_preference", e.target.value)}
             placeholder="Ex: Lisboa, Cascais, Oeiras"

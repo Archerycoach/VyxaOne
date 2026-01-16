@@ -22,6 +22,27 @@ interface LeadFormContainerProps {
   onCancel: () => void;
 }
 
+// Phone validation and cleaning helper
+const cleanPhoneNumber = (phone: string): string => {
+  if (!phone) return "";
+  // Remove all non-numeric characters except leading +
+  const cleaned = phone.replace(/[^\d+]/g, "");
+  // Ensure + only appears at the start
+  const parts = cleaned.split("+");
+  if (parts.length > 1) {
+    return "+" + parts.filter(p => p).join("");
+  }
+  return cleaned;
+};
+
+const validatePhoneNumber = (phone: string): boolean => {
+  if (!phone) return true; // Phone is optional
+  const cleaned = cleanPhoneNumber(phone);
+  // Check format: optional +, followed by 9-15 digits
+  const phoneRegex = /^\+?\d{9,15}$/;
+  return phoneRegex.test(cleaned);
+};
+
 export function LeadFormContainer({ initialData, onSuccess, onCancel }: LeadFormContainerProps) {
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
@@ -74,6 +95,10 @@ export function LeadFormContainer({ initialData, onSuccess, onCancel }: LeadForm
   }, [initialData]);
 
   const handleChange = (field: string, value: any) => {
+    // Auto-clean phone number as user types
+    if (field === "phone" && typeof value === "string") {
+      value = cleanPhoneNumber(value);
+    }
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
@@ -82,6 +107,17 @@ export function LeadFormContainer({ initialData, onSuccess, onCancel }: LeadForm
     setLoading(true);
 
     try {
+      // Validate phone number before submission
+      if (formData.phone && !validatePhoneNumber(formData.phone)) {
+        toast({
+          title: "Erro de Validação",
+          description: "Formato de telefone inválido. Use o formato: +351912345678 (9-15 dígitos, opcional + no início)",
+          variant: "destructive",
+        });
+        setLoading(false);
+        return;
+      }
+
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         toast({
@@ -99,10 +135,13 @@ export function LeadFormContainer({ initialData, onSuccess, onCancel }: LeadForm
       const parsedPropertyArea = parseFloat(formData.property_area) || 0;
       const parsedDesiredPrice = parseFloat(formData.desired_price) || 0;
 
+      // Clean phone number one final time before sending
+      const cleanedPhone = formData.phone ? cleanPhoneNumber(formData.phone) : null;
+
       const leadData = {
         name: formData.name,
         email: formData.email || null,
-        phone: formData.phone || null,
+        phone: cleanedPhone,
         status: formData.status,
         lead_type: formData.lead_type,
         notes: formData.notes || null,
@@ -183,7 +222,7 @@ export function LeadFormContainer({ initialData, onSuccess, onCancel }: LeadForm
           {isBuyer && <LeadFormBuyerFields formData={formData} onChange={handleChange} />}
 
           {/* Seller Specific Fields */}
-          {isSeller && <LeadFormSellerFields formData={formData} onChange={handleChange} />}
+          {isSeller && <LeadFormSellerFields formData={{ ...formData, lead_type: formData.lead_type }} onChange={handleChange} />}
 
           {/* Notes */}
           <div className="space-y-2">
