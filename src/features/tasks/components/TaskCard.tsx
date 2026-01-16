@@ -123,7 +123,10 @@ export function TaskCard({ task, onComplete, onEdit, onDelete, onAddNote }: Task
             <Button
               size="sm"
               variant="outline"
-              onClick={() => onComplete(task.id)}
+              onClick={() => {
+                console.log("🟢 Complete button clicked for task:", task.id);
+                onComplete(task.id);
+              }}
               className="flex-1"
             >
               <CheckCircle2 className="h-4 w-4 mr-1" />
@@ -147,7 +150,10 @@ export function TaskCard({ task, onComplete, onEdit, onDelete, onAddNote }: Task
           <Button
             size="sm"
             variant="outline"
-            onClick={() => onDelete(task.id)}
+            onClick={() => {
+              console.log("🔴 Delete button clicked for task:", task.id);
+              onDelete(task.id);
+            }}
           >
             <Trash2 className="h-4 w-4" />
           </Button>

@@ -1,42 +1,54 @@
-import React from "react";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Input } from "@/components/ui/input";
 import { Search } from "lucide-react";
-import type { TaskFilterStatus } from "../hooks/useTaskFilters";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { TaskStatus, TaskPriority } from "../hooks/useTaskFilters";
 
 interface TaskFiltersProps {
-  filter: TaskFilterStatus;
-  onFilterChange: (filter: TaskFilterStatus) => void;
-  searchTerm: string;
-  onSearchChange: (term: string) => void;
+  statusFilter: TaskStatus;
+  priorityFilter: TaskPriority | "all";
+  searchQuery: string;
+  onStatusChange: (status: TaskStatus) => void;
+  onPriorityChange: (priority: TaskPriority | "all") => void;
+  onSearchChange: (query: string) => void;
 }
 
 export function TaskFilters({
-  filter,
-  onFilterChange,
-  searchTerm,
+  statusFilter,
+  priorityFilter,
+  searchQuery,
+  onStatusChange,
+  onPriorityChange,
   onSearchChange,
 }: TaskFiltersProps) {
+  const statusButtons: { value: TaskStatus; label: string }[] = [
+    { value: "pending", label: "Pendentes" },
+    { value: "in_progress", label: "Em Progresso" },
+    { value: "completed", label: "Concluídas" },
+  ];
+
   return (
     <div className="space-y-4">
       <div className="relative">
         <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
         <Input
           placeholder="Pesquisar tarefas..."
-          value={searchTerm}
+          value={searchQuery}
           onChange={(e) => onSearchChange(e.target.value)}
           className="pl-8"
         />
       </div>
 
-      <Tabs value={filter} onValueChange={(value) => onFilterChange(value as TaskFilterStatus)}>
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="all">Todas</TabsTrigger>
-          <TabsTrigger value="pending">Pendentes</TabsTrigger>
-          <TabsTrigger value="in_progress">Em Progresso</TabsTrigger>
-          <TabsTrigger value="completed">Concluídas</TabsTrigger>
-        </TabsList>
-      </Tabs>
+      <div className="flex flex-wrap gap-2">
+        {statusButtons.map((button) => (
+          <Button
+            key={button.value}
+            variant={statusFilter === button.value ? "default" : "outline"}
+            onClick={() => onStatusChange(button.value)}
+          >
+            {button.label}
+          </Button>
+        ))}
+      </div>
     </div>
   );
 }

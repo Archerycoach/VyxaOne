@@ -177,7 +177,7 @@ export function TaskDialogs({
                     <SelectValue placeholder="Selecione um lead..." />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Nenhum</SelectItem>
+                    <SelectItem value="none">Nenhum</SelectItem>
                     {leads.map((lead) => (
                       <SelectItem key={lead.id} value={lead.id}>
                         {lead.name}
@@ -197,7 +197,7 @@ export function TaskDialogs({
                     <SelectValue placeholder="Selecione um imóvel..." />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Nenhum</SelectItem>
+                    <SelectItem value="none">Nenhum</SelectItem>
                     {properties.map((property) => (
                       <SelectItem key={property.id} value={property.id}>
                         {property.title}

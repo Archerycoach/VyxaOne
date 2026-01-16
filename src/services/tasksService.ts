@@ -58,6 +58,7 @@ export const createTask = async (task: TaskInsert & { lead_id?: string | null, c
     user_id: userId,
     related_lead_id: (task.lead_id && task.lead_id !== "" ? task.lead_id : task.related_lead_id) || null,
     related_contact_id: (task.contact_id && task.contact_id !== "" ? task.contact_id : task.related_contact_id) || null,
+    assigned_to: task.assigned_to || null,
     status: task.status as any,
     priority: task.priority as any,
     is_synced: false,
@@ -87,38 +88,78 @@ export const updateTask = async (id: string, updates: TaskUpdate) => {
     .eq("id", id)
     .single();
 
-  const { data, error } = await supabase
+  // ✅ NEW APPROACH: Do UPDATE without SELECT to avoid 406 error
+  const { error: updateError } = await supabase
     .from("tasks")
     .update({
       ...updates,
       status: updates.status as any,
       priority: updates.priority as any,
-      is_synced: false, // Mark as not synced until Google update succeeds
+      is_synced: false,
     })
+    .eq("id", id);
+
+  if (updateError) throw updateError;
+
+  // ✅ Then fetch the updated task separately
+  const { data, error: selectError } = await supabase
+    .from("tasks")
+    .select("*")
     .eq("id", id)
-    .select()
     .single();
 
-  if (error) throw error;
+  if (selectError) throw selectError;
 
   return data;
 };
 
 // Delete task with Google Calendar sync
 export const deleteTask = async (id: string): Promise<void> => {
-  // Get task to check if it's synced
-  const { data: task } = await supabase
+  console.log("🔴 deleteTask called for id:", id);
+  
+  // First, let's check if the task exists and belongs to current user
+  const { data: { user } } = await supabase.auth.getUser();
+  console.log("🔴 Current user ID:", user?.id);
+  
+  const { data: taskCheck, error: checkError } = await supabase
     .from("tasks")
-    .select("google_event_id")
+    .select("id, user_id, title")
     .eq("id", id)
     .single();
+  
+  if (checkError) {
+    console.error("🔴 Error checking task:", checkError);
+  } else {
+    console.log("🔴 Task found:", taskCheck);
+    console.log("🔴 Task user_id:", taskCheck?.user_id);
+    console.log("🔴 Match?", taskCheck?.user_id === user?.id);
+  }
 
-  const { error } = await supabase
+  // Delete the task
+  const { data: deleteData, error, count } = await supabase
     .from("tasks")
     .delete()
-    .eq("id", id);
+    .eq("id", id)
+    .select();
 
-  if (error) throw error;
+  console.log("🔴 Delete response:", { data: deleteData, error, count });
+
+  if (error) {
+    console.error("🔴 Delete error details:", {
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+      code: error.code
+    });
+    throw error;
+  }
+
+  if (!deleteData || deleteData.length === 0) {
+    console.error("🔴 NO ROWS DELETED! Task might not exist or RLS is blocking.");
+    throw new Error("Failed to delete task - no rows affected. Check RLS policies.");
+  }
+
+  console.log("🔴 Task successfully deleted:", deleteData);
 };
 
 // Toggle task completion

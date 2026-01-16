@@ -115,7 +115,7 @@ export function CalendarDialogs({
             <div>
               <Label htmlFor="event-type">Tipo</Label>
               <Select
-                value={eventForm.eventType || "meeting"}
+                value={eventForm.eventType || "viewing"}
                 onValueChange={(value) =>
                   setEventForm({ ...eventForm, eventType: value as any })
                 }
@@ -186,13 +186,16 @@ export function CalendarDialogs({
                 <Label htmlFor="task-due-date">Data de Vencimento *</Label>
                 <Input
                   id="task-due-date"
-                  type="datetime-local"
+                  type="date"
                   value={taskForm.dueDate || ""}
                   onChange={(e) =>
                     setTaskForm({ ...taskForm, dueDate: e.target.value })
                   }
                   required
                 />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Apenas a data é obrigatória
+                </p>
               </div>
               <div>
                 <Label htmlFor="task-priority">Prioridade</Label>
@@ -227,7 +230,7 @@ export function CalendarDialogs({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="pending">Pendente</SelectItem>
-                  <SelectItem value="in-progress">Em Progresso</SelectItem>
+                  <SelectItem value="in_progress">Em Progresso</SelectItem>
                   <SelectItem value="completed">Concluída</SelectItem>
                 </SelectContent>
               </Select>

@@ -129,7 +129,7 @@ export interface Note {
 
 // Task Types
 export type TaskPriority = "low" | "medium" | "high" | "urgent";
-export type TaskStatus = "pending" | "in-progress" | "completed" | "cancelled";
+export type TaskStatus = "pending" | "in_progress" | "completed" | "cancelled";
 
 export interface Task {
   id: string;

@@ -155,11 +155,28 @@ export function CalendarContainer() {
   // Handlers
   const handleCreateEvent = () => {
     setEditingEvent(null);
+    
+    // Auto-fill with current date/time
+    const now = new Date();
+    const startTime = new Date(now);
+    const endTime = new Date(now);
+    endTime.setHours(endTime.getHours() + 1); // Default 1 hour duration
+    
+    // Format for datetime-local input (YYYY-MM-DDTHH:MM)
+    const formatForInput = (date: Date) => {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      const hours = String(date.getHours()).padStart(2, '0');
+      const minutes = String(date.getMinutes()).padStart(2, '0');
+      return `${year}-${month}-${day}T${hours}:${minutes}`;
+    };
+    
     setEventForm({
       title: "",
       description: "",
-      startTime: "",
-      endTime: "",
+      startTime: formatForInput(startTime),
+      endTime: formatForInput(endTime),
       location: "",
       eventType: "viewing",
       leadId: "",
@@ -169,10 +186,18 @@ export function CalendarContainer() {
 
   const handleCreateTask = () => {
     setEditingTask(null);
+    
+    // Auto-fill with current date only (no time required)
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const dateOnly = `${year}-${month}-${day}`;
+    
     setTaskForm({
       title: "",
       description: "",
-      dueDate: "",
+      dueDate: dateOnly,
       priority: "medium",
       leadId: "",
     });
@@ -181,11 +206,23 @@ export function CalendarContainer() {
 
   const handleEditEvent = (event: CalendarEvent) => {
     setEditingEvent(event);
+    
+    // Format dates for datetime-local input
+    const formatForInput = (isoString: string) => {
+      const date = new Date(isoString);
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      const hours = String(date.getHours()).padStart(2, '0');
+      const minutes = String(date.getMinutes()).padStart(2, '0');
+      return `${year}-${month}-${day}T${hours}:${minutes}`;
+    };
+    
     setEventForm({
       title: event.title,
       description: event.description || "",
-      startTime: event.startTime,
-      endTime: event.endTime,
+      startTime: formatForInput(event.startTime),
+      endTime: formatForInput(event.endTime),
       location: event.location || "",
       eventType: event.eventType || "viewing",
       leadId: event.leadId || "",
@@ -195,10 +232,20 @@ export function CalendarContainer() {
 
   const handleEditTask = (task: Task) => {
     setEditingTask(task);
+    
+    // Format date for date input (YYYY-MM-DD)
+    const formatDateOnly = (isoString: string) => {
+      const date = new Date(isoString);
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+    
     setTaskForm({
       title: task.title,
       description: task.description || "",
-      dueDate: task.dueDate,
+      dueDate: formatDateOnly(task.dueDate),
       priority: task.priority,
       leadId: task.leadId || "",
     });

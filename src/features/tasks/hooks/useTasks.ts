@@ -1,49 +1,61 @@
-import { useState, useEffect, useCallback } from "react";
-import { getTasks, getTaskStats } from "@/services/tasksService";
-import type { Task } from "@/types";
+import { useQuery } from "@tanstack/react-query";
+import { getAllTasks } from "@/services/tasksService";
+import { Task, TaskStatus, TaskPriority } from "@/types";
+import type { Database } from "@/integrations/supabase/types";
 
-export function useTasks() {
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [stats, setStats] = useState<any>(null);
-  const [isLoading, setIsLoading] = useState(true);
+interface UseTasksParams {
+  statusFilter: TaskStatus;
+  priorityFilter: TaskPriority | "all";
+  searchQuery: string;
+}
 
-  const fetchTasks = useCallback(async () => {
-    try {
-      setIsLoading(true);
-      const data = await getTasks();
-      setTasks(data as any);
-    } catch (error) {
-      console.error("Error loading tasks:", error);
-      setTasks([]);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  const fetchStats = useCallback(async () => {
-    try {
-      const data = await getTaskStats();
-      setStats(data);
-    } catch (error) {
-      console.error("Error loading stats:", error);
-      setStats(null);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchTasks();
-    fetchStats();
-  }, [fetchTasks, fetchStats]);
-
-  const refetch = useCallback(() => {
-    fetchTasks();
-    fetchStats();
-  }, [fetchTasks, fetchStats]);
-
+// Transform DB task to App task format
+function transformDbTask(dbTask: Database["public"]["Tables"]["tasks"]["Row"]): Task {
   return {
-    tasks,
-    stats,
-    isLoading,
-    refetch,
+    id: dbTask.id,
+    title: dbTask.title,
+    description: dbTask.description || "",
+    notes: dbTask.notes || "",
+    leadId: dbTask.related_lead_id || undefined,
+    propertyId: dbTask.related_property_id || undefined,
+    priority: dbTask.priority as TaskPriority,
+    status: dbTask.status as TaskStatus,
+    dueDate: dbTask.due_date || "",
+    assignedTo: dbTask.assigned_to || "",
+    completed: dbTask.status === "completed",
+    createdAt: dbTask.created_at || "",
   };
+}
+
+export function useTasks({ statusFilter, priorityFilter, searchQuery }: UseTasksParams) {
+  return useQuery<Task[]>({
+    queryKey: ["tasks", statusFilter, priorityFilter, searchQuery],
+    queryFn: async () => {
+      const dbTasks = await getAllTasks();
+      
+      // Transform DB tasks to App format
+      let tasks = dbTasks.map(transformDbTask);
+
+      // Filter by status
+      tasks = tasks.filter((task) => task.status === statusFilter);
+
+      // Filter by priority
+      if (priorityFilter !== "all") {
+        tasks = tasks.filter((task) => task.priority === priorityFilter);
+      }
+
+      // Filter by search query
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        tasks = tasks.filter(
+          (task) =>
+            task.title.toLowerCase().includes(query) ||
+            task.description?.toLowerCase().includes(query)
+        );
+      }
+
+      return tasks;
+    },
+    staleTime: 30000,
+  });
 }

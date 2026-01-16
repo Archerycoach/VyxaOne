@@ -13,9 +13,38 @@ import type { Task } from "@/types";
 
 export function TasksContainer() {
   const { toast } = useToast();
-  const { tasks, stats, isLoading, refetch } = useTasks();
-  const { filter, setFilter, searchTerm, setSearchTerm, filteredTasks } = useTaskFilters(tasks);
+  
+  // Filters
+  const {
+    statusFilter,
+    setStatusFilter,
+    priorityFilter,
+    setPriorityFilter,
+    searchQuery,
+    setSearchQuery,
+  } = useTaskFilters();
+
+  // Tasks query
+  const { data: tasks = [], isLoading, refetch } = useTasks({
+    statusFilter,
+    priorityFilter,
+    searchQuery,
+  });
+
+  // Mutations
   const { submitting, handleCreate, handleUpdate, handleComplete, handleDelete } = useTaskMutations(refetch);
+
+  // Stats calculation
+  const stats = {
+    total: tasks.length,
+    pending: tasks.filter((t) => t.status === "pending").length,
+    inProgress: tasks.filter((t) => t.status === "in_progress").length,
+    completed: tasks.filter((t) => t.status === "completed").length,
+    overdue: tasks.filter((t) => {
+      if (!t.dueDate || t.status === "completed") return false;
+      return new Date(t.dueDate) < new Date();
+    }).length,
+  };
 
   // Form state
   const [formDialogOpen, setFormDialogOpen] = useState(false);
@@ -26,9 +55,9 @@ export function TasksContainer() {
     priority: "medium",
     status: "pending",
     dueDate: "",
-    relatedLeadId: "",
-    relatedPropertyId: "",
-    assignedToId: "",
+    relatedLeadId: "none",
+    relatedPropertyId: "none",
+    assignedTo: "",
   });
 
   // Notes dialog state
@@ -67,9 +96,9 @@ export function TasksContainer() {
         priority: task.priority,
         status: task.status,
         dueDate: task.dueDate ? new Date(task.dueDate).toISOString().split("T")[0] : "",
-        relatedLeadId: task.leadId || "",
-        relatedPropertyId: task.propertyId || "",
-        assignedToId: task.assignedTo || "",
+        relatedLeadId: task.leadId || "none",
+        relatedPropertyId: task.propertyId || "none",
+        assignedTo: task.assignedTo || "",
       });
     } else {
       setEditingTask(null);
@@ -79,9 +108,9 @@ export function TasksContainer() {
         priority: "medium",
         status: "pending",
         dueDate: "",
-        relatedLeadId: "",
-        relatedPropertyId: "",
-        assignedToId: "",
+        relatedLeadId: "none",
+        relatedPropertyId: "none",
+        assignedTo: "",
       });
     }
     setFormDialogOpen(true);
@@ -96,9 +125,9 @@ export function TasksContainer() {
         priority: formData.priority as "low" | "medium" | "high",
         status: formData.status as "pending" | "in_progress" | "completed",
         due_date: formData.dueDate || null,
-        related_lead_id: formData.relatedLeadId || null,
-        related_property_id: formData.relatedPropertyId || null,
-        assigned_to_id: formData.assignedToId || null,
+        related_lead_id: formData.relatedLeadId === "none" ? null : formData.relatedLeadId,
+        related_property_id: formData.relatedPropertyId === "none" ? null : formData.relatedPropertyId,
+        assigned_to: formData.assignedTo || null,
       };
 
       if (editingTask) {
@@ -168,7 +197,7 @@ export function TasksContainer() {
             <List className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats?.total || 0}</div>
+            <div className="text-2xl font-bold">{stats.total}</div>
           </CardContent>
         </Card>
 
@@ -178,7 +207,7 @@ export function TasksContainer() {
             <AlertCircle className="h-4 w-4 text-yellow-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats?.pending || 0}</div>
+            <div className="text-2xl font-bold">{stats.pending}</div>
           </CardContent>
         </Card>
 
@@ -188,7 +217,7 @@ export function TasksContainer() {
             <Clock className="h-4 w-4 text-blue-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats?.inProgress || 0}</div>
+            <div className="text-2xl font-bold">{stats.inProgress}</div>
           </CardContent>
         </Card>
 
@@ -198,7 +227,7 @@ export function TasksContainer() {
             <CheckCircle2 className="h-4 w-4 text-green-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats?.completed || 0}</div>
+            <div className="text-2xl font-bold">{stats.completed}</div>
           </CardContent>
         </Card>
 
@@ -208,17 +237,19 @@ export function TasksContainer() {
             <CalendarClock className="h-4 w-4 text-red-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-red-500">{stats?.overdue || 0}</div>
+            <div className="text-2xl font-bold text-red-500">{stats.overdue}</div>
           </CardContent>
         </Card>
       </div>
 
       {/* Filters */}
       <TaskFilters
-        filter={filter}
-        onFilterChange={setFilter}
-        searchTerm={searchTerm}
-        onSearchChange={setSearchTerm}
+        statusFilter={statusFilter}
+        priorityFilter={priorityFilter}
+        searchQuery={searchQuery}
+        onStatusChange={setStatusFilter}
+        onPriorityChange={setPriorityFilter}
+        onSearchChange={setSearchQuery}
       />
 
       {/* Tasks Grid */}
@@ -226,13 +257,13 @@ export function TasksContainer() {
         <div className="text-center py-12">
           <p className="text-muted-foreground">Carregando tarefas...</p>
         </div>
-      ) : filteredTasks.length === 0 ? (
+      ) : tasks.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-12">
             <List className="h-12 w-12 text-muted-foreground mb-4" />
             <CardTitle className="mb-2">Nenhuma tarefa encontrada</CardTitle>
             <CardDescription>
-              {searchTerm
+              {searchQuery
                 ? "Tente ajustar os filtros de pesquisa"
                 : "Comece criando sua primeira tarefa"}
             </CardDescription>
@@ -240,7 +271,7 @@ export function TasksContainer() {
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredTasks.map((task) => (
+          {tasks.map((task) => (
             <TaskCard
               key={task.id}
               task={task}
