@@ -208,6 +208,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 /**
  * Sync calendar events from system to Google Calendar
+ * WITH RETRY LOGIC
  */
 async function syncEventsToGoogle(
   userId: string,
@@ -233,54 +234,76 @@ async function syncEventsToGoogle(
     let syncedCount = 0;
 
     for (const event of events) {
-      try {
-        console.log("[syncEventsToGoogle] Syncing event:", event.title);
-        
-        const googleEvent: GoogleCalendarEvent = {
-          summary: event.title,
-          description: event.description || "",
-          start: { 
-            dateTime: event.start_time, 
-            timeZone: "Europe/Lisbon" 
-          },
-          end: { 
-            dateTime: event.end_time, 
-            timeZone: "Europe/Lisbon" 
-          },
-        };
+      let retries = 3;
+      let success = false;
 
-        const response = await fetch(
-          `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`,
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(googleEvent),
-          }
-        );
-
-        if (response.ok) {
-          const createdEvent = await response.json();
-          console.log("[syncEventsToGoogle] ✅ Created in Google, ID:", createdEvent.id);
+      while (retries > 0 && !success) {
+        try {
+          console.log("[syncEventsToGoogle] Syncing event (attempt", 4 - retries, "/3):", event.title);
           
-          // Update local event with Google event ID
-          await supabaseAdmin
-            .from("calendar_events")
-            .update({ 
-              google_event_id: createdEvent.id,
-              is_synced: true 
-            })
-            .eq("id", event.id);
+          const googleEvent: GoogleCalendarEvent = {
+            summary: event.title,
+            description: event.description || "",
+            start: { 
+              dateTime: event.start_time, 
+              timeZone: "Europe/Lisbon" 
+            },
+            end: { 
+              dateTime: event.end_time, 
+              timeZone: "Europe/Lisbon" 
+            },
+          };
+
+          const response = await fetch(
+            `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`,
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify(googleEvent),
+            }
+          );
+
+          if (response.ok) {
+            const createdEvent = await response.json();
+            console.log("[syncEventsToGoogle] ✅ Created in Google, ID:", createdEvent.id);
             
-          syncedCount++;
-        } else {
-          const errorText = await response.text();
-          console.error("[syncEventsToGoogle] ❌ Error creating event:", errorText);
+            // Update local event with Google event ID
+            await supabaseAdmin
+              .from("calendar_events")
+              .update({ 
+                google_event_id: createdEvent.id,
+                is_synced: true 
+              })
+              .eq("id", event.id);
+              
+            syncedCount++;
+            success = true;
+          } else {
+            const errorText = await response.text();
+            console.error("[syncEventsToGoogle] ❌ Error creating event:", errorText);
+            retries--;
+            
+            if (retries > 0) {
+              console.log("[syncEventsToGoogle] 🔄 Retrying in 1 second...");
+              await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+          }
+        } catch (e) { 
+          console.error("[syncEventsToGoogle] ❌ Error syncing event:", e);
+          retries--;
+          
+          if (retries > 0) {
+            console.log("[syncEventsToGoogle] 🔄 Retrying in 1 second...");
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
         }
-      } catch (e) { 
-        console.error("[syncEventsToGoogle] ❌ Error syncing event:", e); 
+      }
+
+      if (!success) {
+        console.error("[syncEventsToGoogle] ❌ Failed to sync event after 3 attempts:", event.title);
       }
     }
     
@@ -293,6 +316,7 @@ async function syncEventsToGoogle(
 
 /**
  * Sync tasks from system to Google Calendar (as events)
+ * WITH RETRY LOGIC
  */
 async function syncTasksToGoogle(
   userId: string,
@@ -319,57 +343,79 @@ async function syncTasksToGoogle(
     let syncedCount = 0;
 
     for (const task of tasks) {
-      try {
-        console.log("[syncTasksToGoogle] Syncing task:", task.title);
-        
-        const dueDate = new Date(task.due_date!);
-        const endDate = new Date(dueDate.getTime() + 60 * 60 * 1000); // 1 hour duration
+      let retries = 3;
+      let success = false;
 
-        const googleEvent: GoogleCalendarEvent = {
-          summary: `[Tarefa] ${task.title}`,
-          description: task.description || "",
-          start: { 
-            dateTime: dueDate.toISOString(), 
-            timeZone: "Europe/Lisbon" 
-          },
-          end: { 
-            dateTime: endDate.toISOString(), 
-            timeZone: "Europe/Lisbon" 
-          },
-        };
-
-        const response = await fetch(
-          `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`,
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(googleEvent),
-          }
-        );
-
-        if (response.ok) {
-          const createdEvent = await response.json();
-          console.log("[syncTasksToGoogle] ✅ Created in Google, ID:", createdEvent.id);
+      while (retries > 0 && !success) {
+        try {
+          console.log("[syncTasksToGoogle] Syncing task (attempt", 4 - retries, "/3):", task.title);
           
-          // Update local task with Google event ID
-          await supabaseAdmin
-            .from("tasks")
-            .update({ 
-              google_event_id: createdEvent.id,
-              is_synced: true 
-            })
-            .eq("id", task.id);
+          const dueDate = new Date(task.due_date!);
+          const endDate = new Date(dueDate.getTime() + 60 * 60 * 1000); // 1 hour duration
+
+          const googleEvent: GoogleCalendarEvent = {
+            summary: `[Tarefa] ${task.title}`,
+            description: task.description || "",
+            start: { 
+              dateTime: dueDate.toISOString(), 
+              timeZone: "Europe/Lisbon" 
+            },
+            end: { 
+              dateTime: endDate.toISOString(), 
+              timeZone: "Europe/Lisbon" 
+            },
+          };
+
+          const response = await fetch(
+            `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`,
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify(googleEvent),
+            }
+          );
+
+          if (response.ok) {
+            const createdEvent = await response.json();
+            console.log("[syncTasksToGoogle] ✅ Created in Google, ID:", createdEvent.id);
             
-          syncedCount++;
-        } else {
-          const errorText = await response.text();
-          console.error("[syncTasksToGoogle] ❌ Error creating task:", errorText);
+            // Update local task with Google event ID
+            await supabaseAdmin
+              .from("tasks")
+              .update({ 
+                google_event_id: createdEvent.id,
+                is_synced: true 
+              })
+              .eq("id", task.id);
+              
+            syncedCount++;
+            success = true;
+          } else {
+            const errorText = await response.text();
+            console.error("[syncTasksToGoogle] ❌ Error creating task:", errorText);
+            retries--;
+            
+            if (retries > 0) {
+              console.log("[syncTasksToGoogle] 🔄 Retrying in 1 second...");
+              await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+          }
+        } catch (e) { 
+          console.error("[syncTasksToGoogle] ❌ Error syncing task:", e);
+          retries--;
+          
+          if (retries > 0) {
+            console.log("[syncTasksToGoogle] 🔄 Retrying in 1 second...");
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
         }
-      } catch (e) { 
-        console.error("[syncTasksToGoogle] ❌ Error syncing task:", e); 
+      }
+
+      if (!success) {
+        console.error("[syncTasksToGoogle] ❌ Failed to sync task after 3 attempts:", task.title);
       }
     }
     

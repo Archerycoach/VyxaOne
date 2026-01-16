@@ -55,6 +55,7 @@ export function CalendarGrid({
       userId: e.userId
     })));
   }
+  console.log("[CalendarGrid] ===== DEBUG END =====");
 
   const handleShowAllForDay = (day: Date, dayEvents: CalendarEvent[], dayTasks: Task[]) => {
     setSelectedDayDate(day);
@@ -191,6 +192,7 @@ export function CalendarGrid({
                         onDeleteEvent(eventId);
                       }
                     }}
+                    showSyncStatus={true}
                   />
                 </div>
               );
@@ -249,6 +251,7 @@ export function CalendarGrid({
                         })}
                         onDragEnd={onDragEnd}
                         compact
+                        showSyncStatus={true}
                       />
                     </div>
                   ))}
@@ -357,6 +360,7 @@ export function CalendarGrid({
                         })}
                         onDragEnd={onDragEnd}
                         compact
+                        showSyncStatus={true}
                       />
                     </div>
                   ))}

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Clock, CalendarIcon, Trash2 } from "lucide-react";
+import { Clock, CalendarIcon, Trash2, AlertCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,6 +12,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import type { CalendarEvent } from "@/types";
 
 interface EventCardProps {
@@ -21,6 +27,7 @@ interface EventCardProps {
   onDragStart?: (e: React.DragEvent) => void;
   onDragEnd?: (e: React.DragEvent) => void;
   compact?: boolean;
+  showSyncStatus?: boolean;
 }
 
 export function EventCard({
@@ -30,8 +37,12 @@ export function EventCard({
   onDragStart,
   onDragEnd,
   compact = false,
+  showSyncStatus = true,
 }: EventCardProps) {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  
+  // Check if event is not synced to Google Calendar
+  const isNotSynced = showSyncStatus && !event.googleEventId;
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -57,13 +68,33 @@ export function EventCard({
           draggable={!!onDragStart}
           onDragStart={onDragStart}
           onDragEnd={onDragEnd}
-          className="text-xs rounded p-1 truncate cursor-move transition-opacity bg-purple-100 hover:bg-purple-200 group relative"
+          className={`text-xs rounded p-1 truncate cursor-move transition-opacity group relative ${
+            isNotSynced 
+              ? "bg-orange-100 hover:bg-orange-200 border border-orange-300" 
+              : "bg-purple-100 hover:bg-purple-200"
+          }`}
           onClick={handleClick}
         >
-          <div className="font-medium">
-            {new Date(event.startTime).toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" })}
+          <div className="flex items-center gap-1">
+            {isNotSynced && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <AlertCircle className="h-3 w-3 text-orange-600 flex-shrink-0" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p className="text-xs">Não sincronizado com Google Calendar</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
+            <div className="flex-1 min-w-0">
+              <div className="font-medium truncate">
+                {new Date(event.startTime).toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" })}
+              </div>
+              <div className="truncate">{event.title}</div>
+            </div>
           </div>
-          <div className="truncate">{event.title}</div>
           {onDelete && (
             <Button
               variant="ghost"
@@ -102,7 +133,11 @@ export function EventCard({
         draggable={!!onDragStart}
         onDragStart={onDragStart}
         onDragEnd={onDragEnd}
-        className="border rounded-lg p-4 cursor-move transition-opacity bg-purple-50 hover:bg-purple-100 group relative"
+        className={`border rounded-lg p-4 cursor-move transition-opacity group relative ${
+          isNotSynced 
+            ? "bg-orange-50 hover:bg-orange-100 border-orange-300" 
+            : "bg-purple-50 hover:bg-purple-100"
+        }`}
         onClick={handleClick}
       >
         {onDelete && (
@@ -120,11 +155,26 @@ export function EventCard({
           <div className="flex-1 pr-10">
             <div className="flex items-center gap-2">
               <h3 className="font-semibold">{event.title}</h3>
-              {event.googleEventId && (
+              {event.googleEventId ? (
                 <Badge variant="outline" className="text-xs">
                   <CalendarIcon className="h-3 w-3 mr-1" />
                   Google
                 </Badge>
+              ) : isNotSynced && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Badge variant="outline" className="text-xs bg-orange-100 border-orange-300 text-orange-700">
+                        <AlertCircle className="h-3 w-3 mr-1" />
+                        Não sincronizado
+                      </Badge>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p className="text-xs">Este evento ainda não foi sincronizado com o Google Calendar.</p>
+                      <p className="text-xs">Clique em "Sincronizar" para enviar.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               )}
             </div>
             {event.description && (

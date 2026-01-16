@@ -15,6 +15,8 @@ interface CalendarHeaderProps {
   onGoogleConnect: () => void;
   onGoogleSync: () => void;
   onGoogleDisconnect: () => void;
+  onRefreshEvents?: () => void;
+  onRefreshTasks?: () => void;
 }
 
 export function CalendarHeader({
@@ -30,7 +32,16 @@ export function CalendarHeader({
   onGoogleConnect,
   onGoogleSync,
   onGoogleDisconnect,
+  onRefreshEvents,
+  onRefreshTasks,
 }: CalendarHeaderProps) {
+  const handleSync = async () => {
+    await onGoogleSync();
+    // Refresh data after sync
+    if (onRefreshEvents) onRefreshEvents();
+    if (onRefreshTasks) onRefreshTasks();
+  };
+
   return (
     <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex items-center gap-4">
@@ -83,7 +94,7 @@ export function CalendarHeader({
               <>
                 <Button
                   variant="outline"
-                  onClick={onGoogleSync}
+                  onClick={handleSync}
                   disabled={isSyncing}
                 >
                   <CalendarIcon className="mr-2 h-4 w-4" />
