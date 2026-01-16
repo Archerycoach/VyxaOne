@@ -382,6 +382,7 @@ async function syncTasksToGoogle(
 
 /**
  * Sync events from Google Calendar to system
+ * Also handles deletions - removes local events that were deleted in Google
  */
 async function syncEventsFromGoogle(
   userId: string,
@@ -400,7 +401,8 @@ async function syncEventsFromGoogle(
       `timeMax=${encodeURIComponent(timeMax)}&` +
       `singleEvents=true&` +
       `orderBy=startTime&` +
-      `maxResults=250`;
+      `maxResults=250&` +
+      `showDeleted=true`; // Important: include deleted events
     
     console.log("[syncEventsFromGoogle] Fetching from URL:", url);
     
@@ -417,17 +419,51 @@ async function syncEventsFromGoogle(
     const data = await response.json();
     const googleEvents = data.items || [];
     
-    console.log("[syncEventsFromGoogle] Fetched", googleEvents.length, "events from Google");
+    console.log("[syncEventsFromGoogle] Fetched", googleEvents.length, "events from Google (including deleted)");
     
+    // Get all local events that are synced with Google
+    const { data: localSyncedEvents } = await supabaseAdmin
+      .from("calendar_events")
+      .select("id, google_event_id")
+      .eq("user_id", userId)
+      .not("google_event_id", "is", null);
+
+    const localGoogleEventIds = new Set(
+      (localSyncedEvents || []).map((e: any) => e.google_event_id)
+    );
+
+    console.log("[syncEventsFromGoogle] Found", localGoogleEventIds.size, "local synced events");
+
+    // Track which Google event IDs we've seen (active events only)
+    const activeGoogleEventIds = new Set<string>();
     let syncedCount = 0;
 
     for (const googleEvent of googleEvents) {
       try {
-        // Skip cancelled events
+        // Handle cancelled/deleted events
         if (googleEvent.status === "cancelled") {
-          console.log("[syncEventsFromGoogle] Skipping cancelled event:", googleEvent.id);
+          console.log("[syncEventsFromGoogle] 🗑️ Event cancelled in Google:", googleEvent.id);
+          
+          // Delete from local database if it exists
+          if (localGoogleEventIds.has(googleEvent.id)) {
+            const { error: deleteError } = await supabaseAdmin
+              .from("calendar_events")
+              .delete()
+              .eq("google_event_id", googleEvent.id)
+              .eq("user_id", userId);
+
+            if (!deleteError) {
+              console.log("[syncEventsFromGoogle] ✅ Deleted local event:", googleEvent.id);
+              syncedCount++;
+            } else {
+              console.error("[syncEventsFromGoogle] ❌ Error deleting local event:", deleteError);
+            }
+          }
           continue;
         }
+
+        // Track this as an active event
+        activeGoogleEventIds.add(googleEvent.id);
 
         const startTime = googleEvent.start?.dateTime || googleEvent.start?.date;
         const endTime = googleEvent.end?.dateTime || googleEvent.end?.date;
@@ -488,6 +524,31 @@ async function syncEventsFromGoogle(
         }
       } catch (e) { 
         console.error("[syncEventsFromGoogle] ❌ Error processing event:", e); 
+      }
+    }
+
+    // Delete local events that no longer exist in Google Calendar
+    console.log("[syncEventsFromGoogle] 🔍 Checking for orphaned local events...");
+    const orphanedEvents = (localSyncedEvents || []).filter(
+      (e: any) => !activeGoogleEventIds.has(e.google_event_id)
+    );
+
+    if (orphanedEvents.length > 0) {
+      console.log("[syncEventsFromGoogle] 🗑️ Found", orphanedEvents.length, "orphaned events to delete");
+      
+      for (const orphan of orphanedEvents) {
+        const { error: deleteError } = await supabaseAdmin
+          .from("calendar_events")
+          .delete()
+          .eq("id", orphan.id)
+          .eq("user_id", userId);
+
+        if (!deleteError) {
+          console.log("[syncEventsFromGoogle] ✅ Deleted orphaned event:", orphan.google_event_id);
+          syncedCount++;
+        } else {
+          console.error("[syncEventsFromGoogle] ❌ Error deleting orphaned event:", deleteError);
+        }
       }
     }
     

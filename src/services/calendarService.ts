@@ -1,7 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
 import type { CalendarEvent } from "@/types";
-import { deleteGoogleCalendarEvent } from "@/lib/googleCalendar";
+import { syncEventToGoogle, deleteGoogleCalendarEvent } from "@/lib/googleCalendar";
 
 type DbCalendarEvent = Database["public"]["Tables"]["calendar_events"]["Row"];
 type CalendarEventInsert = Database["public"]["Tables"]["calendar_events"]["Insert"];
@@ -116,13 +116,16 @@ export const getCalendarEvent = async (id: string): Promise<CalendarEvent | null
   return data ? mapDbEventToFrontend(data) : null;
 };
 
-// Create new calendar event (Local Only)
+// Create new calendar event and sync to Google Calendar
 export const createCalendarEvent = async (event: CalendarEventInsert & { contact_id?: string | null }): Promise<CalendarEvent> => {
+  console.log("[calendarService] 📝 Creating event:", event.title);
+  
   // Validate dates only if end_time is provided
   if (event.end_time && new Date(event.end_time) <= new Date(event.start_time)) {
     throw new Error("A data de fim deve ser posterior à data de início");
   }
 
+  // Create event in local database first
   const { data, error } = await supabase
     .from("calendar_events")
     .insert({
@@ -133,8 +136,43 @@ export const createCalendarEvent = async (event: CalendarEventInsert & { contact
     .single();
 
   if (error) {
-    console.error("Error creating event:", error);
+    console.error("[calendarService] ❌ Error creating event:", error);
     throw error;
+  }
+
+  console.log("[calendarService] ✅ Event created locally:", data.id);
+
+  // Try to sync to Google Calendar immediately (non-blocking)
+  try {
+    console.log("[calendarService] 🔄 Attempting to sync to Google Calendar...");
+    const googleEventId = await syncEventToGoogle({
+      title: data.title,
+      description: data.description || undefined,
+      start_time: data.start_time,
+      end_time: data.end_time,
+      location: data.location || undefined,
+    });
+
+    if (googleEventId) {
+      console.log("[calendarService] ✅ Synced to Google Calendar:", googleEventId);
+      // Update local event with Google event ID
+      await supabase
+        .from("calendar_events")
+        .update({ 
+          google_event_id: googleEventId,
+          is_synced: true 
+        })
+        .eq("id", data.id);
+      
+      // Update the data object to reflect the sync
+      data.google_event_id = googleEventId;
+      data.is_synced = true;
+    } else {
+      console.log("[calendarService] ⚠️ Google Calendar not connected or sync disabled");
+    }
+  } catch (syncError) {
+    console.error("[calendarService] ⚠️ Failed to sync to Google Calendar (non-critical):", syncError);
+    // Don't throw - event was created locally, sync failure is non-critical
   }
 
   return mapDbEventToFrontend(data);
@@ -143,8 +181,18 @@ export const createCalendarEvent = async (event: CalendarEventInsert & { contact
 // Alias for compatibility
 export const createEvent = createCalendarEvent;
 
-// Update calendar event (Local Only)
+// Update calendar event and sync to Google Calendar
 export const updateCalendarEvent = async (id: string, updates: CalendarEventUpdate): Promise<CalendarEvent> => {
+  console.log("[calendarService] 📝 Updating event:", id);
+  
+  // Get current event data to get google_event_id
+  const { data: currentEvent } = await supabase
+    .from("calendar_events")
+    .select("google_event_id, title, description, start_time, end_time, location")
+    .eq("id", id)
+    .single();
+
+  // Update in local database
   const { data, error } = await supabase
     .from("calendar_events")
     .update({
@@ -156,16 +204,37 @@ export const updateCalendarEvent = async (id: string, updates: CalendarEventUpda
     .single();
 
   if (error) {
-    console.error("Error updating event:", error);
+    console.error("[calendarService] ❌ Error updating event:", error);
     throw error;
+  }
+
+  console.log("[calendarService] ✅ Event updated locally");
+
+  // Try to sync update to Google Calendar (non-blocking)
+  try {
+    if (currentEvent?.google_event_id) {
+      console.log("[calendarService] 🔄 Syncing update to Google Calendar...");
+      await syncEventToGoogle({
+        title: data.title,
+        description: data.description || undefined,
+        start_time: data.start_time,
+        end_time: data.end_time,
+        location: data.location || undefined,
+      }, currentEvent.google_event_id);
+      console.log("[calendarService] ✅ Update synced to Google Calendar");
+    }
+  } catch (syncError) {
+    console.error("[calendarService] ⚠️ Failed to sync update to Google Calendar (non-critical):", syncError);
   }
 
   return mapDbEventToFrontend(data);
 };
 
-// Delete calendar event (Local Only)
+// Delete calendar event and sync deletion to Google Calendar
 export const deleteCalendarEvent = async (id: string): Promise<void> => {
   try {
+    console.log("[calendarService] 🗑️ Deleting event:", id);
+    
     // First, get the event to check if it has a google_event_id
     const { data: event } = await supabase
       .from("calendar_events")
@@ -186,13 +255,13 @@ export const deleteCalendarEvent = async (id: string): Promise<void> => {
       .eq("id", id);
 
     if (error) {
-      console.error("Error deleting event:", error);
+      console.error("[calendarService] ❌ Error deleting event:", error);
       throw error;
     }
 
     console.log("[calendarService] ✅ Event deleted successfully");
   } catch (error) {
-    console.error("Error in deleteCalendarEvent:", error);
+    console.error("[calendarService] ❌ Error in deleteCalendarEvent:", error);
     throw error;
   }
 };

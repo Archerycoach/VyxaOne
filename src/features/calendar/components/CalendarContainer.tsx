@@ -8,8 +8,6 @@ import {
   useCalendarTasks,
   useGoogleCalendarSync,
   useCalendarFilters,
-  useCalendarInteractions,
-  useCalendarNotes,
 } from "../hooks";
 import { createCalendarEvent, updateCalendarEvent } from "@/services/calendarService";
 import { updateTask, createTask } from "@/services/tasksService";
@@ -23,8 +21,6 @@ export function CalendarContainer() {
   // Hooks for data fetching
   const { events, isLoading: eventsLoading, refetch: refetchEvents, deleteEvent } = useCalendarEvents();
   const { tasks, isLoading: tasksLoading, refetch: refetchTasks } = useCalendarTasks();
-  const { interactions, isLoading: interactionsLoading, refetch: refetchInteractions } = useCalendarInteractions();
-  const { notes, isLoading: notesLoading, refetch: refetchNotes } = useCalendarNotes();
   const {
     isConnected,
     isSyncing,
@@ -48,10 +44,6 @@ export function CalendarContainer() {
     filterEventsByDate,
     filterTasksByDate,
   } = useCalendarFilters();
-
-  // Additional filters for new types
-  const [showInteractions, setShowInteractions] = useState(true);
-  const [showNotes, setShowNotes] = useState(true);
 
   // Form state
   const [showEventForm, setShowEventForm] = useState(false);
@@ -327,6 +319,14 @@ export function CalendarContainer() {
       setShowEventForm(false);
       setEditingEvent(null);
       refetchEvents();
+      
+      // Auto-sync with Google Calendar after creating/updating event
+      if (isConnected) {
+        console.log("[CalendarContainer] Auto-syncing with Google Calendar...");
+        setTimeout(() => {
+          syncWithGoogle();
+        }, 500); // Small delay to ensure event is saved
+      }
     } catch (error) {
       console.error(error);
       toast({ title: "Erro ao salvar evento", variant: "destructive" });
@@ -475,8 +475,6 @@ export function CalendarContainer() {
         currentDate={currentDate}
         events={showEvents ? filteredEvents : []}
         tasks={showTasks ? filteredTasks : []}
-        interactions={showInteractions ? interactions : []}
-        notes={showNotes ? notes : []}
         onEventClick={handleEditEvent}
         onTaskClick={handleEditTask}
         onDeleteEvent={deleteEvent}
