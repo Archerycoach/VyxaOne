@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { triggerManualSync } from "@/lib/googleCalendar";
 
 export function useGoogleCalendarSync() {
   const [isSyncing, setIsSyncing] = useState(false);
@@ -99,68 +100,36 @@ export function useGoogleCalendarSync() {
     try {
       setIsSyncing(true);
       
-      // Get session token for authentication
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        throw new Error("Sessão não encontrada. Por favor, faça login novamente.");
-      }
-
-      console.log("[useGoogleCalendarSync] 🔄 Iniciando sincronização...");
+      console.log("[useGoogleCalendarSync] 🔄 Iniciando sincronização manual...");
       console.log("[useGoogleCalendarSync] 📋 Configurações:", syncSettings);
 
-      const response = await fetch("/api/google-calendar/sync", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${session.access_token}`,
-          "Content-Type": "application/json",
-        },
-      });
+      // Use the same function that automatic sync uses (it's working!)
+      const result = await triggerManualSync();
 
-      const result = await response.json();
-
-      if (!response.ok) {
-        console.error("[useGoogleCalendarSync] ❌ Erro na sincronização:", result);
-        
-        // Handle specific error cases
-        if (response.status === 401) {
-          if (result.requiresReconnect) {
-            toast({
-              title: "🔐 Autenticação expirada",
-              description: "Sua conexão com Google Calendar expirou. Por favor, reconecte sua conta.",
-              variant: "destructive",
-              duration: 10000,
-            });
-            
-            // Update connection status
-            setIsConnected(false);
-            return;
-          }
-          throw new Error("Autenticação expirada. Por favor, reconecte sua conta Google.");
-        } else if (response.status === 404) {
-          throw new Error("Integração Google Calendar não encontrada. Por favor, conecte sua conta primeiro.");
-        } else {
-          throw new Error(result.error || result.details || "Erro desconhecido na sincronização");
-        }
+      if (!result.success) {
+        console.error("[useGoogleCalendarSync] ❌ Erro na sincronização:", result.error);
+        throw new Error(result.error || "Erro desconhecido na sincronização");
       }
 
       console.log("[useGoogleCalendarSync] ✅ Sincronização concluída:", result);
 
       // Create detailed success message
-      let syncDescription = `${result.synced || 0} item(s) sincronizado(s)`;
+      const syncedCount = result.synced || 0;
+      let syncDescription = `${syncedCount} item(s) sincronizado(s)`;
       
       if (syncSettings) {
         const directions = [];
-        if (result.direction === "both") {
+        if (syncSettings.syncDirection === "both") {
           directions.push("↕️ Bidirecional");
-        } else if (result.direction === "fromGoogle") {
+        } else if (syncSettings.syncDirection === "fromGoogle") {
           directions.push("📥 Do Google");
-        } else if (result.direction === "toGoogle") {
+        } else if (syncSettings.syncDirection === "toGoogle") {
           directions.push("📤 Para o Google");
         }
         
         const types = [];
-        if (result.syncedEvents) types.push("Eventos");
-        if (result.syncedTasks) types.push("Tarefas");
+        if (syncSettings.syncEvents) types.push("Eventos");
+        if (syncSettings.syncTasks) types.push("Tarefas");
         
         if (directions.length > 0 || types.length > 0) {
           syncDescription += "\n";
