@@ -32,7 +32,7 @@ interface TaskDialogsProps {
     dueDate: string;
     relatedLeadId: string;
     relatedPropertyId: string;
-    assignedToId: string;
+    assignedTo: string;
   };
   onFormDataChange: (field: string, value: string) => void;
   onSubmit: (e: React.FormEvent) => void;
@@ -151,16 +151,17 @@ export function TaskDialogs({
               <div className="grid gap-2">
                 <Label htmlFor="assignedTo">Atribuído a</Label>
                 <Select
-                  value={formData.assignedToId}
-                  onValueChange={(value) => onFormDataChange("assignedToId", value)}
+                  value={formData.assignedTo}
+                  onValueChange={(value) => onFormDataChange("assignedTo", value)}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Selecione um usuário..." />
+                    <SelectValue placeholder="Selecione um utilizador" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="none">Ninguém</SelectItem>
                     {users.map((user) => (
                       <SelectItem key={user.id} value={user.id}>
-                        {user.full_name || user.email}
+                        {user.name || user.email}
                       </SelectItem>
                     ))}
                   </SelectContent>
