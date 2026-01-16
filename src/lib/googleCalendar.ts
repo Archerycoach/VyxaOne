@@ -84,6 +84,109 @@ export async function getGoogleCalendarToken(): Promise<string | null> {
 }
 
 /**
+ * Create or update event in Google Calendar
+ * @param eventData - Local event data to sync
+ * @param googleEventId - Existing Google event ID (for updates)
+ * @returns Google event ID if successful, null otherwise
+ */
+export async function syncEventToGoogle(
+  eventData: {
+    title: string;
+    description?: string;
+    start_time: string;
+    end_time: string;
+    location?: string;
+  },
+  googleEventId?: string | null
+): Promise<string | null> {
+  try {
+    const accessToken = await getGoogleCalendarToken();
+    if (!accessToken) {
+      console.log("[googleCalendar] No access token, skipping Google Calendar sync");
+      return null;
+    }
+
+    // Get calendar ID from integration settings
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return null;
+
+    const { data: integration } = await supabase
+      .from("google_calendar_integrations" as any)
+      .select("calendar_id, sync_direction")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (!integration) return null;
+
+    const integrationData = integration as any;
+    
+    // Check if we should sync to Google
+    if (integrationData.sync_direction !== "toGoogle" && integrationData.sync_direction !== "both") {
+      console.log("[googleCalendar] Sync direction doesn't include toGoogle, skipping");
+      return null;
+    }
+
+    const calendarId = integrationData.calendar_id || "primary";
+
+    const googleEvent = {
+      summary: eventData.title,
+      description: eventData.description || "",
+      start: { 
+        dateTime: eventData.start_time, 
+        timeZone: "Europe/Lisbon" 
+      },
+      end: { 
+        dateTime: eventData.end_time, 
+        timeZone: "Europe/Lisbon" 
+      },
+      location: eventData.location || "",
+    };
+
+    let response;
+    if (googleEventId) {
+      // Update existing event
+      response = await fetch(
+        `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${googleEventId}`,
+        {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(googleEvent),
+        }
+      );
+    } else {
+      // Create new event
+      response = await fetch(
+        `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(googleEvent),
+        }
+      );
+    }
+
+    if (response.ok) {
+      const createdEvent = await response.json();
+      console.log("[googleCalendar] ✅ Event synced to Google Calendar:", createdEvent.id);
+      return createdEvent.id;
+    }
+
+    const errorText = await response.text();
+    console.error("[googleCalendar] ❌ Error syncing to Google Calendar:", errorText);
+    return null;
+  } catch (error) {
+    console.error("[googleCalendar] ❌ Error syncing to Google Calendar:", error);
+    return null;
+  }
+}
+
+/**
  * Delete event from Google Calendar
  * @param googleEventId - The Google Calendar event ID
  * @returns true if deleted successfully, false otherwise
@@ -154,6 +257,42 @@ export async function isGoogleCalendarConnected(): Promise<boolean> {
   } catch (error) {
     console.error("[googleCalendar] Error checking connection:", error);
     return false;
+  }
+}
+
+/**
+ * Get sync settings for current user
+ */
+export async function getGoogleCalendarSyncSettings(): Promise<{
+  isConnected: boolean;
+  syncDirection: string | null;
+  syncEvents: boolean;
+  syncTasks: boolean;
+} | null> {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return null;
+
+    const { data: integration } = await supabase
+      .from("google_calendar_integrations" as any)
+      .select("sync_direction, sync_events, sync_tasks")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (!integration) {
+      return { isConnected: false, syncDirection: null, syncEvents: false, syncTasks: false };
+    }
+
+    const integrationData = integration as any;
+    return {
+      isConnected: true,
+      syncDirection: integrationData.sync_direction,
+      syncEvents: integrationData.sync_events,
+      syncTasks: integrationData.sync_tasks,
+    };
+  } catch (error) {
+    console.error("[googleCalendar] Error getting sync settings:", error);
+    return null;
   }
 }
 

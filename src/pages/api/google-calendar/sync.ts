@@ -7,13 +7,16 @@ interface GoogleCalendarEvent {
   summary: string;
   description?: string;
   start: {
-    dateTime: string;
-    timeZone: string;
+    dateTime?: string;
+    date?: string;
+    timeZone?: string;
   };
   end: {
-    dateTime: string;
-    timeZone: string;
+    dateTime?: string;
+    date?: string;
+    timeZone?: string;
   };
+  status?: string;
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -48,7 +51,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     console.log("[sync] ✅ User authenticated:", user.id);
 
     // Get user's Google Calendar integration using admin client
-    // Use 'as any' to bypass complex type inference causing "excessively deep" errors
     const { data: rawIntegration, error: integrationError } = await (supabaseAdmin
       .from("google_calendar_integrations" as any)
       .select("*")
@@ -65,7 +67,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(404).json({ error: "Google Calendar not connected" });
     }
 
-    // Cast to known type
     const integration = rawIntegration as any;
     
     // Check if token is expired
@@ -74,8 +75,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     if (isExpired && integration.refresh_token) {
       console.log("[sync] 🔄 Token expired, refreshing...");
-      // Get OAuth settings
-      // Use 'as any' to bypass complex type inference
+      
       const { data: integrationSettings } = await (supabaseAdmin
         .from("integration_settings" as any)
         .select("*")
@@ -145,26 +145,38 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     console.log("[sync] ✅ Access token validated, proceeding with sync...");
+    console.log("[sync] 📋 Sync settings:", {
+      direction: integration.sync_direction,
+      syncEvents: integration.sync_events,
+      syncTasks: integration.sync_tasks,
+      calendarId: integration.calendar_id || "primary"
+    });
 
     let syncedCount = 0;
 
-    // Sync from Google to system
+    // Sync from Google to system (import from Google)
     if (integration.sync_direction === "both" || integration.sync_direction === "fromGoogle") {
-      console.log("[sync] 📥 Syncing FROM Google...");
+      console.log("[sync] 📥 Syncing FROM Google Calendar...");
       const googleEventsSynced = await syncEventsFromGoogle(user.id, accessToken, integration.calendar_id || "primary");
+      console.log("[sync] ✅ Synced", googleEventsSynced, "events FROM Google");
       syncedCount += googleEventsSynced;
     }
     
-    // Sync from system to Google
+    // Sync from system to Google (export to Google)
     if (integration.sync_direction === "both" || integration.sync_direction === "toGoogle") {
-      console.log("[sync] 📤 Syncing TO Google...");
+      console.log("[sync] 📤 Syncing TO Google Calendar...");
+      
       if (integration.sync_events) {
+        console.log("[sync] 📤 Syncing calendar events to Google...");
         const eventsSynced = await syncEventsToGoogle(user.id, accessToken, integration.calendar_id || "primary");
+        console.log("[sync] ✅ Synced", eventsSynced, "calendar events TO Google");
         syncedCount += eventsSynced;
       }
 
       if (integration.sync_tasks) {
+        console.log("[sync] 📤 Syncing tasks to Google...");
         const tasksSynced = await syncTasksToGoogle(user.id, accessToken, integration.calendar_id || "primary");
+        console.log("[sync] ✅ Synced", tasksSynced, "tasks TO Google");
         syncedCount += tasksSynced;
       }
     }
@@ -175,8 +187,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       .update({ last_sync_at: new Date().toISOString() })
       .eq("id", integration.id));
 
-    console.log("[sync] ===== SYNC COMPLETE. Total synced:", syncedCount);
-    res.status(200).json({ success: true, synced: syncedCount });
+    console.log("[sync] ===== SYNC COMPLETE =====");
+    console.log("[sync] Total items synced:", syncedCount);
+    
+    res.status(200).json({ 
+      success: true, 
+      synced: syncedCount,
+      direction: integration.sync_direction,
+      syncedEvents: integration.sync_events,
+      syncedTasks: integration.sync_tasks
+    });
   } catch (error) {
     console.error("[sync] ❌ Fatal error:", error);
     res.status(500).json({ 
@@ -186,12 +206,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 }
 
+/**
+ * Sync calendar events from system to Google Calendar
+ */
 async function syncEventsToGoogle(
   userId: string,
   accessToken: string,
   calendarId: string
 ): Promise<number> {
   try {
+    console.log("[syncEventsToGoogle] Fetching unsynchronized events...");
+    
+    // Get events that haven't been synced to Google yet
     const { data: rawEvents } = await supabaseAdmin
       .from("calendar_events")
       .select("*")
@@ -200,21 +226,31 @@ async function syncEventsToGoogle(
       .gte("start_time", new Date().toISOString());
     
     const events = rawEvents as any[] || [];
+    console.log("[syncEventsToGoogle] Found", events.length, "events to sync");
+    
     if (events.length === 0) return 0;
 
     let syncedCount = 0;
 
     for (const event of events) {
       try {
+        console.log("[syncEventsToGoogle] Syncing event:", event.title);
+        
         const googleEvent: GoogleCalendarEvent = {
           summary: event.title,
           description: event.description || "",
-          start: { dateTime: event.start_time, timeZone: "Europe/Lisbon" },
-          end: { dateTime: event.end_time, timeZone: "Europe/Lisbon" },
+          start: { 
+            dateTime: event.start_time, 
+            timeZone: "Europe/Lisbon" 
+          },
+          end: { 
+            dateTime: event.end_time, 
+            timeZone: "Europe/Lisbon" 
+          },
         };
 
         const response = await fetch(
-          `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events`,
+          `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`,
           {
             method: "POST",
             headers: {
@@ -227,32 +263,46 @@ async function syncEventsToGoogle(
 
         if (response.ok) {
           const createdEvent = await response.json();
+          console.log("[syncEventsToGoogle] ✅ Created in Google, ID:", createdEvent.id);
+          
+          // Update local event with Google event ID
           await supabaseAdmin
             .from("calendar_events")
-            .update({ google_event_id: createdEvent.id })
+            .update({ 
+              google_event_id: createdEvent.id,
+              is_synced: true 
+            })
             .eq("id", event.id);
+            
           syncedCount++;
         } else {
           const errorText = await response.text();
-          console.error("[sync] Error creating Google event:", errorText);
+          console.error("[syncEventsToGoogle] ❌ Error creating event:", errorText);
         }
       } catch (e) { 
-        console.error("[sync] Error syncing event:", e); 
+        console.error("[syncEventsToGoogle] ❌ Error syncing event:", e); 
       }
     }
+    
     return syncedCount;
   } catch (error) { 
-    console.error("[sync] Error in syncEventsToGoogle:", error);
+    console.error("[syncEventsToGoogle] ❌ Fatal error:", error);
     return 0; 
   }
 }
 
+/**
+ * Sync tasks from system to Google Calendar (as events)
+ */
 async function syncTasksToGoogle(
   userId: string,
   accessToken: string,
   calendarId: string
 ): Promise<number> {
   try {
+    console.log("[syncTasksToGoogle] Fetching unsynchronized tasks...");
+    
+    // Get tasks that haven't been synced to Google yet and have a due date
     const { data: rawTasks } = await supabaseAdmin
       .from("tasks")
       .select("*")
@@ -262,24 +312,34 @@ async function syncTasksToGoogle(
       .gte("due_date", new Date().toISOString());
 
     const tasks = rawTasks as any[] || [];
+    console.log("[syncTasksToGoogle] Found", tasks.length, "tasks to sync");
+    
     if (tasks.length === 0) return 0;
 
     let syncedCount = 0;
 
     for (const task of tasks) {
       try {
+        console.log("[syncTasksToGoogle] Syncing task:", task.title);
+        
         const dueDate = new Date(task.due_date!);
-        const endDate = new Date(dueDate.getTime() + 60 * 60 * 1000);
+        const endDate = new Date(dueDate.getTime() + 60 * 60 * 1000); // 1 hour duration
 
         const googleEvent: GoogleCalendarEvent = {
           summary: `[Tarefa] ${task.title}`,
           description: task.description || "",
-          start: { dateTime: dueDate.toISOString(), timeZone: "Europe/Lisbon" },
-          end: { dateTime: endDate.toISOString(), timeZone: "Europe/Lisbon" },
+          start: { 
+            dateTime: dueDate.toISOString(), 
+            timeZone: "Europe/Lisbon" 
+          },
+          end: { 
+            dateTime: endDate.toISOString(), 
+            timeZone: "Europe/Lisbon" 
+          },
         };
 
         const response = await fetch(
-          `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events`,
+          `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`,
           {
             method: "POST",
             headers: {
@@ -292,73 +352,120 @@ async function syncTasksToGoogle(
 
         if (response.ok) {
           const createdEvent = await response.json();
+          console.log("[syncTasksToGoogle] ✅ Created in Google, ID:", createdEvent.id);
+          
+          // Update local task with Google event ID
           await supabaseAdmin
             .from("tasks")
-            .update({ google_event_id: createdEvent.id })
+            .update({ 
+              google_event_id: createdEvent.id,
+              is_synced: true 
+            })
             .eq("id", task.id);
+            
           syncedCount++;
         } else {
           const errorText = await response.text();
-          console.error("[sync] Error creating Google task:", errorText);
+          console.error("[syncTasksToGoogle] ❌ Error creating task:", errorText);
         }
       } catch (e) { 
-        console.error("[sync] Error syncing task:", e); 
+        console.error("[syncTasksToGoogle] ❌ Error syncing task:", e); 
       }
     }
+    
     return syncedCount;
   } catch (error) { 
-    console.error("[sync] Error in syncTasksToGoogle:", error);
+    console.error("[syncTasksToGoogle] ❌ Fatal error:", error);
     return 0; 
   }
 }
 
+/**
+ * Sync events from Google Calendar to system
+ */
 async function syncEventsFromGoogle(
   userId: string,
   accessToken: string,
   calendarId: string
 ): Promise<number> {
   try {
+    console.log("[syncEventsFromGoogle] Fetching events from Google Calendar...");
+    
+    // Fetch events from the past 30 days to future 90 days
     const timeMin = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
     const timeMax = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
     
-    const response = await fetch(
-      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?` +
-      `timeMin=${encodeURIComponent(timeMin)}&timeMax=${encodeURIComponent(timeMax)}&singleEvents=true&orderBy=startTime&maxResults=250`,
-      { headers: { Authorization: `Bearer ${accessToken}` } }
-    );
+    const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?` +
+      `timeMin=${encodeURIComponent(timeMin)}&` +
+      `timeMax=${encodeURIComponent(timeMax)}&` +
+      `singleEvents=true&` +
+      `orderBy=startTime&` +
+      `maxResults=250`;
+    
+    console.log("[syncEventsFromGoogle] Fetching from URL:", url);
+    
+    const response = await fetch(url, { 
+      headers: { Authorization: `Bearer ${accessToken}` } 
+    });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("[sync] Error fetching Google events:", errorText);
+      console.error("[syncEventsFromGoogle] ❌ Error fetching events:", errorText);
       return 0;
     }
 
     const data = await response.json();
     const googleEvents = data.items || [];
+    
+    console.log("[syncEventsFromGoogle] Fetched", googleEvents.length, "events from Google");
+    
     let syncedCount = 0;
 
     for (const googleEvent of googleEvents) {
       try {
+        // Skip cancelled events
+        if (googleEvent.status === "cancelled") {
+          console.log("[syncEventsFromGoogle] Skipping cancelled event:", googleEvent.id);
+          continue;
+        }
+
         const startTime = googleEvent.start?.dateTime || googleEvent.start?.date;
         const endTime = googleEvent.end?.dateTime || googleEvent.end?.date;
         
-        if (!startTime || !endTime) continue;
+        if (!startTime || !endTime) {
+          console.log("[syncEventsFromGoogle] Skipping event without times:", googleEvent.id);
+          continue;
+        }
 
+        // Check if event already exists in our system
         const { data: existingEvent } = await supabaseAdmin
           .from("calendar_events")
-          .select("id")
+          .select("id, google_event_id")
           .eq("google_event_id", googleEvent.id)
+          .eq("user_id", userId)
           .maybeSingle();
 
-        if (existingEvent) continue;
+        if (existingEvent) {
+          console.log("[syncEventsFromGoogle] Event already exists:", googleEvent.id);
+          continue;
+        }
 
+        // Handle all-day events (date only, no time)
         let finalStartTime = startTime;
         let finalEndTime = endTime;
         
+        // If it's a date-only event (all-day), convert to datetime
         if (startTime.length === 10) {
+          // All-day event: set to 9 AM - 6 PM in Lisbon time
           finalStartTime = `${startTime}T09:00:00.000Z`;
           finalEndTime = `${endTime}T18:00:00.000Z`;
+          console.log("[syncEventsFromGoogle] Converted all-day event:", {
+            original: startTime,
+            converted: finalStartTime
+          });
         }
+
+        console.log("[syncEventsFromGoogle] Creating event:", googleEvent.summary);
 
         const { error: createError } = await supabaseAdmin
           .from("calendar_events")
@@ -369,16 +476,24 @@ async function syncEventsFromGoogle(
             start_time: finalStartTime,
             end_time: finalEndTime,
             google_event_id: googleEvent.id,
+            is_synced: true,
+            location: googleEvent.location || null,
           });
 
-        if (!createError) syncedCount++;
+        if (!createError) {
+          console.log("[syncEventsFromGoogle] ✅ Created event:", googleEvent.summary);
+          syncedCount++;
+        } else {
+          console.error("[syncEventsFromGoogle] ❌ Error creating event:", createError);
+        }
       } catch (e) { 
-        console.error("[sync] Error syncing Google event:", e); 
+        console.error("[syncEventsFromGoogle] ❌ Error processing event:", e); 
       }
     }
+    
     return syncedCount;
   } catch (error) { 
-    console.error("[sync] Error in syncEventsFromGoogle:", error);
+    console.error("[syncEventsFromGoogle] ❌ Fatal error:", error);
     return 0; 
   }
 }

@@ -317,13 +317,21 @@ async function createCalendarEventAction(action: any, lead: any, content: string
     const endTime = new Date(startTime);
     endTime.setHours(endTime.getHours() + 1);
 
+    // Ensure valid ISO strings
+    const startTimeISO = startTime.toISOString();
+    const endTimeISO = endTime.toISOString();
+
+    if (!startTimeISO || !endTimeISO) {
+      throw new Error("Invalid date/time values for calendar event");
+    }
+
     const { error } = await supabase
       .from("calendar_events")
       .insert({
         title: personalizeContent(action.title || "Evento automático", lead),
         description: content,
-        start_time: startTime.toISOString(),
-        end_time: endTime.toISOString(),
+        start_time: startTimeISO,
+        end_time: endTimeISO,
         lead_id: lead.id,
         user_id: userId,
         event_type: action.eventType || "meeting",

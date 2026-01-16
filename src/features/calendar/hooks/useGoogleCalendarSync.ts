@@ -7,6 +7,11 @@ export function useGoogleCalendarSync() {
   const [isConnected, setIsConnected] = useState(false);
   const [isConfigured, setIsConfigured] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [syncSettings, setSyncSettings] = useState<{
+    syncDirection: string | null;
+    syncEvents: boolean;
+    syncTasks: boolean;
+  } | null>(null);
   const { toast } = useToast();
 
   const checkConfiguration = useCallback(async () => {
@@ -28,6 +33,7 @@ export function useGoogleCalendarSync() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         setIsConnected(false);
+        setSyncSettings(null);
         return;
       }
 
@@ -39,6 +45,7 @@ export function useGoogleCalendarSync() {
 
       if (error || !data) {
         setIsConnected(false);
+        setSyncSettings(null);
         return;
       }
 
@@ -46,12 +53,20 @@ export function useGoogleCalendarSync() {
       const integration = data as any;
       const hasRefreshToken = !!integration.refresh_token;
       
+      // Store sync settings
+      setSyncSettings({
+        syncDirection: integration.sync_direction,
+        syncEvents: integration.sync_events,
+        syncTasks: integration.sync_tasks,
+      });
+      
       // Consider connected if we have a refresh token, even if access token expired
       // The backend will automatically refresh the token when needed
       setIsConnected(hasRefreshToken);
     } catch (error) {
       console.error("Error checking Google Calendar connection:", error);
       setIsConnected(false);
+      setSyncSettings(null);
     } finally {
       setLoading(false);
     }
@@ -65,7 +80,7 @@ export function useGoogleCalendarSync() {
   const syncWithGoogle = useCallback(async () => {
     if (!isConfigured) {
       toast({
-        title: "Configuração necessária",
+        title: "⚙️ Configuração necessária",
         description: "A integração com Google Calendar precisa ser configurada por um administrador",
         variant: "destructive",
       });
@@ -74,7 +89,7 @@ export function useGoogleCalendarSync() {
 
     if (!isConnected) {
       toast({
-        title: "Conexão necessária",
+        title: "🔌 Conexão necessária",
         description: "Você precisa conectar sua conta Google primeiro",
         variant: "destructive",
       });
@@ -90,7 +105,8 @@ export function useGoogleCalendarSync() {
         throw new Error("Sessão não encontrada. Por favor, faça login novamente.");
       }
 
-      console.log("[useGoogleCalendarSync] Iniciando sincronização...");
+      console.log("[useGoogleCalendarSync] 🔄 Iniciando sincronização...");
+      console.log("[useGoogleCalendarSync] 📋 Configurações:", syncSettings);
 
       const response = await fetch("/api/google-calendar/sync", {
         method: "POST",
@@ -103,23 +119,60 @@ export function useGoogleCalendarSync() {
       const result = await response.json();
 
       if (!response.ok) {
-        console.error("[useGoogleCalendarSync] Erro na sincronização:", result);
+        console.error("[useGoogleCalendarSync] ❌ Erro na sincronização:", result);
         
         // Handle specific error cases
         if (response.status === 401) {
+          if (result.requiresReconnect) {
+            toast({
+              title: "🔐 Autenticação expirada",
+              description: "Sua conexão com Google Calendar expirou. Por favor, reconecte sua conta.",
+              variant: "destructive",
+              duration: 10000,
+            });
+            
+            // Update connection status
+            setIsConnected(false);
+            return;
+          }
           throw new Error("Autenticação expirada. Por favor, reconecte sua conta Google.");
         } else if (response.status === 404) {
           throw new Error("Integração Google Calendar não encontrada. Por favor, conecte sua conta primeiro.");
         } else {
-          throw new Error(result.error || "Erro desconhecido na sincronização");
+          throw new Error(result.error || result.details || "Erro desconhecido na sincronização");
         }
       }
 
-      console.log("[useGoogleCalendarSync] Sincronização concluída:", result);
+      console.log("[useGoogleCalendarSync] ✅ Sincronização concluída:", result);
+
+      // Create detailed success message
+      let syncDescription = `${result.synced || 0} item(s) sincronizado(s)`;
+      
+      if (syncSettings) {
+        const directions = [];
+        if (result.direction === "both") {
+          directions.push("↕️ Bidirecional");
+        } else if (result.direction === "fromGoogle") {
+          directions.push("📥 Do Google");
+        } else if (result.direction === "toGoogle") {
+          directions.push("📤 Para o Google");
+        }
+        
+        const types = [];
+        if (result.syncedEvents) types.push("Eventos");
+        if (result.syncedTasks) types.push("Tarefas");
+        
+        if (directions.length > 0 || types.length > 0) {
+          syncDescription += "\n";
+          if (directions.length > 0) syncDescription += directions.join(", ");
+          if (types.length > 0) syncDescription += ` (${types.join(", ")})`;
+        }
+      }
 
       toast({
         title: "✅ Sincronização concluída",
-        description: `${result.synced || 0} eventos sincronizados com sucesso`,
+        description: syncDescription,
+        duration: 5000,
       });
 
       // Refresh connection status
@@ -127,7 +180,7 @@ export function useGoogleCalendarSync() {
       
       return result;
     } catch (error) {
-      console.error("[useGoogleCalendarSync] Error syncing with Google Calendar:", error);
+      console.error("[useGoogleCalendarSync] ❌ Error syncing with Google Calendar:", error);
       
       const errorMessage = error instanceof Error ? error.message : "Não foi possível sincronizar com Google Calendar";
       
@@ -135,17 +188,18 @@ export function useGoogleCalendarSync() {
         title: "❌ Erro na sincronização",
         description: errorMessage,
         variant: "destructive",
+        duration: 8000,
       });
       
       throw error;
     } finally {
       setIsSyncing(false);
     }
-  }, [isConfigured, isConnected, toast, checkConnection]);
+  }, [isConfigured, isConnected, syncSettings, toast, checkConnection]);
 
   const connectGoogle = useCallback(async () => {
     try {
-      console.log("[useGoogleCalendarSync] Initiating Google OAuth flow...");
+      console.log("[useGoogleCalendarSync] 🔗 Initiating Google OAuth flow...");
       
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
@@ -161,7 +215,7 @@ export function useGoogleCalendarSync() {
 
       if (!settings) {
         toast({
-          title: "Configuração não encontrada",
+          title: "⚙️ Configuração não encontrada",
           description: "Por favor, configure o Google Calendar nas definições de integração",
           variant: "destructive",
         });
@@ -188,12 +242,12 @@ export function useGoogleCalendarSync() {
         state: user.id,
       })}`;
 
-      console.log("[useGoogleCalendarSync] Redirecting to Google OAuth...");
+      console.log("[useGoogleCalendarSync] 🌐 Redirecting to Google OAuth...");
       window.location.href = authUrl;
     } catch (error) {
-      console.error("[useGoogleCalendarSync] Error connecting to Google:", error);
+      console.error("[useGoogleCalendarSync] ❌ Error connecting to Google:", error);
       toast({
-        title: "Erro ao conectar",
+        title: "❌ Erro ao conectar",
         description: error instanceof Error ? error.message : "Erro desconhecido",
         variant: "destructive",
       });
@@ -202,7 +256,7 @@ export function useGoogleCalendarSync() {
 
   const disconnectGoogle = useCallback(async () => {
     try {
-      console.log("[useGoogleCalendarSync] Disconnecting Google Calendar...");
+      console.log("[useGoogleCalendarSync] 🔌 Disconnecting Google Calendar...");
       
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
@@ -217,17 +271,18 @@ export function useGoogleCalendarSync() {
       if (error) throw error;
 
       setIsConnected(false);
+      setSyncSettings(null);
       
       toast({
-        title: "Desconectado",
+        title: "✅ Desconectado",
         description: "Google Calendar desconectado com sucesso",
       });
 
       console.log("[useGoogleCalendarSync] ✅ Successfully disconnected");
     } catch (error) {
-      console.error("[useGoogleCalendarSync] Error disconnecting:", error);
+      console.error("[useGoogleCalendarSync] ❌ Error disconnecting:", error);
       toast({
-        title: "Erro ao desconectar",
+        title: "❌ Erro ao desconectar",
         description: error instanceof Error ? error.message : "Erro desconhecido",
         variant: "destructive",
       });
@@ -239,6 +294,7 @@ export function useGoogleCalendarSync() {
     isSyncing,
     isConfigured,
     loading,
+    syncSettings,
     checkConnection,
     syncWithGoogle,
     connectGoogle,

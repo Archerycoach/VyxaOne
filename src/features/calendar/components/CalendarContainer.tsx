@@ -255,13 +255,55 @@ export function CalendarContainer() {
   const handleEventSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      // Validate required fields
+      if (!eventForm.title || !eventForm.startTime) {
+        toast({ 
+          title: "Campos obrigatórios", 
+          description: "Por favor, preencha o título e a data de início.",
+          variant: "destructive" 
+        });
+        return;
+      }
+
+      // Convert datetime-local to ISO strings
+      const startTime = new Date(eventForm.startTime);
+      const endTime = eventForm.endTime ? new Date(eventForm.endTime) : new Date(startTime.getTime() + 60 * 60 * 1000); // Default to 1 hour later
+
+      // Validate dates
+      if (isNaN(startTime.getTime())) {
+        toast({ 
+          title: "Data inválida", 
+          description: "A data de início é inválida.",
+          variant: "destructive" 
+        });
+        return;
+      }
+
+      if (isNaN(endTime.getTime())) {
+        toast({ 
+          title: "Data inválida", 
+          description: "A data de fim é inválida.",
+          variant: "destructive" 
+        });
+        return;
+      }
+
+      if (endTime <= startTime) {
+        toast({ 
+          title: "Erro de validação", 
+          description: "A data de fim deve ser posterior à data de início.",
+          variant: "destructive" 
+        });
+        return;
+      }
+
       if (editingEvent) {
         await updateCalendarEvent(editingEvent.id, {
           title: eventForm.title,
-          description: eventForm.description,
-          start_time: eventForm.startTime,
-          end_time: eventForm.endTime,
-          location: eventForm.location,
+          description: eventForm.description || null,
+          start_time: startTime.toISOString(),
+          end_time: endTime.toISOString(),
+          location: eventForm.location || null,
           event_type: eventForm.eventType,
           lead_id: eventForm.leadId || null,
         });
@@ -272,10 +314,10 @@ export function CalendarContainer() {
         
         await createCalendarEvent({
           title: eventForm.title!,
-          description: eventForm.description,
-          start_time: eventForm.startTime!,
-          end_time: eventForm.endTime,
-          location: eventForm.location,
+          description: eventForm.description || null,
+          start_time: startTime.toISOString(),
+          end_time: endTime.toISOString(),
+          location: eventForm.location || null,
           event_type: eventForm.eventType || "viewing",
           lead_id: eventForm.leadId || null,
           user_id: user?.id || "",
@@ -294,11 +336,32 @@ export function CalendarContainer() {
   const handleTaskSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      // Validate required fields
+      if (!taskForm.title || !taskForm.dueDate) {
+        toast({ 
+          title: "Campos obrigatórios", 
+          description: "Por favor, preencha o título e a data de vencimento.",
+          variant: "destructive" 
+        });
+        return;
+      }
+
+      // Validate date
+      const dueDate = new Date(taskForm.dueDate);
+      if (isNaN(dueDate.getTime())) {
+        toast({ 
+          title: "Data inválida", 
+          description: "A data de vencimento é inválida.",
+          variant: "destructive" 
+        });
+        return;
+      }
+
       if (editingTask) {
         await updateTask(editingTask.id, {
           title: taskForm.title,
-          description: taskForm.description,
-          due_date: taskForm.dueDate,
+          description: taskForm.description || null,
+          due_date: dueDate.toISOString(),
           priority: taskForm.priority,
           status: taskForm.status,
           related_lead_id: taskForm.leadId || null,
@@ -310,10 +373,10 @@ export function CalendarContainer() {
 
         await createTask({
           title: taskForm.title!,
-          description: taskForm.description,
-          due_date: taskForm.dueDate,
+          description: taskForm.description || null,
+          due_date: dueDate.toISOString(),
           priority: taskForm.priority || "medium",
-          lead_id: taskForm.leadId || null,
+          related_lead_id: taskForm.leadId || null,
           user_id: user?.id || "",
         });
         toast({ title: "Tarefa criada com sucesso" });

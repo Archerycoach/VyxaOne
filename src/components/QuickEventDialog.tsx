@@ -68,9 +68,19 @@ export function QuickEventDialog({
         throw new Error("Utilizador não autenticado");
       }
 
-      // Convert datetime-local to ISO strings
+      // Validate that both datetime fields are provided and not empty
+      if (!formData.start_datetime || !formData.end_datetime) {
+        throw new Error("Por favor, preencha as datas de início e fim");
+      }
+
+      // Convert datetime-local to Date objects and validate
       const startDateTime = new Date(formData.start_datetime);
       const endDateTime = new Date(formData.end_datetime);
+
+      // Check if dates are valid
+      if (isNaN(startDateTime.getTime()) || isNaN(endDateTime.getTime())) {
+        throw new Error("Datas inválidas. Por favor, verifique os valores inseridos.");
+      }
 
       // Validate end time is after start time
       if (endDateTime <= startDateTime) {

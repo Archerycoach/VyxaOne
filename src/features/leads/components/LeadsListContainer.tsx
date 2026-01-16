@@ -353,14 +353,40 @@ export function LeadsListContainer({
   const handleCreateEvent = useCallback(async () => {
     if (!selectedLead) return;
     
+    // Validate that both dates are provided
+    if (!eventForm.start_date || !eventForm.end_date) {
+      const { toast } = await import("@/hooks/use-toast");
+      toast({
+        title: "Erro de validação",
+        description: "Por favor, preencha as datas de início e fim do evento.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Convert to ISO strings
+    const startDateTime = new Date(eventForm.start_date);
+    const endDateTime = new Date(eventForm.end_date);
+
+    // Validate end time is after start time
+    if (endDateTime <= startDateTime) {
+      const { toast } = await import("@/hooks/use-toast");
+      toast({
+        title: "Erro de validação",
+        description: "A data de fim deve ser posterior à data de início.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     const { createEvent } = await import("@/services/calendarService");
     
     await createEvent({
       title: eventForm.title,
-      description: eventForm.description,
-      start_time: eventForm.start_date,
-      end_time: eventForm.end_date,
-      location: eventForm.location,
+      description: eventForm.description || null,
+      start_time: startDateTime.toISOString(),
+      end_time: endDateTime.toISOString(),
+      location: eventForm.location || null,
       lead_id: selectedLead.id,
       user_id: "",
     });
