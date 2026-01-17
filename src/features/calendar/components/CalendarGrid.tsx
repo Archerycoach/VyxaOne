@@ -73,19 +73,10 @@ export function CalendarGrid({
     const filtered = events.filter(event => {
       const eventDate = new Date(event.startTime);
       const isInRange = eventDate >= startOfDay && eventDate <= endOfDay;
-      
-      if (isInRange) {
-        console.log(`[CalendarGrid] ✅ Event matches ${day.toLocaleDateString()}:`, {
-          title: event.title,
-          startTime: event.startTime,
-          eventDate: eventDate.toISOString()
-        });
-      }
-      
       return isInRange;
     });
 
-    console.log(`[CalendarGrid] Events for ${day.toLocaleDateString()}:`, filtered.length);
+    console.log(`[CalendarGrid] ${day.toLocaleDateString()}: ${filtered.length} eventos`);
     
     return filtered;
   };
@@ -212,7 +203,27 @@ export function CalendarGrid({
             const dayEvents = getEventsForDay(day);
             const dayTasks = getTasksForDay(day);
             const isToday = day.toDateString() === new Date().toDateString();
+            
+            // Calculate how many items are ACTUALLY displayed
+            const maxVisibleEvents = 3;
+            const maxVisibleTasks = 1;
+            const visibleEventsCount = Math.min(dayEvents.length, maxVisibleEvents);
+            const visibleTasksCount = Math.min(dayTasks.length, maxVisibleTasks);
+            const totalVisible = visibleEventsCount + visibleTasksCount;
             const totalItems = dayEvents.length + dayTasks.length;
+            const hiddenItems = totalItems - totalVisible;
+            
+            // Debug logging
+            if (dayEvents.length > 0 || dayTasks.length > 0) {
+              console.log(`[CalendarGrid Week] ${day.toLocaleDateString("pt-PT")}:`, {
+                totalEvents: dayEvents.length,
+                totalTasks: dayTasks.length,
+                visibleEvents: visibleEventsCount,
+                visibleTasks: visibleTasksCount,
+                hiddenItems: hiddenItems,
+                eventIds: dayEvents.slice(0, 3).map(e => ({ id: e.id.substring(0, 8), title: e.title }))
+              });
+            }
             
             return (
               <div 
@@ -225,36 +236,44 @@ export function CalendarGrid({
                   {day.toLocaleDateString("pt-PT", { weekday: "short", day: "numeric" })}
                 </div>
                 <div className="space-y-1 overflow-y-auto flex-1 max-h-[500px]">
-                  {dayEvents.slice(0, 3).map((event) => (
-                    <div
-                      key={`event-${event.id}`}
-                      draggable
-                      onDragStart={(e) => onDragStart(e, { 
-                        id: event.id, 
-                        type: "event",
-                        startTime: event.startTime 
-                      })}
-                      onDragEnd={onDragEnd}
-                    >
-                      <EventCard 
-                        event={event}
-                        onClick={() => onEventClick(event)}
-                        onDelete={(eventId) => {
-                          if (onDeleteEvent) {
-                            onDeleteEvent(eventId);
-                          }
-                        }}
+                  {dayEvents.slice(0, 3).map((event, eventIndex) => {
+                    console.log(`[CalendarGrid Week] Rendering event ${eventIndex + 1}/${dayEvents.slice(0, 3).length}:`, {
+                      id: event.id.substring(0, 8),
+                      title: event.title,
+                      startTime: event.startTime
+                    });
+                    
+                    return (
+                      <div
+                        key={`event-${event.id}`}
+                        draggable
                         onDragStart={(e) => onDragStart(e, { 
                           id: event.id, 
                           type: "event",
                           startTime: event.startTime 
                         })}
                         onDragEnd={onDragEnd}
-                        compact
-                        showSyncStatus={true}
-                      />
-                    </div>
-                  ))}
+                      >
+                        <EventCard 
+                          event={event}
+                          onClick={() => onEventClick(event)}
+                          onDelete={(eventId) => {
+                            if (onDeleteEvent) {
+                              onDeleteEvent(eventId);
+                            }
+                          }}
+                          onDragStart={(e) => onDragStart(e, { 
+                            id: event.id, 
+                            type: "event",
+                            startTime: event.startTime 
+                          })}
+                          onDragEnd={onDragEnd}
+                          compact
+                          showSyncStatus={true}
+                        />
+                      </div>
+                    );
+                  })}
                   {dayTasks.slice(0, 1).map((task) => (
                     <div 
                       key={`task-${task.id}`} 
@@ -274,12 +293,12 @@ export function CalendarGrid({
                       <div className="truncate font-medium">✓ {task.title}</div>
                     </div>
                   ))}
-                  {totalItems > 4 && (
+                  {hiddenItems > 0 && (
                     <button
                       onClick={() => handleShowAllForDay(day, dayEvents, dayTasks)}
                       className="text-[10px] text-purple-600 hover:text-purple-800 font-medium text-center w-full py-1 hover:bg-purple-50 rounded transition-colors"
                     >
-                      +{totalItems - 4} mais
+                      +{hiddenItems} mais
                     </button>
                   )}
                 </div>
@@ -319,7 +338,15 @@ export function CalendarGrid({
             const dayTasks = getTasksForDay(day);
             const isCurrentMonth = day.getMonth() === currentDate.getMonth();
             const isToday = day.toDateString() === new Date().toDateString();
+            
+            // Calculate how many items are ACTUALLY displayed
+            const maxVisibleEvents = 2;
+            const maxVisibleTasks = 1;
+            const visibleEventsCount = Math.min(dayEvents.length, maxVisibleEvents);
+            const visibleTasksCount = Math.min(dayTasks.length, maxVisibleTasks);
+            const totalVisible = visibleEventsCount + visibleTasksCount;
             const totalItems = dayEvents.length + dayTasks.length;
+            const hiddenItems = totalItems - totalVisible;
             
             return (
               <div
@@ -383,12 +410,12 @@ export function CalendarGrid({
                       ✓ {task.title}
                     </div>
                   ))}
-                  {totalItems > 3 && (
+                  {hiddenItems > 0 && (
                     <button
                       onClick={() => handleShowAllForDay(day, dayEvents, dayTasks)}
                       className="text-[10px] text-purple-600 hover:text-purple-800 font-medium text-center w-full hover:bg-purple-50 rounded transition-colors cursor-pointer"
                     >
-                      +{totalItems - 3} mais
+                      +{hiddenItems} mais
                     </button>
                   )}
                 </div>

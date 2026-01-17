@@ -52,6 +52,7 @@ export const getCalendarEvents = async (): Promise<CalendarEvent[]> => {
   
   if (data && data.length > 0) {
     console.log("[calendarService] 📊 Sample raw event:", data[0]);
+    console.log("[calendarService] 📊 All event types:", data.map(e => ({ title: e.title, type: e.event_type, start: e.start_time })));
   }
 
   const mappedEvents = (data || []).map(mapDbEventToFrontend);
@@ -59,6 +60,7 @@ export const getCalendarEvents = async (): Promise<CalendarEvent[]> => {
   console.log("[calendarService] ✅ Mapped events:", mappedEvents.length);
   if (mappedEvents.length > 0) {
     console.log("[calendarService] 📊 Sample mapped event:", mappedEvents[0]);
+    console.log("[calendarService] 📊 All mapped event types:", mappedEvents.map(e => ({ title: e.title, type: e.eventType, start: e.startTime })));
   }
 
   return mappedEvents;
