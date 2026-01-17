@@ -84,6 +84,7 @@ export function Navigation() {
       label: isAdmin || isTeamLead ? "Performance de Equipa" : "Performance", 
       path: isAdmin || isTeamLead ? "/team-dashboard" : "/performance" 
     },
+    { icon: Target, label: "Objetivos", path: "/goals" },
     { icon: FolderOpen, label: "Documentos", path: "/documents" },
     
     // Settings

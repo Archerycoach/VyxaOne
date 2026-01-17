@@ -4,6 +4,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Target, Users, User, Save, TrendingUp, Calendar } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -21,12 +22,20 @@ interface Goal {
   created_at?: string;
 }
 
+interface TeamMember {
+  id: string;
+  email: string;
+  full_name: string | null;
+}
+
 export function GoalsContainer() {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const [selectedAgent, setSelectedAgent] = useState<string>("");
   
   const currentYear = new Date().getFullYear();
   const currentMonth = new Date().getMonth() + 1;
@@ -40,7 +49,7 @@ export function GoalsContainer() {
   const [teamS2Revenue, setTeamS2Revenue] = useState("");
   const [teamS2Acquisitions, setTeamS2Acquisitions] = useState("");
 
-  // Individual Goals
+  // Individual Goals (for selected agent or current user)
   const [individualAnnualRevenue, setIndividualAnnualRevenue] = useState("");
   const [individualAnnualAcquisitions, setIndividualAnnualAcquisitions] = useState("");
   const [individualS1Revenue, setIndividualS1Revenue] = useState("");
@@ -48,11 +57,19 @@ export function GoalsContainer() {
   const [individualS2Revenue, setIndividualS2Revenue] = useState("");
   const [individualS2Acquisitions, setIndividualS2Acquisitions] = useState("");
 
-  const isAdminOrTeamLead = userRole === "admin" || userRole === "team_lead";
+  const isAdmin = userRole === "admin";
+  const isTeamLead = userRole === "team_lead";
+  const isAdminOrTeamLead = isAdmin || isTeamLead;
 
   useEffect(() => {
     loadUserData();
   }, []);
+
+  useEffect(() => {
+    if (selectedAgent && isAdminOrTeamLead) {
+      loadAgentGoals(selectedAgent);
+    }
+  }, [selectedAgent]);
 
   const loadUserData = async () => {
     try {
@@ -66,10 +83,16 @@ export function GoalsContainer() {
         .eq("id", user.id)
         .single();
 
-      setUserRole(profile?.role || null);
+      const role = profile?.role || null;
+      setUserRole(role);
       setUserId(user.id);
 
-      await loadGoals(user.id, profile?.role);
+      // Load team members for team leads and admins
+      if (role === "admin" || role === "team_lead") {
+        await loadTeamMembers(user.id, role);
+      }
+
+      await loadGoals(user.id, role);
     } catch (error) {
       console.error("Error loading user data:", error);
       toast({
@@ -82,35 +105,70 @@ export function GoalsContainer() {
     }
   };
 
+  const loadTeamMembers = async (uid: string, role: string) => {
+    try {
+      let query = supabase
+        .from("profiles")
+        .select("id, email, full_name")
+        .eq("is_active", true);
+
+      if (role === "team_lead") {
+        // Team leads see only their agents
+        query = query.eq("team_lead_id", uid).eq("role", "agent");
+      } else if (role === "admin") {
+        // Admins see all agents and team leads
+        query = query.in("role", ["agent", "team_lead"]);
+      }
+
+      const { data, error } = await query.order("full_name");
+
+      if (error) throw error;
+
+      setTeamMembers(data || []);
+    } catch (error) {
+      console.error("Error loading team members:", error);
+    }
+  };
+
   const loadGoals = async (uid: string, role: string | null) => {
     try {
       // Using "as any" to bypass type checking for the new table
       const { data: goalsData, error } = await supabase
         .from("goals" as any)
         .select("*")
-        .eq("year", currentYear)
-        .in("goal_type", role === "admin" || role === "team_lead" ? ["team", "individual"] : ["individual"]);
+        .eq("year", currentYear);
 
       if (error) throw error;
       
       const goals = goalsData as unknown as Goal[];
 
-      goals?.forEach((goal: Goal) => {
-        const revenueValue = goal.revenue_target?.toString() || "";
-        const acquisitionsValue = goal.acquisitions_target?.toString() || "";
+      // Load team goals for admins and team leads
+      if (role === "admin" || role === "team_lead") {
+        goals?.forEach((goal: Goal) => {
+          if (goal.goal_type === "team") {
+            const revenueValue = goal.revenue_target?.toString() || "";
+            const acquisitionsValue = goal.acquisitions_target?.toString() || "";
 
-        if (goal.goal_type === "team") {
-          if (goal.period === "annual") {
-            setTeamAnnualRevenue(revenueValue);
-            setTeamAnnualAcquisitions(acquisitionsValue);
-          } else if (goal.semester === 1) {
-            setTeamS1Revenue(revenueValue);
-            setTeamS1Acquisitions(acquisitionsValue);
-          } else if (goal.semester === 2) {
-            setTeamS2Revenue(revenueValue);
-            setTeamS2Acquisitions(acquisitionsValue);
+            if (goal.period === "annual") {
+              setTeamAnnualRevenue(revenueValue);
+              setTeamAnnualAcquisitions(acquisitionsValue);
+            } else if (goal.semester === 1) {
+              setTeamS1Revenue(revenueValue);
+              setTeamS1Acquisitions(acquisitionsValue);
+            } else if (goal.semester === 2) {
+              setTeamS2Revenue(revenueValue);
+              setTeamS2Acquisitions(acquisitionsValue);
+            }
           }
-        } else if (goal.goal_type === "individual" && goal.user_id === uid) {
+        });
+      }
+
+      // Load individual goals for current user (agents or own goals)
+      goals?.forEach((goal: Goal) => {
+        if (goal.goal_type === "individual" && goal.user_id === uid) {
+          const revenueValue = goal.revenue_target?.toString() || "";
+          const acquisitionsValue = goal.acquisitions_target?.toString() || "";
+
           if (goal.period === "annual") {
             setIndividualAnnualRevenue(revenueValue);
             setIndividualAnnualAcquisitions(acquisitionsValue);
@@ -128,15 +186,57 @@ export function GoalsContainer() {
     }
   };
 
+  const loadAgentGoals = async (agentId: string) => {
+    try {
+      const { data: goalsData, error } = await supabase
+        .from("goals" as any)
+        .select("*")
+        .eq("year", currentYear)
+        .eq("goal_type", "individual")
+        .eq("user_id", agentId);
+
+      if (error) throw error;
+
+      const goals = goalsData as unknown as Goal[];
+
+      // Reset individual goals
+      setIndividualAnnualRevenue("");
+      setIndividualAnnualAcquisitions("");
+      setIndividualS1Revenue("");
+      setIndividualS1Acquisitions("");
+      setIndividualS2Revenue("");
+      setIndividualS2Acquisitions("");
+
+      goals?.forEach((goal: Goal) => {
+        const revenueValue = goal.revenue_target?.toString() || "";
+        const acquisitionsValue = goal.acquisitions_target?.toString() || "";
+
+        if (goal.period === "annual") {
+          setIndividualAnnualRevenue(revenueValue);
+          setIndividualAnnualAcquisitions(acquisitionsValue);
+        } else if (goal.semester === 1) {
+          setIndividualS1Revenue(revenueValue);
+          setIndividualS1Acquisitions(acquisitionsValue);
+        } else if (goal.semester === 2) {
+          setIndividualS2Revenue(revenueValue);
+          setIndividualS2Acquisitions(acquisitionsValue);
+        }
+      });
+    } catch (error) {
+      console.error("Error loading agent goals:", error);
+    }
+  };
+
   const saveGoal = async (
     goalType: "team" | "individual",
     period: "annual" | "semester",
     semester: number | null,
     revenue: string,
-    acquisitions: string
+    acquisitions: string,
+    targetUserId?: string
   ) => {
     const goalData = {
-      user_id: goalType === "individual" ? userId : null,
+      user_id: goalType === "individual" ? (targetUserId || userId) : null,
       goal_type: goalType,
       period,
       year: currentYear,
@@ -191,24 +291,30 @@ export function GoalsContainer() {
     try {
       setSaving(true);
 
+      const targetUserId = isAdminOrTeamLead && selectedAgent ? selectedAgent : userId;
+
       // Save annual individual goal
-      await saveGoal("individual", "annual", null, individualAnnualRevenue, individualAnnualAcquisitions);
+      await saveGoal("individual", "annual", null, individualAnnualRevenue, individualAnnualAcquisitions, targetUserId);
 
       // Save semester 1 individual goal
-      await saveGoal("individual", "semester", 1, individualS1Revenue, individualS1Acquisitions);
+      await saveGoal("individual", "semester", 1, individualS1Revenue, individualS1Acquisitions, targetUserId);
 
       // Save semester 2 individual goal
-      await saveGoal("individual", "semester", 2, individualS2Revenue, individualS2Acquisitions);
+      await saveGoal("individual", "semester", 2, individualS2Revenue, individualS2Acquisitions, targetUserId);
+
+      const message = isAdminOrTeamLead && selectedAgent 
+        ? "Objetivos do agente guardados com sucesso"
+        : "Objetivos pessoais guardados com sucesso";
 
       toast({
         title: "Sucesso",
-        description: "Objetivos pessoais guardados com sucesso",
+        description: message,
       });
     } catch (error) {
       console.error("Error saving individual goals:", error);
       toast({
         title: "Erro",
-        description: "Erro ao guardar objetivos pessoais",
+        description: "Erro ao guardar objetivos",
         variant: "destructive",
       });
     } finally {
@@ -256,7 +362,7 @@ export function GoalsContainer() {
           )}
           <TabsTrigger value="individual" className="flex items-center gap-2">
             <User className="h-4 w-4" />
-            Objetivos Pessoais
+            {isAdminOrTeamLead ? "Objetivos dos Agentes" : "Objetivos Pessoais"}
           </TabsTrigger>
         </TabsList>
 
@@ -377,15 +483,37 @@ export function GoalsContainer() {
 
         {/* Individual Goals Tab */}
         <TabsContent value="individual" className="space-y-6">
+          {/* Agent Selector for Team Leads and Admins */}
+          {isAdminOrTeamLead && teamMembers.length > 0 && (
+            <Card className="p-6">
+              <Label htmlFor="agent-selector">Selecionar Agente</Label>
+              <Select value={selectedAgent} onValueChange={setSelectedAgent}>
+                <SelectTrigger id="agent-selector" className="mt-2">
+                  <SelectValue placeholder="Selecione um agente para configurar objetivos" />
+                </SelectTrigger>
+                <SelectContent>
+                  {teamMembers.map((member) => (
+                    <SelectItem key={member.id} value={member.id}>
+                      {member.full_name || member.email}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-sm text-muted-foreground mt-2">
+                {isAdmin ? "Selecione um agente ou team lead para configurar objetivos individuais" : "Selecione um agente da sua equipa para configurar objetivos"}
+              </p>
+            </Card>
+          )}
+
           <Card className="p-6">
             <div className="flex items-center justify-between mb-6">
               <div>
                 <h2 className="text-xl font-semibold flex items-center gap-2">
                   <TrendingUp className="h-5 w-5 text-green-600" />
-                  Metas Anuais Pessoais
+                  {isAdminOrTeamLead && selectedAgent ? "Metas do Agente Selecionado" : "Metas Anuais Pessoais"}
                 </h2>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Objetivos pessoais para {currentYear}
+                  Objetivos para {currentYear}
                 </p>
               </div>
             </div>
@@ -400,6 +528,7 @@ export function GoalsContainer() {
                   value={individualAnnualRevenue}
                   onChange={(e) => setIndividualAnnualRevenue(e.target.value)}
                   className="mt-2"
+                  disabled={isAdminOrTeamLead && !selectedAgent}
                 />
               </div>
               <div>
@@ -411,6 +540,7 @@ export function GoalsContainer() {
                   value={individualAnnualAcquisitions}
                   onChange={(e) => setIndividualAnnualAcquisitions(e.target.value)}
                   className="mt-2"
+                  disabled={isAdminOrTeamLead && !selectedAgent}
                 />
               </div>
             </div>
@@ -430,6 +560,7 @@ export function GoalsContainer() {
                     value={individualS1Revenue}
                     onChange={(e) => setIndividualS1Revenue(e.target.value)}
                     className="mt-2"
+                    disabled={isAdminOrTeamLead && !selectedAgent}
                   />
                 </div>
                 <div>
@@ -441,6 +572,7 @@ export function GoalsContainer() {
                     value={individualS1Acquisitions}
                     onChange={(e) => setIndividualS1Acquisitions(e.target.value)}
                     className="mt-2"
+                    disabled={isAdminOrTeamLead && !selectedAgent}
                   />
                 </div>
               </div>
@@ -459,6 +591,7 @@ export function GoalsContainer() {
                     value={individualS2Revenue}
                     onChange={(e) => setIndividualS2Revenue(e.target.value)}
                     className="mt-2"
+                    disabled={isAdminOrTeamLead && !selectedAgent}
                   />
                 </div>
                 <div>
@@ -470,6 +603,7 @@ export function GoalsContainer() {
                     value={individualS2Acquisitions}
                     onChange={(e) => setIndividualS2Acquisitions(e.target.value)}
                     className="mt-2"
+                    disabled={isAdminOrTeamLead && !selectedAgent}
                   />
                 </div>
               </div>
@@ -479,11 +613,11 @@ export function GoalsContainer() {
           <div className="flex justify-end">
             <Button
               onClick={handleSaveIndividualGoals}
-              disabled={saving}
+              disabled={saving || (isAdminOrTeamLead && !selectedAgent)}
               size="lg"
             >
               <Save className="h-4 w-4 mr-2" />
-              {saving ? "A guardar..." : "Guardar Objetivos Pessoais"}
+              {saving ? "A guardar..." : isAdminOrTeamLead && selectedAgent ? "Guardar Objetivos do Agente" : "Guardar Objetivos Pessoais"}
             </Button>
           </div>
         </TabsContent>

@@ -13,11 +13,12 @@ serve(async (req) => {
   }
 
   try {
+    console.log("🚀 Starting daily-emails Edge Function...");
+    
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Get all active users with email notifications enabled and SMTP configured
     const { data: users, error: usersError } = await supabase
       .from("profiles")
       .select("id, email, full_name, email_daily_events, email_daily_tasks")
@@ -25,9 +26,11 @@ serve(async (req) => {
       .or("email_daily_events.eq.true,email_daily_tasks.eq.true");
 
     if (usersError) {
-      console.error("Error fetching users:", usersError);
+      console.error("❌ Error fetching users:", usersError);
       throw usersError;
     }
+
+    console.log(`📊 Found ${users?.length || 0} users with email notifications enabled`);
 
     if (!users || users.length === 0) {
       return new Response(
@@ -48,9 +51,14 @@ serve(async (req) => {
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
+    console.log(`📅 Processing emails for date: ${today.toISOString()}`);
+
     for (const user of users) {
       try {
-        // Get User SMTP Settings
+        console.log(`
+👤 Processing user: ${user.email} (ID: ${user.id})`);
+        console.log(`   Preferences: events=${user.email_daily_events}, tasks=${user.email_daily_tasks}`);
+
         const { data: smtpSettings, error: smtpError } = await supabase
           .from("user_smtp_settings")
           .select("*")
@@ -58,17 +66,22 @@ serve(async (req) => {
           .single();
 
         if (smtpError || !smtpSettings) {
-          console.log(`No SMTP settings for user ${user.email}, skipping...`);
+          console.log(`⚠️  No SMTP settings for user ${user.email}, skipping...`);
           results.skipped++;
           continue;
         }
 
-        // Collect events and tasks for today
+        console.log(`✅ SMTP Settings found:`);
+        console.log(`   Host: ${smtpSettings.smtp_host}:${smtpSettings.smtp_port}`);
+        console.log(`   From: "${smtpSettings.from_name}" <${smtpSettings.from_email}>`);
+        console.log(`   Secure: ${smtpSettings.smtp_secure}`);
+
         let eventsHtml = "";
         let tasksHtml = "";
+        let hasContent = false;
 
         if (user.email_daily_events) {
-          const { data: events } = await supabase
+          const { data: events, error: eventsError } = await supabase
             .from("calendar_events")
             .select("*")
             .eq("user_id", user.id)
@@ -76,7 +89,13 @@ serve(async (req) => {
             .lt("start_time", tomorrow.toISOString())
             .order("start_time");
 
+          console.log(`📅 Events query result: ${events?.length || 0} events found`);
+          if (eventsError) {
+            console.error(`   Error fetching events:`, eventsError);
+          }
+
           if (events && events.length > 0) {
+            hasContent = true;
             eventsHtml = `
               <div style="margin-bottom: 24px;">
                 <h2 style="color: #1f2937; font-size: 20px; margin-bottom: 16px;">📅 Eventos de Hoje</h2>
@@ -93,16 +112,23 @@ serve(async (req) => {
         }
 
         if (user.email_daily_tasks) {
-          const { data: tasks } = await supabase
+          const { data: tasks, error: tasksError } = await supabase
             .from("tasks")
             .select("*")
             .eq("user_id", user.id)
             .eq("status", "pending")
-            .lte("due_date", tomorrow.toISOString())
+            .or(`due_date.lte.${tomorrow.toISOString()},due_date.is.null`)
             .order("priority", { ascending: false })
-            .order("due_date");
+            .order("due_date", { ascending: true, nullsFirst: false })
+            .limit(20);
+
+          console.log(`✅ Tasks query result: ${tasks?.length || 0} tasks found`);
+          if (tasksError) {
+            console.error(`   Error fetching tasks:`, tasksError);
+          }
 
           if (tasks && tasks.length > 0) {
+            hasContent = true;
             tasksHtml = `
               <div style="margin-bottom: 24px;">
                 <h2 style="color: #1f2937; font-size: 20px; margin-bottom: 16px;">✅ Tarefas Pendentes</h2>
@@ -113,7 +139,7 @@ serve(async (req) => {
                       <span style="background: ${getPriorityColor(task.priority)}; color: white; padding: 2px 8px; border-radius: 12px; font-size: 12px; margin-right: 8px;">
                         ${task.priority?.toUpperCase() || 'MEDIUM'}
                       </span>
-                      ${task.due_date ? `📅 ${new Date(task.due_date).toLocaleDateString('pt-PT')}` : ''}
+                      ${task.due_date ? `📅 ${new Date(task.due_date).toLocaleDateString('pt-PT')}` : '📌 Sem data definida'}
                     </div>
                     ${task.description ? `<div style="color: #4b5563; font-size: 14px; margin-top: 8px;">${task.description}</div>` : ''}
                   </div>
@@ -123,14 +149,14 @@ serve(async (req) => {
           }
         }
 
-        // Skip if no content to send
-        if (!eventsHtml && !tasksHtml) {
-          console.log(`No events or tasks for ${user.email}, skipping...`);
+        if (!hasContent) {
+          console.log(`⚠️  No events or tasks for ${user.email}, skipping...`);
           results.skipped++;
           continue;
         }
 
-        // Send Email via Nodemailer (Direct SMTP)
+        console.log(`📧 Creating email transporter...`);
+
         const transporter = nodemailer.createTransport({
           host: smtpSettings.smtp_host,
           port: parseInt(smtpSettings.smtp_port),
@@ -173,22 +199,37 @@ serve(async (req) => {
           </html>
         `;
 
-        await transporter.sendMail({
-          from: `"CRM Notificações" <${smtpSettings.smtp_username}>`,
+        const fromEmail = smtpSettings.from_email || smtpSettings.smtp_username;
+        const fromName = smtpSettings.from_name || "CRM Notificações";
+
+        console.log(`📧 Sending email...`);
+        console.log(`   From: "${fromName}" <${fromEmail}>`);
+        console.log(`   To: ${user.email}`);
+        console.log(`   Subject: 📅 Seu resumo diário - ${new Date().toLocaleDateString('pt-PT')}`);
+
+        const info = await transporter.sendMail({
+          from: `"${fromName}" <${fromEmail}>`,
           to: user.email,
           subject: `📅 Seu resumo diário - ${new Date().toLocaleDateString('pt-PT')}`,
           html: emailHtml,
         });
 
         console.log(`✅ Email sent successfully to ${user.email}`);
+        console.log(`   Message ID: ${info.messageId}`);
+        console.log(`   Response: ${info.response}`);
         results.success++;
 
       } catch (error) {
         console.error(`❌ Error sending email to ${user.email}:`, error);
+        console.error(`   Error details:`, error.message);
+        console.error(`   Stack trace:`, error.stack);
         results.failed++;
         results.errors.push(`${user.email}: ${error.message}`);
       }
     }
+
+    console.log(`
+📊 Final Results:`, results);
 
     return new Response(
       JSON.stringify(results),
@@ -196,7 +237,9 @@ serve(async (req) => {
     );
 
   } catch (error) {
-    console.error("Error in daily-emails function:", error);
+    console.error("❌ Error in daily-emails function:", error);
+    console.error("   Error details:", error.message);
+    console.error("   Stack trace:", error.stack);
     return new Response(
       JSON.stringify({ error: error.message }),
       { 

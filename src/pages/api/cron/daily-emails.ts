@@ -57,6 +57,8 @@ export default async function handler(
     // Process each user
     for (const user of users) {
       try {
+        console.log(`\n📧 Processing user: ${user.email} (ID: ${user.id})`);
+        
         // Get user's SMTP settings
         const { data: smtpSettings, error: smtpError } = await supabase
           .from("user_smtp_settings")
@@ -66,10 +68,15 @@ export default async function handler(
           .single();
 
         if (smtpError || !smtpSettings) {
-          console.log(`No SMTP settings for ${user.email}, skipping...`);
+          console.log(`❌ No SMTP settings for ${user.email}, skipping...`);
+          console.log(`   SMTP Error:`, smtpError);
           results.skipped++;
           continue;
         }
+
+        console.log(`✅ SMTP settings found for ${user.email}`);
+        console.log(`   Host: ${smtpSettings.smtp_host}:${smtpSettings.smtp_port}`);
+        console.log(`   From: "${smtpSettings.from_name}" <${smtpSettings.from_email}>`);
 
         // Fetch today's events if user wants them
         const { data: events } = await supabase
@@ -85,6 +92,8 @@ export default async function handler(
           )
           .order("start_time", { ascending: true });
 
+        console.log(`   Events found: ${events?.length || 0}`);
+
         // Fetch pending tasks if user wants them
         const { data: tasks } = await supabase
           .from("tasks")
@@ -94,12 +103,24 @@ export default async function handler(
           .order("priority", { ascending: false })
           .order("due_date", { ascending: true });
 
-        // Skip if no content to send
-        if (!events || !tasks) {
-          console.log(`No events or tasks for ${user.email}, skipping...`);
+        console.log(`   Tasks found: ${tasks?.length || 0} pending`);
+        console.log(`   User preferences - Events: ${user.email_daily_events}, Tasks: ${user.email_daily_tasks}`);
+
+        // Check if there's any content to send based on user preferences
+        const hasEvents = user.email_daily_events && events && events.length > 0;
+        const hasTasks = user.email_daily_tasks && tasks && tasks.length > 0;
+
+        console.log(`   Has events to send: ${hasEvents}`);
+        console.log(`   Has tasks to send: ${hasTasks}`);
+
+        // Skip if no relevant content to send
+        if (!hasEvents && !hasTasks) {
+          console.log(`⏭️  No relevant content for ${user.email} (events: ${events?.length || 0}, tasks: ${tasks?.length || 0}), skipping...`);
           results.skipped++;
           continue;
         }
+
+        console.log(`✅ Proceeding to send email to ${user.email}`);
 
         // Buscar template customizado do tipo "daily_email" para este usuário
         let template;
@@ -119,18 +140,18 @@ export default async function handler(
           const templateData = {
             userName: user.full_name || user.email?.split("@")[0] || "Utilizador",
             date: new Date().toLocaleDateString("pt-PT", { day: "numeric", month: "long" }),
-            hasEvents: events.length > 0,
-            events: events.map(e => ({
+            hasEvents: hasEvents,
+            events: events?.map(e => ({
               title: e.title,
               start: new Date(e.start_time).toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" }),
               description: e.description || "",
-            })),
-            hasTasks: tasks.length > 0,
-            tasks: tasks.map(t => ({
+            })) || [],
+            hasTasks: hasTasks,
+            tasks: tasks?.map(t => ({
               title: t.title,
               priority: t.priority,
               dueDate: t.due_date ? new Date(t.due_date).toLocaleDateString("pt-PT") : "",
-            })),
+            })) || [],
           };
 
           emailSubject = emailTemplateService.renderTemplate(template.subject, templateData);
@@ -171,10 +192,10 @@ export default async function handler(
                   <p>Olá <strong>${user.full_name || user.email?.split("@")[0]}</strong>,</p>
                   <p>Aqui está o resumo da sua agenda para hoje:</p>
 
-                  ${events.length > 0 ? `
+                  ${hasEvents ? `
                     <div class="section">
                       <h2>📅 Eventos de Hoje</h2>
-                      ${events.map(event => `
+                      ${events!.map(event => `
                         <div class="event">
                           <strong>${event.title}</strong><br>
                           <small>⏰ ${new Date(event.start_time).toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" })}</small>
@@ -182,12 +203,12 @@ export default async function handler(
                         </div>
                       `).join("")}
                     </div>
-                  ` : '<div class="section"><h2>📅 Eventos de Hoje</h2><p class="no-items">Nenhum evento agendado para hoje.</p></div>'}
+                  ` : user.email_daily_events ? '<div class="section"><h2>📅 Eventos de Hoje</h2><p class="no-items">Nenhum evento agendado para hoje.</p></div>' : ''}
 
-                  ${tasks.length > 0 ? `
+                  ${hasTasks ? `
                     <div class="section">
                       <h2>✅ Tarefas Pendentes</h2>
-                      ${tasks.map(task => `
+                      ${tasks!.map(task => `
                         <div class="task ${task.priority || 'low'}">
                           <strong>${task.title}</strong><br>
                           <small>Prioridade: ${task.priority === "high" ? "🔴 Alta" : task.priority === "medium" ? "🟡 Média" : "🟢 Baixa"}</small>
@@ -195,7 +216,7 @@ export default async function handler(
                         </div>
                       `).join("")}
                     </div>
-                  ` : '<div class="section"><h2>✅ Tarefas Pendentes</h2><p class="no-items">Nenhuma tarefa pendente.</p></div>'}
+                  ` : user.email_daily_tasks ? '<div class="section"><h2>✅ Tarefas Pendentes</h2><p class="no-items">Nenhuma tarefa pendente.</p></div>' : ''}
 
                   <div class="footer">
                     <p>Este é um email automático. Não responda a esta mensagem.</p>
@@ -208,17 +229,18 @@ export default async function handler(
           `;
 
           emailText = `Sua Agenda para ${new Date().toLocaleDateString("pt-PT", { day: "numeric", month: "long" })}\n\nOlá ${user.full_name || user.email?.split("@")[0]},\n\n${
-            events.length > 0 
-              ? `EVENTOS DE HOJE:\n${events.map(e => `- ${e.title} às ${new Date(e.start_time).toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" })}`).join("\n")}` 
-              : "Nenhum evento agendado para hoje."
+            hasEvents
+              ? `EVENTOS DE HOJE:\n${events!.map(e => `- ${e.title} às ${new Date(e.start_time).toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" })}`).join("\n")}` 
+              : user.email_daily_events ? "Nenhum evento agendado para hoje." : ""
           }\n\n${
-            tasks.length > 0 
-              ? `TAREFAS PENDENTES:\n${tasks.map(t => `- ${t.title} (${t.priority || "baixa"})`).join("\n")}` 
-              : "Nenhuma tarefa pendente."
+            hasTasks
+              ? `TAREFAS PENDENTES:\n${tasks!.map(t => `- ${t.title} (${t.priority || "baixa"})`).join("\n")}` 
+              : user.email_daily_tasks ? "Nenhuma tarefa pendente." : ""
           }`;
         }
 
         // Create transporter with user's SMTP settings (EXACT SAME CONFIG AS /api/smtp/send.ts)
+        console.log(`🔧 Creating SMTP transporter for ${user.email}...`);
         const transporter = nodemailer.createTransport({
           host: smtpSettings.smtp_host,
           port: smtpSettings.smtp_port,
@@ -232,20 +254,28 @@ export default async function handler(
           },
         });
 
+        console.log(`📤 Attempting to send email to ${user.email}...`);
+        console.log(`   Subject: ${emailSubject}`);
+        console.log(`   From: "${smtpSettings.from_name}" <${smtpSettings.from_email}>`);
+        console.log(`   To: ${user.email}`);
+
         // Enviar email
         const info = await transporter.sendMail({
-          from: `"${smtpSettings.smtp_from_name}" <${smtpSettings.smtp_from_email}>`,
+          from: `"${smtpSettings.from_name}" <${smtpSettings.from_email}>`,
           to: user.email,
-          bcc: template?.recipient_emails?.join(", ") || undefined, // Add BCC recipients from template
+          bcc: template?.recipient_emails?.join(", ") || undefined,
           subject: emailSubject,
           text: emailText,
           html: emailHtml,
         });
 
         console.log(`✅ Email sent successfully to ${user.email}`);
+        console.log(`   Message ID: ${info.messageId}`);
+        console.log(`   Response: ${info.response}`);
         results.success++;
       } catch (userError) {
         console.error(`❌ Error sending email to ${user.email}:`, userError);
+        console.error(`   Error details:`, JSON.stringify(userError, null, 2));
         results.failed++;
         results.errors.push(
           `${user.email}: ${userError instanceof Error ? userError.message : "Unknown error"}`
