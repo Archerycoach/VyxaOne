@@ -389,3 +389,40 @@ function replaceVariables(text: string, lead: Lead): string {
     .replace(/{lead_name}/g, lead.name || "")
     .replace(/{empresa}/g, "REMAX"); // Default company name
 }
+
+// Importar serviço de templates (criar versão Deno-compatible)
+async function getEmailTemplate(supabaseClient: any, templateType: string, userId: string) {
+  try {
+    const { data, error } = await supabaseClient
+      .from("email_templates")
+      .select("*")
+      .eq("template_type", templateType)
+      .eq("is_active", true)
+      .or(`user_id.eq.${userId},is_default.eq.true`)
+      .order("is_default", { ascending: true })
+      .limit(1)
+      .single();
+
+    if (error && error.code !== "PGRST116") {
+      console.error("Error fetching email template:", error);
+      return null;
+    }
+
+    return data;
+  } catch (err) {
+    console.error("Error in getEmailTemplate:", err);
+    return null;
+  }
+}
+
+function renderTemplate(template: string, data: Record<string, any>): string {
+  let result = template;
+  
+  // Substituir variáveis simples {{variavel}}
+  Object.keys(data).forEach((key) => {
+    const regex = new RegExp(`{{${key}}}`, "g");
+    result = result.replace(regex, String(data[key] || ""));
+  });
+  
+  return result;
+}

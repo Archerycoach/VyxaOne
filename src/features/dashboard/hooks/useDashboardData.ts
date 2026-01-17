@@ -1,12 +1,12 @@
 import { useState, useEffect } from "react";
-import { getLeads } from "@/services/leadsService";
-import { getProperties } from "@/services/propertiesService";
-import { getTasks } from "@/services/tasksService";
-import { getCalendarEvents } from "@/services/calendarService";
+import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
+import { getBuyerStages, getSellerStages } from "@/services/pipelineSettingsService";
+import { startOfMonth, subMonths, endOfMonth } from "date-fns";
 
 type Lead = Database["public"]["Tables"]["leads"]["Row"];
-type Profile = Database["public"]["Tables"]["profiles"]["Row"];
+type Task = Database["public"]["Tables"]["tasks"]["Row"];
+type CalendarEvent = Database["public"]["Tables"]["calendar_events"]["Row"];
 
 interface Stats {
   totalLeads: number;
@@ -14,199 +14,288 @@ interface Stats {
   wonLeads: number;
   lostLeads: number;
   conversionRate: number;
-  averageBudget: number;
-  totalProperties: number;
-  availableProperties: number;
-  totalTasks: number;
-  completedTasks: number;
-  todayEvents: number;
+  totalRevenue: number;
+  averageResponseTime: string;
   leadsThisMonth: number;
   leadsLastMonth: number;
   leadsGrowth: number;
-}
-
-interface ChartData {
-  month: string;
-  leads: number;
-  won: number;
+  newLeadsThisMonth: number;
+  scheduledMeetings: number;
+  // Goal-related metrics
+  annualRevenueGoal: number;
+  annualAcquisitionsGoal: number;
+  currentSemesterRevenueGoal: number;
+  currentSemesterAcquisitionsGoal: number;
+  annualRevenueProgress: number;
+  annualAcquisitionsProgress: number;
+  semesterRevenueProgress: number;
+  semesterAcquisitionsProgress: number;
 }
 
 interface UseDashboardDataProps {
   userRole: string | null;
   currentUserId: string | null;
-  selectedAgent: string;
-  agents: Profile[];
-  period: number;
+  selectedAgentId?: string | null;
+  leadTypeFilter?: "all" | "buyer" | "seller";
 }
 
-export function useDashboardData({
-  userRole,
-  currentUserId,
-  selectedAgent,
-  agents,
-  period,
-}: UseDashboardDataProps) {
+export function useDashboardData({ userRole, currentUserId, selectedAgentId, leadTypeFilter = "all" }: UseDashboardDataProps) {
   const [stats, setStats] = useState<Stats>({
     totalLeads: 0,
     activeLeads: 0,
     wonLeads: 0,
     lostLeads: 0,
     conversionRate: 0,
-    averageBudget: 0,
-    totalProperties: 0,
-    availableProperties: 0,
-    totalTasks: 0,
-    completedTasks: 0,
-    todayEvents: 0,
+    totalRevenue: 0,
+    averageResponseTime: "0h",
     leadsThisMonth: 0,
     leadsLastMonth: 0,
     leadsGrowth: 0,
+    newLeadsThisMonth: 0,
+    scheduledMeetings: 0,
+    annualRevenueGoal: 0,
+    annualAcquisitionsGoal: 0,
+    currentSemesterRevenueGoal: 0,
+    currentSemesterAcquisitionsGoal: 0,
+    annualRevenueProgress: 0,
+    annualAcquisitionsProgress: 0,
+    semesterRevenueProgress: 0,
+    semesterAcquisitionsProgress: 0,
   });
-  const [chartData, setChartData] = useState<ChartData[]>([]);
+  const [upcomingEvents, setUpcomingEvents] = useState<CalendarEvent[]>([]);
+  const [todayTasks, setTodayTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (userRole && currentUserId) {
-      loadDashboardData();
-    }
-  }, [period, selectedAgent, userRole, currentUserId]);
+  const [error, setError] = useState<string | null>(null);
 
   const loadDashboardData = async () => {
+    if (!currentUserId) {
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
+      setError(null);
 
-      const [rawLeads, properties, rawTasks, events] = await Promise.all([
-        getLeads(false),
-        getProperties(),
-        getTasks(),
-        getCalendarEvents(),
-      ]);
-
-      // Filter leads based on role and selection
-      let allLeads: Lead[] = [];
-
-      if (userRole === "admin") {
-        if (selectedAgent !== "all") {
-          allLeads = rawLeads.filter(l => l.assigned_to === selectedAgent);
-        } else {
-          allLeads = rawLeads;
-        }
-      } else if (userRole === "team_lead") {
-        if (selectedAgent !== "all") {
-          allLeads = rawLeads.filter(l => l.assigned_to === selectedAgent);
-        } else {
-          const teamAgentIds = agents.map(a => a.id);
-          allLeads = rawLeads.filter(l => {
-            if (l.user_id === currentUserId) return true;
-            if (l.assigned_to === currentUserId) return true;
-            if (l.assigned_to && teamAgentIds.includes(l.assigned_to)) return true;
-            return false;
-          });
-        }
-      } else if (userRole === "agent") {
-        allLeads = rawLeads.filter(l => l.assigned_to === currentUserId);
-      } else {
-        allLeads = rawLeads;
-      }
-
-      // Filter tasks based on role
-      let tasks = rawTasks;
-      if (userRole === "team_lead") {
-        const teamAgentIds = agents.map(a => a.id);
-        tasks = selectedAgent !== "all"
-          ? rawTasks.filter(t => t.assigned_to === selectedAgent)
-          : rawTasks.filter(t => t.assigned_to && teamAgentIds.includes(t.assigned_to));
-      } else if (userRole === "agent") {
-        tasks = rawTasks.filter(t => t.assigned_to === currentUserId);
-      }
-
-      // Calculate metrics
+      // 1. Setup Dates
       const now = new Date();
-      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-      const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-      const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+      const startOfCurrentMonth = startOfMonth(now);
+      const startOfLastMonthDate = startOfMonth(subMonths(now, 1));
+      const endOfLastMonthDate = endOfMonth(subMonths(now, 1));
+      
+      const currentYear = now.getFullYear();
+      const currentMonth = now.getMonth() + 1; // 1-12
+      const currentSemester = currentMonth <= 6 ? 1 : 2;
 
-      const activeLeads = allLeads.filter(l => !["won", "lost"].includes(l.status || "")).length;
-      const wonLeads = allLeads.filter(l => l.status === "won").length;
-      const lostLeads = allLeads.filter(l => l.status === "lost").length;
+      // 2. Fetch Pipeline Stages to determine "Won" logic
+      const buyerStages = await getBuyerStages();
+      const sellerStages = await getSellerStages();
+      const lastBuyerStageId = buyerStages[buyerStages.length - 1]?.id;
+      const lastSellerStageId = sellerStages[sellerStages.length - 1]?.id;
 
-      const leadsThisMonth = allLeads.filter(l => new Date(l.created_at || "") >= startOfMonth).length;
-      const leadsLastMonth = allLeads.filter(l => {
-        const date = new Date(l.created_at || "");
-        return date >= startOfLastMonth && date <= endOfLastMonth;
+      // 3. Determine User Filtering Logic
+      const targetUserId = selectedAgentId && selectedAgentId !== "all" ? selectedAgentId : null;
+
+      // 4. Fetch Leads
+      let leadsQuery = supabase.from("leads").select("*");
+
+      if (userRole === "admin" || userRole === "team_lead") {
+        if (targetUserId) {
+          leadsQuery = leadsQuery.eq("assigned_to", targetUserId);
+        }
+      } else {
+        leadsQuery = leadsQuery.eq("assigned_to", currentUserId);
+      }
+
+      const { data: leadsData, error: leadsError } = await leadsQuery;
+      if (leadsError) throw leadsError;
+
+      let leads = leadsData || [];
+
+      // Filter by Lead Type
+      if (leadTypeFilter === "buyer") {
+        leads = leads.filter(lead => lead.lead_type === "buyer" || lead.lead_type === "both");
+      } else if (leadTypeFilter === "seller") {
+        leads = leads.filter(lead => lead.lead_type === "seller" || lead.lead_type === "both");
+      }
+
+      // 5. Fetch Events
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfWeek = new Date();
+      endOfWeek.setDate(endOfWeek.getDate() + 7);
+
+      let eventsQuery = supabase
+        .from("calendar_events")
+        .select("*")
+        .gte("start_time", startOfDay.toISOString())
+        .lte("start_time", endOfWeek.toISOString())
+        .order("start_time", { ascending: true });
+
+      if (userRole === "admin" || userRole === "team_lead") {
+        if (targetUserId) {
+          eventsQuery = eventsQuery.eq("user_id", targetUserId);
+        }
+      } else {
+        eventsQuery = eventsQuery.eq("user_id", currentUserId);
+      }
+
+      const { data: eventsData, error: eventsError } = await eventsQuery;
+      if (eventsError) throw eventsError;
+      
+      const events = eventsData || [];
+      setUpcomingEvents(events.slice(0, 5));
+      const scheduledMeetings = events.filter(e => e.event_type === "meeting").length;
+
+      // 6. Fetch Tasks
+      const endOfToday = new Date();
+      endOfToday.setHours(23, 59, 59, 999);
+
+      let tasksQuery = supabase
+        .from("tasks")
+        .select("*")
+        .gte("due_date", startOfDay.toISOString())
+        .lte("due_date", endOfToday.toISOString())
+        .order("priority", { ascending: false });
+
+      if (userRole === "admin" || userRole === "team_lead") {
+        if (targetUserId) {
+          tasksQuery = tasksQuery.eq("assigned_to", targetUserId);
+        }
+      } else {
+        tasksQuery = tasksQuery.eq("assigned_to", currentUserId);
+      }
+
+      const { data: tasksData, error: tasksError } = await tasksQuery;
+      if (tasksError) throw tasksError;
+      setTodayTasks(tasksData || []);
+
+      // 7. Fetch Goals
+      const goalType = (userRole === "admin" || userRole === "team_lead") && selectedAgentId === "all" ? "team" : "individual";
+      const goalUserId = goalType === "individual" ? (targetUserId || currentUserId) : null;
+
+      let goalsQuery = (supabase as any).from("goals")
+        .select("*")
+        .eq("goal_type", goalType)
+        .eq("year", currentYear);
+
+      if (goalType === "individual" && goalUserId) {
+        goalsQuery = goalsQuery.eq("user_id", goalUserId);
+      }
+
+      const { data: goalsData, error: goalsError } = await goalsQuery;
+      if (goalsError) console.error("Error loading goals:", goalsError);
+
+      const goals = goalsData as any[] || [];
+      const annualGoal = goals.find(g => g.period === "annual");
+      const semesterGoal = goals.find(g => g.period === "semester" && g.semester === currentSemester);
+
+      const annualRevenueGoal = annualGoal?.revenue_target || 0;
+      const annualAcquisitionsGoal = annualGoal?.acquisitions_target || 0;
+      const currentSemesterRevenueGoal = semesterGoal?.revenue_target || 0;
+      const currentSemesterAcquisitionsGoal = semesterGoal?.acquisitions_target || 0;
+
+      // 8. Fetch Deals for Revenue
+      let dealsQuery = (supabase as any).from("deals").select("amount, transaction_date");
+      
+      if (userRole === "admin" || userRole === "team_lead") {
+        if (targetUserId) {
+          dealsQuery = dealsQuery.eq("user_id", targetUserId);
+        }
+      } else {
+        dealsQuery = dealsQuery.eq("user_id", currentUserId);
+      }
+
+      const { data: dealsData } = await dealsQuery;
+
+      // 9. Calculate Metrics
+      const totalLeads = leads.length;
+      
+      // Calculate won/lost/active leads
+      const wonLeads = leads.filter(l => {
+        const status = l.status || "";
+        if (status === "won") return true;
+        if (l.lead_type === "buyer" && status === lastBuyerStageId) return true;
+        if (l.lead_type === "seller" && status === lastSellerStageId) return true;
+        return false;
       }).length;
 
+      const lostLeads = leads.filter(l => l.status === "lost").length;
+      const activeLeads = leads.length - wonLeads - lostLeads; // Simplified active logic
+      const conversionRate = totalLeads > 0 ? (wonLeads / totalLeads) * 100 : 0;
+
+      // Revenue Calculations
+      // Use deals if available, fallback to legacy calculation
+      const dealsRevenue = dealsData?.reduce((sum: number, deal: any) => sum + Number(deal.amount), 0) || 0;
+      const totalRevenue = dealsData && dealsData.length > 0 ? dealsRevenue : (wonLeads * 5000);
+
+      // Semester Revenue
+      const semesterRevenue = dealsData 
+        ? dealsData
+            .filter((d: any) => {
+              const date = new Date(d.transaction_date);
+              const month = date.getMonth() + 1;
+              const sem = month <= 6 ? 1 : 2;
+              return date.getFullYear() === currentYear && sem === currentSemester;
+            })
+            .reduce((sum: number, deal: any) => sum + Number(deal.amount), 0)
+        : 0;
+
+      // Growth and Time Metrics
+      const leadsThisMonth = leads.filter(l => new Date(l.created_at || "").getTime() >= startOfCurrentMonth.getTime()).length;
+      const leadsLastMonth = leads.filter(l => {
+        const d = new Date(l.created_at || "");
+        return d >= startOfLastMonthDate && d <= endOfLastMonthDate;
+      }).length;
       const leadsGrowth = leadsLastMonth > 0 ? ((leadsThisMonth - leadsLastMonth) / leadsLastMonth) * 100 : 0;
 
-      const totalBudget = allLeads.reduce((sum, lead) => {
-        const budget = typeof lead.budget === "number" ? lead.budget : Number(lead.budget) || 0;
-        return sum + budget;
-      }, 0);
-
-      const averageBudget = allLeads.length > 0 ? totalBudget / allLeads.length : 0;
-      const conversionRate = allLeads.length > 0 ? (wonLeads / allLeads.length) * 100 : 0;
-
-      const todayEvents = events.filter(e => {
-        const eventDate = new Date(e.startTime || "");
-        return eventDate.toDateString() === now.toDateString();
-      }).length;
-
-      const completedTasks = tasks.filter(t => t.status === "completed").length;
-      const availableProperties = properties.filter(p => p.status === "available").length;
-
-      // Generate chart data
-      const months: ChartData[] = [];
-      for (let i = period - 1; i >= 0; i--) {
-        const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
-        const monthStart = new Date(date.getFullYear(), date.getMonth(), 1);
-        const monthEnd = new Date(date.getFullYear(), date.getMonth() + 1, 0);
-        monthEnd.setHours(23, 59, 59, 999);
-
-        const monthLeads = allLeads.filter(l => {
-          if (!l.created_at) return false;
-          const leadDate = new Date(l.created_at);
-          if (isNaN(leadDate.getTime())) return false;
-          return leadDate >= monthStart && leadDate <= monthEnd;
-        });
-
-        const monthWon = monthLeads.filter(l => l.status === "won");
-
-        months.push({
-          month: date.toLocaleDateString("pt-PT", { month: "short" }),
-          leads: monthLeads.length,
-          won: monthWon.length,
-        });
-      }
+      // Progress Metrics
+      const annualRevenueProgress = annualRevenueGoal > 0 ? (totalRevenue / annualRevenueGoal) * 100 : 0;
+      const annualAcquisitionsProgress = annualAcquisitionsGoal > 0 ? (totalLeads / annualAcquisitionsGoal) * 100 : 0;
+      const semesterRevenueProgress = currentSemesterRevenueGoal > 0 ? (semesterRevenue / currentSemesterRevenueGoal) * 100 : 0;
+      const semesterAcquisitionsProgress = currentSemesterAcquisitionsGoal > 0 ? (totalLeads / 2 / currentSemesterAcquisitionsGoal) * 100 : 0;
 
       setStats({
-        totalLeads: allLeads.length,
+        totalLeads,
         activeLeads,
         wonLeads,
         lostLeads,
         conversionRate,
-        averageBudget,
-        totalProperties: properties.length,
-        availableProperties,
-        totalTasks: tasks.length,
-        completedTasks,
-        todayEvents,
+        totalRevenue,
+        averageResponseTime: "2.5h", // Mock value for now
         leadsThisMonth,
         leadsLastMonth,
         leadsGrowth,
+        newLeadsThisMonth: leadsThisMonth,
+        scheduledMeetings,
+        annualRevenueGoal,
+        annualAcquisitionsGoal,
+        currentSemesterRevenueGoal,
+        currentSemesterAcquisitionsGoal,
+        annualRevenueProgress,
+        annualAcquisitionsProgress,
+        semesterRevenueProgress,
+        semesterAcquisitionsProgress,
       });
 
-      setChartData(months);
-    } catch (error) {
-      console.error("Error loading dashboard:", error);
+    } catch (err) {
+      console.error("Error loading dashboard data:", err);
+      setError("Erro ao carregar dados");
     } finally {
       setLoading(false);
     }
   };
 
+  useEffect(() => {
+    loadDashboardData();
+  }, [currentUserId, userRole, selectedAgentId, leadTypeFilter]);
+
   return {
     stats,
-    chartData,
+    upcomingEvents,
+    todayTasks,
     loading,
+    error,
     refetch: loadDashboardData,
   };
 }

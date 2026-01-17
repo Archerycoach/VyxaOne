@@ -1,54 +1,79 @@
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
-import { 
-  Target, 
-  Trophy, 
-  TrendingUp, 
-  DollarSign, 
-  Award,
-  Calendar,
-  CheckSquare,
-  Users,
-  TrendingDown
-} from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
-import { supabase } from "@/integrations/supabase/client";
 import { Layout } from "@/components/Layout";
+import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { supabase } from "@/integrations/supabase/client";
+import { Users, TrendingUp, Phone, Mail, Calendar, Target, Award, CheckCircle2, Home, Tag } from "lucide-react";
+import type { Database } from "@/integrations/supabase/types";
+
+type Profile = Database["public"]["Tables"]["profiles"]["Row"];
+type Lead = Database["public"]["Tables"]["leads"]["Row"];
+type Interaction = Database["public"]["Tables"]["interactions"]["Row"];
+type Deal = {
+  id: string;
+  user_id: string;
+  deal_type: "seller" | "buyer" | "both";
+  transaction_date: string;
+  amount: number;
+  notes?: string;
+  created_at: string;
+};
 
 interface AgentMetrics {
-  deals_closed: number;
-  total_revenue: number;
-  active_leads: number;
-  conversion_rate: number;
-  monthly_goal: number;
-  goal_progress: number;
-  tasks_completed: number;
-  tasks_pending: number;
-  meetings_this_week: number;
+  agentId: string;
+  agentName: string;
+  totalLeads: number;
+  acquisitions: number;
+  buyerLeads: number;
+  sellerLeads: number;
+  activeLeads: number;
+  wonLeads: number;
+  conversionRate: number;
+  buyerConversionRate: number;
+  sellerConversionRate: number;
+  totalInteractions: number;
+  callInteractions: number;
+  emailInteractions: number;
+  meetingInteractions: number;
+  averageResponseTime: string;
 }
 
-export default function Performance() {
+export default function PerformancePage() {
   const router = useRouter();
-  const [metrics, setMetrics] = useState<AgentMetrics | null>(null);
-  const [agentName, setAgentName] = useState<string>("");
   const [loading, setLoading] = useState(true);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [userRole, setUserRole] = useState<string | null>(null);
+  const [agents, setAgents] = useState<Profile[]>([]);
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [interactions, setInteractions] = useState<Interaction[]>([]);
+  const [deals, setDeals] = useState<Deal[]>([]);
+  const [selectedPeriod, setSelectedPeriod] = useState<string>("30");
+  const [selectedAgent, setSelectedAgent] = useState<string>("all");
+  const [leadTypeFilter, setLeadTypeFilter] = useState<"all" | "buyer" | "seller">("all");
 
   useEffect(() => {
-    checkAuthAndLoadMetrics();
-  }, []);
+    loadData();
+  }, [selectedPeriod]);
 
-  const checkAuthAndLoadMetrics = async () => {
+  const loadData = async () => {
     try {
+      setLoading(true);
+
+      // Get current user
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         router.push("/login");
         return;
       }
 
+      // Get user profile
       const { data: profile } = await supabase
         .from("profiles")
-        .select("full_name, email, role")
+        .select("*")
         .eq("id", user.id)
         .single();
 
@@ -57,352 +82,392 @@ export default function Performance() {
         return;
       }
 
-      setAgentName(profile.full_name || profile.email || "Agente");
+      setCurrentUserId(user.id);
+      setUserRole(profile.role || "agent");
 
-      // Admin and team_lead should go to team-dashboard
-      if (profile.role === "admin" || profile.role === "team_lead") {
-        router.push("/team-dashboard");
-        return;
+      // Load agents based on role
+      let agentsData: Profile[] = [];
+      if (profile.role === "admin") {
+        const { data } = await supabase
+          .from("profiles")
+          .select("*")
+          .in("role", ["agent", "team_lead"]);
+        agentsData = data || [];
+      } else if (profile.role === "team_lead") {
+        const { data } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("role", "agent");
+        agentsData = data || [];
       }
+      setAgents(agentsData);
 
-      await loadAgentMetrics(user.id);
+      // Load leads
+      const { data: leadsData } = await supabase
+        .from("leads")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      setLeads(leadsData || []);
+
+      // Load interactions
+      const { data: interactionsData } = await supabase
+        .from("interactions")
+        .select("*")
+        .order("interaction_date", { ascending: false });
+
+      setInteractions(interactionsData || []);
+
+      // Load deals
+      const { data: dealsData } = await (supabase as any)
+        .from("deals")
+        .select("*")
+        .order("transaction_date", { ascending: false });
+
+      setDeals(dealsData || []);
     } catch (error) {
-      console.error("Error loading metrics:", error);
-      router.push("/dashboard");
+      console.error("Error loading performance data:", error);
     } finally {
       setLoading(false);
     }
   };
 
-  const loadAgentMetrics = async (userId: string) => {
-    try {
-      // Get leads for this agent
-      const { data: leads } = await supabase
-        .from("leads")
-        .select("status")
-        .eq("assigned_to", userId);
+  const calculateMetrics = (): AgentMetrics[] => {
+    const metrics: AgentMetrics[] = [];
+    const periodDays = parseInt(selectedPeriod);
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - periodDays);
 
-      const wonLeads = leads?.filter(l => l.status === "won").length || 0;
-      const totalLeads = leads?.length || 0;
-      const activeLeads = leads?.filter(l => !["won", "lost"].includes(l.status)).length || 0;
-      const conversionRate = totalLeads > 0 ? (wonLeads / totalLeads) * 100 : 0;
+    // Filter agents based on selection
+    const agentsToAnalyze = selectedAgent === "all" 
+      ? agents 
+      : agents.filter(a => a.id === selectedAgent);
 
-      // Get tasks statistics
-      const { data: tasks } = await supabase
-        .from("tasks")
-        .select("status")
-        .eq("assigned_to", userId);
-
-      const tasksCompleted = tasks?.filter(t => t.status === "completed").length || 0;
-      const tasksPending = tasks?.filter(t => t.status === "pending").length || 0;
-
-      // Get meetings this week
-      const startOfWeek = new Date();
-      startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
-      startOfWeek.setHours(0, 0, 0, 0);
-
-      const endOfWeek = new Date(startOfWeek);
-      endOfWeek.setDate(startOfWeek.getDate() + 6);
-      endOfWeek.setHours(23, 59, 59, 999);
-
-      const { data: meetings } = await supabase
-        .from("calendar_events")
-        .select("id")
-        .eq("user_id", userId)
-        .gte("start_time", startOfWeek.toISOString())
-        .lte("start_time", endOfWeek.toISOString());
-
-      const monthlyGoal = 200000;
-      const totalRevenue = wonLeads * 150000;
-
-      setMetrics({
-        deals_closed: wonLeads,
-        total_revenue: totalRevenue,
-        active_leads: activeLeads,
-        conversion_rate: Math.round(conversionRate),
-        monthly_goal: monthlyGoal,
-        goal_progress: Math.min(100, Math.round((totalRevenue / monthlyGoal) * 100)),
-        tasks_completed: tasksCompleted,
-        tasks_pending: tasksPending,
-        meetings_this_week: meetings?.length || 0,
+    agentsToAnalyze.forEach(agent => {
+      // Filter leads by agent and period
+      const agentLeads = leads.filter(lead => {
+        const isAssigned = lead.assigned_to === agent.id;
+        const isInPeriod = new Date(lead.created_at || "") >= startDate;
+        
+        // Apply lead type filter
+        let matchesType = true;
+        if (leadTypeFilter === "buyer") {
+          matchesType = lead.lead_type === "buyer";
+        } else if (leadTypeFilter === "seller") {
+          matchesType = lead.lead_type === "seller";
+        }
+        
+        return isAssigned && isInPeriod && matchesType;
       });
-    } catch (error) {
-      console.error("Error loading agent metrics:", error);
-    }
+
+      // Filter deals (acquisitions) by agent and period
+      const agentDeals = deals.filter(deal => {
+        const isAgent = deal.user_id === agent.id;
+        const isInPeriod = new Date(deal.transaction_date || "") >= startDate;
+        
+        // Apply lead type filter for acquisitions
+        let matchesType = true;
+        if (leadTypeFilter === "buyer") {
+          matchesType = deal.deal_type === "buyer" || deal.deal_type === "both";
+        } else if (leadTypeFilter === "seller") {
+          matchesType = deal.deal_type === "seller" || deal.deal_type === "both";
+        }
+        
+        return isAgent && isInPeriod && matchesType;
+      });
+
+      const acquisitions = agentDeals.length;
+
+      // Calculate buyer/seller specific metrics
+      const buyerLeads = agentLeads.filter(l => l.lead_type === "buyer");
+      const sellerLeads = agentLeads.filter(l => l.lead_type === "seller");
+      
+      const activeLeads = agentLeads.filter(l => !["won", "lost"].includes(l.status || ""));
+      const wonLeads = agentLeads.filter(l => l.status === "won");
+      const buyerWonLeads = buyerLeads.filter(l => l.status === "won");
+      const sellerWonLeads = sellerLeads.filter(l => l.status === "won");
+
+      // Filter interactions by agent and period
+      const agentInteractions = interactions.filter(interaction => {
+        const isAgent = interaction.user_id === agent.id;
+        const isInPeriod = new Date(interaction.interaction_date || "") >= startDate;
+        
+        // Filter interactions by related lead type
+        if (leadTypeFilter !== "all" && interaction.lead_id) {
+          const relatedLead = leads.find(l => l.id === interaction.lead_id);
+          if (relatedLead) {
+            return isAgent && isInPeriod && relatedLead.lead_type === leadTypeFilter;
+          }
+        }
+        
+        return isAgent && isInPeriod;
+      });
+
+      const callInteractions = agentInteractions.filter(i => i.interaction_type === "call");
+      const emailInteractions = agentInteractions.filter(i => i.interaction_type === "email");
+      const meetingInteractions = agentInteractions.filter(i => i.interaction_type === "meeting");
+
+      const conversionRate = agentLeads.length > 0 ? (wonLeads.length / agentLeads.length) * 100 : 0;
+      const buyerConversionRate = buyerLeads.length > 0 ? (buyerWonLeads.length / buyerLeads.length) * 100 : 0;
+      const sellerConversionRate = sellerLeads.length > 0 ? (sellerWonLeads.length / sellerLeads.length) * 100 : 0;
+
+      metrics.push({
+        agentId: agent.id,
+        agentName: agent.full_name || agent.email || "Sem nome",
+        totalLeads: agentLeads.length,
+        acquisitions,
+        buyerLeads: buyerLeads.length,
+        sellerLeads: sellerLeads.length,
+        activeLeads: activeLeads.length,
+        wonLeads: wonLeads.length,
+        conversionRate,
+        buyerConversionRate,
+        sellerConversionRate,
+        totalInteractions: agentInteractions.length,
+        callInteractions: callInteractions.length,
+        emailInteractions: emailInteractions.length,
+        meetingInteractions: meetingInteractions.length,
+        averageResponseTime: "2.5h", // Placeholder
+      });
+    });
+
+    return metrics.sort((a, b) => b.conversionRate - a.conversionRate);
   };
 
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat("pt-PT", { style: "currency", currency: "EUR" }).format(value);
-  };
+  const metrics = calculateMetrics();
 
-  if (loading || !metrics) {
+  // Calculate team totals
+  const teamTotals = metrics.reduce(
+    (acc, curr) => ({
+      totalLeads: acc.totalLeads + curr.totalLeads,
+      acquisitions: acc.acquisitions + curr.acquisitions,
+      buyerLeads: acc.buyerLeads + curr.buyerLeads,
+      sellerLeads: acc.sellerLeads + curr.sellerLeads,
+      wonLeads: acc.wonLeads + curr.wonLeads,
+      totalInteractions: acc.totalInteractions + curr.totalInteractions,
+    }),
+    { totalLeads: 0, acquisitions: 0, buyerLeads: 0, sellerLeads: 0, wonLeads: 0, totalInteractions: 0 }
+  );
+
+  const teamConversionRate = teamTotals.totalLeads > 0 
+    ? (teamTotals.wonLeads / teamTotals.totalLeads) * 100 
+    : 0;
+
+  if (loading) {
     return (
-      <Layout title="Minha Performance">
-        <div className="flex items-center justify-center min-h-screen">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
-        </div>
-      </Layout>
+      <ProtectedRoute allowedRoles={["admin", "team_lead"]}>
+        <Layout>
+          <div className="container mx-auto p-6">
+            <p>A carregar...</p>
+          </div>
+        </Layout>
+      </ProtectedRoute>
     );
   }
 
   return (
-    <Layout title="Minha Performance">
-      <div className="p-8 space-y-8 bg-slate-50/50 min-h-full">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Minha Performance 🎯</h1>
-            <p className="text-gray-500 mt-2">Olá {agentName}, veja suas métricas e progresso</p>
+    <ProtectedRoute allowedRoles={["admin", "team_lead"]}>
+      <Layout>
+        <div className="container mx-auto p-6 max-w-7xl">
+          <div className="mb-6">
+            <h1 className="text-3xl font-bold mb-2">Performance da Equipa</h1>
+            <p className="text-muted-foreground">
+              Métricas e estatísticas de desempenho da sua equipa
+            </p>
+          </div>
+
+          {/* Lead Type Filter - Prominent Position */}
+          <Card className="p-6 mb-6 bg-gradient-to-r from-blue-50 to-purple-50 border-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-lg bg-blue-600 flex items-center justify-center">
+                  <Target className="h-5 w-5 text-white" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-lg">Filtrar Tipo de Lead</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Ver métricas por compradores, vendedores ou ambos
+                  </p>
+                </div>
+              </div>
+              <Tabs 
+                value={leadTypeFilter} 
+                onValueChange={(value) => setLeadTypeFilter(value as "all" | "buyer" | "seller")}
+                className="w-auto"
+              >
+                <TabsList className="grid grid-cols-3 w-[400px]">
+                  <TabsTrigger value="all" className="gap-2">
+                    <Users className="h-4 w-4" />
+                    Todos
+                  </TabsTrigger>
+                  <TabsTrigger value="buyer" className="gap-2">
+                    <Home className="h-4 w-4" />
+                    Compradores
+                  </TabsTrigger>
+                  <TabsTrigger value="seller" className="gap-2">
+                    <Tag className="h-4 w-4" />
+                    Vendedores
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
+            </div>
+          </Card>
+
+          {/* Team Overview */}
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+            <Card className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Angariações</p>
+                  <p className="text-3xl font-bold mt-2">{teamTotals.acquisitions}</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Negócios captados no período
+                  </p>
+                </div>
+                <div className="p-3 rounded-full bg-blue-50">
+                  <Target className="h-6 w-6 text-blue-600" />
+                </div>
+              </div>
+            </Card>
+
+            <Card className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">
+                    {leadTypeFilter === "buyer" ? "Compradores" : leadTypeFilter === "seller" ? "Vendedores" : "Leads Ativos"}
+                  </p>
+                  <p className="text-3xl font-bold mt-2">
+                    {leadTypeFilter === "buyer" ? teamTotals.buyerLeads : leadTypeFilter === "seller" ? teamTotals.sellerLeads : teamTotals.totalLeads}
+                  </p>
+                </div>
+                <div className="p-3 rounded-full bg-green-50">
+                  <TrendingUp className="h-6 w-6 text-green-600" />
+                </div>
+              </div>
+            </Card>
+
+            <Card className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Conversões</p>
+                  <p className="text-3xl font-bold mt-2">{teamTotals.wonLeads}</p>
+                </div>
+                <div className="p-3 rounded-full bg-purple-50">
+                  <CheckCircle2 className="h-6 w-6 text-purple-600" />
+                </div>
+              </div>
+            </Card>
+
+            <Card className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Taxa de Conversão</p>
+                  <p className="text-3xl font-bold mt-2">{teamConversionRate.toFixed(1)}%</p>
+                </div>
+                <div className="p-3 rounded-full bg-orange-50">
+                  <Target className="h-6 w-6 text-orange-600" />
+                </div>
+              </div>
+            </Card>
+
+            <Card className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Interações</p>
+                  <p className="text-3xl font-bold mt-2">{teamTotals.totalInteractions}</p>
+                </div>
+                <div className="p-3 rounded-full bg-pink-50">
+                  <Phone className="h-6 w-6 text-pink-600" />
+                </div>
+              </div>
+            </Card>
+          </div>
+
+          {/* Agent Performance Cards */}
+          <div className="space-y-4">
+            <h2 className="text-xl font-semibold">Desempenho por Agente</h2>
+            <div className="grid gap-4">
+              {metrics.map((metric) => (
+                <Card key={metric.agentId} className="p-6 hover:shadow-lg transition-shadow">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
+                        <span className="text-lg font-semibold text-primary">
+                          {metric.agentName.charAt(0).toUpperCase()}
+                        </span>
+                      </div>
+                      <div>
+                        <h3 className="font-semibold text-lg">{metric.agentName}</h3>
+                        <p className="text-sm text-muted-foreground">
+                          {metric.acquisitions} angariações • {metric.wonLeads} conversões
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Award className="h-5 w-5 text-yellow-600" />
+                      <span className="text-2xl font-bold text-yellow-600">
+                        {metric.conversionRate.toFixed(1)}%
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Buyer vs Seller Stats */}
+                  {leadTypeFilter === "all" && (
+                    <div className="grid grid-cols-2 gap-4 mb-4 p-4 bg-muted/30 rounded-lg">
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground mb-2">🏠 Compradores</p>
+                        <div className="space-y-1">
+                          <p className="text-sm">
+                            <span className="font-semibold">{metric.buyerLeads}</span> leads
+                          </p>
+                          <p className="text-sm">
+                            Taxa: <span className="font-semibold text-green-600">{metric.buyerConversionRate.toFixed(1)}%</span>
+                          </p>
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground mb-2">🏷️ Vendedores</p>
+                        <div className="space-y-1">
+                          <p className="text-sm">
+                            <span className="font-semibold">{metric.sellerLeads}</span> leads
+                          </p>
+                          <p className="text-sm">
+                            Taxa: <span className="font-semibold text-blue-600">{metric.sellerConversionRate.toFixed(1)}%</span>
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Interaction Stats */}
+                  <div className="grid grid-cols-4 gap-4">
+                    <div className="text-center p-3 bg-blue-50 rounded-lg">
+                      <Phone className="h-5 w-5 text-blue-600 mx-auto mb-1" />
+                      <p className="text-2xl font-bold text-blue-600">{metric.callInteractions}</p>
+                      <p className="text-xs text-muted-foreground">Chamadas</p>
+                    </div>
+                    <div className="text-center p-3 bg-green-50 rounded-lg">
+                      <Mail className="h-5 w-5 text-green-600 mx-auto mb-1" />
+                      <p className="text-2xl font-bold text-green-600">{metric.emailInteractions}</p>
+                      <p className="text-xs text-muted-foreground">Emails</p>
+                    </div>
+                    <div className="text-center p-3 bg-purple-50 rounded-lg">
+                      <Calendar className="h-5 w-5 text-purple-600 mx-auto mb-1" />
+                      <p className="text-2xl font-bold text-purple-600">{metric.meetingInteractions}</p>
+                      <p className="text-xs text-muted-foreground">Reuniões</p>
+                    </div>
+                    <div className="text-center p-3 bg-orange-50 rounded-lg">
+                      <TrendingUp className="h-5 w-5 text-orange-600 mx-auto mb-1" />
+                      <p className="text-2xl font-bold text-orange-600">{metric.activeLeads}</p>
+                      <p className="text-xs text-muted-foreground">Ativos</p>
+                    </div>
+                  </div>
+                </Card>
+              ))}
+            </div>
           </div>
         </div>
-
-        {/* KPIs Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-gray-500">
-                Vendas do Mês
-              </CardTitle>
-              <DollarSign className="h-4 w-4 text-green-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{formatCurrency(metrics.total_revenue)}</div>
-              {metrics.deals_closed > 0 && (
-                <p className="text-xs text-green-600 mt-1 flex items-center">
-                  <TrendingUp className="h-3 w-3 mr-1" />
-                  {metrics.deals_closed} negócio{metrics.deals_closed !== 1 ? "s" : ""} fechado{metrics.deals_closed !== 1 ? "s" : ""}
-                </p>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-gray-500">
-                Taxa de Conversão
-              </CardTitle>
-              <Target className="h-4 w-4 text-blue-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{metrics.conversion_rate}%</div>
-              <p className="text-xs text-gray-500 mt-1">
-                {metrics.active_leads} leads ativos
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-gray-500">
-                Tarefas
-              </CardTitle>
-              <CheckSquare className="h-4 w-4 text-purple-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{metrics.tasks_completed}</div>
-              <p className="text-xs text-gray-500 mt-1">
-                {metrics.tasks_pending} pendentes
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-gray-500">
-                Reuniões (Semana)
-              </CardTitle>
-              <Calendar className="h-4 w-4 text-orange-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{metrics.meetings_this_week}</div>
-              <p className="text-xs text-gray-500 mt-1">
-                Esta semana
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Main Performance Cards */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* Monthly Goal Progress */}
-          <Card className="col-span-1">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Trophy className="h-5 w-5 text-yellow-500" />
-                Meta do Mês
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div>
-                <div className="flex justify-between mb-2">
-                  <span className="text-sm font-medium">Faturação</span>
-                  <span className="text-sm text-gray-500">
-                    {formatCurrency(metrics.total_revenue)} / {formatCurrency(metrics.monthly_goal)}
-                  </span>
-                </div>
-                <Progress value={metrics.goal_progress} className="h-4" />
-                <p className="text-xs text-right mt-1 text-gray-400">
-                  {metrics.goal_progress}% atingido
-                </p>
-              </div>
-
-              <div className="p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <h4 className="font-semibold text-gray-900 mb-1">
-                      {metrics.goal_progress >= 100 ? "🎉 Meta Atingida!" : 
-                       metrics.goal_progress >= 75 ? "🔥 Quase lá!" :
-                       metrics.goal_progress >= 50 ? "💪 Continue assim!" :
-                       "📈 Foco na meta!"}
-                    </h4>
-                    <p className="text-sm text-gray-700">
-                      {metrics.goal_progress >= 100 ? "Parabéns! Você superou sua meta mensal!" :
-                       metrics.goal_progress >= 75 ? "Faltam apenas " + formatCurrency(metrics.monthly_goal - metrics.total_revenue) + " para atingir sua meta!" :
-                       metrics.goal_progress >= 50 ? "Você já está na metade do caminho. Continue focado!" :
-                       "Ainda há " + formatCurrency(metrics.monthly_goal - metrics.total_revenue) + " para alcançar. Você consegue!"}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <h4 className="font-semibold text-gray-900">Para atingir a meta:</h4>
-                <div className="space-y-2 text-sm">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                    <span>Focar em leads de alta prioridade</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
-                    <span>Fazer follow-ups regulares</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                    <span>Agendar mais reuniões presenciais</span>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Activity Summary */}
-          <Card className="col-span-1">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Award className="h-5 w-5 text-blue-500" />
-                Resumo de Atividade
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="p-4 bg-green-50 rounded-lg">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm text-gray-600">Negócios Fechados</span>
-                    <Trophy className="h-4 w-4 text-green-600" />
-                  </div>
-                  <div className="text-2xl font-bold text-green-900">{metrics.deals_closed}</div>
-                </div>
-
-                <div className="p-4 bg-blue-50 rounded-lg">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm text-gray-600">Leads Ativos</span>
-                    <Users className="h-4 w-4 text-blue-600" />
-                  </div>
-                  <div className="text-2xl font-bold text-blue-900">{metrics.active_leads}</div>
-                </div>
-
-                <div className="p-4 bg-purple-50 rounded-lg">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm text-gray-600">Tarefas Concluídas</span>
-                    <CheckSquare className="h-4 w-4 text-purple-600" />
-                  </div>
-                  <div className="text-2xl font-bold text-purple-900">{metrics.tasks_completed}</div>
-                </div>
-
-                <div className="p-4 bg-orange-50 rounded-lg">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm text-gray-600">Reuniões</span>
-                    <Calendar className="h-4 w-4 text-orange-600" />
-                  </div>
-                  <div className="text-2xl font-bold text-orange-900">{metrics.meetings_this_week}</div>
-                </div>
-              </div>
-
-              <div className="p-4 bg-yellow-50 rounded-lg">
-                <h4 className="font-semibold text-yellow-900 mb-2">💡 Dica de Produtividade</h4>
-                <p className="text-sm text-yellow-800">
-                  {metrics.tasks_pending > 10 
-                    ? "Você tem muitas tarefas pendentes. Priorize as mais importantes e delegue quando possível."
-                    : metrics.meetings_this_week < 5
-                    ? "Agende mais reuniões com seus leads ativos para acelerar o processo de conversão."
-                    : metrics.conversion_rate < 10
-                    ? "Sua taxa de conversão pode melhorar. Foque em qualificar melhor os leads antes de investir tempo."
-                    : "Excelente trabalho! Continue mantendo esse ritmo e organização."}
-                </p>
-              </div>
-
-              <div className="border-t pt-4">
-                <h4 className="font-semibold text-gray-900 mb-3">Próximas Ações Sugeridas:</h4>
-                <ul className="space-y-2 text-sm text-gray-700">
-                  <li className="flex items-start gap-2">
-                    <span className="text-blue-500 mt-1">→</span>
-                    <span>Revisar leads sem interação nos últimos 7 dias</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="text-blue-500 mt-1">→</span>
-                    <span>Agendar follow-ups para leads em negociação</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="text-blue-500 mt-1">→</span>
-                    <span>Atualizar status das propostas enviadas</span>
-                  </li>
-                </ul>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Quick Actions */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Ações Rápidas</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <button
-                onClick={() => router.push("/leads")}
-                className="p-4 border-2 border-dashed border-gray-300 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-all text-center"
-              >
-                <Users className="h-6 w-6 mx-auto mb-2 text-gray-400" />
-                <span className="text-sm font-medium text-gray-700">Ver Minhas Leads</span>
-              </button>
-
-              <button
-                onClick={() => router.push("/tasks")}
-                className="p-4 border-2 border-dashed border-gray-300 rounded-lg hover:border-purple-500 hover:bg-purple-50 transition-all text-center"
-              >
-                <CheckSquare className="h-6 w-6 mx-auto mb-2 text-gray-400" />
-                <span className="text-sm font-medium text-gray-700">Minhas Tarefas</span>
-              </button>
-
-              <button
-                onClick={() => router.push("/calendar")}
-                className="p-4 border-2 border-dashed border-gray-300 rounded-lg hover:border-orange-500 hover:bg-orange-50 transition-all text-center"
-              >
-                <Calendar className="h-6 w-6 mx-auto mb-2 text-gray-400" />
-                <span className="text-sm font-medium text-gray-700">Agenda</span>
-              </button>
-
-              <button
-                onClick={() => router.push("/pipeline")}
-                className="p-4 border-2 border-dashed border-gray-300 rounded-lg hover:border-green-500 hover:bg-green-50 transition-all text-center"
-              >
-                <TrendingUp className="h-6 w-6 mx-auto mb-2 text-gray-400" />
-                <span className="text-sm font-medium text-gray-700">Pipeline</span>
-              </button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    </Layout>
+      </Layout>
+    </ProtectedRoute>
   );
 }

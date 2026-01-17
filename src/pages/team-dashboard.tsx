@@ -25,6 +25,15 @@ interface AgentMetrics {
   conversion_rate: number;
   monthly_goal: number;
   goal_progress: number;
+  acquisitions: number;
+}
+
+interface Deal {
+  id: string;
+  user_id: string;
+  deal_type: "seller" | "buyer" | "both";
+  transaction_date: string;
+  amount: number;
 }
 
 export default function TeamDashboard() {
@@ -32,8 +41,10 @@ export default function TeamDashboard() {
   const [metrics, setMetrics] = useState<AgentMetrics[]>([]);
   const [agents, setAgents] = useState<Array<{ id: string; name: string }>>([]);
   const [selectedView, setSelectedView] = useState<string>("team");
+  const [leadTypeFilter, setLeadTypeFilter] = useState<string>("all");
   const [loading, setLoading] = useState(true);
   const [hasAccess, setHasAccess] = useState(false);
+  const [deals, setDeals] = useState<Deal[]>([]);
 
   useEffect(() => {
     checkAccess();
@@ -53,13 +64,11 @@ export default function TeamDashboard() {
         .eq("id", user.id)
         .single();
 
-      // Only admin and team_lead can access this page
       if (profile && (profile.role === "admin" || profile.role === "team_lead")) {
         setHasAccess(true);
         loadAgents();
         loadTeamMetrics();
       } else {
-        // Redirect agents to their personal performance page
         router.push("/performance");
       }
     } catch (error) {
@@ -76,7 +85,7 @@ export default function TeamDashboard() {
         loadAgentMetrics(selectedView);
       }
     }
-  }, [selectedView, hasAccess]);
+  }, [selectedView, leadTypeFilter, hasAccess]);
 
   const loadAgents = async () => {
     try {
@@ -98,7 +107,6 @@ export default function TeamDashboard() {
     try {
       setLoading(true);
       
-      // Get real agents from database
       const { data: agentsData } = await supabase
         .from("profiles")
         .select("id, full_name, email")
@@ -110,13 +118,37 @@ export default function TeamDashboard() {
         return;
       }
 
-      // Calculate real metrics for each agent
+      // Fetch all deals
+      const { data: dealsData } = await (supabase as any)
+        .from("deals")
+        .select("*")
+        .order("transaction_date", { ascending: false });
+
+      setDeals(dealsData || []);
+
       const metricsPromises = agentsData.map(async (agent) => {
-        // Get leads for this agent
-        const { data: leads } = await supabase
+        let query = supabase
           .from("leads")
-          .select("status")
+          .select("status, lead_type")
           .eq("assigned_to", agent.id);
+
+        if (leadTypeFilter === "buyers") {
+          query = query.in("lead_type", ["buyer", "both"]);
+        } else if (leadTypeFilter === "sellers") {
+          query = query.in("lead_type", ["seller", "both"]);
+        }
+
+        const { data: leads } = await query;
+
+        // Calculate acquisitions from deals
+        const agentDeals = (dealsData || []).filter((d: Deal) => d.user_id === agent.id);
+        let acquisitions = 0;
+        
+        if (leadTypeFilter === "all" || leadTypeFilter === "sellers") {
+          acquisitions = agentDeals.filter((d: Deal) => 
+            d.deal_type === "seller" || d.deal_type === "both"
+          ).length;
+        }
 
         const wonLeads = leads?.filter(l => l.status === "won").length || 0;
         const totalLeads = leads?.length || 0;
@@ -128,11 +160,12 @@ export default function TeamDashboard() {
           name: agent.full_name || agent.email || "Agente",
           avatar: (agent.full_name || agent.email || "A").split(" ").map((n: string) => n[0]).join("").toUpperCase(),
           deals_closed: wonLeads,
-          total_revenue: wonLeads * 150000, // Average deal value
+          total_revenue: wonLeads * 150000,
           active_leads: activeLeads,
           conversion_rate: Math.round(conversionRate),
           monthly_goal: 500000,
-          goal_progress: Math.min(100, Math.round((wonLeads * 150000 / 500000) * 100))
+          goal_progress: Math.min(100, Math.round((wonLeads * 150000 / 500000) * 100)),
+          acquisitions
         };
       });
 
@@ -152,11 +185,33 @@ export default function TeamDashboard() {
       const agent = agents.find(a => a.id === agentId);
       if (!agent) return;
 
-      // Get leads for this agent
-      const { data: leads } = await supabase
+      let query = supabase
         .from("leads")
-        .select("status")
+        .select("status, lead_type")
         .eq("assigned_to", agentId);
+
+      if (leadTypeFilter === "buyers") {
+        query = query.in("lead_type", ["buyer", "both"]);
+      } else if (leadTypeFilter === "sellers") {
+        query = query.in("lead_type", ["seller", "both"]);
+      }
+
+      const { data: leads } = await query;
+
+      // Fetch deals for this agent
+      const { data: dealsData } = await (supabase as any)
+        .from("deals")
+        .select("*")
+        .eq("user_id", agentId)
+        .order("transaction_date", { ascending: false });
+
+      // Calculate acquisitions
+      let acquisitions = 0;
+      if (leadTypeFilter === "all" || leadTypeFilter === "sellers") {
+        acquisitions = (dealsData || []).filter((d: Deal) => 
+          d.deal_type === "seller" || d.deal_type === "both"
+        ).length;
+      }
 
       const wonLeads = leads?.filter(l => l.status === "won").length || 0;
       const totalLeads = leads?.length || 0;
@@ -172,7 +227,8 @@ export default function TeamDashboard() {
         active_leads: activeLeads,
         conversion_rate: Math.round(conversionRate),
         monthly_goal: 200000,
-        goal_progress: Math.min(100, Math.round((wonLeads * 150000 / 200000) * 100))
+        goal_progress: Math.min(100, Math.round((wonLeads * 150000 / 200000) * 100)),
+        acquisitions
       };
 
       setMetrics([agentMetric]);
@@ -191,6 +247,7 @@ export default function TeamDashboard() {
   const totalRevenue = metrics.reduce((sum, m) => sum + m.total_revenue, 0);
   const totalDeals = metrics.reduce((sum, m) => sum + m.deals_closed, 0);
   const totalLeads = metrics.reduce((sum, m) => sum + m.active_leads, 0);
+  const totalAcquisitions = metrics.reduce((sum, m) => sum + m.acquisitions, 0);
   const avgConversion = metrics.length > 0 
     ? metrics.reduce((sum, m) => sum + m.conversion_rate, 0) / metrics.length 
     : 0;
@@ -203,19 +260,31 @@ export default function TeamDashboard() {
             <h1 className="text-3xl font-bold text-gray-900">Performance 🏆</h1>
             <p className="text-gray-500 mt-2">Métricas, metas e rankings</p>
           </div>
-          <Select value={selectedView} onValueChange={setSelectedView}>
-            <SelectTrigger className="w-64">
-              <SelectValue placeholder="Selecione a visualização" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="team">📊 Equipa Completa</SelectItem>
-              {agents.map(agent => (
-                <SelectItem key={agent.id} value={agent.id}>
-                  👤 {agent.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex gap-3">
+            <Select value={leadTypeFilter} onValueChange={setLeadTypeFilter}>
+              <SelectTrigger className="w-52">
+                <SelectValue placeholder="Tipo de Lead" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">📊 Todos os Leads</SelectItem>
+                <SelectItem value="buyers">🏠 Compradores</SelectItem>
+                <SelectItem value="sellers">💼 Vendedores</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={selectedView} onValueChange={setSelectedView}>
+              <SelectTrigger className="w-64">
+                <SelectValue placeholder="Selecione a visualização" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="team">📊 Equipa Completa</SelectItem>
+                {agents.map(agent => (
+                  <SelectItem key={agent.id} value={agent.id}>
+                    👤 {agent.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
@@ -354,10 +423,10 @@ export default function TeamDashboard() {
 
                 <div>
                   <div className="flex justify-between mb-2">
-                    <span className="text-sm font-medium">Novos Leads</span>
-                    <span className="text-sm text-gray-500">{totalLeads > 0 ? Math.round((totalLeads / 50) * 100) : 0}% atingido</span>
+                    <span className="text-sm font-medium">Angariações</span>
+                    <span className="text-sm text-gray-500">{totalAcquisitions > 0 ? Math.round((totalAcquisitions / 20) * 100) : 0}% atingido</span>
                   </div>
-                  <Progress value={totalLeads > 0 ? Math.min(100, (totalLeads / 50) * 100) : 0} className="h-3 bg-slate-100" />
+                  <Progress value={totalAcquisitions > 0 ? Math.min(100, (totalAcquisitions / 20) * 100) : 0} className="h-3 bg-slate-100" />
                 </div>
 
                 <div>

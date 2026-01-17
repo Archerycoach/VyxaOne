@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
-import nodemailer from "npm:nodemailer@6.9.7";
+import nodemailer from "npm:nodemailer@6.9.9";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -13,110 +13,119 @@ serve(async (req) => {
   }
 
   try {
-    console.log("🔔 [daily-emails] Starting daily email notifications...");
-
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // 1. Get all users with notifications enabled
+    // Get all active users with email notifications enabled and SMTP configured
     const { data: users, error: usersError } = await supabase
       .from("profiles")
-      .select("id, email, full_name, email_daily_tasks, email_daily_events")
-      .or("email_daily_tasks.eq.true,email_daily_events.eq.true")
-      .not("email", "is", null);
+      .select("id, email, full_name, email_daily_events, email_daily_tasks")
+      .eq("is_active", true)
+      .or("email_daily_events.eq.true,email_daily_tasks.eq.true");
 
-    if (usersError) throw usersError;
-
-    if (!users || users.length === 0) {
-      console.log("ℹ️ [daily-emails] No users with notifications enabled");
-      return new Response(JSON.stringify({ message: "No users to notify" }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" }
-      });
+    if (usersError) {
+      console.error("Error fetching users:", usersError);
+      throw usersError;
     }
 
-    console.log(`📊 [daily-emails] Processing ${users.length} users`);
+    if (!users || users.length === 0) {
+      return new Response(
+        JSON.stringify({ message: "No users with email notifications enabled" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
-    const results = { success: 0, failed: 0, skipped: 0, errors: [] as string[] };
-    const today = new Date().toISOString().split("T")[0];
+    const results = {
+      success: 0,
+      failed: 0,
+      skipped: 0,
+      errors: [] as string[],
+    };
 
-    // 2. Process each user
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
     for (const user of users) {
       try {
         // Get User SMTP Settings
-        const { data: smtpSettings } = await supabase
+        const { data: smtpSettings, error: smtpError } = await supabase
           .from("user_smtp_settings")
           .select("*")
           .eq("user_id", user.id)
           .single();
 
-        if (!smtpSettings) {
-          console.log(`⚠️ [daily-emails] User ${user.email} has no SMTP settings configured`);
+        if (smtpError || !smtpSettings) {
+          console.log(`No SMTP settings for user ${user.email}, skipping...`);
           results.skipped++;
           continue;
         }
 
-        let emailContent = "";
-        let hasContent = false;
+        // Collect events and tasks for today
+        let eventsHtml = "";
+        let tasksHtml = "";
 
-        // Fetch Tasks
-        if (user.email_daily_tasks) {
-          const { data: tasks } = await supabase
-            .from("tasks")
-            .select(`*, lead:leads(name), contact:contacts(name)`)
-            .eq("user_id", user.id)
-            .eq("due_date", today)
-            .neq("status", "completed")
-            .order("priority", { ascending: false });
-
-          if (tasks && tasks.length > 0) {
-            hasContent = true;
-            emailContent += `
-              <div style="margin-bottom: 25px;">
-                <h2 style="color: #2563eb; font-size: 18px; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px;">📋 Tarefas para Hoje</h2>
-                ${tasks.map(task => `
-                  <div style="padding: 12px; margin-bottom: 10px; background: #f8fafc; border-left: 4px solid ${getPriorityColor(task.priority)}; border-radius: 4px;">
-                    <div style="font-weight: bold; color: #1e293b;">${task.title}</div>
-                    ${task.due_time ? `<div style="font-size: 13px; color: #64748b;">⏰ ${task.due_time}</div>` : ''}
-                    ${task.lead ? `<div style="font-size: 13px; color: #64748b;">👤 Lead: ${task.lead.name}</div>` : ''}
-                    ${task.description ? `<div style="font-size: 13px; color: #475569; margin-top: 4px;">${task.description}</div>` : ''}
-                  </div>
-                `).join('')}
-              </div>`;
-          }
-        }
-
-        // Fetch Events
         if (user.email_daily_events) {
           const { data: events } = await supabase
             .from("calendar_events")
-            .select(`*, lead:leads(name), contact:contacts(name)`)
+            .select("*")
             .eq("user_id", user.id)
-            .gte("start_time", `${today}T00:00:00`)
-            .lt("start_time", `${today}T23:59:59`)
-            .order("start_time", { ascending: true });
+            .gte("start_time", today.toISOString())
+            .lt("start_time", tomorrow.toISOString())
+            .order("start_time");
 
           if (events && events.length > 0) {
-            hasContent = true;
-            emailContent += `
-              <div style="margin-bottom: 25px;">
-                <h2 style="color: #2563eb; font-size: 18px; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px;">📅 Agenda de Hoje</h2>
-                ${events.map(event => {
-                  const time = new Date(event.start_time).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
-                  return `
-                    <div style="padding: 12px; margin-bottom: 10px; background: #f8fafc; border-left: 4px solid #3b82f6; border-radius: 4px;">
-                      <div style="font-weight: bold; color: #1e293b;">${time} - ${event.title}</div>
-                      ${event.location ? `<div style="font-size: 13px; color: #64748b;">📍 ${event.location}</div>` : ''}
-                      ${event.lead ? `<div style="font-size: 13px; color: #64748b;">👤 Lead: ${event.lead.name}</div>` : ''}
-                    </div>
-                  `;
-                }).join('')}
-              </div>`;
+            eventsHtml = `
+              <div style="margin-bottom: 24px;">
+                <h2 style="color: #1f2937; font-size: 20px; margin-bottom: 16px;">📅 Eventos de Hoje</h2>
+                ${events.map(event => `
+                  <div style="background: #f9fafb; border-left: 4px solid #3b82f6; padding: 12px; margin-bottom: 12px; border-radius: 4px;">
+                    <div style="font-weight: 600; color: #1f2937; margin-bottom: 4px;">${event.title}</div>
+                    <div style="color: #6b7280; font-size: 14px;">⏰ ${new Date(event.start_time).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })}</div>
+                    ${event.description ? `<div style="color: #4b5563; font-size: 14px; margin-top: 8px;">${event.description}</div>` : ''}
+                  </div>
+                `).join('')}
+              </div>
+            `;
           }
         }
 
-        if (!hasContent) {
-          console.log(`ℹ️ [daily-emails] No tasks or events for ${user.email}`);
+        if (user.email_daily_tasks) {
+          const { data: tasks } = await supabase
+            .from("tasks")
+            .select("*")
+            .eq("user_id", user.id)
+            .eq("status", "pending")
+            .lte("due_date", tomorrow.toISOString())
+            .order("priority", { ascending: false })
+            .order("due_date");
+
+          if (tasks && tasks.length > 0) {
+            tasksHtml = `
+              <div style="margin-bottom: 24px;">
+                <h2 style="color: #1f2937; font-size: 20px; margin-bottom: 16px;">✅ Tarefas Pendentes</h2>
+                ${tasks.map(task => `
+                  <div style="background: #f9fafb; border-left: 4px solid ${getPriorityColor(task.priority)}; padding: 12px; margin-bottom: 12px; border-radius: 4px;">
+                    <div style="font-weight: 600; color: #1f2937; margin-bottom: 4px;">${task.title}</div>
+                    <div style="color: #6b7280; font-size: 14px;">
+                      <span style="background: ${getPriorityColor(task.priority)}; color: white; padding: 2px 8px; border-radius: 12px; font-size: 12px; margin-right: 8px;">
+                        ${task.priority?.toUpperCase() || 'MEDIUM'}
+                      </span>
+                      ${task.due_date ? `📅 ${new Date(task.due_date).toLocaleDateString('pt-PT')}` : ''}
+                    </div>
+                    ${task.description ? `<div style="color: #4b5563; font-size: 14px; margin-top: 8px;">${task.description}</div>` : ''}
+                  </div>
+                `).join('')}
+              </div>
+            `;
+          }
+        }
+
+        // Skip if no content to send
+        if (!eventsHtml && !tasksHtml) {
+          console.log(`No events or tasks for ${user.email}, skipping...`);
           results.skipped++;
           continue;
         }
@@ -131,59 +140,75 @@ serve(async (req) => {
             pass: smtpSettings.smtp_password,
           },
           tls: {
-            rejectUnauthorized: smtpSettings.reject_unauthorized ?? true
+            rejectUnauthorized: smtpSettings.reject_unauthorized ?? true,
+            minVersion: 'TLSv1',
+            ciphers: 'ALL'
           }
         });
 
-        const html = `
+        const emailHtml = `
           <!DOCTYPE html>
           <html>
-          <body style="font-family: sans-serif; line-height: 1.5; color: #1e293b; max-width: 600px; margin: 0 auto; padding: 20px;">
-            <div style="text-align: center; margin-bottom: 30px;">
-              <h1 style="color: #1e293b; margin: 0;">Resumo Diário</h1>
-              <p style="color: #64748b; margin-top: 5px;">${new Date().toLocaleDateString('pt-PT', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
-            </div>
-            
-            ${emailContent}
-            
-            <div style="margin-top: 40px; border-top: 1px solid #e2e8f0; padding-top: 20px; text-align: center; font-size: 12px; color: #94a3b8;">
-              <p>Enviado automaticamente pelo seu CRM</p>
-            </div>
-          </body>
+            <head>
+              <meta charset="utf-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            </head>
+            <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f3f4f6;">
+              <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+                <div style="background: white; border-radius: 8px; padding: 32px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                  <h1 style="color: #1f2937; font-size: 24px; margin-bottom: 24px;">☀️ Bom dia, ${user.full_name || user.email}!</h1>
+                  <p style="color: #4b5563; font-size: 16px; margin-bottom: 24px;">Aqui está o seu resumo diário:</p>
+                  
+                  ${eventsHtml}
+                  ${tasksHtml}
+                  
+                  <div style="margin-top: 32px; padding-top: 24px; border-top: 1px solid #e5e7eb;">
+                    <p style="color: #6b7280; font-size: 14px; margin: 0;">
+                      Este é um email automático enviado pelo seu CRM.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </body>
           </html>
         `;
 
         await transporter.sendMail({
-          from: `"${user.full_name || 'CRM'}" <${smtpSettings.smtp_username}>`,
+          from: `"CRM Notificações" <${smtpSettings.smtp_username}>`,
           to: user.email,
-          subject: `📅 Resumo Diário - ${new Date().toLocaleDateString('pt-PT')}`,
-          html: html,
+          subject: `📅 Seu resumo diário - ${new Date().toLocaleDateString('pt-PT')}`,
+          html: emailHtml,
         });
 
-        console.log(`✅ [daily-emails] Sent to ${user.email}`);
+        console.log(`✅ Email sent successfully to ${user.email}`);
         results.success++;
 
-      } catch (error: any) {
-        console.error(`❌ [daily-emails] Error for ${user.email}:`, error);
+      } catch (error) {
+        console.error(`❌ Error sending email to ${user.email}:`, error);
         results.failed++;
         results.errors.push(`${user.email}: ${error.message}`);
       }
     }
 
-    return new Response(JSON.stringify(results), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" }
-    });
+    return new Response(
+      JSON.stringify(results),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
 
-  } catch (error: any) {
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" }
-    });
+  } catch (error) {
+    console.error("Error in daily-emails function:", error);
+    return new Response(
+      JSON.stringify({ error: error.message }),
+      { 
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" } 
+      }
+    );
   }
 });
 
-function getPriorityColor(priority: string) {
-  switch (priority) {
+function getPriorityColor(priority: string | null): string {
+  switch (priority?.toLowerCase()) {
     case 'high': return '#ef4444';
     case 'medium': return '#f59e0b';
     case 'low': return '#10b981';
