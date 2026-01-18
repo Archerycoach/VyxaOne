@@ -352,22 +352,134 @@ export function GoalsContainer() {
         </div>
       </div>
 
-      <Tabs defaultValue="team" className="space-y-6">
-        <TabsList>
-          {isAdminOrTeamLead && (
+      {/* Para Agents: Renderizar diretamente sem Tabs */}
+      {!isAdminOrTeamLead ? (
+        <div className="space-y-6">
+          <Card className="p-6">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h2 className="text-xl font-semibold flex items-center gap-2">
+                  <TrendingUp className="h-5 w-5 text-green-600" />
+                  Metas Anuais Pessoais
+                </h2>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Objetivos para {currentYear}
+                </p>
+              </div>
+            </div>
+
+            <div className="grid gap-6 md:grid-cols-2">
+              <div>
+                <Label htmlFor="individual-annual-revenue">Faturação Anual (€)</Label>
+                <Input
+                  id="individual-annual-revenue"
+                  type="number"
+                  placeholder="Ex: 100000"
+                  value={individualAnnualRevenue}
+                  onChange={(e) => setIndividualAnnualRevenue(e.target.value)}
+                  className="mt-2"
+                />
+              </div>
+              <div>
+                <Label htmlFor="individual-annual-acquisitions">Número de Angariações</Label>
+                <Input
+                  id="individual-annual-acquisitions"
+                  type="number"
+                  placeholder="Ex: 10"
+                  value={individualAnnualAcquisitions}
+                  onChange={(e) => setIndividualAnnualAcquisitions(e.target.value)}
+                  className="mt-2"
+                />
+              </div>
+            </div>
+          </Card>
+
+          <div className="grid gap-6 md:grid-cols-2">
+            {/* Semester 1 */}
+            <Card className="p-6">
+              <h3 className="text-lg font-semibold mb-4">1º Semestre</h3>
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="individual-s1-revenue">Faturação (€)</Label>
+                  <Input
+                    id="individual-s1-revenue"
+                    type="number"
+                    placeholder="Ex: 50000"
+                    value={individualS1Revenue}
+                    onChange={(e) => setIndividualS1Revenue(e.target.value)}
+                    className="mt-2"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="individual-s1-acquisitions">Angariações</Label>
+                  <Input
+                    id="individual-s1-acquisitions"
+                    type="number"
+                    placeholder="Ex: 5"
+                    value={individualS1Acquisitions}
+                    onChange={(e) => setIndividualS1Acquisitions(e.target.value)}
+                    className="mt-2"
+                  />
+                </div>
+              </div>
+            </Card>
+
+            {/* Semester 2 */}
+            <Card className="p-6">
+              <h3 className="text-lg font-semibold mb-4">2º Semestre</h3>
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="individual-s2-revenue">Faturação (€)</Label>
+                  <Input
+                    id="individual-s2-revenue"
+                    type="number"
+                    placeholder="Ex: 50000"
+                    value={individualS2Revenue}
+                    onChange={(e) => setIndividualS2Revenue(e.target.value)}
+                    className="mt-2"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="individual-s2-acquisitions">Angariações</Label>
+                  <Input
+                    id="individual-s2-acquisitions"
+                    type="number"
+                    placeholder="Ex: 5"
+                    value={individualS2Acquisitions}
+                    onChange={(e) => setIndividualS2Acquisitions(e.target.value)}
+                    className="mt-2"
+                  />
+                </div>
+              </div>
+            </Card>
+          </div>
+
+          <div className="flex justify-end">
+            <Button
+              onClick={handleSaveIndividualGoals}
+              disabled={saving}
+              size="lg"
+            >
+              <Save className="h-4 w-4 mr-2" />
+              {saving ? "A guardar..." : "Guardar Objetivos Pessoais"}
+            </Button>
+          </div>
+        </div>
+      ) : (
+        /* Para Team Leads e Admins: Manter estrutura com Tabs */
+        <Tabs defaultValue="team" className="space-y-6">
+          <TabsList>
             <TabsTrigger value="team" className="flex items-center gap-2">
               <Users className="h-4 w-4" />
               Objetivos da Equipa
             </TabsTrigger>
-          )}
-          <TabsTrigger value="individual" className="flex items-center gap-2">
-            <User className="h-4 w-4" />
-            {isAdminOrTeamLead ? "Objetivos dos Agentes" : "Objetivos Pessoais"}
-          </TabsTrigger>
-        </TabsList>
+            <TabsTrigger value="individual" className="flex items-center gap-2">
+              <User className="h-4 w-4" />
+              Objetivos dos Agentes
+            </TabsTrigger>
+          </TabsList>
 
-        {/* Team Goals Tab */}
-        {isAdminOrTeamLead && (
+          {/* Team Goals Tab */}
           <TabsContent value="team" className="space-y-6">
             <Card className="p-6">
               <div className="flex items-center justify-between mb-6">
@@ -479,149 +591,149 @@ export function GoalsContainer() {
               </Button>
             </div>
           </TabsContent>
-        )}
 
-        {/* Individual Goals Tab */}
-        <TabsContent value="individual" className="space-y-6">
-          {/* Agent Selector for Team Leads and Admins */}
-          {isAdminOrTeamLead && teamMembers.length > 0 && (
-            <Card className="p-6">
-              <Label htmlFor="agent-selector">Selecionar Agente</Label>
-              <Select value={selectedAgent} onValueChange={setSelectedAgent}>
-                <SelectTrigger id="agent-selector" className="mt-2">
-                  <SelectValue placeholder="Selecione um agente para configurar objetivos" />
-                </SelectTrigger>
-                <SelectContent>
-                  {teamMembers.map((member) => (
-                    <SelectItem key={member.id} value={member.id}>
-                      {member.full_name || member.email}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-sm text-muted-foreground mt-2">
-                {isAdmin ? "Selecione um agente ou team lead para configurar objetivos individuais" : "Selecione um agente da sua equipa para configurar objetivos"}
-              </p>
-            </Card>
-          )}
-
-          <Card className="p-6">
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h2 className="text-xl font-semibold flex items-center gap-2">
-                  <TrendingUp className="h-5 w-5 text-green-600" />
-                  {isAdminOrTeamLead && selectedAgent ? "Metas do Agente Selecionado" : "Metas Anuais Pessoais"}
-                </h2>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Objetivos para {currentYear}
+          {/* Individual Goals Tab */}
+          <TabsContent value="individual" className="space-y-6">
+            {/* Agent Selector for Team Leads and Admins */}
+            {isAdminOrTeamLead && teamMembers.length > 0 && (
+              <Card className="p-6">
+                <Label htmlFor="agent-selector">Selecionar Agente</Label>
+                <Select value={selectedAgent} onValueChange={setSelectedAgent}>
+                  <SelectTrigger id="agent-selector" className="mt-2">
+                    <SelectValue placeholder="Selecione um agente para configurar objetivos" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {teamMembers.map((member) => (
+                      <SelectItem key={member.id} value={member.id}>
+                        {member.full_name || member.email}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-sm text-muted-foreground mt-2">
+                  {isAdmin ? "Selecione um agente ou team lead para configurar objetivos individuais" : "Selecione um agente da sua equipa para configurar objetivos"}
                 </p>
+              </Card>
+            )}
+
+            <Card className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h2 className="text-xl font-semibold flex items-center gap-2">
+                    <TrendingUp className="h-5 w-5 text-green-600" />
+                    {isAdminOrTeamLead && selectedAgent ? "Metas do Agente Selecionado" : "Metas Anuais Pessoais"}
+                  </h2>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Objetivos para {currentYear}
+                  </p>
+                </div>
               </div>
-            </div>
+
+              <div className="grid gap-6 md:grid-cols-2">
+                <div>
+                  <Label htmlFor="individual-annual-revenue">Faturação Anual (€)</Label>
+                  <Input
+                    id="individual-annual-revenue"
+                    type="number"
+                    placeholder="Ex: 100000"
+                    value={individualAnnualRevenue}
+                    onChange={(e) => setIndividualAnnualRevenue(e.target.value)}
+                    className="mt-2"
+                    disabled={isAdminOrTeamLead && !selectedAgent}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="individual-annual-acquisitions">Número de Angariações</Label>
+                  <Input
+                    id="individual-annual-acquisitions"
+                    type="number"
+                    placeholder="Ex: 10"
+                    value={individualAnnualAcquisitions}
+                    onChange={(e) => setIndividualAnnualAcquisitions(e.target.value)}
+                    className="mt-2"
+                    disabled={isAdminOrTeamLead && !selectedAgent}
+                  />
+                </div>
+              </div>
+            </Card>
 
             <div className="grid gap-6 md:grid-cols-2">
-              <div>
-                <Label htmlFor="individual-annual-revenue">Faturação Anual (€)</Label>
-                <Input
-                  id="individual-annual-revenue"
-                  type="number"
-                  placeholder="Ex: 100000"
-                  value={individualAnnualRevenue}
-                  onChange={(e) => setIndividualAnnualRevenue(e.target.value)}
-                  className="mt-2"
-                  disabled={isAdminOrTeamLead && !selectedAgent}
-                />
-              </div>
-              <div>
-                <Label htmlFor="individual-annual-acquisitions">Número de Angariações</Label>
-                <Input
-                  id="individual-annual-acquisitions"
-                  type="number"
-                  placeholder="Ex: 10"
-                  value={individualAnnualAcquisitions}
-                  onChange={(e) => setIndividualAnnualAcquisitions(e.target.value)}
-                  className="mt-2"
-                  disabled={isAdminOrTeamLead && !selectedAgent}
-                />
-              </div>
+              {/* Semester 1 */}
+              <Card className="p-6">
+                <h3 className="text-lg font-semibold mb-4">1º Semestre</h3>
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="individual-s1-revenue">Faturação (€)</Label>
+                    <Input
+                      id="individual-s1-revenue"
+                      type="number"
+                      placeholder="Ex: 50000"
+                      value={individualS1Revenue}
+                      onChange={(e) => setIndividualS1Revenue(e.target.value)}
+                      className="mt-2"
+                      disabled={isAdminOrTeamLead && !selectedAgent}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="individual-s1-acquisitions">Angariações</Label>
+                    <Input
+                      id="individual-s1-acquisitions"
+                      type="number"
+                      placeholder="Ex: 5"
+                      value={individualS1Acquisitions}
+                      onChange={(e) => setIndividualS1Acquisitions(e.target.value)}
+                      className="mt-2"
+                      disabled={isAdminOrTeamLead && !selectedAgent}
+                    />
+                  </div>
+                </div>
+              </Card>
+
+              {/* Semester 2 */}
+              <Card className="p-6">
+                <h3 className="text-lg font-semibold mb-4">2º Semestre</h3>
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="individual-s2-revenue">Faturação (€)</Label>
+                    <Input
+                      id="individual-s2-revenue"
+                      type="number"
+                      placeholder="Ex: 50000"
+                      value={individualS2Revenue}
+                      onChange={(e) => setIndividualS2Revenue(e.target.value)}
+                      className="mt-2"
+                      disabled={isAdminOrTeamLead && !selectedAgent}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="individual-s2-acquisitions">Angariações</Label>
+                    <Input
+                      id="individual-s2-acquisitions"
+                      type="number"
+                      placeholder="Ex: 5"
+                      value={individualS2Acquisitions}
+                      onChange={(e) => setIndividualS2Acquisitions(e.target.value)}
+                      className="mt-2"
+                      disabled={isAdminOrTeamLead && !selectedAgent}
+                    />
+                  </div>
+                </div>
+              </Card>
             </div>
-          </Card>
 
-          <div className="grid gap-6 md:grid-cols-2">
-            {/* Semester 1 */}
-            <Card className="p-6">
-              <h3 className="text-lg font-semibold mb-4">1º Semestre</h3>
-              <div className="space-y-4">
-                <div>
-                  <Label htmlFor="individual-s1-revenue">Faturação (€)</Label>
-                  <Input
-                    id="individual-s1-revenue"
-                    type="number"
-                    placeholder="Ex: 50000"
-                    value={individualS1Revenue}
-                    onChange={(e) => setIndividualS1Revenue(e.target.value)}
-                    className="mt-2"
-                    disabled={isAdminOrTeamLead && !selectedAgent}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="individual-s1-acquisitions">Angariações</Label>
-                  <Input
-                    id="individual-s1-acquisitions"
-                    type="number"
-                    placeholder="Ex: 5"
-                    value={individualS1Acquisitions}
-                    onChange={(e) => setIndividualS1Acquisitions(e.target.value)}
-                    className="mt-2"
-                    disabled={isAdminOrTeamLead && !selectedAgent}
-                  />
-                </div>
-              </div>
-            </Card>
-
-            {/* Semester 2 */}
-            <Card className="p-6">
-              <h3 className="text-lg font-semibold mb-4">2º Semestre</h3>
-              <div className="space-y-4">
-                <div>
-                  <Label htmlFor="individual-s2-revenue">Faturação (€)</Label>
-                  <Input
-                    id="individual-s2-revenue"
-                    type="number"
-                    placeholder="Ex: 50000"
-                    value={individualS2Revenue}
-                    onChange={(e) => setIndividualS2Revenue(e.target.value)}
-                    className="mt-2"
-                    disabled={isAdminOrTeamLead && !selectedAgent}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="individual-s2-acquisitions">Angariações</Label>
-                  <Input
-                    id="individual-s2-acquisitions"
-                    type="number"
-                    placeholder="Ex: 5"
-                    value={individualS2Acquisitions}
-                    onChange={(e) => setIndividualS2Acquisitions(e.target.value)}
-                    className="mt-2"
-                    disabled={isAdminOrTeamLead && !selectedAgent}
-                  />
-                </div>
-              </div>
-            </Card>
-          </div>
-
-          <div className="flex justify-end">
-            <Button
-              onClick={handleSaveIndividualGoals}
-              disabled={saving || (isAdminOrTeamLead && !selectedAgent)}
-              size="lg"
-            >
-              <Save className="h-4 w-4 mr-2" />
-              {saving ? "A guardar..." : isAdminOrTeamLead && selectedAgent ? "Guardar Objetivos do Agente" : "Guardar Objetivos Pessoais"}
-            </Button>
-          </div>
-        </TabsContent>
-      </Tabs>
+            <div className="flex justify-end">
+              <Button
+                onClick={handleSaveIndividualGoals}
+                disabled={saving || (isAdminOrTeamLead && !selectedAgent)}
+                size="lg"
+              >
+                <Save className="h-4 w-4 mr-2" />
+                {saving ? "A guardar..." : isAdminOrTeamLead && selectedAgent ? "Guardar Objetivos do Agente" : "Guardar Objetivos Pessoais"}
+              </Button>
+            </div>
+          </TabsContent>
+        </Tabs>
+      )}
     </div>
   );
 }

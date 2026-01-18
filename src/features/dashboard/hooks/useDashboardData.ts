@@ -224,10 +224,8 @@ export function useDashboardData({ userRole, currentUserId, selectedAgentId, lea
       const activeLeads = leads.length - wonLeads - lostLeads; // Simplified active logic
       const conversionRate = totalLeads > 0 ? (wonLeads / totalLeads) * 100 : 0;
 
-      // Revenue Calculations
-      // Use deals if available, fallback to legacy calculation
-      const dealsRevenue = dealsData?.reduce((sum: number, deal: any) => sum + Number(deal.amount), 0) || 0;
-      const totalRevenue = dealsData && dealsData.length > 0 ? dealsRevenue : (wonLeads * 5000);
+      // Revenue Calculations - ALWAYS use deals, no fallback
+      const totalRevenue = dealsData?.reduce((sum: number, deal: any) => sum + Number(deal.amount || 0), 0) || 0;
 
       // Semester Revenue
       const semesterRevenue = dealsData 
@@ -238,7 +236,7 @@ export function useDashboardData({ userRole, currentUserId, selectedAgentId, lea
               const sem = month <= 6 ? 1 : 2;
               return date.getFullYear() === currentYear && sem === currentSemester;
             })
-            .reduce((sum: number, deal: any) => sum + Number(deal.amount), 0)
+            .reduce((sum: number, deal: any) => sum + Number(deal.amount || 0), 0)
         : 0;
 
       // Growth and Time Metrics
