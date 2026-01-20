@@ -286,6 +286,141 @@ export async function syncEventToGoogle(
 }
 
 /**
+ * Create or update task in Google Calendar as an all-day event with retry
+ * @param taskData - Local task data to sync
+ * @param googleEventId - Existing Google event ID (for updates)
+ * @returns Google event ID if successful, null otherwise
+ */
+export async function syncTaskToGoogle(
+  taskData: {
+    title: string;
+    description?: string;
+    due_date: string;
+    priority?: string;
+  },
+  googleEventId?: string | null
+): Promise<string | null> {
+  try {
+    console.log("[googleCalendar:syncTask] ===== SYNC TASK START =====");
+    console.log("[googleCalendar:syncTask] Task:", taskData.title);
+    console.log("[googleCalendar:syncTask] Google Event ID:", googleEventId || "none (new task)");
+    
+    const accessToken = await getGoogleCalendarToken();
+    if (!accessToken) {
+      console.log("[googleCalendar:syncTask] ❌ No access token, skipping sync");
+      return null;
+    }
+
+    // Get calendar ID from integration settings
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      console.error("[googleCalendar:syncTask] ❌ No authenticated user");
+      return null;
+    }
+
+    const { data: integration } = await supabase
+      .from("google_calendar_integrations" as any)
+      .select("calendar_id, sync_direction, sync_tasks")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (!integration) {
+      console.error("[googleCalendar:syncTask] ❌ No integration found");
+      return null;
+    }
+
+    const integrationData = integration as any;
+    
+    // Check if we should sync tasks to Google
+    if (!integrationData.sync_tasks) {
+      console.log("[googleCalendar:syncTask] ⏭️ Task sync is disabled, skipping");
+      return null;
+    }
+    
+    if (integrationData.sync_direction !== "toGoogle" && integrationData.sync_direction !== "both") {
+      console.log("[googleCalendar:syncTask] ⏭️ Sync direction doesn't include toGoogle, skipping");
+      return null;
+    }
+
+    const calendarId = integrationData.calendar_id || "primary";
+    console.log("[googleCalendar:syncTask] Calendar ID:", calendarId);
+
+    // Create an all-day event for the task
+    const dueDate = new Date(taskData.due_date);
+    const dueDateString = dueDate.toISOString().split('T')[0]; // YYYY-MM-DD format
+    
+    const priorityEmoji = taskData.priority === "high" || taskData.priority === "urgent" ? "🔴 " : 
+                          taskData.priority === "medium" ? "🟡 " : "🟢 ";
+
+    const googleEvent = {
+      summary: `${priorityEmoji}[Tarefa] ${taskData.title}`,
+      description: taskData.description || "",
+      start: { 
+        date: dueDateString,
+        timeZone: "Europe/Lisbon"
+      },
+      end: { 
+        date: dueDateString,
+        timeZone: "Europe/Lisbon"
+      },
+      colorId: taskData.priority === "high" || taskData.priority === "urgent" ? "11" : 
+               taskData.priority === "medium" ? "5" : "2", // Red for high, Yellow for medium, Green for low
+    };
+
+    console.log("[googleCalendar:syncTask] Prepared Google event data");
+
+    // Sync with retry
+    const result = await withRetry(async () => {
+      let response;
+      if (googleEventId) {
+        console.log("[googleCalendar:syncTask] 🔄 Updating existing task...");
+        // Update existing event
+        response = await fetch(
+          `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${googleEventId}`,
+          {
+            method: "PUT",
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(googleEvent),
+          }
+        );
+      } else {
+        console.log("[googleCalendar:syncTask] ➕ Creating new task...");
+        // Create new event
+        response = await fetch(
+          `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(googleEvent),
+          }
+        );
+      }
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Google Calendar API error: ${response.status} - ${errorText}`);
+      }
+
+      return response.json();
+    }, "syncTaskToGoogle");
+
+    console.log("[googleCalendar:syncTask] ✅ Task synced successfully, ID:", result.id);
+    console.log("[googleCalendar:syncTask] ===== SYNC TASK END =====");
+    return result.id;
+  } catch (error) {
+    console.error("[googleCalendar:syncTask] ❌ Failed after all retries:", error);
+    console.log("[googleCalendar:syncTask] ===== SYNC TASK FAILED =====");
+    return null;
+  }
+}
+
+/**
  * Delete event from Google Calendar with retry
  * @param googleEventId - The Google Calendar event ID
  * @returns true if deleted successfully, false otherwise

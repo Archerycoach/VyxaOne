@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
+import { syncTaskToGoogle, deleteGoogleCalendarEvent } from "@/lib/googleCalendar";
 
 type Task = Database["public"]["Tables"]["tasks"]["Row"];
 type TaskInsert = Database["public"]["Tables"]["tasks"]["Insert"];
@@ -9,7 +10,13 @@ type TaskUpdate = Database["public"]["Tables"]["tasks"]["Update"];
 export const getTasks = async (): Promise<Task[]> => {
   const { data, error } = await supabase
     .from("tasks")
-    .select("*")
+    .select(`
+      *,
+      leads:related_lead_id (
+        id,
+        name
+      )
+    `)
     .order("due_date", { ascending: true });
 
   if (error) {
@@ -17,7 +24,20 @@ export const getTasks = async (): Promise<Task[]> => {
     return [];
   }
 
-  return data || [];
+  // Map the response to include lead name
+  const tasksWithLeadNames = (data || []).map((task: any) => {
+    const leadName = task.leads?.name || null;
+    
+    // Remove the nested leads object and add leadName at top level
+    const { leads, ...taskData } = task;
+    
+    return {
+      ...taskData,
+      relatedLeadName: leadName,
+    };
+  });
+
+  return tasksWithLeadNames;
 };
 
 // Alias for compatibility
@@ -76,6 +96,32 @@ export const createTask = async (task: TaskInsert & { lead_id?: string | null, c
 
   if (error) throw error;
 
+  // Sync to Google Calendar if task has a due date
+  if (data && data.due_date) {
+    console.log("[createTask] Syncing new task to Google Calendar...");
+    const googleEventId = await syncTaskToGoogle({
+      title: data.title,
+      description: data.description || "",
+      due_date: data.due_date,
+      priority: data.priority,
+    }, null);
+
+    if (googleEventId) {
+      console.log("[createTask] Task synced to Google, updating local record...");
+      await supabase
+        .from("tasks")
+        .update({ 
+          google_event_id: googleEventId,
+          is_synced: true 
+        })
+        .eq("id", data.id);
+      
+      // Update the returned data
+      data.google_event_id = googleEventId;
+      data.is_synced = true;
+    }
+  }
+
   return data;
 };
 
@@ -84,7 +130,7 @@ export const updateTask = async (id: string, updates: TaskUpdate) => {
   // Get current task to check if it's synced
   const { data: currentTask } = await supabase
     .from("tasks")
-    .select("google_event_id, is_synced")
+    .select("google_event_id, is_synced, due_date, title, description, priority")
     .eq("id", id)
     .single();
 
@@ -110,12 +156,69 @@ export const updateTask = async (id: string, updates: TaskUpdate) => {
 
   if (selectError) throw selectError;
 
+  // Sync to Google Calendar if task has a due date and was previously synced
+  if (data && data.due_date && currentTask?.google_event_id) {
+    console.log("[updateTask] Syncing updated task to Google Calendar...");
+    const googleEventId = await syncTaskToGoogle({
+      title: data.title,
+      description: data.description || "",
+      due_date: data.due_date,
+      priority: data.priority,
+    }, currentTask.google_event_id);
+
+    if (googleEventId) {
+      console.log("[updateTask] Task synced to Google");
+      await supabase
+        .from("tasks")
+        .update({ is_synced: true })
+        .eq("id", id);
+      
+      data.is_synced = true;
+    }
+  } else if (data && data.due_date && !currentTask?.google_event_id) {
+    // Task wasn't synced before but now has a due date - create in Google
+    console.log("[updateTask] Creating task in Google Calendar for first time...");
+    const googleEventId = await syncTaskToGoogle({
+      title: data.title,
+      description: data.description || "",
+      due_date: data.due_date,
+      priority: data.priority,
+    }, null);
+
+    if (googleEventId) {
+      console.log("[updateTask] Task created in Google");
+      await supabase
+        .from("tasks")
+        .update({ 
+          google_event_id: googleEventId,
+          is_synced: true 
+        })
+        .eq("id", id);
+      
+      data.google_event_id = googleEventId;
+      data.is_synced = true;
+    }
+  }
+
   return data;
 };
 
 // Delete task with Google Calendar sync
 export const deleteTask = async (id: string): Promise<void> => {
   console.log("🔴 deleteTask called for id:", id);
+  
+  // First, get the task to check if it has a Google event ID
+  const { data: task } = await supabase
+    .from("tasks")
+    .select("google_event_id")
+    .eq("id", id)
+    .single();
+
+  // Delete from Google Calendar if synced
+  if (task?.google_event_id) {
+    console.log("🔴 Task has Google event ID, deleting from Google Calendar...");
+    await deleteGoogleCalendarEvent(task.google_event_id);
+  }
   
   // First, let's check if the task exists and belongs to current user
   const { data: { user } } = await supabase.auth.getUser();

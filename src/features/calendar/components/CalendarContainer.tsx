@@ -70,6 +70,8 @@ export function CalendarContainer() {
     dueDate: "",
     priority: "medium",
     leadId: "",
+    relatedLeadId: "",
+    relatedLeadName: "",
   });
 
   // Drag and drop state
@@ -227,6 +229,8 @@ export function CalendarContainer() {
       dueDate: dateOnly,
       priority: "medium",
       leadId: "",
+      relatedLeadId: "",
+      relatedLeadName: "",
     });
     setShowTaskForm(true);
   };
@@ -275,7 +279,10 @@ export function CalendarContainer() {
       description: task.description || "",
       dueDate: formatDateOnly(task.dueDate),
       priority: task.priority,
+      status: task.status,
       leadId: task.leadId || "",
+      relatedLeadId: task.relatedLeadId || "",
+      relatedLeadName: task.relatedLeadName || "",
     });
     setShowTaskForm(true);
   };
