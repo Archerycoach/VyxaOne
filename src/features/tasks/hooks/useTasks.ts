@@ -1,61 +1,47 @@
 import { useQuery } from "@tanstack/react-query";
-import { getAllTasks } from "@/services/tasksService";
-import { Task, TaskStatus, TaskPriority } from "@/types";
-import type { Database } from "@/integrations/supabase/types";
+import { getTasks } from "@/services/tasksService";
+import type { TaskPriority } from "@/types";
+import type { TaskStatus } from "./useTaskFilters";
 
-interface UseTasksParams {
-  statusFilter: TaskStatus;
-  priorityFilter: TaskPriority | "all";
-  searchQuery: string;
+interface UseTasksOptions {
+  statusFilter?: TaskStatus;
+  priorityFilter?: TaskPriority | "all";
+  searchQuery?: string;
 }
 
-// Transform DB task to App task format
-function transformDbTask(dbTask: Database["public"]["Tables"]["tasks"]["Row"]): Task {
-  return {
-    id: dbTask.id,
-    title: dbTask.title,
-    description: dbTask.description || "",
-    notes: dbTask.notes || "",
-    leadId: dbTask.related_lead_id || undefined,
-    propertyId: dbTask.related_property_id || undefined,
-    priority: dbTask.priority as TaskPriority,
-    status: dbTask.status as TaskStatus,
-    dueDate: dbTask.due_date || "",
-    assignedTo: dbTask.assigned_to || "",
-    completed: dbTask.status === "completed",
-    createdAt: dbTask.created_at || "",
-  };
-}
+export function useTasks(options: UseTasksOptions = {}) {
+  const { statusFilter = "all", priorityFilter = "all", searchQuery = "" } = options;
 
-export function useTasks({ statusFilter, priorityFilter, searchQuery }: UseTasksParams) {
-  return useQuery<Task[]>({
+  return useQuery({
     queryKey: ["tasks", statusFilter, priorityFilter, searchQuery],
     queryFn: async () => {
-      const dbTasks = await getAllTasks();
+      // Get all tasks first
+      const allTasks = await getTasks();
       
-      // Transform DB tasks to App format
-      let tasks = dbTasks.map(transformDbTask);
-
-      // Filter by status
-      tasks = tasks.filter((task) => task.status === statusFilter);
-
-      // Filter by priority
-      if (priorityFilter !== "all") {
-        tasks = tasks.filter((task) => task.priority === priorityFilter);
+      // Apply filters
+      let filtered = allTasks;
+      
+      // Status filter
+      if (statusFilter !== "all") {
+        filtered = filtered.filter((task) => task.status === statusFilter);
       }
-
-      // Filter by search query
+      
+      // Priority filter
+      if (priorityFilter !== "all") {
+        filtered = filtered.filter((task) => task.priority === priorityFilter);
+      }
+      
+      // Search filter
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
-        tasks = tasks.filter(
+        filtered = filtered.filter(
           (task) =>
             task.title.toLowerCase().includes(query) ||
             task.description?.toLowerCase().includes(query)
         );
       }
-
-      return tasks;
+      
+      return filtered;
     },
-    staleTime: 30000,
   });
 }

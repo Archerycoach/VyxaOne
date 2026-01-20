@@ -1,7 +1,8 @@
 import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { TaskStatus, TaskPriority } from "../hooks/useTaskFilters";
+import { TaskStatus } from "../hooks/useTaskFilters";
+import { TaskPriority } from "@/types";
 
 interface TaskFiltersProps {
   statusFilter: TaskStatus;
@@ -21,6 +22,7 @@ export function TaskFilters({
   onSearchChange,
 }: TaskFiltersProps) {
   const statusButtons: { value: TaskStatus; label: string }[] = [
+    { value: "all", label: "Todos" },
     { value: "pending", label: "Pendentes" },
     { value: "in_progress", label: "Em Progresso" },
     { value: "completed", label: "Concluídas" },

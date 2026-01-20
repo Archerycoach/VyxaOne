@@ -263,6 +263,15 @@ export function CalendarContainer() {
   };
 
   const handleEditTask = (task: Task) => {
+    console.log("[CalendarContainer] ==================== EDIT TASK ====================");
+    console.log("[CalendarContainer] handleEditTask - Task data:", task);
+    console.log("[CalendarContainer] Task ID:", task.id);
+    console.log("[CalendarContainer] Task title:", task.title);
+    console.log("[CalendarContainer] leadId:", task.leadId);
+    console.log("[CalendarContainer] relatedLeadId:", task.relatedLeadId);
+    console.log("[CalendarContainer] relatedLeadName:", task.relatedLeadName);
+    console.log("[CalendarContainer] ================================================================");
+    
     setEditingTask(task);
     
     // Format date for date input (YYYY-MM-DD)
@@ -274,17 +283,34 @@ export function CalendarContainer() {
       return `${year}-${month}-${day}`;
     };
     
-    setTaskForm({
+    const formData = {
       title: task.title,
       description: task.description || "",
       dueDate: formatDateOnly(task.dueDate),
       priority: task.priority,
       status: task.status,
-      leadId: task.leadId || "",
-      relatedLeadId: task.relatedLeadId || "",
+      leadId: task.leadId || task.relatedLeadId || "",
+      relatedLeadId: task.relatedLeadId || task.leadId || "",
       relatedLeadName: task.relatedLeadName || "",
-    });
+    };
+    
+    console.log("[CalendarContainer] taskForm will be set to:", formData);
+    console.log("[CalendarContainer] formData.relatedLeadId:", formData.relatedLeadId);
+    console.log("[CalendarContainer] formData.relatedLeadName:", formData.relatedLeadName);
+    
+    setTaskForm(formData);
     setShowTaskForm(true);
+  };
+
+  const handleDeleteTask = async (taskId: string) => {
+    try {
+      await updateTask(taskId, { status: "deleted" });
+      toast({ title: "Tarefa eliminada com sucesso" });
+      refetchTasks();
+    } catch (error) {
+      console.error(error);
+      toast({ title: "Erro ao eliminar tarefa", variant: "destructive" });
+    }
   };
 
   const handleEventSubmit = async (e: React.FormEvent) => {
@@ -488,6 +514,41 @@ export function CalendarContainer() {
     return filterTasksByDate(tasks, currentDate);
   }, [tasks, currentDate, filterTasksByDate]);
 
+  // Filter out Google Calendar events that are duplicates of local tasks
+  // Tasks synced to Google have a googleEventId that matches the event's googleEventId
+  const filteredEventsWithoutDuplicates = React.useMemo(() => {
+    if (!showTasks || tasks.length === 0) {
+      return filteredEvents;
+    }
+
+    // Get all googleEventIds from tasks
+    const taskGoogleEventIds = new Set(
+      tasks
+        .filter(task => task.googleEventId)
+        .map(task => task.googleEventId)
+    );
+
+    // Filter out events that match task googleEventIds or have [TAREFA] prefix
+    const nonDuplicateEvents = filteredEvents.filter(event => {
+      // If event has a googleEventId that matches a task, it's a duplicate
+      if (event.googleEventId && taskGoogleEventIds.has(event.googleEventId)) {
+        console.log(`[CalendarContainer] 🚫 Filtering duplicate event: ${event.title} (matches task)`);
+        return false;
+      }
+      
+      // If event title starts with [TAREFA], it's likely a synced task
+      if (event.title?.startsWith('[TAREFA]')) {
+        console.log(`[CalendarContainer] 🚫 Filtering synced task event: ${event.title}`);
+        return false;
+      }
+      
+      return true;
+    });
+
+    console.log(`[CalendarContainer] 🎯 Events after duplicate filter: ${nonDuplicateEvents.length} (removed ${filteredEvents.length - nonDuplicateEvents.length})`);
+    return nonDuplicateEvents;
+  }, [filteredEvents, tasks, showTasks]);
+
   return (
     <div className="space-y-6">
       <CalendarHeader
@@ -508,7 +569,7 @@ export function CalendarContainer() {
       <CalendarGrid
         viewMode={viewMode}
         currentDate={currentDate}
-        events={showEvents ? filteredEvents : []}
+        events={showEvents ? filteredEventsWithoutDuplicates : []}
         tasks={showTasks ? filteredTasks : []}
         onEventClick={handleEditEvent}
         onTaskClick={handleEditTask}
@@ -533,6 +594,7 @@ export function CalendarContainer() {
         setTaskForm={setTaskForm}
         handleTaskSubmit={handleTaskSubmit}
         isTaskEditing={!!editingTask}
+        handleDeleteTask={handleDeleteTask}
       />
     </div>
   );

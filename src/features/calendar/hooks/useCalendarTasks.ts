@@ -14,51 +14,53 @@ export function useCalendarTasks() {
       setError(null);
       const data = await getTasks();
       
+      console.log("[useCalendarTasks] ==================== FETCH TASKS ====================");
+      console.log("[useCalendarTasks] Total tasks fetched:", data?.length || 0);
+      console.log("[useCalendarTasks] Raw data from getTasks:", data);
+      
       // Map API response (snake_case) to Task interface (camelCase)
-      // and fetch lead names for tasks with related_lead_id
-      const mappedTasks: Task[] = await Promise.all((data || []).map(async (t: any) => {
-        let leadName = undefined;
+      const mappedTasks: Task[] = (data || []).map((t: any) => {
+        console.log("[useCalendarTasks] --- Mapping task ---");
+        console.log("[useCalendarTasks] Task ID:", t.id);
+        console.log("[useCalendarTasks] Task title:", t.title);
+        console.log("[useCalendarTasks] related_lead_id:", t.related_lead_id);
+        console.log("[useCalendarTasks] relatedLeadId:", t.relatedLeadId);
+        console.log("[useCalendarTasks] relatedLeadName:", t.relatedLeadName);
+        console.log("[useCalendarTasks] leadId:", t.leadId);
         
-        // Fetch lead name if related_lead_id exists
-        if (t.related_lead_id) {
-          try {
-            const { data: lead, error: leadError } = await supabase
-              .from("leads")
-              .select("name")
-              .eq("id", t.related_lead_id)
-              .single();
-            
-            if (!leadError && lead) {
-              leadName = lead.name;
-            }
-          } catch (err) {
-            console.warn("Failed to fetch lead name for task:", t.id, err);
-          }
-        }
-        
-        return {
+        const mapped = {
           id: t.id,
           title: t.title || "",
           description: t.description || "",
           notes: t.notes,
-          leadId: t.lead_id,
-          relatedLeadId: t.related_lead_id,
-          relatedLeadName: leadName,
+          leadId: t.leadId || t.relatedLeadId || t.related_lead_id,
+          relatedLeadId: t.relatedLeadId || t.related_lead_id,
+          relatedLeadName: t.relatedLeadName,
           propertyId: t.property_id,
           priority: t.priority || "medium",
           status: t.status || "pending",
-          dueDate: t.due_date,
+          dueDate: t.due_date || t.dueDate,
           assignedTo: t.assigned_to,
           completed: t.status === "completed",
-          createdAt: t.created_at,
-          googleEventId: t.google_event_id,
-          isSynced: t.is_synced
+          createdAt: t.created_at || t.createdAt,
+          googleEventId: t.google_event_id || t.googleEventId,
+          isSynced: t.is_synced || t.isSynced
         };
-      }));
+        
+        console.log("[useCalendarTasks] Mapped task:", mapped);
+        console.log("[useCalendarTasks] Mapped relatedLeadId:", mapped.relatedLeadId);
+        console.log("[useCalendarTasks] Mapped relatedLeadName:", mapped.relatedLeadName);
+        
+        return mapped;
+      });
 
+      console.log("[useCalendarTasks] All mapped tasks:", mappedTasks);
+      console.log("[useCalendarTasks] Tasks with leads:", mappedTasks.filter(t => t.relatedLeadId).length);
+      console.log("[useCalendarTasks] ================================================================");
+      
       setTasks(mappedTasks);
     } catch (err) {
-      console.error("Error fetching tasks:", err);
+      console.error("[useCalendarTasks] Error fetching tasks:", err);
       setError(err as Error);
     } finally {
       setIsLoading(false);

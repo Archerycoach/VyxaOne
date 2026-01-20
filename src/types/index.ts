@@ -149,6 +149,8 @@ export interface Task {
   assignedTo: string;
   completed: boolean;
   createdAt: string;
+  googleEventId?: string;
+  isSynced?: boolean;
 }
 
 export interface TaskStats {

@@ -24,6 +24,7 @@ interface CalendarDialogsProps {
   setTaskForm: (form: Partial<Task>) => void;
   handleTaskSubmit: (e: React.FormEvent) => Promise<void>;
   isTaskEditing: boolean;
+  handleDeleteTask?: (taskId: string) => Promise<void>;
 }
 
 export function CalendarDialogs({
@@ -39,6 +40,7 @@ export function CalendarDialogs({
   setTaskForm,
   handleTaskSubmit,
   isTaskEditing,
+  handleDeleteTask,
 }: CalendarDialogsProps) {
   return (
     <>
@@ -274,21 +276,38 @@ export function CalendarDialogs({
                 </Select>
               </div>
 
-              <DialogFooter>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setShowTaskForm(false)}
-                >
-                  Cancelar
-                </Button>
-                <Button type="submit">
-                  {isTaskEditing ? "Guardar" : "Criar"}
-                </Button>
+              <DialogFooter className="gap-2 sm:gap-0">
+                {isTaskEditing && handleDeleteTask && taskForm.id && (
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    onClick={() => {
+                      if (confirm("Tem a certeza que deseja eliminar esta tarefa?")) {
+                        handleDeleteTask(taskForm.id!);
+                        setShowTaskForm(false);
+                      }
+                    }}
+                    className="mr-auto"
+                  >
+                    Eliminar
+                  </Button>
+                )}
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setShowTaskForm(false)}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button type="submit">
+                    {isTaskEditing ? "Guardar" : "Criar"}
+                  </Button>
+                </div>
               </DialogFooter>
             </form>
 
-            {/* Lead Activities Panel - só mostra se houver relatedLeadId e relatedLeadName */}
+            {/* Lead Activities Panel */}
             {taskForm.relatedLeadId && taskForm.relatedLeadName && (
               <div className="lg:border-l lg:pl-6">
                 <LeadActivitiesPanel

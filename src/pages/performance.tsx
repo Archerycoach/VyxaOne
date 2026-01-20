@@ -99,6 +99,10 @@ export default function PerformancePage() {
           .select("*")
           .eq("role", "agent");
         agentsData = data || [];
+      } else if (profile.role === "agent") {
+        // For agents, only show their own data
+        agentsData = [profile];
+        setSelectedAgent(user.id);
       }
       setAgents(agentsData);
 
@@ -255,7 +259,7 @@ export default function PerformancePage() {
 
   if (loading) {
     return (
-      <ProtectedRoute allowedRoles={["admin", "team_lead"]}>
+      <ProtectedRoute allowedRoles={["admin", "team_lead", "agent"]}>
         <Layout>
           <div className="container mx-auto p-6">
             <p>A carregar...</p>
@@ -266,13 +270,18 @@ export default function PerformancePage() {
   }
 
   return (
-    <ProtectedRoute allowedRoles={["admin", "team_lead"]}>
+    <ProtectedRoute allowedRoles={["admin", "team_lead", "agent"]}>
       <Layout>
         <div className="container mx-auto p-6 max-w-7xl">
           <div className="mb-6">
-            <h1 className="text-3xl font-bold mb-2">Performance da Equipa</h1>
+            <h1 className="text-3xl font-bold mb-2">
+              {userRole === "agent" ? "Meu Desempenho" : "Performance da Equipa"}
+            </h1>
             <p className="text-muted-foreground">
-              Métricas e estatísticas de desempenho da sua equipa
+              {userRole === "agent" 
+                ? "Métricas e estatísticas do seu desempenho pessoal"
+                : "Métricas e estatísticas de desempenho da sua equipa"
+              }
             </p>
           </div>
 
@@ -312,6 +321,64 @@ export default function PerformancePage() {
               </Tabs>
             </div>
           </Card>
+
+          {/* Period and Agent Filters - Only show for team_lead and admin */}
+          {userRole !== "agent" && (
+            <Card className="p-4 mb-6">
+              <div className="flex gap-4 items-center">
+                <div className="flex-1">
+                  <label className="text-sm font-medium mb-2 block">Período</label>
+                  <Select value={selectedPeriod} onValueChange={setSelectedPeriod}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="7">Últimos 7 dias</SelectItem>
+                      <SelectItem value="30">Últimos 30 dias</SelectItem>
+                      <SelectItem value="90">Últimos 90 dias</SelectItem>
+                      <SelectItem value="365">Último ano</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex-1">
+                  <label className="text-sm font-medium mb-2 block">Agente</label>
+                  <Select value={selectedAgent} onValueChange={setSelectedAgent}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todos os agentes</SelectItem>
+                      {agents.map((agent) => (
+                        <SelectItem key={agent.id} value={agent.id}>
+                          {agent.full_name || agent.email}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {/* Period Filter for Agents - Simplified */}
+          {userRole === "agent" && (
+            <Card className="p-4 mb-6">
+              <div className="flex items-center gap-4">
+                <label className="text-sm font-medium">Período de Análise:</label>
+                <Select value={selectedPeriod} onValueChange={setSelectedPeriod}>
+                  <SelectTrigger className="w-[200px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="7">Últimos 7 dias</SelectItem>
+                    <SelectItem value="30">Últimos 30 dias</SelectItem>
+                    <SelectItem value="90">Últimos 90 dias</SelectItem>
+                    <SelectItem value="365">Último ano</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </Card>
+          )}
 
           {/* Team Overview */}
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
@@ -385,7 +452,9 @@ export default function PerformancePage() {
 
           {/* Agent Performance Cards */}
           <div className="space-y-4">
-            <h2 className="text-xl font-semibold">Desempenho por Agente</h2>
+            <h2 className="text-xl font-semibold">
+              {userRole === "agent" ? "Minhas Estatísticas Detalhadas" : "Desempenho por Agente"}
+            </h2>
             <div className="grid gap-4">
               {metrics.map((metric) => (
                 <Card key={metric.agentId} className="p-6 hover:shadow-lg transition-shadow">

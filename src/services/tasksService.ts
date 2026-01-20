@@ -1,13 +1,48 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
+import type { Task as GlobalTask } from "@/types";
 import { syncTaskToGoogle, deleteGoogleCalendarEvent } from "@/lib/googleCalendar";
 
-type Task = Database["public"]["Tables"]["tasks"]["Row"];
+type DbTask = Database["public"]["Tables"]["tasks"]["Row"];
 type TaskInsert = Database["public"]["Tables"]["tasks"]["Insert"];
 type TaskUpdate = Database["public"]["Tables"]["tasks"]["Update"];
 
+// Helper to map DB task to Global Task
+const mapDbTaskToGlobal = (task: any): GlobalTask => {
+  // Extract lead name from nested leads object or from direct property
+  const leadName = task.relatedLeadName || task.leads?.name || null;
+  
+  console.log("[mapDbTaskToGlobal] Mapping task:", {
+    id: task.id,
+    related_lead_id: task.related_lead_id,
+    leadName: leadName,
+    rawLeads: task.leads,
+  });
+  
+  return {
+    id: task.id,
+    title: task.title,
+    description: task.description || "",
+    notes: task.notes || "",
+    leadId: task.related_lead_id || undefined,
+    relatedLeadId: task.related_lead_id || undefined,
+    relatedLeadName: leadName,
+    propertyId: task.related_property_id || undefined,
+    priority: task.priority,
+    status: task.status,
+    dueDate: task.due_date || "",
+    assignedTo: task.assigned_to || "",
+    completed: task.status === 'completed',
+    createdAt: task.created_at,
+    googleEventId: task.google_event_id,
+    isSynced: task.is_synced,
+  };
+};
+
 // Get all tasks for current user
-export const getTasks = async (): Promise<Task[]> => {
+export const getTasks = async (): Promise<GlobalTask[]> => {
+  console.log("[tasksService] ==================== GET TASKS ====================");
+  
   const { data, error } = await supabase
     .from("tasks")
     .select(`
@@ -20,31 +55,51 @@ export const getTasks = async (): Promise<Task[]> => {
     .order("due_date", { ascending: true });
 
   if (error) {
-    console.error("Error fetching tasks:", error);
+    console.error("[tasksService] Error fetching tasks:", error);
     return [];
   }
 
-  // Map the response to include lead name
-  const tasksWithLeadNames = (data || []).map((task: any) => {
+  console.log("[tasksService] Raw data from Supabase:", data);
+  console.log("[tasksService] Total tasks:", data?.length || 0);
+
+  // Map database tasks to GlobalTask format
+  const mappedTasks = (data || []).map((task: any) => {
+    console.log("[tasksService] --- Processing task ---");
+    console.log("[tasksService] Task ID:", task.id);
+    console.log("[tasksService] Task title:", task.title);
+    console.log("[tasksService] related_lead_id:", task.related_lead_id);
+    console.log("[tasksService] leads object:", task.leads);
+    console.log("[tasksService] leads.name:", task.leads?.name);
+    
     const leadName = task.leads?.name || null;
-    
-    // Remove the nested leads object and add leadName at top level
-    const { leads, ...taskData } = task;
-    
-    return {
-      ...taskData,
+    const mappedTask = mapDbTaskToGlobal({
+      ...task,
       relatedLeadName: leadName,
-    };
+    });
+    
+    console.log("[tasksService] Mapped task:", {
+      id: mappedTask.id,
+      title: mappedTask.title,
+      relatedLeadId: mappedTask.relatedLeadId,
+      relatedLeadName: mappedTask.relatedLeadName,
+      rawLeadData: task.leads,
+    });
+    
+    return mappedTask;
   });
 
-  return tasksWithLeadNames;
+  console.log("[tasksService] All mapped tasks:", mappedTasks);
+  console.log("[tasksService] Tasks with lead data:", mappedTasks.filter(t => t.relatedLeadName).length);
+  console.log("[tasksService] ================================================================");
+
+  return mappedTasks;
 };
 
 // Alias for compatibility
 export const getAllTasks = getTasks;
 
 // Get single task by ID
-export const getTask = async (id: string): Promise<Task | null> => {
+export const getTask = async (id: string): Promise<GlobalTask | null> => {
   const { data, error } = await supabase
     .from("tasks")
     .select("*")
@@ -56,7 +111,7 @@ export const getTask = async (id: string): Promise<Task | null> => {
     return null;
   }
 
-  return data;
+  return mapDbTaskToGlobal(data);
 };
 
 // Create new task with Google Calendar sync
@@ -122,7 +177,7 @@ export const createTask = async (task: TaskInsert & { lead_id?: string | null, c
     }
   }
 
-  return data;
+  return mapDbTaskToGlobal(data);
 };
 
 // Update task with Google Calendar sync
@@ -200,7 +255,7 @@ export const updateTask = async (id: string, updates: TaskUpdate) => {
     }
   }
 
-  return data;
+  return mapDbTaskToGlobal(data);
 };
 
 // Delete task with Google Calendar sync
@@ -266,7 +321,7 @@ export const deleteTask = async (id: string): Promise<void> => {
 };
 
 // Toggle task completion
-export const toggleTaskCompletion = async (id: string, currentStatus: string): Promise<Task> => {
+export const toggleTaskCompletion = async (id: string, currentStatus: string): Promise<GlobalTask> => {
   const newStatus = currentStatus === "completed" ? "pending" : "completed";
   
   const { data, error } = await supabase
@@ -277,7 +332,7 @@ export const toggleTaskCompletion = async (id: string, currentStatus: string): P
     .single();
 
   if (error) throw error;
-  return data;
+  return mapDbTaskToGlobal(data);
 };
 
 export const completeTask = async (id: string) => {
@@ -301,7 +356,7 @@ export const getTaskStats = async () => {
 };
 
 // Get tasks by status
-export const getTasksByStatus = async (status: string): Promise<Task[]> => {
+export const getTasksByStatus = async (status: string): Promise<GlobalTask[]> => {
   const { data, error } = await supabase
     .from("tasks")
     .select("*")
@@ -313,11 +368,11 @@ export const getTasksByStatus = async (status: string): Promise<Task[]> => {
     return [];
   }
 
-  return data || [];
+  return (data || []).map(mapDbTaskToGlobal);
 };
 
 // Get tasks by priority
-export const getTasksByPriority = async (priority: string): Promise<Task[]> => {
+export const getTasksByPriority = async (priority: string): Promise<GlobalTask[]> => {
   const { data, error } = await supabase
     .from("tasks")
     .select("*")
@@ -329,11 +384,11 @@ export const getTasksByPriority = async (priority: string): Promise<Task[]> => {
     return [];
   }
 
-  return data || [];
+  return (data || []).map(mapDbTaskToGlobal);
 };
 
 // Get overdue tasks
-export const getOverdueTasks = async (): Promise<Task[]> => {
+export const getOverdueTasks = async (): Promise<GlobalTask[]> => {
   const now = new Date().toISOString();
   
   const { data, error } = await supabase
@@ -348,7 +403,7 @@ export const getOverdueTasks = async (): Promise<Task[]> => {
     return [];
   }
 
-  return data || [];
+  return (data || []).map(mapDbTaskToGlobal);
 };
 
 // Manual sync function that uses the existing /api/google-calendar/sync endpoint
@@ -364,7 +419,7 @@ export const manualSync = async () => {
 };
 
 // Get tasks by lead ID
-export const getTasksByLead = async (leadId: string): Promise<Task[]> => {
+export const getTasksByLead = async (leadId: string): Promise<GlobalTask[]> => {
   console.log("[tasksService] Fetching tasks for lead:", leadId);
   
   const { data: { user } } = await supabase.auth.getUser();
@@ -387,5 +442,5 @@ export const getTasksByLead = async (leadId: string): Promise<Task[]> => {
   }
 
   console.log("[tasksService] Found tasks for lead:", data?.length || 0);
-  return data || [];
+  return (data || []).map(mapDbTaskToGlobal);
 };

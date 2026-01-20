@@ -297,12 +297,15 @@ export async function syncTaskToGoogle(
     description?: string;
     due_date: string;
     priority?: string;
+    status?: string;
   },
   googleEventId?: string | null
 ): Promise<string | null> {
   try {
     console.log("[googleCalendar:syncTask] ===== SYNC TASK START =====");
     console.log("[googleCalendar:syncTask] Task:", taskData.title);
+    console.log("[googleCalendar:syncTask] Due date:", taskData.due_date);
+    console.log("[googleCalendar:syncTask] Status:", taskData.status);
     console.log("[googleCalendar:syncTask] Google Event ID:", googleEventId || "none (new task)");
     
     const accessToken = await getGoogleCalendarToken();
@@ -311,12 +314,16 @@ export async function syncTaskToGoogle(
       return null;
     }
 
+    console.log("[googleCalendar:syncTask] ✅ Access token obtained");
+
     // Get calendar ID from integration settings
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
       console.error("[googleCalendar:syncTask] ❌ No authenticated user");
       return null;
     }
+
+    console.log("[googleCalendar:syncTask] User ID:", user.id);
 
     const { data: integration } = await supabase
       .from("google_calendar_integrations" as any)
@@ -325,36 +332,53 @@ export async function syncTaskToGoogle(
       .maybeSingle();
 
     if (!integration) {
-      console.error("[googleCalendar:syncTask] ❌ No integration found");
+      console.error("[googleCalendar:syncTask] ❌ No integration found for user");
       return null;
     }
 
     const integrationData = integration as any;
     
+    console.log("[googleCalendar:syncTask] Integration data:", {
+      calendar_id: integrationData.calendar_id,
+      sync_direction: integrationData.sync_direction,
+      sync_tasks: integrationData.sync_tasks
+    });
+    
     // Check if we should sync tasks to Google
     if (!integrationData.sync_tasks) {
-      console.log("[googleCalendar:syncTask] ⏭️ Task sync is disabled, skipping");
+      console.log("[googleCalendar:syncTask] ⏭️ Task sync is DISABLED in settings, skipping");
       return null;
     }
     
     if (integrationData.sync_direction !== "toGoogle" && integrationData.sync_direction !== "both") {
-      console.log("[googleCalendar:syncTask] ⏭️ Sync direction doesn't include toGoogle, skipping");
+      console.log("[googleCalendar:syncTask] ⏭️ Sync direction doesn't include toGoogle (current:", integrationData.sync_direction, "), skipping");
       return null;
     }
 
     const calendarId = integrationData.calendar_id || "primary";
-    console.log("[googleCalendar:syncTask] Calendar ID:", calendarId);
+    console.log("[googleCalendar:syncTask] ✅ Sync is enabled, calendar ID:", calendarId);
 
     // Create an all-day event for the task
     const dueDate = new Date(taskData.due_date);
     const dueDateString = dueDate.toISOString().split('T')[0]; // YYYY-MM-DD format
     
-    const priorityEmoji = taskData.priority === "high" || taskData.priority === "urgent" ? "🔴 " : 
-                          taskData.priority === "medium" ? "🟡 " : "🟢 ";
+    // Color based on status (not priority)
+    // pending = yellow (5), in_progress = blue (9), completed = green (10)
+    let colorId = "5"; // Default yellow for pending
+    let statusEmoji = "🟡";
+    
+    if (taskData.status === "in_progress") {
+      colorId = "9"; // Blue
+      statusEmoji = "🔵";
+    } else if (taskData.status === "completed") {
+      colorId = "10"; // Green
+      statusEmoji = "🟢";
+    }
 
+    // Add [TASK] prefix to identify tasks and prevent reimport as events
     const googleEvent = {
-      summary: `${priorityEmoji}[Tarefa] ${taskData.title}`,
-      description: taskData.description || "",
+      summary: `${statusEmoji} [TAREFA] ${taskData.title}`,
+      description: `${taskData.description || ""}\n\n[TASK_SYNC_ID]`, // Identifier to prevent reimport
       start: { 
         date: dueDateString,
         timeZone: "Europe/Lisbon"
@@ -363,17 +387,21 @@ export async function syncTaskToGoogle(
         date: dueDateString,
         timeZone: "Europe/Lisbon"
       },
-      colorId: taskData.priority === "high" || taskData.priority === "urgent" ? "11" : 
-               taskData.priority === "medium" ? "5" : "2", // Red for high, Yellow for medium, Green for low
+      colorId: colorId,
     };
 
-    console.log("[googleCalendar:syncTask] Prepared Google event data");
+    console.log("[googleCalendar:syncTask] Prepared Google event data:", {
+      summary: googleEvent.summary,
+      date: dueDateString,
+      colorId: googleEvent.colorId,
+      status: taskData.status
+    });
 
     // Sync with retry
     const result = await withRetry(async () => {
       let response;
       if (googleEventId) {
-        console.log("[googleCalendar:syncTask] 🔄 Updating existing task...");
+        console.log("[googleCalendar:syncTask] 🔄 Updating existing task in Google Calendar...");
         // Update existing event
         response = await fetch(
           `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${googleEventId}`,
@@ -387,7 +415,7 @@ export async function syncTaskToGoogle(
           }
         );
       } else {
-        console.log("[googleCalendar:syncTask] ➕ Creating new task...");
+        console.log("[googleCalendar:syncTask] ➕ Creating new task in Google Calendar...");
         // Create new event
         response = await fetch(
           `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`,
@@ -402,12 +430,17 @@ export async function syncTaskToGoogle(
         );
       }
 
+      console.log("[googleCalendar:syncTask] API Response status:", response.status);
+
       if (!response.ok) {
         const errorText = await response.text();
+        console.error("[googleCalendar:syncTask] ❌ API error response:", errorText);
         throw new Error(`Google Calendar API error: ${response.status} - ${errorText}`);
       }
 
-      return response.json();
+      const responseData = await response.json();
+      console.log("[googleCalendar:syncTask] API Response data:", responseData);
+      return responseData;
     }, "syncTaskToGoogle");
 
     console.log("[googleCalendar:syncTask] ✅ Task synced successfully, ID:", result.id);
@@ -463,15 +496,24 @@ export async function deleteGoogleCalendarEvent(googleEventId: string): Promise<
         }
       );
 
-      if (!response.ok && response.status !== 404) {
+      // Success: 204 (No Content) or 404 (Not Found) or 410 (Gone)
+      // 404 and 410 mean the event is already deleted, which is fine
+      if (!response.ok && response.status !== 404 && response.status !== 410) {
         const errorText = await response.text();
         throw new Error(`Delete failed: ${response.status} - ${errorText}`);
+      }
+
+      if (response.status === 404) {
+        console.log("[googleCalendar:deleteEvent] ⚠️ Event not found (404) - already deleted");
+      } else if (response.status === 410) {
+        console.log("[googleCalendar:deleteEvent] ⚠️ Event gone (410) - already deleted");
+      } else {
+        console.log("[googleCalendar:deleteEvent] ✅ Event deleted successfully (204)");
       }
 
       return true;
     }, "deleteEvent");
 
-    console.log("[googleCalendar:deleteEvent] ✅ Event deleted successfully");
     console.log("[googleCalendar:deleteEvent] ===== DELETE EVENT END =====");
     return true;
   } catch (error) {

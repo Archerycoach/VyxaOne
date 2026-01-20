@@ -24,23 +24,30 @@ export function TasksContainer() {
     setSearchQuery,
   } = useTaskFilters();
 
-  // Tasks query
+  // Tasks query with filters
   const { data: tasks = [], isLoading, refetch } = useTasks({
     statusFilter,
     priorityFilter,
     searchQuery,
   });
 
+  // Query for all tasks (for stats) - sempre busca todas independente do filtro
+  const { data: allTasks = [] } = useTasks({
+    statusFilter: "all",
+    priorityFilter: "all",
+    searchQuery: "",
+  });
+
   // Mutations
   const { submitting, handleCreate, handleUpdate, handleComplete, handleDelete } = useTaskMutations(refetch);
 
-  // Stats calculation
+  // Stats calculation - usar allTasks em vez de tasks para mostrar sempre o total
   const stats = {
-    total: tasks.length,
-    pending: tasks.filter((t) => t.status === "pending").length,
-    inProgress: tasks.filter((t) => t.status === "in_progress").length,
-    completed: tasks.filter((t) => t.status === "completed").length,
-    overdue: tasks.filter((t) => {
+    total: allTasks.length,
+    pending: allTasks.filter((t) => t.status === "pending").length,
+    inProgress: allTasks.filter((t) => t.status === "in_progress").length,
+    completed: allTasks.filter((t) => t.status === "completed").length,
+    overdue: allTasks.filter((t) => {
       if (!t.dueDate || t.status === "completed") return false;
       return new Date(t.dueDate) < new Date();
     }).length,

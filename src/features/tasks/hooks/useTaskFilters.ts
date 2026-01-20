@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { TaskStatus, TaskPriority } from "@/types";
+import type { TaskPriority } from "@/types";
 
-export type { TaskStatus, TaskPriority };
+export type TaskStatus = "all" | "pending" | "in_progress" | "completed";
 
 export function useTaskFilters() {
-  const [statusFilter, setStatusFilter] = useState<TaskStatus>("pending");
+  const [statusFilter, setStatusFilter] = useState<TaskStatus>("all");
   const [priorityFilter, setPriorityFilter] = useState<TaskPriority | "all">("all");
   const [searchQuery, setSearchQuery] = useState("");
 
