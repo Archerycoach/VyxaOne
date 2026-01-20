@@ -18,6 +18,8 @@ export function useCalendarEvents() {
       
       console.log("[useCalendarEvents] ✅ Events fetched:", data.length);
       console.log("[useCalendarEvents] 📊 Sample event:", data[0]);
+      console.log("[useCalendarEvents] 🔍 Events with leads:", data.filter(e => e.leadId).length);
+      console.log("[useCalendarEvents] 📝 Sample event with lead:", data.find(e => e.leadId));
       
       setEvents(data);
     } catch (err) {

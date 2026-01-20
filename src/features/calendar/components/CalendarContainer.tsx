@@ -253,6 +253,7 @@ export function CalendarContainer() {
       location: event.location || "",
       eventType: event.eventType || "viewing",
       leadId: event.leadId || "",
+      leadName: event.leadName || "",
     });
     setShowEventForm(true);
   };

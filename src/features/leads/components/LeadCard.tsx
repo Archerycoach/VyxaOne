@@ -26,6 +26,7 @@ import {
   StickyNote,
 } from "lucide-react";
 import type { LeadWithContacts } from "@/services/leadsService";
+import { supabase } from "@/integrations/supabase/client";
 
 interface Lead {
   id: string;
@@ -88,6 +89,50 @@ export function LeadCard({
   onWhatsApp,
 }: LeadCardProps) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [activitiesCount, setActivitiesCount] = useState<{
+    events: number;
+    tasks: number;
+    pendingTasks: number;
+  } | null>(null);
+
+  // Load activities count for this lead
+  React.useEffect(() => {
+    const loadActivitiesCount = async () => {
+      try {
+        const user = (await supabase.auth.getUser()).data.user;
+        if (!user) return;
+
+        // Get events count
+        const { count: eventsCount } = await supabase
+          .from("calendar_events")
+          .select("*", { count: "exact", head: true })
+          .eq("lead_id", lead.id)
+          .eq("user_id", user.id);
+
+        // Get tasks count and pending tasks
+        const { data } = await supabase
+          .from("tasks" as any)
+          .select("status")
+          .eq("related_lead_id", lead.id)
+          .eq("user_id", user.id);
+
+        const tasksData = data as unknown as { status: string }[] | null;
+
+        const totalTasks = tasksData?.length || 0;
+        const pendingTasks = tasksData?.filter(t => t.status === "pending").length || 0;
+
+        setActivitiesCount({
+          events: eventsCount || 0,
+          tasks: totalTasks,
+          pendingTasks,
+        });
+      } catch (error) {
+        console.error("Error loading activities count:", error);
+      }
+    };
+
+    loadActivitiesCount();
+  }, [lead.id]);
 
   const handleMenuItemClick = (action: () => void) => {
     setDropdownOpen(false);
@@ -293,6 +338,26 @@ export function LeadCard({
           <Badge variant="outline" className="text-xs">{getLeadTypeLabel(lead.lead_type)}</Badge>
         </div>
 
+        {activitiesCount && (activitiesCount.events > 0 || activitiesCount.tasks > 0) && (
+          <div className="flex gap-2 mb-3 text-xs">
+            {activitiesCount.events > 0 && (
+              <div className="flex items-center gap-1 text-purple-600 bg-purple-50 px-2 py-1 rounded">
+                <Calendar className="h-3 w-3" />
+                <span className="font-medium">{activitiesCount.events}</span>
+              </div>
+            )}
+            {activitiesCount.tasks > 0 && (
+              <div className="flex items-center gap-1 text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                <CalendarDays className="h-3 w-3" />
+                <span className="font-medium">{activitiesCount.tasks}</span>
+                {activitiesCount.pendingTasks > 0 && (
+                  <span className="text-orange-600">({activitiesCount.pendingTasks} pendentes)</span>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="space-y-1.5 text-xs text-gray-600">
           {lead.phone && (
             <div className="flex items-center gap-2">
@@ -472,6 +537,26 @@ export function LeadCard({
         </Badge>
         <Badge variant="outline">{getLeadTypeLabel(lead.lead_type)}</Badge>
       </div>
+
+      {activitiesCount && (activitiesCount.events > 0 || activitiesCount.tasks > 0) && (
+        <div className="flex gap-2 mb-3 text-sm">
+          {activitiesCount.events > 0 && (
+            <div className="flex items-center gap-1.5 text-purple-600 bg-purple-50 px-2.5 py-1 rounded">
+              <Calendar className="h-4 w-4" />
+              <span className="font-medium">{activitiesCount.events} evento{activitiesCount.events !== 1 ? 's' : ''}</span>
+            </div>
+          )}
+          {activitiesCount.tasks > 0 && (
+            <div className="flex items-center gap-1.5 text-blue-600 bg-blue-50 px-2.5 py-1 rounded">
+              <CalendarDays className="h-4 w-4" />
+              <span className="font-medium">{activitiesCount.tasks} tarefa{activitiesCount.tasks !== 1 ? 's' : ''}</span>
+              {activitiesCount.pendingTasks > 0 && (
+                <span className="text-orange-600 font-semibold">({activitiesCount.pendingTasks} pendentes)</span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="space-y-2 mb-4 text-sm text-gray-600">
         {lead.email && (

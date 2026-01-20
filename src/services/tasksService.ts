@@ -259,3 +259,30 @@ export const manualSync = async () => {
 
   return data;
 };
+
+// Get tasks by lead ID
+export const getTasksByLead = async (leadId: string): Promise<Task[]> => {
+  console.log("[tasksService] Fetching tasks for lead:", leadId);
+  
+  const { data: { user } } = await supabase.auth.getUser();
+  
+  if (!user) {
+    console.error("[tasksService] User not authenticated");
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from("tasks")
+    .select("*")
+    .eq("user_id", user.id)
+    .eq("related_lead_id", leadId)
+    .order("due_date", { ascending: false });
+
+  if (error) {
+    console.error("[tasksService] Error fetching tasks by lead:", error);
+    return [];
+  }
+
+  console.log("[tasksService] Found tasks for lead:", data?.length || 0);
+  return data || [];
+};

@@ -25,13 +25,18 @@ import {
   MessageSquare,
   FileText,
   X,
+  CheckSquare,
+  Clock,
 } from "lucide-react";
 import { getLeadById } from "@/services/leadsService";
 import { getInteractionsByLead } from "@/services/interactionsService";
 import { getNotesByLead } from "@/services/notesService";
+import { getEventsByLead } from "@/services/calendarService";
+import { getTasksByLead } from "@/services/tasksService";
 import type { LeadWithContacts } from "@/services/leadsService";
 import type { InteractionWithDetails } from "@/services/interactionsService";
 import type { LeadNote } from "@/services/notesService";
+import type { CalendarEvent, Task } from "@/types";
 
 interface LeadDetailsDialogProps {
   leadId: string | null;
@@ -47,6 +52,8 @@ export function LeadDetailsDialog({
   const [lead, setLead] = useState<LeadWithContacts | null>(null);
   const [interactions, setInteractions] = useState<InteractionWithDetails[]>([]);
   const [notes, setNotes] = useState<LeadNote[]>([]);
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   
   // Use ref to prevent multiple fetches
@@ -70,16 +77,42 @@ export function LeadDetailsDialog({
         console.log("[LeadDetailsDialog] Fetching data for lead:", leadId);
         
         // Fetch all data in parallel
-        const [leadData, interactionsData, notesData] = await Promise.all([
+        const [leadData, interactionsData, notesData, eventsData, tasksData] = await Promise.all([
           getLeadById(leadId),
           getInteractionsByLead(leadId),
           getNotesByLead(leadId),
+          getEventsByLead(leadId),
+          getTasksByLead(leadId),
         ]);
 
-        console.log("[LeadDetailsDialog] Data fetched successfully:", { leadData, interactions: interactionsData.length, notes: notesData.length });
+        console.log("[LeadDetailsDialog] Data fetched successfully:", { 
+          leadData, 
+          interactions: interactionsData.length, 
+          notes: notesData.length,
+          events: eventsData.length,
+          tasks: tasksData.length
+        });
         setLead(leadData);
         setInteractions(interactionsData);
         setNotes(notesData);
+        setEvents(eventsData);
+        
+        // Map database tasks to frontend Task type
+        const mappedTasks = tasksData.map((t: any) => ({
+          id: t.id,
+          title: t.title || "",
+          description: t.description || "",
+          status: t.status || "pending",
+          priority: t.priority || "medium",
+          dueDate: t.due_date,
+          createdAt: t.created_at,
+          userId: t.user_id,
+          assignedTo: t.assigned_to,
+          completed: t.status === "completed",
+          leadId: t.related_lead_id,
+          relatedLeadId: t.related_lead_id,
+        }));
+        setTasks(mappedTasks);
         
         console.log("[LeadDetailsDialog] Data set in state");
       } catch (error) {
@@ -105,6 +138,8 @@ export function LeadDetailsDialog({
         setLead(null);
         setInteractions([]);
         setNotes([]);
+        setEvents([]);
+        setTasks([]);
         currentLeadIdRef.current = null;
       }, 150);
       
@@ -406,44 +441,76 @@ export function LeadDetailsDialog({
 
             <TabsContent value="timeline" className="space-y-4 mt-4">
               <div className="space-y-3">
-                {[...interactions, ...notes]
+                {[...interactions, ...notes, ...events, ...tasks]
                   .sort((a, b) => {
-                    const dateA = new Date(
-                      "interaction_date" in a ? a.interaction_date : a.created_at
-                    );
-                    const dateB = new Date(
-                      "interaction_date" in b ? b.interaction_date : b.created_at
-                    );
-                    return dateB.getTime() - dateA.getTime();
+                    const getDate = (item: any) => {
+                      if ("interaction_date" in item) return new Date(item.interaction_date);
+                      if ("note" in item && "created_at" in item) return new Date(item.created_at);
+                      if ("startTime" in item) return new Date(item.startTime);
+                      if ("dueDate" in item && item.dueDate) return new Date(item.dueDate);
+                      if ("createdAt" in item) return new Date(item.createdAt);
+                      return new Date();
+                    };
+                    return getDate(b).getTime() - getDate(a).getTime();
                   })
                   .map((item) => {
-                    const isInteraction = "interaction_date" in item;
+                    const isInteraction = "interaction_type" in item;
+                    const isNote = "note" in item && "created_at" in item;
+                    const isEvent = "startTime" in item;
+                    const isTask = "status" in item && "priority" in item;
+
+                    let icon = <FileText className="h-5 w-5 text-gray-500" />;
+                    let badge = null;
+                    let date = "";
+                    let title = "";
+                    let content = "";
+                    let subBadge = null;
+
+                    if (isInteraction) {
+                      const interaction = item as InteractionWithDetails;
+                      icon = <MessageSquare className="h-5 w-5 text-green-500 mt-0.5" />;
+                      badge = <Badge className="bg-green-100 text-green-800 hover:bg-green-200 border-green-200">{interaction.interaction_type}</Badge>;
+                      date = formatDate(interaction.interaction_date);
+                      content = interaction.content;
+                    } else if (isNote) {
+                      const note = item as LeadNote;
+                      icon = <FileText className="h-5 w-5 text-yellow-500 mt-0.5" />;
+                      badge = <Badge variant="outline" className="text-yellow-700 border-yellow-300 bg-yellow-50">Nota</Badge>;
+                      date = formatDate(note.created_at);
+                      content = note.note;
+                    } else if (isEvent) {
+                      const event = item as CalendarEvent;
+                      icon = <Calendar className="h-5 w-5 text-purple-500 mt-0.5" />;
+                      badge = <Badge className="bg-purple-100 text-purple-800 hover:bg-purple-200 border-purple-200">Evento</Badge>;
+                      date = new Date(event.startTime).toLocaleString("pt-PT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+                      title = event.title;
+                      content = event.description || "";
+                    } else if (isTask) {
+                      const task = item as Task;
+                      icon = <CheckSquare className="h-5 w-5 text-blue-500 mt-0.5" />;
+                      badge = <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-200 border-blue-200">Tarefa</Badge>;
+                      subBadge = <Badge variant="outline" className="ml-2 text-xs">{task.status === "completed" ? "Concluída" : "Pendente"}</Badge>;
+                      date = task.dueDate ? new Date(task.dueDate).toLocaleDateString("pt-PT") : formatDate(task.createdAt);
+                      title = task.title;
+                      content = task.description || "";
+                    }
+
                     return (
-                      <Card key={item.id}>
+                      <Card key={(item as any).id}>
                         <CardContent className="pt-4">
                           <div className="flex items-start gap-3">
-                            {isInteraction ? (
-                              <MessageSquare className="h-5 w-5 text-blue-500 mt-0.5" />
-                            ) : (
-                              <FileText className="h-5 w-5 text-purple-500 mt-0.5" />
-                            )}
+                            {icon}
                             <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-2">
-                                <Badge variant={isInteraction ? "default" : "secondary"}>
-                                  {isInteraction ? item.interaction_type : "Nota"}
-                                </Badge>
-                                <span className="text-sm text-gray-500">
-                                  {formatDate(
-                                    isInteraction ? item.interaction_date : item.created_at
-                                  )}
+                              <div className="flex items-center flex-wrap gap-2 mb-2">
+                                {badge}
+                                {subBadge}
+                                <span className="text-sm text-gray-500 flex items-center gap-1">
+                                  <Clock className="h-3 w-3" />
+                                  {date}
                                 </span>
                               </div>
-                              {!isInteraction && (
-                                <p className="text-sm font-medium mb-1">Nota</p>
-                              )}
-                              <p className="text-sm text-gray-700 whitespace-pre-wrap">
-                                {isInteraction ? (item as InteractionWithDetails).content : (item as LeadNote).note}
-                              </p>
+                              {title && <p className="text-sm font-semibold mb-1">{title}</p>}
+                              {content && <p className="text-sm text-gray-700 whitespace-pre-wrap">{content}</p>}
                             </div>
                           </div>
                         </CardContent>

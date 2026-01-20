@@ -327,3 +327,35 @@ export const getUpcomingEvents = async (): Promise<CalendarEvent[]> => {
 
   return getEventsByDateRange(today, nextWeek);
 };
+
+// Get events by lead ID
+export const getEventsByLead = async (leadId: string): Promise<CalendarEvent[]> => {
+  const { data: { user } } = await supabase.auth.getUser();
+  
+  if (!user) {
+    console.error("[calendarService] User not authenticated");
+    return [];
+  }
+
+  console.log("[calendarService] Fetching events for lead:", leadId);
+
+  const { data, error } = await supabase
+    .from("calendar_events")
+    .select(`
+      *,
+      leads (
+        name
+      )
+    `)
+    .eq("user_id", user.id)
+    .eq("lead_id", leadId)
+    .order("start_time", { ascending: false });
+
+  if (error) {
+    console.error("[calendarService] Error fetching events by lead:", error);
+    return [];
+  }
+
+  console.log("[calendarService] Found events for lead:", data?.length || 0);
+  return (data || []).map(mapDbEventToFrontend);
+};

@@ -140,6 +140,8 @@ export interface Task {
   description: string;
   notes?: string;
   leadId?: string;
+  relatedLeadId?: string; // Compatibilidade com frontend
+  relatedLeadName?: string; // Nome da lead associada
   propertyId?: string;
   priority: TaskPriority;
   status: TaskStatus;
