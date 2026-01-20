@@ -1,546 +1,328 @@
-import { useState, useEffect } from "react";
 import { Layout } from "@/components/Layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
+import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Calendar, Settings, CheckCircle2, XCircle, AlertCircle, Loader2 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { InfoIcon, ExternalLink, CheckCircle2, Settings } from "lucide-react";
+import { MetaAppSettings } from "@/components/admin/MetaAppSettings";
 
+// Define interface for the settings JSON structure
 interface GoogleCalendarSettings {
-  client_id: string | null;
-  client_secret: string | null;
-  enabled: boolean;
-  redirect_uri: string | null;
-  scopes: string | null;
+  client_id?: string;
+  client_secret?: string;
+  redirect_uri?: string;
 }
 
-interface GoogleCalendarIntegration {
-  id: string;
-  user_id: string;
-  google_email: string;
-  access_token: string;
-  refresh_token: string;
-  expires_at: string;
-  calendar_id: string | null;
-  sync_direction: string;
-  sync_events: boolean;
-  sync_tasks: boolean;
-  last_sync_at: string | null;
-  created_at: string;
-}
-
-export default function IntegrationsPage() {
-  const [settings, setSettings] = useState({
+export default function Integrations() {
+  const { toast } = useToast();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  
+  // Google Calendar Settings
+  const [googleCalendar, setGoogleCalendar] = useState({
     client_id: "",
     client_secret: "",
-    redirect_uri: "",
-    enabled: false,
-    scopes: "",
+    enabled: false
   });
-  const [integration, setIntegration] = useState<any>(null);
-  const [loading, setLoading] = useState(false);
-  const [clearingConfig, setClearingConfig] = useState(false);
-  const [syncSettings, setSyncSettings] = useState({
-    sync_direction: "both" as "both" | "fromGoogle" | "toGoogle",
-    sync_events: true,
-    sync_tasks: true,
-  });
+  const [isGoogleConfigured, setIsGoogleConfigured] = useState(false);
 
-  // Client-only state for callback URL to prevent hydration mismatch
-  const [callbackUrl, setCallbackUrl] = useState("https://www.vyxa.pt/api/google-calendar/callback");
-
-  // Set callback URL only on client-side after mount
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      setCallbackUrl(`${window.location.origin}/api/google-calendar/callback`);
-    }
+    loadIntegrationSettings();
   }, []);
 
-  const { toast } = useToast();
-
-  const loadSettings = async () => {
+  const loadIntegrationSettings = async () => {
     try {
-      console.log("[Integrations] Loading Google Calendar settings...");
-      
-      const { data, error } = await supabase
-        .from("integration_settings" as any)
+      setLoading(true);
+
+      // Load Google Calendar settings
+      const { data: gcSettings, error: gcError } = await supabase
+        .from("integration_settings")
         .select("*")
-        .eq("service_name", "google_calendar")
+        .eq("integration_name", "google_calendar")
         .maybeSingle();
 
-      if (error) {
-        console.error("[Integrations] ❌ Error loading settings:", error);
-        throw error;
+      if (gcError) throw gcError;
+
+      if (gcSettings) {
+        // Cast settings to unknown first, then to our interface to handle Json type safely
+        const settings = gcSettings.settings as unknown as GoogleCalendarSettings;
+        
+        setGoogleCalendar({
+          client_id: settings?.client_id || "",
+          client_secret: settings?.client_secret || "",
+          enabled: gcSettings.is_active || false
+        });
+        setIsGoogleConfigured(!!(settings?.client_id && settings?.client_secret));
       }
 
-      const settingsData = data as any;
-      console.log("[Integrations] ✅ Settings loaded:", {
-        hasData: !!settingsData,
-        enabled: settingsData?.enabled,
-        hasClientId: !!settingsData?.client_id
-      });
-
-      if (settingsData) {
-        setSettings({
-          client_id: settingsData.client_id || "",
-          client_secret: settingsData.client_secret || "",
-          enabled: settingsData.enabled || false,
-          redirect_uri: settingsData.redirect_uri || "",
-          scopes: settingsData.scopes || "",
-        });
-      } else {
-        // Reset to empty if no settings found
-        setSettings({
-          client_id: "",
-          client_secret: "",
-          redirect_uri: "",
-          enabled: false,
-          scopes: "",
-        });
-      }
-    } catch (error) {
-      console.error("[Integrations] Error loading settings:", error);
+    } catch (error: any) {
+      console.error("Error loading integration settings:", error);
       toast({
         title: "Erro",
-        description: error instanceof Error ? error.message : "Erro ao carregar configurações",
+        description: "Falha ao carregar configurações de integrações.",
         variant: "destructive",
       });
+    } finally {
+      setLoading(false);
     }
   };
 
-  const loadIntegration = async () => {
+  const handleSaveGoogleCalendar = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      console.log("[Integrations] Loading integration for user:", user.id);
-
-      const { data, error } = await supabase
-        .from("google_calendar_integrations" as any)
-        .select("*")
-        .eq("user_id", user.id)
-        .maybeSingle();
-
-      if (error) {
-        console.error("[Integrations] ❌ Error loading integration:", error);
+      if (!googleCalendar.client_id || !googleCalendar.client_secret) {
+        toast({
+          title: "Campos obrigatórios",
+          description: "Por favor, preencha Client ID e Client Secret.",
+          variant: "destructive",
+        });
         return;
       }
 
-      const integrationData = data as any;
-      console.log("[Integrations] ✅ Integration loaded:", {
-        hasData: !!integrationData,
-        email: integrationData?.google_email
-      });
+      setSaving(true);
 
-      setIntegration(integrationData);
-    } catch (error) {
-      console.error("[Integrations] Error loading integration:", error);
-      toast({
-        title: "Erro",
-        description: "Erro ao carregar configurações de integração",
-        variant: "destructive",
-      });
-    }
-  };
+      const settings: GoogleCalendarSettings = {
+        client_id: googleCalendar.client_id,
+        client_secret: googleCalendar.client_secret,
+        redirect_uri: `${window.location.origin}/api/google-calendar/callback`
+      };
 
-  useEffect(() => {
-    loadSettings();
-    loadIntegration();
-  }, []);
-
-  const handleSaveSettings = async () => {
-    setLoading(true);
-    try {
-      console.log("[Integrations] 💾 Saving settings...", {
-        client_id: settings.client_id ? "SET" : "EMPTY",
-        client_secret: settings.client_secret ? "SET" : "EMPTY",
-        enabled: settings.enabled
-      });
-
-      // Use "as any" to bypass TypeScript errors with auto-generated types that might be outdated
       const { error } = await supabase
-        .from("integration_settings" as any)
+        .from("integration_settings")
         .upsert({
-          service_name: "google_calendar",
-          client_id: settings.client_id,
-          client_secret: settings.client_secret,
-          redirect_uri: `${window.location.origin}/api/google-calendar/callback`,
-          enabled: settings.enabled,
-        }, { onConflict: "service_name" });
-
-      if (error) {
-        console.error("[Integrations] ❌ Error saving:", error);
-        throw error;
-      }
-
-      console.log("[Integrations] ✅ Settings saved successfully");
-
-      toast({
-        title: "Configurações salvas",
-        description: "As configurações de integração foram atualizadas com sucesso.",
-      });
-
-      // Reload settings to confirm
-      await loadSettings();
-    } catch (error: any) {
-      console.error("[Integrations] Error saving settings:", error);
-      toast({
-        title: "Erro ao salvar configurações",
-        description: error.message,
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleDisconnect = async () => {
-    if (!confirm("Tem certeza que deseja desconectar o Google Calendar? Isso removerá todas as configurações de sincronização.")) {
-      return;
-    }
-
-    try {
-      setLoading(true);
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        throw new Error("Usuário não autenticado");
-      }
-
-      const { error } = await supabase
-        .from("google_calendar_integrations" as any)
-        .delete()
-        .eq("user_id", user.id);
+          integration_name: "google_calendar",
+          settings: settings as any, // Cast to any to satisfy Json type requirement
+          is_active: googleCalendar.enabled,
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: "integration_name"
+        });
 
       if (error) throw error;
 
-      setIntegration(null);
+      setIsGoogleConfigured(true);
       toast({
-        title: "Desconectado",
-        description: "Google Calendar desconectado com sucesso",
+        title: "✅ Sucesso",
+        description: "Configurações do Google Calendar salvas com sucesso!",
       });
-    } catch (error) {
-      console.error("Error disconnecting:", error);
+
+      await loadIntegrationSettings();
+    } catch (error: any) {
+      console.error("Error saving Google Calendar settings:", error);
       toast({
         title: "Erro",
-        description: "Erro ao desconectar Google Calendar",
+        description: error.message || "Falha ao salvar configurações.",
         variant: "destructive",
       });
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
 
-  const handleClearOAuthConfig = async () => {
-    if (!confirm("⚠️ ATENÇÃO: Tem certeza que deseja apagar a configuração OAuth global?\n\nIsso removerá as credenciais do Google Cloud Console e impedirá que todos os utilizadores conectem suas contas ao Google Calendar.\n\nEsta ação não pode ser desfeita.")) {
+  const handleToggleGoogleEnabled = async (enabled: boolean) => {
+    try {
+      if (!isGoogleConfigured && enabled) {
+        toast({
+          title: "Configuração necessária",
+          description: "Por favor, configure o Client ID e Client Secret primeiro.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const { error } = await supabase
+        .from("integration_settings")
+        .update({ 
+          is_active: enabled,
+          updated_at: new Date().toISOString()
+        })
+        .eq("integration_name", "google_calendar");
+
+      if (error) throw error;
+
+      setGoogleCalendar(prev => ({ ...prev, enabled }));
+      toast({
+        title: enabled ? "✅ Integração Ativada" : "⚠️ Integração Desativada",
+        description: enabled 
+          ? "Utilizadores podem agora conectar suas contas Google Calendar." 
+          : "Integração do Google Calendar foi desativada.",
+      });
+    } catch (error: any) {
+      console.error("Error toggling Google Calendar:", error);
+      toast({
+        title: "Erro",
+        description: error.message || "Falha ao atualizar status.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleClearGoogleConfig = async () => {
+    if (!confirm("Tem certeza que deseja limpar as configurações OAuth do Google Calendar? Esta ação não pode ser desfeita.")) {
       return;
     }
 
-    setClearingConfig(true);
     try {
-      console.log("[Integrations] 🗑️ Clearing OAuth config...");
-
-      // Delete from database
-      const { error: deleteError } = await supabase
-        .from("integration_settings" as any)
+      const { error } = await supabase
+        .from("integration_settings")
         .delete()
-        .eq("service_name", "google_calendar");
+        .eq("integration_name", "google_calendar");
 
-      if (deleteError) {
-        console.error("[Integrations] ❌ Delete error:", deleteError);
-        throw deleteError;
-      }
+      if (error) throw error;
 
-      console.log("[Integrations] ✅ OAuth config deleted from database");
-
-      // Clear local state
-      setSettings({
+      setGoogleCalendar({
         client_id: "",
         client_secret: "",
-        redirect_uri: "",
-        enabled: false,
-        scopes: "",
+        enabled: false
       });
-
-      console.log("[Integrations] ✅ Local state cleared");
+      setIsGoogleConfigured(false);
 
       toast({
-        title: "✅ Configuração OAuth apagada",
-        description: "A configuração OAuth global foi removida com sucesso. Os utilizadores não poderão conectar ao Google Calendar até que novas credenciais sejam configuradas.",
+        title: "✅ Configuração Limpa",
+        description: "Configurações do Google Calendar foram removidas com sucesso.",
       });
-
-      // Refresh settings to confirm
-      await loadSettings();
     } catch (error: any) {
-      console.error("[Integrations] ❌ Error clearing OAuth config:", error);
+      console.error("Error clearing Google Calendar config:", error);
       toast({
-        title: "Erro ao apagar configuração",
-        description: error.message || "Ocorreu um erro ao tentar apagar a configuração OAuth",
+        title: "Erro",
+        description: error.message || "Falha ao limpar configurações.",
         variant: "destructive",
       });
-    } finally {
-      setClearingConfig(false);
     }
   };
 
-  const isConfigured = !!(settings.client_id && settings.client_secret);
-  const isConnected = !!integration;
-  const isTokenValid = integration && new Date(integration.expires_at).getTime() > new Date().getTime();
+  if (loading) {
+    return (
+      <Layout>
+        <div className="container mx-auto py-8">
+          <p>Carregando configurações...</p>
+        </div>
+      </Layout>
+    );
+  }
 
   return (
     <Layout>
-      <div className="space-y-6">
+      <div className="container mx-auto py-8 space-y-8">
         <div>
-          <h1 className="text-3xl font-bold">Integrações</h1>
+          <h1 className="text-3xl font-bold mb-2">Configurações de Integrações</h1>
           <p className="text-muted-foreground">
-            Configure e gerencie integrações com serviços externos
+            Configure as integrações externas para expandir as funcionalidades do CRM
           </p>
         </div>
 
-        <Tabs defaultValue="google-calendar" className="w-full">
-          <TabsList>
-            <TabsTrigger value="google-calendar">
-              <Calendar className="w-4 h-4 mr-2" />
-              Google Calendar
-            </TabsTrigger>
-          </TabsList>
+        <div className="space-y-6">
+          {/* Google Calendar Integration */}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+              <div className="flex items-center gap-2">
+                <Settings className="h-5 w-5" />
+                <CardTitle>Google Calendar</CardTitle>
+              </div>
+              {isGoogleConfigured && (
+                <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
+                  <CheckCircle2 className="h-4 w-4" />
+                  Configurado
+                </div>
+              )}
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <CardDescription>
+                Configure as credenciais do Google Cloud Console para permitir integração com Google Calendar
+              </CardDescription>
 
-          <TabsContent value="google-calendar" className="space-y-6">
-            {/* Configuration Card */}
-            <Card>
-              <CardHeader>
+              <Alert>
+                <InfoIcon className="h-4 w-4" />
+                <AlertDescription>
+                  <p className="font-semibold mb-2">Importante</p>
+                  <p className="mb-2">Adicione esta URL de callback no Google Cloud Console:</p>
+                  <code className="block bg-muted p-2 rounded text-sm">
+                    {typeof window !== 'undefined' && `${window.location.origin}/api/google-calendar/callback`}
+                  </code>
+                </AlertDescription>
+              </Alert>
+
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="gc-client-id">Client ID</Label>
+                  <Input
+                    id="gc-client-id"
+                    type="text"
+                    placeholder="540924658202-xxxxxxxxxxxx.apps.googleusercontent.com"
+                    value={googleCalendar.client_id}
+                    onChange={(e) => setGoogleCalendar(prev => ({ ...prev, client_id: e.target.value }))}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="gc-client-secret">Client Secret</Label>
+                  <Input
+                    id="gc-client-secret"
+                    type="password"
+                    placeholder="GOCSPX-xxxxxxxxxxxx"
+                    value={googleCalendar.client_secret}
+                    onChange={(e) => setGoogleCalendar(prev => ({ ...prev, client_secret: e.target.value }))}
+                  />
+                </div>
+
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Settings className="w-5 h-5" />
-                    <CardTitle>Configuração OAuth</CardTitle>
-                  </div>
-                  {isConfigured ? (
-                    <Badge variant="default" className="bg-green-500">
-                      <CheckCircle2 className="w-3 h-3 mr-1" />
-                      Configurado
-                    </Badge>
-                  ) : (
-                    <Badge variant="secondary">
-                      <XCircle className="w-3 h-3 mr-1" />
-                      Não Configurado
-                    </Badge>
-                  )}
-                </div>
-                <CardDescription>
-                  Configure as credenciais do Google Cloud Console para permitir integração com Google Calendar
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <Alert>
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertTitle>Importante</AlertTitle>
-                  <AlertDescription>
-                    Adicione esta URL de callback no Google Cloud Console:
-                    <br />
-                    <code className="bg-muted px-2 py-1 rounded text-sm mt-2 block">
-                      {callbackUrl}
-                    </code>
-                  </AlertDescription>
-                </Alert>
-
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="client_id">Client ID</Label>
-                    <Input
-                      id="client_id"
-                      value={settings.client_id || ""}
-                      onChange={(e) => setSettings({ ...settings, client_id: e.target.value })}
-                      placeholder="123456789-abc.apps.googleusercontent.com"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="client_secret">Client Secret</Label>
-                    <Input
-                      id="client_secret"
-                      type="password"
-                      value={settings.client_secret || ""}
-                      onChange={(e) => setSettings({ ...settings, client_secret: e.target.value })}
-                      placeholder="GOCSPX-..."
-                    />
-                  </div>
-
-                  <div className="flex items-center space-x-2">
-                    <Switch
-                      id="enabled"
-                      checked={settings.enabled}
-                      onCheckedChange={(checked) => setSettings({ ...settings, enabled: checked })}
-                    />
-                    <Label htmlFor="enabled">Ativar Integração</Label>
-                    <span className="text-sm text-muted-foreground">
+                  <div className="space-y-1">
+                    <Label htmlFor="gc-enabled">Ativar Integração</Label>
+                    <p className="text-sm text-muted-foreground">
                       Permitir que utilizadores conectem suas contas
-                    </span>
+                    </p>
                   </div>
-
-                  <div className="flex gap-2">
-                    <Button onClick={handleSaveSettings} disabled={loading || clearingConfig}>
-                      {loading ? (
-                        <>
-                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                          Salvando...
-                        </>
-                      ) : (
-                        <>
-                          <Settings className="w-4 h-4 mr-2" />
-                          Salvar Configurações
-                        </>
-                      )}
-                    </Button>
-
-                    {isConfigured && (
-                      <Button 
-                        onClick={handleClearOAuthConfig} 
-                        variant="outline"
-                        disabled={loading || clearingConfig}
-                        className="border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground"
-                      >
-                        {clearingConfig ? (
-                          <>
-                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                            Limpando...
-                          </>
-                        ) : (
-                          <>
-                            <XCircle className="w-4 h-4 mr-2" />
-                            Limpar Configuração OAuth
-                          </>
-                        )}
-                      </Button>
-                    )}
-                  </div>
+                  <Switch
+                    id="gc-enabled"
+                    checked={googleCalendar.enabled}
+                    onCheckedChange={handleToggleGoogleEnabled}
+                    disabled={!isGoogleConfigured}
+                  />
                 </div>
-              </CardContent>
-            </Card>
+              </div>
 
-            {/* Connection Status Card */}
-            {isConfigured && (
-              <Card>
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <CardTitle>Sua Conexão</CardTitle>
-                    <div className="flex items-center gap-2">
-                      {isConnected ? (
-                        isTokenValid ? (
-                          <Badge variant="default" className="bg-green-500">
-                            <CheckCircle2 className="w-3 h-3 mr-1" />
-                            Conectado
-                          </Badge>
-                        ) : (
-                          <Badge variant="destructive">
-                            <AlertCircle className="w-3 h-3 mr-1" />
-                            Token Expirado
-                          </Badge>
-                        )
-                      ) : (
-                        <Badge variant="secondary">
-                          <XCircle className="w-3 h-3 mr-1" />
-                          Não Conectado
-                        </Badge>
-                      )}
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {isConnected && integration ? (
-                    <div className="space-y-4">
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <Label className="text-sm text-muted-foreground">Email</Label>
-                          <p className="font-medium">{integration.google_email}</p>
-                        </div>
-                        <div>
-                          <Label className="text-sm text-muted-foreground">Calendar ID</Label>
-                          <p className="font-medium">{integration.calendar_id || "primary"}</p>
-                        </div>
-                        <div>
-                          <Label className="text-sm text-muted-foreground">Conectado em</Label>
-                          <p className="font-medium">
-                            {new Date(integration.created_at).toLocaleDateString("pt-PT")}
-                          </p>
-                        </div>
-                        <div>
-                          <Label className="text-sm text-muted-foreground">Última Sincronização</Label>
-                          <p className="font-medium">
-                            {integration.last_sync_at
-                              ? new Date(integration.last_sync_at).toLocaleString("pt-PT")
-                              : "Nunca"}
-                          </p>
-                        </div>
-                        <div>
-                          <Label className="text-sm text-muted-foreground">Token Expira em</Label>
-                          <p className="font-medium">
-                            {new Date(integration.expires_at).toLocaleString("pt-PT")}
-                          </p>
-                        </div>
-                      </div>
+              <div className="flex gap-3">
+                <Button
+                  onClick={handleSaveGoogleCalendar}
+                  disabled={saving}
+                >
+                  <Settings className="mr-2 h-4 w-4" />
+                  {saving ? "Salvando..." : "Salvar Configurações"}
+                </Button>
 
-                      <Button 
-                        onClick={handleDisconnect} 
-                        variant="destructive"
-                        disabled={loading || clearingConfig}
-                      >
-                        <XCircle className="w-4 h-4 mr-2" />
-                        Desconectar Google Calendar
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      <p className="text-sm text-muted-foreground">
-                        Você ainda não conectou sua conta do Google Calendar. Clique no botão abaixo para autorizar o acesso.
-                      </p>
-                      <Button onClick={() => window.location.href = "/calendar"}>
-                        <Calendar className="w-4 h-4 mr-2" />
-                        Conectar Google Calendar
-                      </Button>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            )}
+                {isGoogleConfigured && (
+                  <Button
+                    variant="destructive"
+                    onClick={handleClearGoogleConfig}
+                  >
+                    Limpar Configuração OAuth
+                  </Button>
+                )}
 
-            {/* Sync Settings - Only show if connected */}
-            {isConnected && integration && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Configurações de Sincronização</CardTitle>
-                  <CardDescription>
-                    Configure como seus eventos são sincronizados
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-2">
-                    <Label>Direção da Sincronização</Label>
-                    <p className="text-sm text-muted-foreground">
-                      Atual: <strong>{integration.sync_direction}</strong>
-                    </p>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Sincronizar Eventos</Label>
-                    <p className="text-sm text-muted-foreground">
-                      {integration.sync_events ? "Sim" : "Não"}
-                    </p>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Sincronizar Tarefas</Label>
-                    <p className="text-sm text-muted-foreground">
-                      {integration.sync_tasks ? "Sim" : "Não"}
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-          </TabsContent>
-        </Tabs>
+                <Button
+                  variant="outline"
+                  asChild
+                >
+                  <a
+                    href="https://console.cloud.google.com/apis/credentials"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <ExternalLink className="mr-2 h-4 w-4" />
+                    Google Cloud Console
+                  </a>
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Meta Lead Ads Integration */}
+          <MetaAppSettings />
+        </div>
       </div>
     </Layout>
   );

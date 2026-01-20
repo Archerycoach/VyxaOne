@@ -296,34 +296,6 @@ export default function AdminDashboard() {
                   </Card>
                 );
               })}
-
-              <Card
-                className="cursor-pointer hover:shadow-lg transition-shadow"
-                onClick={() => router.push("/admin/integrations")}
-              >
-                <CardContent className="p-6">
-                  <Plug className="h-8 w-8 text-blue-500 mb-4" />
-                  <h3 className="font-semibold mb-2">Integrações</h3>
-                  <p className="text-sm text-muted-foreground">
-                    Configurar integrações externas
-                  </p>
-                  <ArrowRight className="h-4 w-4 mt-4 text-muted-foreground" />
-                </CardContent>
-              </Card>
-
-              <Card
-                className="cursor-pointer hover:shadow-lg transition-shadow"
-                onClick={() => router.push("/templates")}
-              >
-                <CardContent className="p-6">
-                  <FileText className="h-8 w-8 text-indigo-500 mb-4" />
-                  <h3 className="font-semibold mb-2">Templates</h3>
-                  <p className="text-sm text-muted-foreground">
-                    Gerir templates de mensagens
-                  </p>
-                  <ArrowRight className="h-4 w-4 mt-4 text-muted-foreground" />
-                </CardContent>
-              </Card>
             </div>
           </div>
 

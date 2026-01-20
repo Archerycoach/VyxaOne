@@ -12,6 +12,8 @@ import { updatePassword, getSession, signOut } from "@/services/authService";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { SMTPSettingsDialog } from "@/components/SMTPSettingsDialog";
+import { MetaAccountConnection } from "@/components/settings/MetaAccountConnection";
+import { MetaFormsManagement } from "@/components/settings/MetaFormsManagement";
 
 export default function Settings() {
   const router = useRouter();
@@ -44,6 +46,7 @@ export default function Settings() {
   
   // SMTP Dialog
   const [smtpDialogOpen, setSmtpDialogOpen] = useState(false);
+  const [selectedMetaIntegration, setSelectedMetaIntegration] = useState<{id: string; name: string} | null>(null);
 
   useEffect(() => {
     checkAuthentication();
@@ -465,6 +468,18 @@ export default function Settings() {
           open={smtpDialogOpen} 
           onOpenChange={setSmtpDialogOpen}
         />
+
+        <MetaAccountConnection onSelectIntegration={(integration) => setSelectedMetaIntegration(integration)} />
+
+        {selectedMetaIntegration && (
+          <div className="mt-4">
+            <MetaFormsManagement 
+              integrationId={selectedMetaIntegration.id}
+              integrationName={selectedMetaIntegration.name}
+            />
+          </div>
+        )}
+
       </div>
     </div>
   );
