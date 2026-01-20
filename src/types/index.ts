@@ -167,6 +167,7 @@ export interface CalendarEvent {
   location?: string;
   attendees: string[];
   leadId?: string;
+  leadName?: string; // Nome da lead associada
   propertyId?: string;
   contactId?: string; // Add contactId
   googleEventId?: string;

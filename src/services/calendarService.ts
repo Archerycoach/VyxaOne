@@ -8,7 +8,7 @@ type CalendarEventInsert = Database["public"]["Tables"]["calendar_events"]["Inse
 type CalendarEventUpdate = Database["public"]["Tables"]["calendar_events"]["Update"];
 
 // Helper to map database event to frontend CalendarEvent
-const mapDbEventToFrontend = (dbEvent: DbCalendarEvent): CalendarEvent => ({
+const mapDbEventToFrontend = (dbEvent: DbCalendarEvent & { leads?: { name: string } }): CalendarEvent => ({
   id: dbEvent.id,
   title: dbEvent.title,
   description: dbEvent.description || "",
@@ -17,6 +17,7 @@ const mapDbEventToFrontend = (dbEvent: DbCalendarEvent): CalendarEvent => ({
   location: dbEvent.location || "",
   attendees: Array.isArray(dbEvent.attendees) ? (dbEvent.attendees as string[]) : [],
   leadId: dbEvent.lead_id || undefined,
+  leadName: dbEvent.leads?.name || undefined,
   propertyId: dbEvent.property_id || undefined,
   contactId: dbEvent.contact_id || undefined,
   googleEventId: dbEvent.google_event_id || undefined,
@@ -39,7 +40,12 @@ export const getCalendarEvents = async (): Promise<CalendarEvent[]> => {
 
   const { data, error } = await supabase
     .from("calendar_events")
-    .select("*")
+    .select(`
+      *,
+      leads (
+        name
+      )
+    `)
     .eq("user_id", user.id)
     .order("start_time", { ascending: true });
 
@@ -80,7 +86,12 @@ export const getEventsByDateRange = async (
 
   const { data, error } = await supabase
     .from("calendar_events")
-    .select("*")
+    .select(`
+      *,
+      leads (
+        name
+      )
+    `)
     .eq("user_id", user.id)
     .gte("start_time", startDate.toISOString())
     .lte("start_time", endDate.toISOString())
@@ -105,7 +116,12 @@ export const getCalendarEvent = async (id: string): Promise<CalendarEvent | null
 
   const { data, error } = await supabase
     .from("calendar_events")
-    .select("*")
+    .select(`
+      *,
+      leads (
+        name
+      )
+    `)
     .eq("id", id)
     .eq("user_id", user.id)
     .single();

@@ -23,6 +23,7 @@ import {
 } from "../hooks";
 import { getLeadColumnsConfig, type LeadColumnConfig } from "@/services/leadColumnsService";
 import type { LeadWithContacts } from "@/services/leadsService";
+import { supabase } from "@/integrations/supabase/client";
 
 // Default columns configuration for fallback
 const DEFAULT_COLUMNS: LeadColumnConfig[] = [
@@ -46,6 +47,9 @@ export function LeadsListContainer({
   canAssignLeads,
   teamMembers,
 }: LeadsListContainerProps) {
+  // User ID state
+  const [userId, setUserId] = useState<string>("");
+
   // Filter states
   const [showArchived, setShowArchived] = useState(false);
   
@@ -67,6 +71,17 @@ export function LeadsListContainer({
       localStorage.setItem("leadsViewMode", viewMode);
     }
   }, [viewMode]);
+
+  // Load user ID on mount
+  useEffect(() => {
+    const loadUserId = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        setUserId(user.id);
+      }
+    };
+    loadUserId();
+  }, []);
 
   // Load columns configuration
   useEffect(() => {
@@ -326,7 +341,7 @@ export function LeadsListContainer({
   }, []);
 
   const handleCreateTask = useCallback(async () => {
-    if (!selectedLead) return;
+    if (!selectedLead || !userId) return;
     
     const { createTask } = await import("@/services/tasksService");
     
@@ -337,7 +352,7 @@ export function LeadsListContainer({
       priority: taskForm.priority as any,
       status: taskForm.status as any,
       related_lead_id: selectedLead.id,
-      user_id: "",
+      user_id: userId,
     });
 
     setTaskDialogOpen(false);
@@ -348,10 +363,10 @@ export function LeadsListContainer({
       priority: "medium",
       status: "pending",
     });
-  }, [selectedLead, taskForm]);
+  }, [selectedLead, taskForm, userId]);
 
   const handleCreateEvent = useCallback(async () => {
-    if (!selectedLead) return;
+    if (!selectedLead || !userId) return;
     
     // Validate that both dates are provided
     if (!eventForm.start_date || !eventForm.end_date) {
@@ -388,7 +403,7 @@ export function LeadsListContainer({
       end_time: endDateTime.toISOString(),
       location: eventForm.location || null,
       lead_id: selectedLead.id,
-      user_id: "",
+      user_id: userId,
     });
 
     setEventDialogOpen(false);
@@ -399,7 +414,7 @@ export function LeadsListContainer({
       end_date: "",
       location: "",
     });
-  }, [selectedLead, eventForm]);
+  }, [selectedLead, eventForm, userId]);
 
   const handleCreateInteraction = useCallback(async () => {
     if (!selectedLead) return;

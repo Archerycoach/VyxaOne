@@ -62,6 +62,17 @@ export function CalendarDialogs({
               />
             </div>
 
+            {eventForm.leadName && (
+              <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-md p-3">
+                <Label className="text-xs text-blue-600 dark:text-blue-400 font-medium">
+                  Lead Associada
+                </Label>
+                <p className="text-sm font-medium text-blue-900 dark:text-blue-100 mt-1">
+                  {eventForm.leadName}
+                </p>
+              </div>
+            )}
+
             <div>
               <Label htmlFor="event-description">Descrição</Label>
               <Textarea
