@@ -208,15 +208,15 @@ export function LeadsListContainer({
   };
 
   const handleEmail = (lead: LeadWithContacts) => {
-    if (lead.email) sendEmail(lead.email, lead.name);
+    sendEmail(lead);
   };
 
   const handleSMS = (lead: LeadWithContacts) => {
-    if (lead.phone) sendSMS(lead.phone);
+    sendSMS(lead);
   };
 
   const handleWhatsApp = (lead: LeadWithContacts) => {
-    if (lead.phone) sendWhatsApp(lead.phone);
+    sendWhatsApp(lead);
   };
 
   const handleViewDetails = (lead: LeadWithContacts) => {

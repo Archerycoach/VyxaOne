@@ -28,10 +28,11 @@ export const supabase = createClient<Database>(
       autoRefreshToken: true,
       detectSessionInUrl: true,
       flowType: 'pkce',
-      // Handle storage errors gracefully
+      // Handle storage errors gracefully with SSR-safe implementation
       storage: {
         getItem: (key: string) => {
           try {
+            if (typeof window === 'undefined') return null;
             return localStorage.getItem(key);
           } catch (error) {
             console.error('Error reading from localStorage:', error);
@@ -40,14 +41,18 @@ export const supabase = createClient<Database>(
         },
         setItem: (key: string, value: string) => {
           try {
-            localStorage.setItem(key, value);
+            if (typeof window !== 'undefined') {
+              localStorage.setItem(key, value);
+            }
           } catch (error) {
             console.error('Error writing to localStorage:', error);
           }
         },
         removeItem: (key: string) => {
           try {
-            localStorage.removeItem(key);
+            if (typeof window !== 'undefined') {
+              localStorage.removeItem(key);
+            }
           } catch (error) {
             console.error('Error removing from localStorage:', error);
           }

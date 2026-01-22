@@ -284,11 +284,11 @@ export function DashboardContainer() {
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-muted-foreground">Total</span>
-                  <span className="text-2xl font-bold">1</span>
+                  <span className="text-2xl font-bold">{stats?.totalProperties || 0}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-muted-foreground">Disponíveis</span>
-                  <span className="text-2xl font-bold text-green-600">0</span>
+                  <span className="text-2xl font-bold text-green-600">{stats?.activeProperties || 0}</span>
                 </div>
               </div>
             </Card>
@@ -369,7 +369,7 @@ export function DashboardContainer() {
                     <div className="flex items-end justify-between">
                       <div>
                         <p className="text-sm text-muted-foreground">Realizadas</p>
-                        <p className="text-2xl font-bold">{stats?.wonLeads || 0}</p>
+                        <p className="text-2xl font-bold">{stats?.annualAcquisitionsCount || 0}</p>
                       </div>
                       <div className="text-right">
                         <p className="text-sm text-muted-foreground">Meta</p>
@@ -501,7 +501,7 @@ export function DashboardContainer() {
                   <p className="text-sm font-medium text-muted-foreground mb-1">
                     Total de Imóveis
                   </p>
-                  <p className="text-5xl font-bold mb-2">1</p>
+                  <p className="text-5xl font-bold mb-2">{stats?.totalProperties || 0}</p>
                 </div>
                 <div className="bg-blue-100 p-3 rounded-full">
                   <Building2 className="h-6 w-6 text-blue-600" />
@@ -516,7 +516,7 @@ export function DashboardContainer() {
                   <p className="text-sm font-medium text-muted-foreground mb-1">
                     Vendidos
                   </p>
-                  <p className="text-5xl font-bold mb-2">0</p>
+                  <p className="text-5xl font-bold mb-2">{stats?.soldProperties || 0}</p>
                 </div>
                 <div className="bg-green-100 p-3 rounded-full">
                   <CheckCircle2 className="h-6 w-6 text-green-600" />
@@ -531,7 +531,7 @@ export function DashboardContainer() {
                   <p className="text-sm font-medium text-muted-foreground mb-1">
                     Arrendados
                   </p>
-                  <p className="text-5xl font-bold mb-2">0</p>
+                  <p className="text-5xl font-bold mb-2">{stats?.rentedProperties || 0}</p>
                 </div>
                 <div className="bg-purple-100 p-3 rounded-full">
                   <Home className="h-6 w-6 text-purple-600" />

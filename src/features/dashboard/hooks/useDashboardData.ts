@@ -30,6 +30,21 @@ interface Stats {
   annualAcquisitionsProgress: number;
   semesterRevenueProgress: number;
   semesterAcquisitionsProgress: number;
+  annualAcquisitionsCount: number;
+  semesterAcquisitionsCount: number;
+  totalProperties: number;
+  activeProperties: number;
+  soldProperties: number;
+  rentedProperties: number;
+  lostProperties: number;
+  propertyConversionRate: number;
+  totalPropertyRevenue: number;
+  averagePropertyResponseTime: string;
+  propertiesThisMonth: number;
+  propertiesLastMonth: number;
+  propertiesGrowth: number;
+  newPropertiesThisMonth: number;
+  scheduledPropertyMeetings: number;
 }
 
 interface UseDashboardDataProps {
@@ -61,6 +76,21 @@ export function useDashboardData({ userRole, currentUserId, selectedAgentId, lea
     annualAcquisitionsProgress: 0,
     semesterRevenueProgress: 0,
     semesterAcquisitionsProgress: 0,
+    annualAcquisitionsCount: 0,
+    semesterAcquisitionsCount: 0,
+    totalProperties: 0,
+    activeProperties: 0,
+    soldProperties: 0,
+    rentedProperties: 0,
+    lostProperties: 0,
+    propertyConversionRate: 0,
+    totalPropertyRevenue: 0,
+    averagePropertyResponseTime: "0h",
+    propertiesThisMonth: 0,
+    propertiesLastMonth: 0,
+    propertiesGrowth: 0,
+    newPropertiesThisMonth: 0,
+    scheduledPropertyMeetings: 0,
   });
   const [upcomingEvents, setUpcomingEvents] = useState<CalendarEvent[]>([]);
   const [todayTasks, setTodayTasks] = useState<Task[]>([]);
@@ -208,7 +238,21 @@ export function useDashboardData({ userRole, currentUserId, selectedAgentId, lea
 
       const { data: dealsData } = await dealsQuery;
 
-      // 9. Calculate Metrics
+      // 9. Fetch Properties
+      let propertiesQuery = supabase.from("properties").select("*");
+      
+      if (userRole === "admin" || userRole === "team_lead") {
+        if (targetUserId) {
+          propertiesQuery = propertiesQuery.eq("user_id", targetUserId);
+        }
+      } else {
+        propertiesQuery = propertiesQuery.eq("user_id", currentUserId);
+      }
+
+      const { data: propertiesData } = await propertiesQuery;
+      const properties = propertiesData || [];
+
+      // 10. Calculate Metrics
       const totalLeads = leads.length;
       
       // Calculate won/lost/active leads
@@ -247,11 +291,44 @@ export function useDashboardData({ userRole, currentUserId, selectedAgentId, lea
       }).length;
       const leadsGrowth = leadsLastMonth > 0 ? ((leadsThisMonth - leadsLastMonth) / leadsLastMonth) * 100 : 0;
 
-      // Progress Metrics
+      // Calculate actual acquisitions (seller leads at final stage)
+      const acquisitionsCount = leads.filter(l => {
+        const isSellerLead = l.lead_type === "seller" || l.lead_type === "both";
+        const isAtFinalStage = l.status === lastSellerStageId;
+        return isSellerLead && isAtFinalStage;
+      }).length;
+
+      // Acquisitions for current year
+      const annualAcquisitionsCount = leads.filter(l => {
+        const isSellerLead = l.lead_type === "seller" || l.lead_type === "both";
+        const isAtFinalStage = l.status === lastSellerStageId;
+        const createdDate = new Date(l.created_at || "");
+        const isThisYear = createdDate.getFullYear() === currentYear;
+        return isSellerLead && isAtFinalStage && isThisYear;
+      }).length;
+
+      // Acquisitions for current semester
+      const semesterAcquisitionsCount = leads.filter(l => {
+        const isSellerLead = l.lead_type === "seller" || l.lead_type === "both";
+        const isAtFinalStage = l.status === lastSellerStageId;
+        const createdDate = new Date(l.created_at || "");
+        const month = createdDate.getMonth() + 1;
+        const semester = month <= 6 ? 1 : 2;
+        const isThisSemester = createdDate.getFullYear() === currentYear && semester === currentSemester;
+        return isSellerLead && isAtFinalStage && isThisSemester;
+      }).length;
+
+      // Progress Metrics - Fixed with correct acquisitions count
       const annualRevenueProgress = annualRevenueGoal > 0 ? (totalRevenue / annualRevenueGoal) * 100 : 0;
-      const annualAcquisitionsProgress = annualAcquisitionsGoal > 0 ? (totalLeads / annualAcquisitionsGoal) * 100 : 0;
+      const annualAcquisitionsProgress = annualAcquisitionsGoal > 0 ? (annualAcquisitionsCount / annualAcquisitionsGoal) * 100 : 0;
       const semesterRevenueProgress = currentSemesterRevenueGoal > 0 ? (semesterRevenue / currentSemesterRevenueGoal) * 100 : 0;
-      const semesterAcquisitionsProgress = currentSemesterAcquisitionsGoal > 0 ? (totalLeads / 2 / currentSemesterAcquisitionsGoal) * 100 : 0;
+      const semesterAcquisitionsProgress = currentSemesterAcquisitionsGoal > 0 ? (semesterAcquisitionsCount / currentSemesterAcquisitionsGoal) * 100 : 0;
+
+      // Property Metrics
+      const totalProperties = properties.length;
+      const activeProperties = properties.filter(p => p.status === "available" || p.status === "reserved").length;
+      const soldProperties = properties.filter(p => p.status === "sold").length;
+      const rentedProperties = properties.filter(p => p.status === "rented").length;
 
       setStats({
         totalLeads,
@@ -274,6 +351,21 @@ export function useDashboardData({ userRole, currentUserId, selectedAgentId, lea
         annualAcquisitionsProgress,
         semesterRevenueProgress,
         semesterAcquisitionsProgress,
+        annualAcquisitionsCount,
+        semesterAcquisitionsCount,
+        totalProperties,
+        activeProperties,
+        soldProperties,
+        rentedProperties,
+        lostProperties: 0,
+        propertyConversionRate: 0,
+        totalPropertyRevenue: 0,
+        averagePropertyResponseTime: "0h",
+        propertiesThisMonth: 0,
+        propertiesLastMonth: 0,
+        propertiesGrowth: 0,
+        newPropertiesThisMonth: 0,
+        scheduledPropertyMeetings: 0,
       });
 
     } catch (err) {
