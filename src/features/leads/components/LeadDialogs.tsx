@@ -31,6 +31,7 @@ interface LeadDialogsProps {
     start_date: string;
     end_date: string;
     location: string;
+    event_type?: string;
   };
   setEventForm: (form: any) => void;
   onCreateEvent: () => void;
@@ -181,14 +182,32 @@ export function LeadDialogs({
                 onChange={(e) => setEventForm({ ...eventForm, end_date: e.target.value })}
               />
             </div>
-            <div>
+            <div className="space-y-2">
               <Label htmlFor="event-location">Local</Label>
               <Input
                 id="event-location"
+                placeholder="Local do evento"
                 value={eventForm.location}
                 onChange={(e) => setEventForm({ ...eventForm, location: e.target.value })}
-                placeholder="Local do evento"
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="event-type">Tipo de Evento</Label>
+              <Select
+                value={eventForm.event_type || "meeting"}
+                onValueChange={(value) => setEventForm({ ...eventForm, event_type: value })}
+              >
+                <SelectTrigger id="event-type">
+                  <SelectValue placeholder="Selecione o tipo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="visit">📅 Visita</SelectItem>
+                  <SelectItem value="meeting">🤝 Reunião</SelectItem>
+                  <SelectItem value="call">📞 Chamada</SelectItem>
+                  <SelectItem value="other">📋 Outro</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <Button onClick={onCreateEvent} className="w-full">
               Criar Evento

@@ -143,7 +143,7 @@ export function LeadActivitiesPanel({ leadId, leadName, onNoteAdded }: LeadActiv
       const { error } = await supabase.from("lead_notes" as any).insert({
         lead_id: leadId,
         note: newNote.trim(),
-        user_id: user.id,
+        created_by: user.id,
       });
 
       if (error) throw error;

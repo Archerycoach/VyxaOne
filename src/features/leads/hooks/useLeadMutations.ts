@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 import { 
   deleteLead as archiveLead, 
   permanentlyDeleteLead,
@@ -7,13 +8,21 @@ import {
   assignLead 
 } from "@/services/leadsService";
 import { convertLeadToContact } from "@/services/contactsService";
-import type { LeadWithContacts } from "@/services/leadsService";
+
+interface LeadMutationsReturn {
+  convertLead: (leadId: string) => Promise<void>;
+  deleteLead: (leadId: string) => Promise<void>;
+  permanentlyDelete: (leadId: string, leadName: string) => Promise<void>;
+  restore: (leadId: string) => Promise<void>;
+  assign: (leadId: string, userId: string) => Promise<void>;
+  isProcessing: boolean;
+}
 
 /**
  * Hook for lead mutations (create, update, delete, convert, assign)
  * Includes operation locking to prevent concurrent operations
  */
-export function useLeadMutations(onSuccess?: () => Promise<void>) {
+export function useLeadMutations(onSuccess?: () => Promise<void>): LeadMutationsReturn {
   const { toast } = useToast();
   const [isProcessing, setIsProcessing] = useState(false);
   const operationLockRef = useRef(false);
@@ -65,9 +74,20 @@ export function useLeadMutations(onSuccess?: () => Promise<void>) {
     }
   }, [toast, onSuccess]);
 
-  const convertLead = useCallback(async (lead: LeadWithContacts) => {
+  const convertLead = useCallback(async (leadId: string): Promise<void> => {
     await executeOperation("convert lead", async () => {
-      await convertLeadToContact(lead.id, lead);
+      // Get lead data first
+      const { data: lead } = await supabase
+        .from("leads")
+        .select("*")
+        .eq("id", leadId)
+        .single();
+      
+      if (!lead) {
+        throw new Error("Lead não encontrada");
+      }
+
+      await convertLeadToContact(leadId, lead);
       
       toast({
         title: "Lead convertida com sucesso!",
@@ -76,9 +96,9 @@ export function useLeadMutations(onSuccess?: () => Promise<void>) {
     });
   }, [executeOperation, toast]);
 
-  const deleteLead = useCallback(async (id: string) => {
+  const deleteLead = useCallback(async (leadId: string): Promise<void> => {
     await executeOperation("archive lead", async () => {
-      await archiveLead(id);
+      await archiveLead(leadId);
       
       toast({
         title: "Lead arquivada!",
@@ -87,9 +107,9 @@ export function useLeadMutations(onSuccess?: () => Promise<void>) {
     });
   }, [executeOperation, toast]);
 
-  const permanentlyDelete = useCallback(async (id: string, leadName: string) => {
+  const permanentlyDelete = useCallback(async (leadId: string, leadName: string): Promise<void> => {
     await executeOperation("permanently delete lead", async () => {
-      await permanentlyDeleteLead(id);
+      await permanentlyDeleteLead(leadId);
       
       toast({
         title: "Lead eliminada permanentemente!",
@@ -99,9 +119,9 @@ export function useLeadMutations(onSuccess?: () => Promise<void>) {
     });
   }, [executeOperation, toast]);
 
-  const restore = useCallback(async (id: string) => {
+  const restore = useCallback(async (leadId: string): Promise<void> => {
     await executeOperation("restore lead", async () => {
-      await restoreLead(id);
+      await restoreLead(leadId);
       
       toast({
         title: "Lead restaurada!",
@@ -110,7 +130,7 @@ export function useLeadMutations(onSuccess?: () => Promise<void>) {
     });
   }, [executeOperation, toast]);
 
-  const assign = useCallback(async (leadId: string, userId: string) => {
+  const assign = useCallback(async (leadId: string, userId: string): Promise<void> => {
     await executeOperation("assign lead", async () => {
       await assignLead(leadId, userId);
       

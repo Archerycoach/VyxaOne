@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useDraggable } from "@dnd-kit/core";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -37,7 +37,22 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Mail, Phone, Euro, Calendar, MessageCircle, UserCheck, Edit, Trash2, FileText, CalendarDays, MessageSquare, MoreVertical, Users, StickyNote } from "lucide-react";
+import { 
+  Mail, 
+  Phone, 
+  Calendar, 
+  MessageCircle, 
+  UserCheck, 
+  Edit, 
+  Trash2, 
+  FileText, 
+  CalendarDays, 
+  MessageSquare, 
+  MoreVertical, 
+  Users, 
+  StickyNote,
+  Eye,
+} from "lucide-react";
 import type { LeadWithContacts } from "@/services/leadsService";
 import { convertLeadToContact } from "@/services/contactsService";
 import { createInteraction } from "@/services/interactionsService";
@@ -46,8 +61,9 @@ import { QuickTaskDialog } from "@/components/QuickTaskDialog";
 import { QuickEventDialog } from "@/components/QuickEventDialog";
 import { LeadNotesDialog } from "@/components/leads/LeadNotesDialog";
 import { AssignLeadDialog } from "@/components/leads/AssignLeadDialog";
-import { useEffect } from "react";
+import { LeadDetailsDialog } from "@/components/leads/LeadDetailsDialog";
 import { getUserProfile } from "@/services/profileService";
+import { supabase } from "@/integrations/supabase/client";
 
 interface LeadCardProps {
   lead: LeadWithContacts;
@@ -62,8 +78,10 @@ export function LeadCard({ lead, onClick, onDelete, onConvertSuccess }: LeadCard
   const [interactionDialogOpen, setInteractionDialogOpen] = useState(false);
   const [notesDialogOpen, setNotesDialogOpen] = useState(false);
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
+  const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
   const [converting, setConverting] = useState(false);
   const [creatingInteraction, setCreatingInteraction] = useState(false);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
   const [interactionForm, setInteractionForm] = useState({
     type: "call" as "call" | "email" | "whatsapp" | "meeting" | "note" | "sms" | "video_call" | "visit",
     subject: "",
@@ -74,10 +92,16 @@ export function LeadCard({ lead, onClick, onDelete, onConvertSuccess }: LeadCard
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
   const [eventDialogOpen, setEventDialogOpen] = useState(false);
   const [canAssignLeads, setCanAssignLeads] = useState(false);
+  const [activitiesCount, setActivitiesCount] = useState<{
+    events: number;
+    tasks: number;
+    pendingTasks: number;
+  } | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
     checkPermissions();
+    loadActivitiesCount();
   }, []);
 
   const checkPermissions = async () => {
@@ -91,6 +115,40 @@ export function LeadCard({ lead, onClick, onDelete, onConvertSuccess }: LeadCard
     }
   };
 
+  const loadActivitiesCount = async () => {
+    try {
+      const user = (await supabase.auth.getUser()).data.user;
+      if (!user) return;
+
+      // Get events count
+      const { count: eventsCount } = await supabase
+        .from("calendar_events")
+        .select("*", { count: "exact", head: true })
+        .eq("lead_id", lead.id)
+        .eq("user_id", user.id);
+
+      // Get tasks count and pending tasks
+      const { data } = await supabase
+        .from("tasks" as any)
+        .select("status")
+        .eq("related_lead_id", lead.id)
+        .eq("user_id", user.id);
+
+      const tasksData = data as unknown as { status: string }[] | null;
+
+      const totalTasks = tasksData?.length || 0;
+      const pendingTasks = tasksData?.filter(t => t.status === "pending").length || 0;
+
+      setActivitiesCount({
+        events: eventsCount || 0,
+        tasks: totalTasks,
+        pendingTasks,
+      });
+    } catch (error) {
+      console.error("Error loading activities count:", error);
+    }
+  };
+
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: lead.id,
   });
@@ -101,76 +159,13 @@ export function LeadCard({ lead, onClick, onDelete, onConvertSuccess }: LeadCard
       }
     : undefined;
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "new":
-        return "bg-blue-100 text-blue-800 border-blue-200";
-      case "contacted":
-        return "bg-yellow-100 text-yellow-800 border-yellow-200";
-      case "qualified":
-        return "bg-purple-100 text-purple-800 border-purple-200";
-      case "proposal":
-        return "bg-indigo-100 text-indigo-800 border-indigo-200";
-      case "negotiation":
-        return "bg-orange-100 text-orange-800 border-orange-200";
-      case "won":
-        return "bg-green-100 text-green-800 border-green-200";
-      case "lost":
-        return "bg-red-100 text-red-800 border-red-200";
-      default:
-        return "bg-gray-100 text-gray-800 border-gray-200";
-    }
+  const handleMenuItemClick = (action: () => void) => {
+    setDropdownOpen(false);
+    setTimeout(action, 100);
   };
 
-  const getTypeColor = (type: string) => {
-    switch (type) {
-      case "buyer":
-        return "bg-blue-100 text-blue-800 border-blue-200";
-      case "seller":
-        return "bg-green-100 text-green-800 border-green-200";
-      case "both":
-        return "bg-purple-100 text-purple-800 border-purple-200";
-      default:
-        return "bg-gray-100 text-gray-800 border-gray-200";
-    }
-  };
-
-  const getStatusLabel = (status: string) => {
-    switch (status) {
-      case "new":
-        return "Novo";
-      case "contacted":
-        return "Contactado";
-      case "qualified":
-        return "Qualificado";
-      case "proposal":
-        return "Proposta";
-      case "negotiation":
-        return "Negociação";
-      case "won":
-        return "Ganho";
-      case "lost":
-        return "Perdido";
-      default:
-        return status;
-    }
-  };
-
-  const getTypeLabel = (type: string) => {
-    switch (type) {
-      case "buyer":
-        return "Comprador";
-      case "seller":
-        return "Vendedor";
-      case "both":
-        return "Ambos";
-      default:
-        return type;
-    }
-  };
-
-  const handleWhatsApp = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleWhatsApp = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
     if (!lead.phone) {
       toast({
         title: "Sem número de telefone",
@@ -186,8 +181,8 @@ export function LeadCard({ lead, onClick, onDelete, onConvertSuccess }: LeadCard
     window.open(whatsappUrl, "_blank");
   };
 
-  const handleEmail = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleEmail = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
     if (!lead.email) {
       toast({
         title: "Sem email",
@@ -200,8 +195,8 @@ export function LeadCard({ lead, onClick, onDelete, onConvertSuccess }: LeadCard
     window.location.href = `mailto:${lead.email}`;
   };
 
-  const handleSMS = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleSMS = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
     if (!lead.phone) {
       toast({
         title: "Sem número de telefone",
@@ -216,8 +211,8 @@ export function LeadCard({ lead, onClick, onDelete, onConvertSuccess }: LeadCard
     window.location.href = `sms:+${phoneWithCountry}`;
   };
 
-  const handleConvertClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleConvertClick = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
     setConvertDialogOpen(true);
   };
 
@@ -248,8 +243,8 @@ export function LeadCard({ lead, onClick, onDelete, onConvertSuccess }: LeadCard
     }
   };
 
-  const handleInteractionClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleInteractionClick = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
     setInteractionForm({
       type: "call",
       subject: "",
@@ -292,8 +287,8 @@ export function LeadCard({ lead, onClick, onDelete, onConvertSuccess }: LeadCard
     }
   };
 
-  const handleDelete = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleDelete = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
     setDeleteDialogOpen(true);
   };
 
@@ -317,28 +312,33 @@ export function LeadCard({ lead, onClick, onDelete, onConvertSuccess }: LeadCard
     }
   };
 
-  const handleTaskClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleTaskClick = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
     setTaskDialogOpen(true);
   };
 
-  const handleEventClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleEventClick = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
     setEventDialogOpen(true);
   };
 
-  const handleNotesClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleNotesClick = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
     setNotesDialogOpen(true);
   };
 
-  const handleAssignClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleAssignClick = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
     setAssignDialogOpen(true);
   };
 
-  const handleEdit = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleViewDetails = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setDetailsDialogOpen(true);
+  };
+
+  const handleEdit = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
     if (onClick) {
       onClick();
     }
@@ -374,10 +374,10 @@ export function LeadCard({ lead, onClick, onDelete, onConvertSuccess }: LeadCard
           isDragging ? "opacity-50" : ""
         }`}
       >
-        {/* Header with Actions and Delete Button - Top Right */}
+        {/* Header with Actions - Top Right */}
         <div className="absolute top-4 right-4 flex gap-1 bg-white/80 backdrop-blur-sm p-1 rounded-lg shadow-sm">
-          {/* Actions Dropdown Menu - Concentrates ALL actions */}
-          <DropdownMenu>
+          {/* Actions Dropdown Menu */}
+          <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
             <DropdownMenuTrigger asChild>
               <button className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-colors">
                 <MoreVertical className="h-4 w-4" />
@@ -385,15 +385,18 @@ export function LeadCard({ lead, onClick, onDelete, onConvertSuccess }: LeadCard
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
               {/* Communication Section */}
-              <DropdownMenuItem onClick={handleEmail}>
+              <div className="px-2 py-1.5 text-xs font-semibold text-gray-500 uppercase">
+                Comunicação
+              </div>
+              <DropdownMenuItem onClick={() => handleMenuItemClick(() => handleEmail())}>
                 <Mail className="h-4 w-4 mr-2" />
                 Email
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={handleSMS}>
+              <DropdownMenuItem onClick={() => handleMenuItemClick(() => handleSMS())}>
                 <MessageSquare className="h-4 w-4 mr-2" />
                 SMS
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={handleWhatsApp}>
+              <DropdownMenuItem onClick={() => handleMenuItemClick(() => handleWhatsApp())}>
                 <MessageCircle className="h-4 w-4 mr-2" />
                 WhatsApp
               </DropdownMenuItem>
@@ -401,15 +404,18 @@ export function LeadCard({ lead, onClick, onDelete, onConvertSuccess }: LeadCard
               <DropdownMenuSeparator />
               
               {/* Calendar Section */}
-              <DropdownMenuItem onClick={handleTaskClick}>
+              <div className="px-2 py-1.5 text-xs font-semibold text-gray-500 uppercase">
+                Calendário
+              </div>
+              <DropdownMenuItem onClick={() => handleMenuItemClick(() => handleTaskClick())}>
                 <CalendarDays className="h-4 w-4 mr-2" />
                 Tarefa
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={handleEventClick}>
+              <DropdownMenuItem onClick={() => handleMenuItemClick(() => handleEventClick())}>
                 <Calendar className="h-4 w-4 mr-2" />
                 Evento
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={handleInteractionClick}>
+              <DropdownMenuItem onClick={() => handleMenuItemClick(() => handleInteractionClick())}>
                 <FileText className="h-4 w-4 mr-2" />
                 Interação
               </DropdownMenuItem>
@@ -417,17 +423,24 @@ export function LeadCard({ lead, onClick, onDelete, onConvertSuccess }: LeadCard
               <DropdownMenuSeparator />
               
               {/* Management Section */}
-              <DropdownMenuItem onClick={handleNotesClick}>
+              <div className="px-2 py-1.5 text-xs font-semibold text-gray-500 uppercase">
+                Gestão
+              </div>
+              <DropdownMenuItem onClick={() => handleMenuItemClick(() => handleViewDetails())}>
+                <Eye className="h-4 w-4 mr-2" />
+                Ver Detalhes
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleMenuItemClick(() => handleNotesClick())}>
                 <StickyNote className="h-4 w-4 mr-2" />
                 Notas
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={handleConvertClick}>
+              <DropdownMenuItem onClick={() => handleMenuItemClick(() => handleConvertClick())}>
                 <UserCheck className="h-4 w-4 mr-2" />
-                Converter
+                Converter em Contacto
               </DropdownMenuItem>
               
               {canAssignLeads && (
-                <DropdownMenuItem onClick={handleAssignClick}>
+                <DropdownMenuItem onClick={() => handleMenuItemClick(() => handleAssignClick())}>
                   <Users className="h-4 w-4 mr-2" />
                   Atribuir Agente
                 </DropdownMenuItem>
@@ -435,15 +448,15 @@ export function LeadCard({ lead, onClick, onDelete, onConvertSuccess }: LeadCard
 
               <DropdownMenuSeparator />
 
-              {/* Destructive Actions in Menu (Optional/Alternative) */}
-               <DropdownMenuItem onClick={handleDelete} className="text-red-600 focus:text-red-600">
+              {/* Destructive Actions */}
+              <DropdownMenuItem onClick={() => handleMenuItemClick(() => handleDelete())} className="text-red-600 focus:text-red-600">
                 <Trash2 className="h-4 w-4 mr-2" />
                 Apagar
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* Edit Button - Visible for quick access */}
+          {/* Edit Button */}
           <button
             onClick={handleEdit}
             className="p-1.5 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded-md transition-colors"
@@ -458,8 +471,14 @@ export function LeadCard({ lead, onClick, onDelete, onConvertSuccess }: LeadCard
           {lead.name}
         </h3>
 
-        {/* Contact Information - Phone Only */}
-        <div className="mb-4">
+        {/* Contact Information */}
+        <div className="mb-4 space-y-1">
+          {lead.email && (
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <Mail className="h-4 w-4 text-gray-400" />
+              <span className="truncate">{lead.email}</span>
+            </div>
+          )}
           {lead.phone && (
             <div className="flex items-center gap-2 text-sm text-gray-600">
               <Phone className="h-4 w-4 text-gray-400" />
@@ -467,6 +486,27 @@ export function LeadCard({ lead, onClick, onDelete, onConvertSuccess }: LeadCard
             </div>
           )}
         </div>
+
+        {/* Activities Count */}
+        {activitiesCount && (activitiesCount.events > 0 || activitiesCount.tasks > 0) && (
+          <div className="flex gap-2 mb-3 text-xs">
+            {activitiesCount.events > 0 && (
+              <div className="flex items-center gap-1 text-purple-600 bg-purple-50 px-2 py-1 rounded">
+                <Calendar className="h-3 w-3" />
+                <span className="font-medium">{activitiesCount.events}</span>
+              </div>
+            )}
+            {activitiesCount.tasks > 0 && (
+              <div className="flex items-center gap-1 text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                <CalendarDays className="h-3 w-3" />
+                <span className="font-medium">{activitiesCount.tasks}</span>
+                {activitiesCount.pendingTasks > 0 && (
+                  <span className="text-orange-600">({activitiesCount.pendingTasks} pendentes)</span>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Buyer Preferences or Seller Property Details */}
         {lead.lead_type === "buyer" && (
@@ -754,30 +794,34 @@ export function LeadCard({ lead, onClick, onDelete, onConvertSuccess }: LeadCard
       />
 
       {/* Notes Dialog */}
-      {/* Controlled dialog - rendered outside of card content flow, controlled by state */}
       <LeadNotesDialog 
         leadId={lead.id} 
         leadName={lead.name} 
         open={notesDialogOpen}
         onOpenChange={setNotesDialogOpen}
-        trigger={<></>} // No trigger button needed as we control it via menu
+        trigger={<></>}
+      />
+
+      {/* Details Dialog */}
+      <LeadDetailsDialog
+        leadId={lead.id}
+        open={detailsDialogOpen}
+        onOpenChange={setDetailsDialogOpen}
       />
 
       {/* Assign Dialog */}
       {canAssignLeads && (
-        <Dialog open={assignDialogOpen} onOpenChange={setAssignDialogOpen}>
-          <DialogContent className="sm:max-w-[425px]">
-            <AssignLeadDialog
-              leadId={lead.id}
-              leadName={lead.name}
-              currentAssignedUserId={lead.assigned_to}
-              onAssignSuccess={() => {
-                setAssignDialogOpen(false);
-                if (onConvertSuccess) onConvertSuccess();
-              }}
-            />
-          </DialogContent>
-        </Dialog>
+        <AssignLeadDialog
+          leadId={lead.id}
+          leadName={lead.name}
+          currentAssignedUserId={lead.assigned_to}
+          onAssignSuccess={() => {
+            setAssignDialogOpen(false);
+            if (onConvertSuccess) onConvertSuccess();
+          }}
+          open={assignDialogOpen}
+          onOpenChange={setAssignDialogOpen}
+        />
       )}
     </>
   );

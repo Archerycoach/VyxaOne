@@ -30,7 +30,7 @@ export default function EmailTemplatesPage() {
   const [formData, setFormData] = useState({
     name: "",
     description: "",
-    template_type: "daily_email" as "daily_email" | "workflow" | "whatsapp",
+    template_type: "daily_email" as "daily_email" | "workflow" | "whatsapp" | "meta_lead_consultant" | "meta_lead_client",
     subject: "",
     html_body: "",
     text_body: "",
@@ -215,6 +215,8 @@ export default function EmailTemplatesPage() {
       daily_email: "Email Diário",
       workflow: "Workflow",
       whatsapp: "WhatsApp",
+      meta_lead_consultant: "Meta Lead - Consultor",
+      meta_lead_client: "Meta Lead - Cliente",
     };
     return labels[type as keyof typeof labels] || type;
   };
@@ -224,6 +226,8 @@ export default function EmailTemplatesPage() {
       daily_email: "bg-blue-100 text-blue-800",
       workflow: "bg-purple-100 text-purple-800",
       whatsapp: "bg-green-100 text-green-800",
+      meta_lead_consultant: "bg-indigo-100 text-indigo-800",
+      meta_lead_client: "bg-cyan-100 text-cyan-800",
     };
     return colors[type as keyof typeof colors] || "bg-gray-100 text-gray-800";
   };
@@ -233,6 +237,8 @@ export default function EmailTemplatesPage() {
       daily_email: ["userName", "date", "hasEvents", "events", "hasTasks", "tasks"],
       workflow: ["userName", "workflowName", "message", "leadName", "leadEmail", "leadPhone", "leadSource", "actionUrl"],
       whatsapp: ["userName", "tasks", "date"],
+      meta_lead_consultant: ["consultantName", "leadName", "leadEmail", "leadPhone", "leadSource", "formName", "pageName", "submittedAt", "leadUrl", "formFields"],
+      meta_lead_client: ["clientName", "formName", "pageName", "companyName", "consultantName", "consultantEmail", "consultantPhone", "submittedAt"],
     };
     return variables[type as keyof typeof variables] || [];
   };
@@ -357,6 +363,8 @@ export default function EmailTemplatesPage() {
                         <SelectItem value="daily_email">Email Diário</SelectItem>
                         <SelectItem value="workflow">Workflow</SelectItem>
                         <SelectItem value="whatsapp">WhatsApp</SelectItem>
+                        <SelectItem value="meta_lead_consultant">Meta Lead - Consultor</SelectItem>
+                        <SelectItem value="meta_lead_client">Meta Lead - Cliente</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

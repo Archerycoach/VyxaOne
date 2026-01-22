@@ -14,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { createEvent } from "@/services/calendarService";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface QuickEventDialogProps {
   open: boolean;
@@ -33,6 +34,13 @@ export function QuickEventDialog({
   onSuccess,
 }: QuickEventDialogProps) {
   const [loading, setLoading] = useState(false);
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [location, setLocation] = useState("");
+  const [eventType, setEventType] = useState("meeting");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [isCreating, setIsCreating] = useState(false);
   
   // Default to today at 9:00 AM - 10:00 AM
   const getDefaultStartDateTime = () => {
@@ -55,6 +63,14 @@ export function QuickEventDialog({
     end_datetime: getDefaultEndDateTime(),
   });
   const { toast } = useToast();
+
+  const handleClose = () => {
+    setTitle("");
+    setDescription("");
+    setLocation("");
+    setEventType("meeting");
+    onOpenChange(false);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -86,6 +102,16 @@ export function QuickEventDialog({
       if (endDateTime <= startDateTime) {
         throw new Error("A hora de fim deve ser posterior à hora de início");
       }
+
+      const eventData = {
+        title,
+        description: description || null,
+        location: location || null,
+        event_type: eventType,
+        lead_id: leadId,
+        contact_id: contactId,
+        user_id: user.id,
+      };
 
       await createEvent({
         title: formData.title,
@@ -160,13 +186,28 @@ export function QuickEventDialog({
           </div>
 
           <div>
-            <Label htmlFor="location">Localização</Label>
+            <Label htmlFor="location">Local</Label>
             <Input
               id="location"
               value={formData.location}
               onChange={(e) => setFormData({ ...formData, location: e.target.value })}
               placeholder="Ex: Rua das Flores, 123, Porto"
             />
+          </div>
+
+          <div>
+            <Label htmlFor="event-type">Tipo de Evento *</Label>
+            <Select value={eventType} onValueChange={setEventType}>
+              <SelectTrigger id="event-type">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="visit">📅 Visita</SelectItem>
+                <SelectItem value="meeting">🤝 Reunião</SelectItem>
+                <SelectItem value="call">📞 Chamada</SelectItem>
+                <SelectItem value="other">📋 Outro</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="grid grid-cols-2 gap-4">

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { LeadCard } from "./LeadCard";
 import { LeadFilters } from "./LeadFilters";
 import { LeadDialogs } from "./LeadDialogs";
@@ -107,20 +107,20 @@ export function LeadsListContainer({
   const { leads, isLoading, error, refetch } = useLeads(showArchived);
   
   // Stabilize refetch callback
-  const stableRefetch = useCallback(async () => {
+  const stableRefetch = async () => {
     await refetch();
-  }, [refetch]);
+  };
 
   // Debounced refetch to prevent cascade re-renders
   const [isRefetching, setIsRefetching] = useState(false);
-  const debouncedRefetch = useCallback(async () => {
+  const debouncedRefetch = async () => {
     if (isRefetching) return;
     setIsRefetching(true);
     await refetch();
     setTimeout(() => {
       setIsRefetching(false);
     }, 500);
-  }, [isRefetching, refetch]);
+  };
 
   // Filter logic
   const {
@@ -131,9 +131,9 @@ export function LeadsListContainer({
     filteredLeads,
   } = useLeadFilters(leads);
 
-  // CRUD operations
-  const { convertLead, deleteLead, permanentlyDelete, restore, assign, isProcessing } =
-    useLeadMutations(stableRefetch);
+  // CRUD operations - destructure from useLeadMutations hook
+  const { convertLead, deleteLead, restore, permanentlyDelete, assign } = useLeadMutations(stableRefetch);
+  const { isProcessing } = useLeadMutations(stableRefetch);
 
   // Interactions
   const {
@@ -183,26 +183,43 @@ export function LeadsListContainer({
     start_date: "",
     end_date: "",
     location: "",
+    event_type: "meeting",
   });
 
-  // Handlers
-  const handleConvert = async (lead: LeadWithContacts) => {
-    await convertLead(lead);
+  // Handlers - Simplified to pass lead data correctly
+  const handleConvert = (lead: LeadWithContacts) => {
+    convertLead(lead.id);
   };
 
-  const handleDelete = async (id: string) => {
-    await deleteLead(id);
+  const handleDelete = (lead: LeadWithContacts) => {
+    deleteLead(lead.id);
   };
 
-  const handleRestore = async (id: string) => {
-    await restore(id);
+  const handleRestore = (lead: LeadWithContacts) => {
+    restore(lead.id);
   };
 
-  const handlePermanentlyDelete = async (lead: LeadWithContacts) => {
-    await permanentlyDelete(lead.id, lead.name);
+  const handlePermanentlyDelete = (lead: LeadWithContacts) => {
+    permanentlyDelete(lead.id, lead.name);
   };
 
-  const handleViewDetails = useCallback((lead: LeadWithContacts) => {
+  const handleEdit = (lead: LeadWithContacts) => {
+    onEdit(lead);
+  };
+
+  const handleEmail = (lead: LeadWithContacts) => {
+    if (lead.email) sendEmail(lead.email, lead.name);
+  };
+
+  const handleSMS = (lead: LeadWithContacts) => {
+    if (lead.phone) sendSMS(lead.phone);
+  };
+
+  const handleWhatsApp = (lead: LeadWithContacts) => {
+    if (lead.phone) sendWhatsApp(lead.phone);
+  };
+
+  const handleViewDetails = (lead: LeadWithContacts) => {
     // Prevent multiple simultaneous opens
     if (openingDetailsRef.current) {
       console.log("[LeadsListContainer] Already opening details, ignoring duplicate call");
@@ -222,9 +239,9 @@ export function LeadsListContainer({
         openingDetailsRef.current = false;
       }, 300);
     }, 0);
-  }, []);
+  };
 
-  const handleAssign = useCallback((lead: LeadWithContacts) => {
+  const handleAssign = (lead: LeadWithContacts) => {
     if (openingAssignRef.current) {
       console.log("[LeadsListContainer] Already opening assign dialog, ignoring duplicate call");
       return;
@@ -241,16 +258,16 @@ export function LeadsListContainer({
         openingAssignRef.current = false;
       }, 300);
     }, 0);
-  }, []);
+  };
 
-  const handleAssignLead = useCallback(async () => {
+  const handleAssignLead = async () => {
     if (!selectedLead || !selectedAgent) return;
     await assign(selectedLead.id, selectedAgent);
     setAssignDialogOpen(false);
     setSelectedAgent("");
-  }, [selectedLead, selectedAgent, assign]);
+  };
 
-  const handleTask = useCallback((lead: LeadWithContacts) => {
+  const handleTask = (lead: LeadWithContacts) => {
     if (openingTaskRef.current) {
       console.log("[LeadsListContainer] Already opening task dialog, ignoring duplicate call");
       return;
@@ -274,9 +291,9 @@ export function LeadsListContainer({
         openingTaskRef.current = false;
       }, 300);
     }, 0);
-  }, []);
+  };
 
-  const handleEvent = useCallback((lead: LeadWithContacts) => {
+  const handleEvent = (lead: LeadWithContacts) => {
     if (openingEventRef.current) {
       console.log("[LeadsListContainer] Already opening event dialog, ignoring duplicate call");
       return;
@@ -293,6 +310,7 @@ export function LeadsListContainer({
         start_date: "",
         end_date: "",
         location: "",
+        event_type: "meeting",
       });
       setEventDialogOpen(true);
       
@@ -300,9 +318,9 @@ export function LeadsListContainer({
         openingEventRef.current = false;
       }, 300);
     }, 0);
-  }, []);
+  };
 
-  const handleInteraction = useCallback((lead: LeadWithContacts) => {
+  const handleInteraction = (lead: LeadWithContacts) => {
     if (openingInteractionRef.current) {
       console.log("[LeadsListContainer] Already opening interaction dialog, ignoring duplicate call");
       return;
@@ -319,9 +337,9 @@ export function LeadsListContainer({
         openingInteractionRef.current = false;
       }, 300);
     }, 0);
-  }, []);
+  };
 
-  const handleNotes = useCallback((lead: LeadWithContacts) => {
+  const handleNotes = (lead: LeadWithContacts) => {
     if (openingNotesRef.current) {
       console.log("[LeadsListContainer] Already opening notes dialog, ignoring duplicate call");
       return;
@@ -338,9 +356,9 @@ export function LeadsListContainer({
         openingNotesRef.current = false;
       }, 300);
     }, 0);
-  }, []);
+  };
 
-  const handleCreateTask = useCallback(async () => {
+  const handleCreateTask = async () => {
     if (!selectedLead || !userId) return;
     
     const { createTask } = await import("@/services/tasksService");
@@ -363,9 +381,9 @@ export function LeadsListContainer({
       priority: "medium",
       status: "pending",
     });
-  }, [selectedLead, taskForm, userId]);
+  };
 
-  const handleCreateEvent = useCallback(async () => {
+  const handleCreateEvent = async () => {
     if (!selectedLead || !userId) return;
     
     // Validate that both dates are provided
@@ -402,6 +420,7 @@ export function LeadsListContainer({
       start_time: startDateTime.toISOString(),
       end_time: endDateTime.toISOString(),
       location: eventForm.location || null,
+      event_type: eventForm.event_type || "meeting",
       lead_id: selectedLead.id,
       user_id: userId,
     });
@@ -413,13 +432,14 @@ export function LeadsListContainer({
       start_date: "",
       end_date: "",
       location: "",
+      event_type: "meeting",
     });
-  }, [selectedLead, eventForm, userId]);
+  };
 
-  const handleCreateInteraction = useCallback(async () => {
+  const handleCreateInteraction = async () => {
     if (!selectedLead) return;
     await createNewInteraction(selectedLead.id);
-  }, [selectedLead, createNewInteraction]);
+  };
 
   // Helper functions for table
   const formatCurrency = (value: number | null | undefined) => {
@@ -584,20 +604,20 @@ export function LeadsListContainer({
               showArchived={showArchived}
               canAssignLeads={canAssignLeads}
               viewMode={viewMode}
-              onEdit={onEdit}
-              onDelete={(lead) => handleDelete(lead.id)}
+              onEdit={handleEdit}
+              onDelete={handleDelete}
               onPermanentlyDelete={handlePermanentlyDelete}
-              onRestore={(lead) => handleRestore(lead.id)}
+              onRestore={handleRestore}
               onConvert={handleConvert}
               onViewDetails={handleViewDetails}
-              onAssign={handleAssign}
+              onAssign={canAssignLeads ? handleAssign : undefined}
               onTask={handleTask}
               onEvent={handleEvent}
               onInteraction={handleInteraction}
               onNotes={handleNotes}
-              onEmail={sendEmail}
-              onSMS={sendSMS}
-              onWhatsApp={sendWhatsApp}
+              onEmail={handleEmail}
+              onSMS={handleSMS}
+              onWhatsApp={handleWhatsApp}
             />
           ))}
         </div>
@@ -632,7 +652,7 @@ export function LeadsListContainer({
                       <td className="px-4 py-3">
                         <div className="flex gap-1">
                           <button
-                            onClick={() => onEdit(lead)}
+                            onClick={() => handleEdit(lead)}
                             className="p-1.5 text-blue-500 hover:bg-blue-100 rounded transition-colors"
                             title="Editar"
                           >
@@ -670,14 +690,14 @@ export function LeadsListContainer({
                               )}
                               {showArchived ? (
                                 <DropdownMenuItem
-                                  onClick={() => handleRestore(lead.id)}
+                                  onClick={() => handleRestore(lead)}
                                   className="text-green-600"
                                 >
                                   Restaurar
                                 </DropdownMenuItem>
                               ) : (
                                 <DropdownMenuItem
-                                  onClick={() => handleDelete(lead.id)}
+                                  onClick={() => handleDelete(lead)}
                                   className="text-red-600"
                                 >
                                   Arquivar

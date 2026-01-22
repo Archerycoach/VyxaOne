@@ -4,7 +4,7 @@ import { supabaseAdmin, validateSupabaseAdmin } from "@/lib/supabaseAdmin";
 // Define interface for local type safety
 interface IntegrationSettings {
   id?: string;
-  service_name: string;
+  integration_name: string;
   client_id: string | null;
   client_secret: string | null;
   redirect_uri: string | null;
@@ -42,7 +42,7 @@ export default async function handler(
       const { data, error } = await (supabaseAdmin
         .from("integration_settings") as any)
         .select("*")
-        .eq("service_name", "google_calendar")
+        .eq("integration_name", "google_calendar")
         .maybeSingle();
 
       if (error) {
@@ -98,7 +98,7 @@ export default async function handler(
       const { data: existingSettings, error: checkError } = await (supabaseAdmin
         .from("integration_settings") as any)
         .select("id")
-        .eq("service_name", "google_calendar")
+        .eq("integration_name", "google_calendar")
         .maybeSingle();
 
       if (checkError) {
@@ -124,7 +124,7 @@ export default async function handler(
             enabled: enabled,
             updated_at: new Date().toISOString(),
           })
-          .eq("service_name", "google_calendar")
+          .eq("integration_name", "google_calendar")
           .select()
           .single();
 
@@ -144,7 +144,7 @@ export default async function handler(
         const { data: insertedData, error: insertError } = await (supabaseAdmin
           .from("integration_settings") as any)
           .insert({
-            service_name: "google_calendar",
+            integration_name: "google_calendar",
             client_id: clientId,
             client_secret: clientSecret,
             redirect_uri: redirectUri,

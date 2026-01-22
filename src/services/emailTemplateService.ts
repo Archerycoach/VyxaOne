@@ -6,7 +6,7 @@ export type EmailTemplate = {
   user_id: string | null;
   name: string;
   description: string | null;
-  template_type: "daily_email" | "workflow" | "whatsapp";
+  template_type: "daily_email" | "workflow" | "whatsapp" | "meta_lead_consultant" | "meta_lead_client";
   subject: string;
   html_body: string;
   text_body: string | null;

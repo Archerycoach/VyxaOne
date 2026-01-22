@@ -39,8 +39,7 @@ export default function Integrations() {
     try {
       setLoading(true);
 
-      // Load Google Calendar settings
-      const { data: gcSettings, error: gcError } = await supabase
+      const { data: gcData, error: gcError } = await supabase
         .from("integration_settings")
         .select("*")
         .eq("integration_name", "google_calendar")
@@ -48,14 +47,14 @@ export default function Integrations() {
 
       if (gcError) throw gcError;
 
-      if (gcSettings) {
+      if (gcData) {
         // Cast settings to unknown first, then to our interface to handle Json type safely
-        const settings = gcSettings.settings as unknown as GoogleCalendarSettings;
+        const settings = gcData.settings as unknown as GoogleCalendarSettings;
         
         setGoogleCalendar({
           client_id: settings?.client_id || "",
           client_secret: settings?.client_secret || "",
-          enabled: gcSettings.is_active || false
+          enabled: gcData.is_active || false
         });
         setIsGoogleConfigured(!!(settings?.client_id && settings?.client_secret));
       }
@@ -95,8 +94,11 @@ export default function Integrations() {
         .from("integration_settings")
         .upsert({
           integration_name: "google_calendar",
-          settings: settings as any, // Cast to any to satisfy Json type requirement
-          is_active: googleCalendar.enabled,
+          client_id: googleCalendar.client_id.trim(),
+          client_secret: googleCalendar.client_secret.trim(),
+          redirect_uri: `${window.location.origin}/api/google-calendar/callback`.trim(),
+          scopes: ["https://www.googleapis.com/auth/calendar"],
+          enabled: googleCalendar.enabled,
           updated_at: new Date().toISOString()
         }, {
           onConflict: "integration_name"

@@ -62,6 +62,15 @@ export const deleteWorkflowRule = async (id: string) => {
 export const processLeadWorkflows = async (leadId: string, triggerType: string) => {
   console.log(`Processing workflows for lead ${leadId} with trigger ${triggerType}`);
   
+  // Supported trigger types:
+  // - lead_created: When any lead is created manually
+  // - meta_lead_created: When lead is created via Meta (Facebook/Instagram)
+  // - no_contact_5_days: No contact for 5+ days (automatic check)
+  // - visit_scheduled: Visit scheduled - reminder sent day before (automatic)
+  // - no_activity_7_days: No activity for 7+ days
+  // - birthday: Lead's birthday
+  // - custom_date: Custom date trigger
+  
   try {
     // Get current user
     const { data: { user } } = await supabase.auth.getUser();

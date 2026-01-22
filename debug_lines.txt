@@ -1,0 +1,8 @@
+Debugging LeadsListContainer.tsx lines 200-230
+
+Looking for lines 211, 215, 219 with TypeScript errors:
+- Line 211, column 43: convertLead expects 1 argument but got 2
+- Line 215, column 29: deleteLead receives string but expects LeadWithDetails
+- Line 219, column 34: restore receives string but expects LeadWithDetails
+
+Need to extract exact code from those lines.

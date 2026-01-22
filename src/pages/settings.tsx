@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
-import { ArrowLeft, User, Lock, Building2, Bell, Save, Loader2, Mail } from "lucide-react";
+import { ArrowLeft, User, Lock, Building2, Bell, Save, Loader2, Mail, Facebook } from "lucide-react";
 import { getUserProfile, updateUserProfile } from "@/services/profileService";
 import { updatePassword, getSession, signOut } from "@/services/authService";
 import { useToast } from "@/hooks/use-toast";
@@ -46,6 +46,8 @@ export default function Settings() {
   
   // SMTP Dialog
   const [smtpDialogOpen, setSmtpDialogOpen] = useState(false);
+  
+  // Meta Integration
   const [selectedMetaIntegration, setSelectedMetaIntegration] = useState<{id: string; name: string} | null>(null);
 
   useEffect(() => {
@@ -212,7 +214,7 @@ export default function Settings() {
         </div>
 
         <Tabs defaultValue="profile" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-6">
             <TabsTrigger value="profile">
               <User className="h-4 w-4 mr-2" />
               Perfil
@@ -232,6 +234,10 @@ export default function Settings() {
             <TabsTrigger value="notifications">
               <Bell className="h-4 w-4 mr-2" />
               Notificações
+            </TabsTrigger>
+            <TabsTrigger value="meta">
+              <Facebook className="h-4 w-4 mr-2" />
+              Meta
             </TabsTrigger>
           </TabsList>
 
@@ -462,24 +468,40 @@ export default function Settings() {
               </CardContent>
             </Card>
           </TabsContent>
+
+          <TabsContent value="meta" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>
+                  <div className="flex items-center gap-2">
+                    <Facebook className="h-6 w-6 text-blue-600" />
+                    Meta Lead Ads
+                  </div>
+                </CardTitle>
+                <CardDescription>
+                  Conecte suas páginas do Facebook e Instagram para receber leads automaticamente no CRM.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <MetaAccountConnection onSelectIntegration={(integration) => setSelectedMetaIntegration(integration)} />
+                
+                {selectedMetaIntegration && (
+                  <div className="mt-6 pt-6 border-t">
+                    <MetaFormsManagement 
+                      integrationId={selectedMetaIntegration.id}
+                      integrationName={selectedMetaIntegration.name}
+                    />
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
         </Tabs>
 
         <SMTPSettingsDialog 
           open={smtpDialogOpen} 
           onOpenChange={setSmtpDialogOpen}
         />
-
-        <MetaAccountConnection onSelectIntegration={(integration) => setSelectedMetaIntegration(integration)} />
-
-        {selectedMetaIntegration && (
-          <div className="mt-4">
-            <MetaFormsManagement 
-              integrationId={selectedMetaIntegration.id}
-              integrationName={selectedMetaIntegration.name}
-            />
-          </div>
-        )}
-
       </div>
     </div>
   );

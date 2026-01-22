@@ -214,7 +214,18 @@ async function getLeadsForTrigger(supabase: any, rule: WorkflowRule): Promise<Le
       return data || [];
     }
 
+    case "no_contact_5_days": {
+      const days = 5;
+      const cutoffDate = new Date(now);
+      cutoffDate.setDate(cutoffDate.getDate() - days);
+      const cutoffDateStr = cutoffDate.toISOString();
+
+      const { data } = await query.or(`last_contact_date.is.null,last_contact_date.lt.${cutoffDateStr}`);
+      return data || [];
+    }
+
     case "no_activity_7_days": {
+      // Manter a lógica de 7 dias, mas garantir que não interfere
       const days = 7;
       const cutoffDate = new Date(now);
       cutoffDate.setDate(cutoffDate.getDate() - days);
@@ -225,26 +236,38 @@ async function getLeadsForTrigger(supabase: any, rule: WorkflowRule): Promise<Le
     }
 
     case "visit_scheduled": {
-      // Check for visits scheduled today or tomorrow
-      const tomorrow = new Date(now);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      const tomorrowStr = tomorrow.toISOString().split("T")[0];
+      // Check for visits scheduled for TOMORROW (24h warning)
+      const tomorrowStart = new Date(now);
+      tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+      tomorrowStart.setHours(0, 0, 0, 0);
+      
+      const tomorrowEnd = new Date(tomorrowStart);
+      tomorrowEnd.setHours(23, 59, 59, 999);
 
-      // Get leads with calendar events scheduled
+      // Get leads with VISIT events scheduled for tomorrow
       const { data: events } = await supabase
         .from("calendar_events")
-        .select("lead_id")
+        .select("lead_id, start_time, title, location")
         .eq("user_id", user_id)
-        .gte("start_time", today)
-        .lte("start_time", tomorrowStr + "T23:59:59")
+        .eq("event_type", "visit") // Only visits triggers this workflow
+        .gte("start_time", tomorrowStart.toISOString())
+        .lte("start_time", tomorrowEnd.toISOString())
         .not("lead_id", "is", null);
 
       if (!events || events.length === 0) return [];
 
+      // Store event details in lead for email template usage
       const leadIds = [...new Set(events.map((e: any) => e.lead_id))];
+      const { data: leads } = await query.in("id", leadIds);
       
-      const { data } = await query.in("id", leadIds);
-      return data || [];
+      // Enrich leads with event info
+      return (leads || []).map((lead: any) => {
+        const event = events.find((e: any) => e.lead_id === lead.id);
+        return {
+          ...lead,
+          _event_context: event // Pass event context for email templates
+        };
+      });
     }
 
     case "lead_created": {
@@ -306,15 +329,39 @@ async function sendEmailAction(supabase: any, rule: WorkflowRule, lead: Lead) {
         break;
         
       case "visit_scheduled":
-        // Send to both user and lead
-        // For now, send two separate emails
-        await sendSingleEmail(smtpSettings, userProfile.email, userProfile.full_name, rule, lead);
+        // Send to BOTH user and lead
+        
+        // 1. Email to User (Reminder)
+        await sendSingleEmail(
+          smtpSettings, 
+          userProfile.email, 
+          userProfile.full_name, 
+          {
+            ...rule,
+            action_config: {
+              ...rule.action_config,
+              subject: `📅 Lembrete de Visita Amanhã: ${lead.name}`,
+              body: `Olá ${userProfile.full_name},\n\nLembrete: Tens uma visita agendada com ${lead.name} para amanhã.\n\nDetalhes:\nCliente: ${lead.name}\nData: ${formatDate(lead._event_context?.start_time)}\nLocal: ${lead._event_context?.location || "A definir"}\n\nBom trabalho!`
+            }
+          }, 
+          lead
+        );
+
+        // 2. Email to Lead (Reminder)
         recipientEmail = lead.email;
         recipientName = lead.name;
+        
+        // Override config for client email
+        rule = {
+          ...rule,
+          action_config: {
+            subject: `Lembrete de Visita - ${formatDate(lead._event_context?.start_time)}`,
+            body: `Olá ${lead.name},\n\nEste é um lembrete da nossa visita agendada para amanhã.\n\nData: ${formatDate(lead._event_context?.start_time)}\nLocal: ${lead._event_context?.location || "A definir"}\n\nSe precisar de reagendar, por favor contacte-nos.\n\nAté amanhã!`
+          }
+        };
         break;
         
-      case "no_contact_3_days":
-      case "no_activity_7_days":
+      case "no_contact_5_days":
         // Send to user only
         recipientEmail = userProfile.email;
         recipientName = userProfile.full_name;
@@ -379,6 +426,19 @@ async function sendSingleEmail(
     await client.close();
     throw error;
   }
+}
+
+function formatDate(dateStr: string | undefined): string {
+  if (!dateStr) return "Data a definir";
+  const date = new Date(dateStr);
+  return date.toLocaleString("pt-PT", { 
+    weekday: 'long', 
+    year: 'numeric', 
+    month: 'long', 
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
 }
 
 function replaceVariables(text: string, lead: Lead): string {

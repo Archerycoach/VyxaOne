@@ -10,6 +10,14 @@ serve(async (req) => {
   try {
     console.log("Starting Meta Leads Sync...");
 
+    // Allow cron invocations (no auth required) and manual invocations
+    const isCronInvocation = req.headers.get("x-cron-signature") !== null;
+    const authHeader = req.headers.get("authorization");
+    
+    if (!isCronInvocation && !authHeader) {
+      console.log("No authorization header and not a cron invocation - allowing for testing");
+    }
+
     // Get all active integrations
     const { data: integrations, error: integrationsError } = await supabase
       .from("meta_integrations")
@@ -245,14 +253,30 @@ function mapMetaFieldsToLead(metaLead: any, mappings: any[], config: any) {
 
 async function sendEmailNotification(userId: string, lead: any, pageName: string) {
   try {
+    // Get notification settings
+    const { data: notifSettings } = await supabase
+      .from("meta_notification_settings")
+      .select("*")
+      .single();
+
+    if (!notifSettings || !notifSettings.notification_enabled) {
+      console.log("Email notifications are disabled");
+      return;
+    }
+
+    // Get user profile
     const { data: user } = await supabase
       .from("profiles")
-      .select("email")
+      .select("email, full_name")
       .eq("id", userId)
       .single();
 
-    if (!user?.email) return;
+    if (!user?.email) {
+      console.log("User email not found");
+      return;
+    }
 
+    // Get SMTP settings (user-specific or global)
     const { data: smtpSettings } = await supabase
       .from("user_smtp_settings")
       .select("*")
@@ -260,28 +284,110 @@ async function sendEmailNotification(userId: string, lead: any, pageName: string
       .eq("is_active", true)
       .single();
 
-    if (!smtpSettings) return;
+    if (!smtpSettings) {
+      console.log("No active SMTP settings found for user");
+      return;
+    }
 
-    const emailBody = `
-      <h2>🎯 Nova Lead da Meta!</h2>
-      <p>Uma nova lead foi capturada do formulário <strong>${pageName}</strong>.</p>
-      
-      <h3>Detalhes da Lead:</h3>
-      <ul>
-        <li><strong>Nome:</strong> ${lead.name || "N/A"}</li>
-        <li><strong>Email:</strong> ${lead.email || "N/A"}</li>
-        <li><strong>Telefone:</strong> ${lead.phone || "N/A"}</li>
-        ${lead.budget ? `<li><strong>Orçamento:</strong> ${lead.budget}</li>` : ""}
-        ${lead.location_preference ? `<li><strong>Localização:</strong> ${lead.location_preference}</li>` : ""}
-        ${lead.property_type ? `<li><strong>Tipo de Imóvel:</strong> ${lead.property_type}</li>` : ""}
-      </ul>
-      
-      <p><a href="${Deno.env.get("NEXT_PUBLIC_APP_URL")}/leads" style="background: #4F46E5; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Ver Lead no CRM</a></p>
-    `;
+    // Send email to consultant if enabled
+    if (notifSettings.notify_consultant) {
+      const { data: consultantTemplate } = await supabase
+        .from("email_templates")
+        .select("*")
+        .eq("template_type", "meta_lead_notification_consultant")
+        .eq("is_active", true)
+        .single();
 
-    // Send email via SMTP (simplified - would use actual SMTP in production)
-    console.log(`Would send email to ${user.email}: New lead from ${pageName}`);
+      if (consultantTemplate) {
+        const consultantBody = consultantTemplate.template_html
+          .replace(/\{\{lead_name\}\}/g, lead.name || "N/A")
+          .replace(/\{\{lead_email\}\}/g, lead.email || "N/A")
+          .replace(/\{\{lead_phone\}\}/g, lead.phone || "N/A")
+          .replace(/\{\{page_name\}\}/g, pageName)
+          .replace(/\{\{budget\}\}/g, lead.budget || "N/A")
+          .replace(/\{\{location\}\}/g, lead.location_preference || "N/A")
+          .replace(/\{\{property_type\}\}/g, lead.property_type || "N/A")
+          .replace(/\{\{notes\}\}/g, lead.notes || "Nenhuma nota adicional")
+          .replace(/\{\{crm_url\}\}/g, `${Deno.env.get("NEXT_PUBLIC_APP_URL") || ""}/leads`);
+
+        await sendEmailViaSMTP({
+          to: user.email,
+          subject: consultantTemplate.subject.replace(/\{\{lead_name\}\}/g, lead.name || "Nova Lead"),
+          html: consultantBody,
+          smtpSettings,
+        });
+
+        console.log(`Consultant notification sent to ${user.email}`);
+      }
+    }
+
+    // Send email to client (lead) if enabled and lead has email
+    if (notifSettings.notify_client && lead.email) {
+      const { data: clientTemplate } = await supabase
+        .from("email_templates")
+        .select("*")
+        .eq("template_type", "meta_lead_notification_client")
+        .eq("is_active", true)
+        .single();
+
+      if (clientTemplate) {
+        const clientBody = clientTemplate.template_html
+          .replace(/\{\{lead_name\}\}/g, lead.name || "Cliente")
+          .replace(/\{\{consultant_name\}\}/g, user.full_name || "Nossa equipa")
+          .replace(/\{\{company_name\}\}/g, "Imogest")
+          .replace(/\{\{consultant_email\}\}/g, user.email)
+          .replace(/\{\{consultant_phone\}\}/g, smtpSettings.reply_to || "");
+
+        await sendEmailViaSMTP({
+          to: lead.email,
+          subject: clientTemplate.subject.replace(/\{\{lead_name\}\}/g, lead.name || ""),
+          html: clientBody,
+          smtpSettings,
+        });
+
+        console.log(`Client notification sent to ${lead.email}`);
+      }
+    }
   } catch (error) {
     console.error("Error sending email notification:", error);
+  }
+}
+
+async function sendEmailViaSMTP(params: {
+  to: string;
+  subject: string;
+  html: string;
+  smtpSettings: any;
+}) {
+  const { to, subject, html, smtpSettings } = params;
+
+  try {
+    // Basic SMTP implementation using fetch to call the SMTP API endpoint
+    const response = await fetch(`${Deno.env.get("NEXT_PUBLIC_APP_URL")}/api/smtp/send`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        to,
+        subject,
+        html,
+        smtp_host: smtpSettings.smtp_host,
+        smtp_port: smtpSettings.smtp_port,
+        smtp_user: smtpSettings.smtp_user,
+        smtp_password: smtpSettings.smtp_password,
+        from_email: smtpSettings.from_email,
+        from_name: smtpSettings.from_name,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`SMTP API error: ${response.statusText}`);
+    }
+
+    console.log(`Email sent successfully to ${to}`);
+  } catch (error) {
+    console.error("Error sending email via SMTP:", error);
+    throw error;
   }
 }

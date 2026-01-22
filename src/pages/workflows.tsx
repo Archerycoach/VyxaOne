@@ -97,11 +97,21 @@ const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     color: "bg-blue-100 text-blue-700"
   },
   {
+    id: "meta-lead-welcome",
+    name: "Lead Meta - Resposta Automática",
+    description: "Enviar email automático quando uma lead é criada através do Facebook/Instagram",
+    trigger: "meta_lead_created",
+    triggerLabel: "meta_lead_created",
+    actions: 2,
+    icon: "📘",
+    color: "bg-blue-100 text-blue-700"
+  },
+  {
     id: "auto-followup",
     name: "Follow-up Automático",
-    description: "Enviar lembrete de follow-up após 3 dias sem contacto",
-    trigger: "no_contact_3_days",
-    triggerLabel: "no_contact_3_days",
+    description: "Enviar lembrete de follow-up após 5 dias sem contacto",
+    trigger: "no_contact_5_days",
+    triggerLabel: "no_contact_5_days",
     actions: 2,
     icon: "📧",
     color: "bg-purple-100 text-purple-700"
@@ -109,7 +119,7 @@ const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
   {
     id: "visit-reminder",
     name: "Lembrete de Visita",
-    description: "Enviar lembrete automático 1 dia antes da visita agendada",
+    description: "Enviar lembrete automático na véspera da visita agendada",
     trigger: "visit_scheduled",
     triggerLabel: "visit_scheduled",
     actions: 2,
@@ -364,13 +374,21 @@ export default function WorkflowsPage() {
         defaultSubject = "Bem-vindo à {empresa}!";
         defaultBody = "Olá {nome},\n\nObrigado por entrar em contacto connosco!\n\nEstamos à disposição para ajudar.\n\nCumprimentos,\nEquipa {empresa}";
         break;
-      case "visit_scheduled":
-        defaultSubject = "Lembrete: Visita Agendada";
-        defaultBody = "Olá,\n\nLembrete de visita agendada com {nome}.\n\nContacto: {telefone}\nEmail: {email}\n\nBoa visita!";
+      case "meta_lead_created":
+        defaultSubject = "Obrigado pelo seu interesse, {nome}!";
+        defaultBody = "Olá {nome},\n\nObrigado por preencher o nosso formulário no Facebook/Instagram!\n\nRecebemos a sua mensagem e iremos entrar em contacto consigo brevemente.\n\nEnquanto aguarda, pode contactar-nos através de:\nTelefone: {telefone}\nEmail: {email}\n\nCumprimentos,\nEquipa {empresa}";
         break;
       case "no_contact_3_days":
         defaultSubject = "Follow-up: {nome}";
         defaultBody = "Olá,\n\nLembrete para fazer follow-up com {nome}.\n\nÚltimo contacto há 3+ dias.\n\nContacto: {telefone}";
+        break;
+      case "no_contact_5_days":
+        defaultSubject = "Follow-up: {nome}";
+        defaultBody = "Olá,\n\nLembrete para fazer follow-up com {nome}.\n\nÚltimo contacto há 5+ dias.\n\nContacto: {telefone}";
+        break;
+      case "visit_scheduled":
+        defaultSubject = "📅 Visita Agendada: {nome}";
+        defaultBody = "Olá,\n\nLembrete: Tens uma visita agendada com {nome} amanhã.\n\nContacto: {telefone}\nEmail: {email}";
         break;
       case "no_activity_7_days":
         defaultSubject = "Lead Inativo: {nome}";
@@ -662,7 +680,7 @@ export default function WorkflowsPage() {
                 Novo Workflow
               </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-[600px]">
+            <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>
                   {selectedTemplate ? `Usar Template: ${selectedTemplate.name}` : "Criar Novo Workflow"}
@@ -699,8 +717,9 @@ export default function WorkflowsPage() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="lead_created">🆕 Lead Criado</SelectItem>
-                      <SelectItem value="no_contact_3_days">📧 Sem Contacto (3 dias)</SelectItem>
-                      <SelectItem value="visit_scheduled">📅 Visita Agendada</SelectItem>
+                      <SelectItem value="meta_lead_created">📘 Lead Meta (Facebook/Instagram)</SelectItem>
+                      <SelectItem value="no_contact_5_days">📧 Sem Contacto (5 dias)</SelectItem>
+                      <SelectItem value="visit_scheduled">📅 Visita Agendada (Véspera)</SelectItem>
                       <SelectItem value="no_activity_7_days">💤 Sem Atividade (7 dias)</SelectItem>
                       <SelectItem value="birthday">🎂 Aniversário</SelectItem>
                       <SelectItem value="custom_date">📌 Data Personalizada</SelectItem>
