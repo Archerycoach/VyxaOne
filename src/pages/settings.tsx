@@ -539,11 +539,13 @@ export default function Settings() {
                       onClick={async () => {
                         try {
                           // Check integration_settings to see if Google Calendar OAuth is configured
-                          const { data: settings } = await supabase
+                          const { data: rawSettings } = await supabase
                             .from("integration_settings")
                             .select("*")
                             .eq("integration_name", "google_calendar")
                             .maybeSingle();
+
+                          const settings = rawSettings as any;
 
                           // Check if user has an active connection in google_calendar_integrations table
                           const { data: user } = await supabase.auth.getUser();
