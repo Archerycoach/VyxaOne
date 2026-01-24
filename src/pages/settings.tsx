@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
-import { ArrowLeft, User, Lock, Building2, Bell, Save, Loader2, Mail, Facebook } from "lucide-react";
+import { ArrowLeft, User, Lock, Building2, Bell, Save, Loader2, Mail, Facebook, Calendar } from "lucide-react";
 import { getUserProfile, updateUserProfile } from "@/services/profileService";
 import { updatePassword, getSession, signOut } from "@/services/authService";
 import { useToast } from "@/hooks/use-toast";
@@ -214,7 +214,7 @@ export default function Settings() {
         </div>
 
         <Tabs defaultValue="profile" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-6">
+          <TabsList className="grid w-full grid-cols-7">
             <TabsTrigger value="profile">
               <User className="h-4 w-4 mr-2" />
               Perfil
@@ -238,6 +238,10 @@ export default function Settings() {
             <TabsTrigger value="meta">
               <Facebook className="h-4 w-4 mr-2" />
               Meta
+            </TabsTrigger>
+            <TabsTrigger value="google-calendar">
+              <Calendar className="h-4 w-4 mr-2" />
+              Google Calendar
             </TabsTrigger>
           </TabsList>
 
@@ -493,6 +497,132 @@ export default function Settings() {
                     />
                   </div>
                 )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="google-calendar" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>
+                  <div className="flex items-center gap-2">
+                    <Calendar className="h-6 w-6 text-blue-600" />
+                    Google Calendar
+                  </div>
+                </CardTitle>
+                <CardDescription>
+                  Conecte sua conta Google para sincronizar eventos e compromissos automaticamente com o CRM.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="flex items-start space-x-4 rounded-lg border p-4">
+                  <Calendar className="h-6 w-6 text-blue-600 mt-1" />
+                  <div className="flex-1 space-y-1">
+                    <p className="text-sm font-medium leading-none">
+                      Sincronização Bidirecional
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      Sincronize eventos do Google Calendar com o Vyxa One e vice-versa. Eventos criados no CRM aparecem no Google Calendar automaticamente.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between p-4 border rounded-lg">
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium">Status da Conexão</p>
+                      <p className="text-xs text-muted-foreground">
+                        Verifique se sua conta Google está conectada
+                      </p>
+                    </div>
+                    <Button
+                      onClick={async () => {
+                        try {
+                          // Check integration_settings to see if Google Calendar OAuth is configured
+                          const { data: settings } = await supabase
+                            .from("integration_settings")
+                            .select("*")
+                            .eq("integration_name", "google_calendar")
+                            .maybeSingle();
+
+                          // Check if user has an active connection in google_calendar_integrations table
+                          const { data: user } = await supabase.auth.getUser();
+                          
+                          if (!user.user) {
+                            toast({
+                              title: "Erro de autenticação",
+                              description: "Por favor, faça login novamente.",
+                              variant: "destructive",
+                            });
+                            return;
+                          }
+
+                          // Use type assertion to bypass TypeScript error with google_calendar_integrations
+                          const { data: userIntegration } = await supabase
+                            .from("google_calendar_integrations" as any)
+                            .select("id")
+                            .eq("user_id", user.user.id)
+                            .maybeSingle();
+
+                          if (userIntegration) {
+                            toast({
+                              title: "Google Calendar Conectado",
+                              description: "Sua conta está conectada e sincronizando.",
+                            });
+                          } else {
+                            // If credentials exist but user not connected, start OAuth flow
+                            if (settings && settings.client_id) {
+                              // Build OAuth URL
+                              const scopes = Array.isArray(settings.scopes) 
+                                ? settings.scopes.join(" ")
+                                : "https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/userinfo.email";
+                              
+                              const redirectUri = settings.redirect_uri || `${window.location.origin}/api/google-calendar/callback`;
+                              
+                              const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+                              authUrl.searchParams.set("client_id", settings.client_id);
+                              authUrl.searchParams.set("redirect_uri", redirectUri);
+                              authUrl.searchParams.set("response_type", "code");
+                              authUrl.searchParams.set("scope", scopes);
+                              authUrl.searchParams.set("access_type", "offline");
+                              authUrl.searchParams.set("prompt", "consent");
+                              authUrl.searchParams.set("state", user.user.id);
+                              
+                              window.location.href = authUrl.toString();
+                            } else {
+                              toast({
+                                title: "Configuração em falta",
+                                description: "Contacte o administrador para configurar a integração Google Calendar.",
+                                variant: "destructive"
+                              });
+                            }
+                          }
+                        } catch (error) {
+                          console.error("Error checking calendar connection:", error);
+                          toast({
+                            title: "Erro",
+                            description: "Não foi possível verificar a conexão. Tente novamente.",
+                            variant: "destructive",
+                          });
+                        }
+                      }}
+                      className="bg-gradient-to-r from-blue-600 to-purple-600"
+                    >
+                      <Calendar className="mr-2 h-4 w-4" />
+                      Conectar Google Calendar
+                    </Button>
+                  </div>
+
+                  <div className="space-y-2 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                    <h4 className="text-sm font-semibold text-blue-900">ℹ️ Como funciona:</h4>
+                    <ul className="text-xs text-blue-800 space-y-1 list-disc list-inside">
+                      <li>Eventos criados no Vyxa One aparecem automaticamente no Google Calendar</li>
+                      <li>Eventos do Google Calendar são importados para o CRM</li>
+                      <li>Sincronização em tempo real via webhooks</li>
+                      <li>Notificações e lembretes mantêm-se sincronizados</li>
+                    </ul>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
