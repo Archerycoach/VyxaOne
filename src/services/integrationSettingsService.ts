@@ -1,7 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 
 export interface IntegrationConfig {
-  service_name: string;
+  integration_name: string;
   enabled: boolean;
   client_id: string;
   client_secret: string;
@@ -13,7 +13,7 @@ export async function getIntegrationSettings(serviceName: string): Promise<Integ
   const { data, error } = await supabase
     .from("integration_settings" as any)
     .select("*")
-    .eq("service_name", serviceName)
+    .eq("integration_name", serviceName)
     .single();
 
   if (error) {
@@ -31,7 +31,7 @@ export async function updateIntegrationSettings(
   const { error } = await supabase
     .from("integration_settings" as any)
     .update(config)
-    .eq("service_name", serviceName);
+    .eq("integration_name", serviceName);
 
   if (error) {
     console.error("Error updating integration settings:", error);
@@ -43,7 +43,7 @@ export async function toggleIntegration(serviceName: string, enabled: boolean): 
   const { error } = await supabase
     .from("integration_settings" as any)
     .update({ enabled })
-    .eq("service_name", serviceName);
+    .eq("integration_name", serviceName);
 
   if (error) {
     console.error("Error toggling integration:", error);

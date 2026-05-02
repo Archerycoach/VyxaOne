@@ -25,6 +25,7 @@ export function CalendarContainer() {
   const {
     isConnected,
     isSyncing,
+    isConfigured,
     checkConnection,
     syncWithGoogle,
     connectGoogle,
@@ -559,7 +560,7 @@ export function CalendarContainer() {
         onViewModeChange={setViewMode}
         onNewEvent={handleCreateEvent}
         googleConnected={isConnected}
-        googleConfigured={!!process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID}
+        googleConfigured={isConfigured}
         isSyncing={isSyncing}
         onGoogleConnect={connectGoogle}
         onGoogleSync={syncWithGoogle}

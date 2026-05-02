@@ -20,7 +20,8 @@ export function useGoogleCalendarSync() {
       const response = await fetch("/api/google-calendar/settings");
       if (response.ok) {
         const settings = await response.json();
-        setIsConfigured(!!(settings.enabled && settings.clientId && settings.clientSecret));
+        // Apenas exigir o clientId para considerar como configurado
+        setIsConfigured(!!settings.clientId);
       }
     } catch (error) {
       console.error("Error checking Google Calendar configuration:", error);
@@ -52,7 +53,6 @@ export function useGoogleCalendarSync() {
 
       // Check if token is still valid
       const integration = data as any;
-      const hasRefreshToken = !!integration.refresh_token;
       
       // Store sync settings
       setSyncSettings({
@@ -61,9 +61,8 @@ export function useGoogleCalendarSync() {
         syncTasks: integration.sync_tasks,
       });
       
-      // Consider connected if we have a refresh token, even if access token expired
-      // The backend will automatically refresh the token when needed
-      setIsConnected(hasRefreshToken);
+      // Se o registo existe, o utilizador está conectado
+      setIsConnected(true);
     } catch (error) {
       console.error("Error checking Google Calendar connection:", error);
       setIsConnected(false);
@@ -175,14 +174,15 @@ export function useGoogleCalendarSync() {
         throw new Error("User not authenticated");
       }
 
-      // Get OAuth settings from database
-      const { data: settings } = await supabase
-        .from("integration_settings" as any)
-        .select("*")
-        .eq("service_name", "google_calendar")
-        .single();
+      // Get OAuth settings from API instead of direct DB query to avoid RLS and schema issues
+      const response = await fetch("/api/google-calendar/settings");
+      if (!response.ok) {
+        throw new Error("Falha ao obter configurações do servidor");
+      }
+      
+      const settings = await response.json();
 
-      if (!settings) {
+      if (!settings || !settings.clientId) {
         toast({
           title: "⚙️ Configuração não encontrada",
           description: "Por favor, configure o Google Calendar nas definições de integração",
@@ -191,21 +191,21 @@ export function useGoogleCalendarSync() {
         return;
       }
 
-      const settingsData = settings as any;
-      const { client_id, redirect_uri } = settingsData;
-      const actualRedirectUri = redirect_uri || `${window.location.origin}/api/google-calendar/callback`;
+      const actualRedirectUri = window.location.origin.includes('localhost') || window.location.origin.includes('softgen') 
+        ? `${window.location.origin}/api/google-calendar/callback`
+        : (settings.redirectUri || `${window.location.origin}/api/google-calendar/callback`);
 
-      const scope = [
-        "https://www.googleapis.com/auth/calendar",
-        "https://www.googleapis.com/auth/calendar.events",
-        "https://www.googleapis.com/auth/userinfo.email",
-      ].join(" ");
+      const scopeString = Array.isArray(settings.scopes) 
+        ? settings.scopes.join(" ") 
+        : (typeof settings.scopes === 'string' && settings.scopes.length > 0 
+            ? settings.scopes 
+            : "https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/userinfo.email");
 
       const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${new URLSearchParams({
-        client_id: client_id,
+        client_id: settings.clientId,
         redirect_uri: actualRedirectUri,
         response_type: "code",
-        scope: scope,
+        scope: scopeString,
         access_type: "offline",
         prompt: "consent",
         state: user.id,

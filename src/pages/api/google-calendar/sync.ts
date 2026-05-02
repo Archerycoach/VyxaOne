@@ -79,7 +79,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const { data: integrationSettings } = await (supabaseAdmin
         .from("integration_settings" as any)
         .select("*")
-        .eq("service_name", "google_calendar")
+        .eq("integration_name", "google_calendar")
         .maybeSingle());
 
       if (!integrationSettings) {

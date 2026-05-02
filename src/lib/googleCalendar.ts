@@ -103,7 +103,7 @@ export async function getGoogleCalendarToken(): Promise<string | null> {
       const { data: settings } = await supabase
         .from("integration_settings" as any)
         .select("*")
-        .eq("service_name", "google_calendar")
+        .eq("integration_name", "google_calendar")
         .maybeSingle();
 
       if (!settings) {
