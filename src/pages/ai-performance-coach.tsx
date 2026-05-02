@@ -23,10 +23,16 @@ export default function AiPerformanceCoach() {
   };
 
   const runAnalysis = async () => {
+    console.log("[FRONTEND] 1. Iniciar botão Coach...");
     setIsAnalyzing(true);
     try {
+      console.log("[FRONTEND] 2. A validar sessão Supabase...");
       const { data: session } = await supabase.auth.getSession();
-      if (!session.session?.access_token) throw new Error("Não autenticado");
+      if (!session.session?.access_token) throw new Error("Não autenticado - Inicie sessão novamente.");
+
+      console.log("[FRONTEND] 3. A fazer pedido à API Coach...");
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 20000); // 20 segundos máximo
 
       const response = await fetch("/api/gpt/agents/coach", {
         method: "POST",
@@ -34,21 +40,26 @@ export default function AiPerformanceCoach() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${session.session.access_token}`,
         },
+        signal: controller.signal
       });
+      
+      clearTimeout(timeoutId);
+      console.log("[FRONTEND] 4. Resposta recebida. Status HTTP:", response.status);
 
       if (!response.ok) {
         const errText = await response.text();
+        console.error("[FRONTEND] Erro do Servidor:", errText);
         let errMsg = "Falha ao gerar análise";
         try {
           const errJson = JSON.parse(errText);
           errMsg = errJson.error || errMsg;
         } catch (e) {
-          errMsg = `Erro ${response.status}: Ocorreu um problema no servidor.`;
-          console.error("Non-JSON error response:", errText);
+          errMsg = `Erro ${response.status}: Vercel falhou ou bloqueou a resposta.`;
         }
         throw new Error(errMsg);
       }
 
+      console.log("[FRONTEND] 5. A processar JSON...");
       const data = await response.json();
       setAnalysisResult(data.advice);
       
@@ -56,11 +67,16 @@ export default function AiPerformanceCoach() {
         title: "Análise concluída",
         description: "Os seus conselhos preditivos foram gerados com sucesso.",
       });
+      console.log("[FRONTEND] 6. Finalizado com sucesso!");
     } catch (error: any) {
-      console.error(error);
+      console.error("[FRONTEND] ERRO APANHADO:", error);
+      let errorMsg = error.message;
+      if (error.name === 'AbortError') {
+        errorMsg = "O servidor demorou demasiado tempo a responder (Timeout do lado do cliente).";
+      }
       toast({
         title: "Erro na análise",
-        description: error.message,
+        description: errorMsg,
         variant: "destructive",
       });
     } finally {
