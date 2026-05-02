@@ -648,6 +648,13 @@ export default function Settings() {
                                 ? `${window.location.origin}/api/google-calendar/callback`
                                 : (settings.redirectUri || `${window.location.origin}/api/google-calendar/callback`);
                               
+                              // Codificar o estado para enviar o ID e o URL de redirecionamento de forma segura
+                              const stateObj = {
+                                userId: user.user.id,
+                                redirectUri: redirectUri
+                              };
+                              const encodedState = window.btoa(JSON.stringify(stateObj));
+
                               const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
                               authUrl.searchParams.set("client_id", settings.clientId);
                               authUrl.searchParams.set("redirect_uri", redirectUri);
@@ -655,7 +662,7 @@ export default function Settings() {
                               authUrl.searchParams.set("scope", scopes);
                               authUrl.searchParams.set("access_type", "offline");
                               authUrl.searchParams.set("prompt", "consent");
-                              authUrl.searchParams.set("state", user.user.id);
+                              authUrl.searchParams.set("state", encodedState);
                               
                               console.log("[Google Auth] Redirecionando para:", authUrl.toString());
                               window.location.assign(authUrl.toString());

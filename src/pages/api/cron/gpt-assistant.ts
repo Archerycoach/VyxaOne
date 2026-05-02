@@ -168,9 +168,7 @@ ${JSON.stringify(contextData, null, 2)}`;
               event_type: ["call", "meeting", "visit", "task"].includes(e.event_type) ? e.event_type : "task",
               start_time: e.start_time || new Date().toISOString(),
               end_time: e.end_time || new Date(Date.now() + 30 * 60000).toISOString(),
-              lead_id: isValidLead ? e.lead_id : null,
-              is_all_day: false,
-              status: "scheduled"
+              lead_id: isValidLead ? e.lead_id : null
             };
           });
 
