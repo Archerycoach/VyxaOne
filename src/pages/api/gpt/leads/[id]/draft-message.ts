@@ -34,17 +34,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (notesError) console.error("Notes fetch error:", notesError);
 
     // Buscar chave da base de dados (dinâmica) com fallback para variável de ambiente
-    const { data: keyData } = await (supabaseAdmin
-      .from("gpt_api_keys" as any)
-      .select("api_key")
-      .eq("user_id", user.id)
-      .eq("is_active", true)
-      .maybeSingle() as any);
-
-    const openAIApiKey = keyData?.api_key || process.env.OPENAI_API_KEY;
+    let openAIApiKey = process.env.OPENAI_API_KEY;
+    
+    try {
+      const { data: keyData, error: keyError } = await (supabaseAdmin
+        .from("gpt_api_keys" as any)
+        .select("api_key")
+        .eq("user_id", user.id)
+        .eq("is_active", true)
+        .maybeSingle() as any);
+        
+      if (keyData?.api_key) {
+        openAIApiKey = keyData.api_key;
+      }
+    } catch (e) {
+      console.warn("Não foi possível aceder à tabela gpt_api_keys (provavelmente não existe). A usar fallback do .env");
+    }
     
     if (!openAIApiKey) {
-      return res.status(400).json({ error: "OpenAI API Key não configurada. Configure no menu Definições > Agente GPT." });
+      return res.status(400).json({ error: "OpenAI API Key não configurada. Configure no menu Definições > Agente GPT ou adicione ao .env.local." });
     }
 
     const channelInstructions = channel === 'whatsapp' 

@@ -625,7 +625,11 @@ export function LeadDetailsDialog({
           <Button onClick={() => {
             if (!generatedDraft) return;
             if (generatedDraft.channel === 'whatsapp') {
-              const phone = lead?.phone?.replace(/\D/g, '') || '';
+              let phone = lead?.phone?.replace(/\D/g, '') || '';
+              // Adiciona indicativo de Portugal caso o número tenha 9 dígitos
+              if (phone.length === 9 && (phone.startsWith('9') || phone.startsWith('2'))) {
+                phone = '351' + phone;
+              }
               const url = `https://wa.me/${phone}?text=${encodeURIComponent(generatedDraft.text)}`;
               window.open(url, "_blank");
             } else {
