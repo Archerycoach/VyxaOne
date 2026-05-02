@@ -83,42 +83,49 @@ export default async function handler(
           .in("lead_id", leadIds)
           .order("created_at", { ascending: false });
 
-        const { data: pendingTasks } = await supabase
-          .from("tasks")
-          .select("id, title, related_lead_id, due_date")
+        const { data: upcomingEvents } = await supabase
+          .from("calendar_events")
+          .select("id, title, lead_id, start_time, end_time")
           .eq("user_id", user.id)
-          .eq("status", "pending")
-          .in("related_lead_id", leadIds);
+          .gte("start_time", new Date().toISOString());
 
         const contextData = {
           leads,
           recent_notes: notes || [],
-          existing_pending_tasks: pendingTasks || []
+          existing_upcoming_events: upcomingEvents || []
         };
+
+        const now = new Date();
 
         const prompt = `És um assistente de vendas de elite de uma agência imobiliária. 
 Analisa as leads pendentes do consultor/agente ${user.full_name || 'Utilizador'}.
-Vais receber os dados das leads, as notas reais recentes escritas sobre cada uma, e as tarefas pendentes atuais.
+Vais receber os dados das leads, as notas reais recentes escritas sobre cada uma, e os eventos de calendário já marcados.
+
+Data e hora atual: ${now.toISOString()}
 
 O teu objetivo é:
 1. Ler as notas para entender o contexto da negociação.
-2. Sugerir ações baseadas nessas notas.
-3. Evitar criar tarefas duplicadas (verifica o 'existing_pending_tasks').
+2. Agendar EVENTOS DE CALENDÁRIO (hora de início e fim) baseados nessas notas.
+3. Evitar sobrepor horários (verifica 'existing_upcoming_events').
 4. Formatar um resumo motivador para o e-mail matinal.
 
 A tua resposta DEVE ser OBRIGATORIAMENTE um objeto JSON com esta estrutura:
 {
   "html_summary": "E-mail em HTML (<h3>, <p>, <ul>, <li>). Foca-te no contexto lido nas notas.",
-  "new_tasks": [
+  "new_events": [
     {
-      "title": "Ação a tomar (ex: Enviar email com propostas de T2)",
-      "description": "Justificação com base na nota lida...",
-      "related_lead_id": "id_da_lead_aqui",
-      "priority": "high",
-      "due_date": "${new Date().toISOString()}"
+      "title": "Ligar à Ana para confirmar visita",
+      "description": "Justificação baseada na nota...",
+      "lead_id": "id_da_lead_aqui",
+      "event_type": "call",
+      "start_time": "2026-05-02T10:00:00Z",
+      "end_time": "2026-05-02T10:30:00Z"
     }
   ]
 }
+
+Tipos de evento aceites: 'call', 'meeting', 'visit', 'task'.
+Marca os eventos com duração de 30 a 60 mins dentro do horário de trabalho para hoje ou amanhã.
 
 Dados para analisar:
 ${JSON.stringify(contextData, null, 2)}`;
@@ -145,30 +152,33 @@ ${JSON.stringify(contextData, null, 2)}`;
         const gptResponse = JSON.parse(gptData.choices[0].message.content);
         
         let gptMessage = gptResponse.html_summary || "<p>Resumo processado.</p>";
-        const newTasks = gptResponse.new_tasks || [];
+        const newEvents = gptResponse.new_events || [];
 
-        let tasksCreatedCount = 0;
-        if (Array.isArray(newTasks) && newTasks.length > 0) {
-          const tasksToInsert = newTasks.map((t: any) => ({
+        let eventsCreatedCount = 0;
+        if (Array.isArray(newEvents) && newEvents.length > 0) {
+          const eventsToInsert = newEvents.map((e: any) => ({
             user_id: user.id,
-            assigned_to: user.id,
-            title: t.title,
-            description: t.description || "Agendado pelo Vyxa AI",
-            status: "pending",
-            priority: ["low", "medium", "high", "urgent"].includes(t.priority) ? t.priority : "medium",
-            related_lead_id: t.related_lead_id,
-            due_date: t.due_date || new Date().toISOString()
+            title: e.title,
+            description: e.description || "Agendado pelo Vyxa AI",
+            event_type: ["call", "meeting", "visit", "task"].includes(e.event_type) ? e.event_type : "task",
+            start_time: e.start_time || new Date().toISOString(),
+            end_time: e.end_time || new Date(Date.now() + 30 * 60000).toISOString(),
+            lead_id: e.lead_id,
+            is_all_day: false,
+            status: "scheduled"
           }));
 
-          const { error: insertError } = await supabase.from("tasks").insert(tasksToInsert);
+          const { error: insertError } = await supabase.from("calendar_events").insert(eventsToInsert);
           if (!insertError) {
-            tasksCreatedCount = tasksToInsert.length;
+            eventsCreatedCount = eventsToInsert.length;
             gptMessage += `
               <div style="margin-top: 20px; padding: 15px; background-color: #eef2ff; border-left: 4px solid #4f46e5; border-radius: 4px; color: #3730a3;">
-                <strong>🤖 Agendamento Automático:</strong><br>
-                Li as suas notas e já deixei <strong>${tasksCreatedCount} tarefas</strong> prontas no seu calendário para hoje!
+                <strong>📅 Agendamento Automático:</strong><br>
+                Li as suas notas e já agendei <strong>${eventsCreatedCount} eventos</strong> no seu calendário para hoje!
               </div>
             `;
+          } else {
+            console.error("Erro ao inserir eventos GPT:", insertError);
           }
         }
 

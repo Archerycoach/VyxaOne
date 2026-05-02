@@ -149,7 +149,7 @@ export function GptApiSettings() {
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Erro ao executar o assistente");
+      if (!res.ok) throw new Error(data.message || data.error || "Erro ao executar o assistente");
 
       setManualRunResult(data.message);
       toast({

@@ -64,47 +64,52 @@ export default async function handler(
       .in("lead_id", leadIds)
       .order("created_at", { ascending: false });
 
-    // Buscar tarefas pendentes para evitar duplicações
-    const { data: pendingTasks } = await supabase
-      .from("tasks")
-      .select("id, title, related_lead_id, due_date")
+    // Buscar eventos já marcados para evitar sobreposição de horários
+    const { data: upcomingEvents } = await supabase
+      .from("calendar_events")
+      .select("id, title, lead_id, start_time, end_time")
       .eq("user_id", user.id)
-      .eq("status", "pending")
-      .in("related_lead_id", leadIds);
+      .gte("start_time", new Date().toISOString());
 
     const contextData = {
       leads,
       recent_notes: notes || [],
-      existing_pending_tasks: pendingTasks || []
+      existing_upcoming_events: upcomingEvents || []
     };
+
+    const now = new Date();
 
     // Instruções para o OpenAI (System Prompt) com formato JSON forçado
     const prompt = `És um assistente de vendas de elite de uma agência imobiliária. 
 Analisa as leads pendentes do consultor/agente ${profile?.full_name || 'Utilizador'}.
-Vais receber os dados das leads, as notas reais recentes escritas sobre cada uma, e as tarefas pendentes atuais.
+Vais receber os dados das leads, as notas reais recentes escritas sobre cada uma, e os eventos já agendados no calendário.
+
+Data e hora atual: ${now.toISOString()}
 
 O teu objetivo é:
 1. Ler as notas para entender o contexto real da negociação de cada cliente.
-2. Identificar quem precisa de contacto urgente hoje.
-3. Sugerir tarefas de follow-up lógicas APENAS se a lead não tiver já uma tarefa pendente na lista 'existing_pending_tasks' para o mesmo assunto.
-4. Gerar um resumo motivador para o utilizador.
+2. Identificar quem precisa de contacto.
+3. Agendar EVENTOS DE CALENDÁRIO de follow-up lógicos APENAS se a lead não tiver já um evento sobre esse assunto.
+4. Evitar sobrepor horários com os 'existing_upcoming_events'. Marca eventos de 30 a 60 minutos para horários laborais.
+5. Gerar um resumo motivador.
 
 A tua resposta DEVE ser OBRIGATORIAMENTE um objeto JSON válido com esta estrutura exata:
 {
   "html_summary": "Resumo profissional em HTML. Usa <h3>, <p>, <ul>, <li>, <strong>, <br>. Não uses markdown. Foca-te no que descobriste lendo as notas.",
-  "new_tasks": [
+  "new_events": [
     {
-      "title": "Título da tarefa (ex: Ligar à Ana para confirmar visita à casa T3)",
-      "description": "Justificação com base na nota lida...",
-      "related_lead_id": "id_da_lead_aqui",
-      "priority": "high",
-      "due_date": "${new Date().toISOString()}"
+      "title": "Ligar à Ana para confirmar visita",
+      "description": "Justificação baseada na nota...",
+      "lead_id": "id_da_lead_aqui",
+      "event_type": "call",
+      "start_time": "2026-05-02T10:00:00Z",
+      "end_time": "2026-05-02T10:30:00Z"
     }
   ]
 }
 
-Prioridades aceites: 'low', 'medium', 'high', 'urgent'.
-Datas: Usa o formato ISO. Agenda as tarefas urgentes para hoje e as menos urgentes para amanhã.
+Tipos de evento válidos (event_type): 'call', 'meeting', 'visit', 'task'.
+Datas: Usa o formato ISO real. Agenda os eventos dentro do horário laboral para hoje ou amanhã, verificando para não chocar com a lista de existing_upcoming_events.
 
 Dados para analisar:
 ${JSON.stringify(contextData, null, 2)}`;
@@ -126,40 +131,53 @@ ${JSON.stringify(contextData, null, 2)}`;
     if (!openAiRes.ok) {
       const errorText = await openAiRes.text();
       console.error("OpenAI erro:", errorText);
-      throw new Error("Falha ao comunicar com a OpenAI");
+      
+      // Tentar extrair a mensagem de erro específica da OpenAI
+      let openAiErrorMessage = "Falha ao comunicar com a OpenAI";
+      try {
+        const errorJson = JSON.parse(errorText);
+        if (errorJson.error && errorJson.error.message) {
+          openAiErrorMessage = `Erro da OpenAI: ${errorJson.error.message}`;
+        }
+      } catch (e) {
+        openAiErrorMessage = `Erro da OpenAI: ${errorText}`;
+      }
+      
+      throw new Error(openAiErrorMessage);
     }
 
     const gptData = await openAiRes.json();
     const gptResponse = JSON.parse(gptData.choices[0].message.content);
     
     let gptMessage = gptResponse.html_summary || "<p>Resumo gerado.</p>";
-    const newTasks = gptResponse.new_tasks || [];
+    const newEvents = gptResponse.new_events || [];
 
-    // Criar as novas tarefas na base de dados
-    let tasksCreatedCount = 0;
-    if (Array.isArray(newTasks) && newTasks.length > 0) {
-      const tasksToInsert = newTasks.map((t: any) => ({
+    // Criar os novos eventos na base de dados
+    let eventsCreatedCount = 0;
+    if (Array.isArray(newEvents) && newEvents.length > 0) {
+      const eventsToInsert = newEvents.map((e: any) => ({
         user_id: user.id,
-        assigned_to: user.id,
-        title: t.title,
-        description: t.description || "Agendado pelo Vyxa AI",
-        status: "pending",
-        priority: ["low", "medium", "high", "urgent"].includes(t.priority) ? t.priority : "medium",
-        related_lead_id: t.related_lead_id,
-        due_date: t.due_date || new Date().toISOString()
+        title: e.title,
+        description: e.description || "Agendado pelo Vyxa AI",
+        event_type: ["call", "meeting", "visit", "task"].includes(e.event_type) ? e.event_type : "task",
+        start_time: e.start_time || new Date().toISOString(),
+        end_time: e.end_time || new Date(Date.now() + 30 * 60000).toISOString(),
+        lead_id: e.lead_id,
+        is_all_day: false,
+        status: "scheduled"
       }));
 
-      const { error: insertError } = await supabase.from("tasks").insert(tasksToInsert);
+      const { error: insertError } = await supabase.from("calendar_events").insert(eventsToInsert);
       if (!insertError) {
-        tasksCreatedCount = tasksToInsert.length;
+        eventsCreatedCount = eventsToInsert.length;
         gptMessage += `
           <div style="margin-top: 20px; padding: 15px; background-color: #eef2ff; border-left: 4px solid #4f46e5; border-radius: 4px;">
-            <strong style="color: #3730a3;">🤖 Automação Concluída:</strong><br>
-            Li as suas notas e adicionei automaticamente <strong>${tasksCreatedCount} novas tarefas</strong> ao seu calendário para hoje!
+            <strong style="color: #3730a3;">📅 Automação Concluída:</strong><br>
+            Li as suas notas e agendei automaticamente <strong>${eventsCreatedCount} novos eventos</strong> no seu calendário!
           </div>
         `;
       } else {
-        console.error("Erro ao inserir tarefas GPT:", insertError);
+        console.error("Erro ao inserir eventos GPT:", insertError);
       }
     }
 
@@ -212,7 +230,7 @@ ${JSON.stringify(contextData, null, 2)}`;
     return res.status(200).json({ 
       success: true, 
       message: gptMessage, 
-      tasksCreated: tasksCreatedCount,
+      tasksCreated: eventsCreatedCount,
       emailSent 
     });
   } catch (error) {

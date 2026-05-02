@@ -210,6 +210,13 @@ export function useGoogleCalendarSync() {
             ? settings.scopes 
             : "https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/userinfo.email");
 
+      // Codificar o estado para enviar o ID e o URL de redirecionamento de forma segura
+      const stateObj = {
+        userId: user.id,
+        redirectUri: actualRedirectUri
+      };
+      const encodedState = window.btoa(JSON.stringify(stateObj));
+
       const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${new URLSearchParams({
         client_id: settings.clientId,
         redirect_uri: actualRedirectUri,
@@ -217,7 +224,7 @@ export function useGoogleCalendarSync() {
         scope: scopeString,
         access_type: "offline",
         prompt: "consent",
-        state: user.id,
+        state: encodedState,
       })}`;
 
       console.log("[useGoogleCalendarSync] 🌐 Redirecting to Google OAuth...");

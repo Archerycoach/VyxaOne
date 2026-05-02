@@ -13,14 +13,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    const { code, state: userId, error: oauthError } = req.query;
+    const { code, state: rawState, error: oauthError } = req.query;
 
     console.log("[Google Calendar Callback] ========== INÍCIO ==========");
     console.log("[Google Calendar Callback] Request received:", {
       hasCode: !!code,
       codeLength: code ? (code as string).length : 0,
-      hasUserId: !!userId,
-      userId: userId,
+      hasState: !!rawState,
+      state: rawState,
       hasError: !!oauthError,
       error: oauthError,
       fullQuery: req.query
@@ -32,13 +32,29 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.redirect(302, "/calendar?error=authorization_denied");
     }
 
-    if (!code || !userId || typeof userId !== "string") {
+    if (!code || !rawState || typeof rawState !== "string") {
       console.error("[Google Calendar Callback] Missing required parameters:", { 
         code: !!code, 
-        userId,
-        userIdType: typeof userId
+        hasState: !!rawState,
       });
       return res.redirect(302, "/calendar?error=invalid_params");
+    }
+
+    // Decode state to handle robust redirect URI matching
+    let userId = rawState;
+    let redirectUriFromState = "";
+    
+    try {
+      // Tentativa de descodificar estado (se foi enviado como base64 JSON pelo frontend)
+      const decoded = Buffer.from(rawState, 'base64').toString('utf-8');
+      if (decoded.includes('userId')) {
+        const stateObj = JSON.parse(decoded);
+        userId = stateObj.userId;
+        redirectUriFromState = stateObj.redirectUri || "";
+        console.log("[Google Calendar Callback] State descodificado com sucesso. Origin URI recebido.");
+      }
+    } catch (e) {
+      console.log("[Google Calendar Callback] State formato simples (retrocompatibilidade).");
     }
 
     console.log("[Google Calendar Callback] Step 1: Fetching OAuth settings from database...");
@@ -82,9 +98,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const protocol = req.headers["x-forwarded-proto"] || (host.includes("localhost") ? "http" : "https");
     const origin = `${protocol}://${host}`;
     
-    let actualRedirectUri = redirect_uri;
+    let actualRedirectUri = redirectUriFromState || redirect_uri;
     if (!actualRedirectUri || host.includes("localhost") || host.includes("softgen")) {
-      actualRedirectUri = `${origin}/api/google-calendar/callback`;
+      actualRedirectUri = redirectUriFromState || `${origin}/api/google-calendar/callback`;
     }
 
     console.log("[Google Calendar Callback] Step 3: Using OAuth credentials:", {
@@ -176,21 +192,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     console.log("[Google Calendar Callback] Step 10: Saving integration to database...");
 
+    const integrationData: any = {
+      user_id: userId,
+      google_email: userInfo.email,
+      access_token: tokens.access_token,
+      expires_at: expiresAt.toISOString(),
+      sync_events: true,
+      sync_tasks: true,
+      sync_notes: false,
+      sync_direction: "both",
+      auto_sync: true,
+    };
+
+    // A Google pode não devolver o refresh_token se a conta já foi autorizada antes.
+    // Só atualizamos o refresh_token se ele vier na resposta para não apagar o existente.
+    if (tokens.refresh_token) {
+      integrationData.refresh_token = tokens.refresh_token;
+    }
+
     // Save or update integration in database
     const { error: upsertError, data: upsertData } = await supabaseAdmin
       .from("google_calendar_integrations" as any)
-      .upsert({
-        user_id: userId,
-        google_email: userInfo.email,
-        access_token: tokens.access_token,
-        refresh_token: tokens.refresh_token,
-        expires_at: expiresAt.toISOString(),
-        sync_events: true,
-        sync_tasks: true,
-        sync_notes: false,
-        sync_direction: "both",
-        auto_sync: true,
-      }, {
+      .upsert(integrationData, {
         onConflict: "user_id",
       })
       .select();
