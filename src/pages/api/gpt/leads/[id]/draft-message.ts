@@ -15,19 +15,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const leadId = req.query.id as string;
     const { channel } = req.body; // 'whatsapp' ou 'email'
 
-    // Buscar dados e notas da lead
-    const { data: lead } = await (supabaseAdmin
+    // Buscar dados e notas da lead (usando maybeSingle para não "partir" se algo falhar)
+    const { data: lead, error: leadError } = await (supabaseAdmin
       .from("leads" as any)
       .select("*")
       .eq("id", leadId)
-      .single() as any);
+      .maybeSingle() as any);
 
-    const { data: notes } = await (supabaseAdmin
+    if (leadError) console.error("Lead fetch error:", leadError);
+
+    const { data: notes, error: notesError } = await (supabaseAdmin
       .from("lead_notes" as any)
       .select("note, created_at")
       .eq("lead_id", leadId)
       .order("created_at", { ascending: false })
       .limit(5) as any);
+
+    if (notesError) console.error("Notes fetch error:", notesError);
 
     // Buscar chave da base de dados (dinâmica) com fallback para variável de ambiente
     const { data: keyData } = await (supabaseAdmin

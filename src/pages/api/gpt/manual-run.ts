@@ -197,10 +197,21 @@ ${JSON.stringify(contextData, null, 2)}`;
       const { error: insertError } = await supabase.from("calendar_events").insert(eventsToInsert);
       if (!insertError) {
         eventsCreatedCount = eventsToInsert.length;
+        
+        let eventsListHtml = "<ul style='margin-top: 10px; padding-left: 20px; font-size: 14px;'>";
+        eventsToInsert.forEach((e: any) => {
+          const dateStr = new Date(e.start_time).toLocaleString('pt-PT', { 
+            day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' 
+          });
+          eventsListHtml += `<li style='margin-bottom: 5px;'><strong>${dateStr}</strong>: ${e.title}</li>`;
+        });
+        eventsListHtml += "</ul>";
+
         gptMessage += `
           <div style="margin-top: 20px; padding: 15px; background-color: #eef2ff; border-left: 4px solid #4f46e5; border-radius: 4px;">
             <strong style="color: #3730a3;">📅 Automação Concluída:</strong><br>
             Li as suas notas e agendei automaticamente <strong>${eventsCreatedCount} novos eventos</strong> no seu calendário!
+            ${eventsListHtml}
           </div>
         `;
       } else {

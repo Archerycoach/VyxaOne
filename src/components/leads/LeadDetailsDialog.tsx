@@ -5,11 +5,13 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Textarea } from "@/components/ui/textarea";
 import {
   User,
   Mail,
@@ -61,6 +63,7 @@ export function LeadDetailsDialog({
   const [isLoading, setIsLoading] = useState(false);
   const [quickContactOpen, setQuickContactOpen] = useState(false);
   const [drafting, setDrafting] = useState<string | null>(null);
+  const [generatedDraft, setGeneratedDraft] = useState<{text: string, channel: 'whatsapp'|'email'} | null>(null);
   const { toast } = useToast();
   
   // Use ref to prevent multiple fetches
@@ -208,18 +211,8 @@ export function LeadDetailsDialog({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
 
-      if (channel === 'whatsapp') {
-        const url = `https://wa.me/${lead?.phone?.replace(/\D/g, '') || ''}?text=${encodeURIComponent(data.draft)}`;
-        window.open(url, "_blank");
-      } else {
-        const subjectMatch = data.draft.match(/^Assunto: (.*)/m);
-        const subject = subjectMatch ? subjectMatch[1] : "Follow-up";
-        const body = data.draft.replace(/^Assunto: .*\n?/, "").trim();
-        const url = `mailto:${lead?.email || ''}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-        window.open(url, "_blank");
-      }
-      
-      toast({ title: "Rascunho Gerado", description: "Mensagem pronta a enviar no seu aplicativo!" });
+      setGeneratedDraft({ text: data.draft, channel });
+      toast({ title: "Rascunho Gerado", description: "Pode rever a mensagem antes de a enviar." });
     } catch (err: any) {
       toast({ title: "Erro", description: err.message, variant: "destructive" });
     } finally {
@@ -228,6 +221,7 @@ export function LeadDetailsDialog({
   };
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
@@ -608,5 +602,46 @@ export function LeadDetailsDialog({
         )}
       </DialogContent>
     </Dialog>
+
+    {/* Modal de Revisão do Rascunho */}
+    <Dialog open={!!generatedDraft} onOpenChange={(open) => !open && setGeneratedDraft(null)}>
+      <DialogContent className="sm:max-w-[500px] z-[100]">
+        <DialogHeader>
+          <DialogTitle>Rever Mensagem ({generatedDraft?.channel === 'whatsapp' ? 'WhatsApp' : 'E-mail'})</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 pt-4">
+          <Textarea 
+            value={generatedDraft?.text || ""} 
+            onChange={(e) => setGeneratedDraft(prev => prev ? {...prev, text: e.target.value} : null)}
+            rows={12}
+            className="resize-none"
+          />
+          <p className="text-xs text-gray-500">
+            Pode editar a mensagem à vontade. Quando clicar no botão abaixo, a aplicação irá abrir com este texto.
+          </p>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setGeneratedDraft(null)}>Cancelar</Button>
+          <Button onClick={() => {
+            if (!generatedDraft) return;
+            if (generatedDraft.channel === 'whatsapp') {
+              const phone = lead?.phone?.replace(/\D/g, '') || '';
+              const url = `https://wa.me/${phone}?text=${encodeURIComponent(generatedDraft.text)}`;
+              window.open(url, "_blank");
+            } else {
+              const subjectMatch = generatedDraft.text.match(/^Assunto: (.*)/m);
+              const subject = subjectMatch ? subjectMatch[1] : "Follow-up";
+              const body = generatedDraft.text.replace(/^Assunto: .*\n?/, "").trim();
+              const url = `mailto:${lead?.email || ''}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+              window.open(url, "_blank");
+            }
+            setGeneratedDraft(null);
+          }}>
+            {generatedDraft?.channel === 'whatsapp' ? 'Abrir no WhatsApp' : 'Abrir no E-mail'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }

@@ -134,6 +134,18 @@ export default function AiAgentPage() {
     }
   };
 
+  const handleDeleteReport = async (id: string) => {
+    if (!confirm("Tem a certeza que deseja eliminar este relatório?")) return;
+    try {
+      const { error } = await (supabase.from("ai_reports" as any).delete().eq("id", id) as any);
+      if (error) throw error;
+      toast({ title: "Relatório Eliminado" });
+      loadData();
+    } catch (error: any) {
+      toast({ title: "Erro", description: error.message, variant: "destructive" });
+    }
+  };
+
   return (
     <ProtectedRoute>
       <AppWrapper>
@@ -199,9 +211,14 @@ export default function AiAgentPage() {
                                 </span>
                               </div>
                             </div>
-                            <Button variant="secondary" size="sm" onClick={() => setSelectedReport(report)}>
-                              Ler
-                            </Button>
+                            <div className="flex items-center gap-2">
+                              <Button variant="secondary" size="sm" onClick={() => setSelectedReport(report)}>
+                                Ler
+                              </Button>
+                              <Button variant="ghost" size="sm" className="text-red-500 hover:bg-red-50 px-2" onClick={() => handleDeleteReport(report.id)}>
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
                           </div>
                         ))}
                       </div>
