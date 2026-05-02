@@ -5,8 +5,11 @@ type Profile = Database["public"]["Tables"]["profiles"]["Row"];
 
 // Get current user profile with role and team_lead_id
 export const getCurrentUserProfile = async () => {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not authenticated");
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error("Not authenticated");
+
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) throw new Error("Not authenticated");
 
   const { data: profile, error } = await supabase
     .from("profiles")

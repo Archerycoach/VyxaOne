@@ -1,6 +1,16 @@
 {
   "buildCommand": "npm run build",
   "installCommand": "npm install",
+  "crons": [
+    {
+      "path": "/api/cron/daily-emails",
+      "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/cron/gpt-assistant",
+      "schedule": "30 8 * * *"
+    }
+  ],
   "headers": [
     {
       "source": "/(.*)",

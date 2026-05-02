@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { Bot, Copy, Key, Plus, Trash2, Check, Clock } from "lucide-react";
+import { Bot, Copy, Key, Plus, Trash2, Check, Clock, Play, Loader2 } from "lucide-react";
 
 interface GptApiKey {
   id: string;
@@ -30,6 +31,9 @@ export function GptApiSettings() {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const [manualRunLoading, setManualRunLoading] = useState(false);
+  const [manualRunResult, setManualRunResult] = useState<string | null>(null);
 
   useEffect(() => {
     loadKeys();
@@ -131,6 +135,39 @@ export function GptApiSettings() {
     });
   };
 
+  const handleManualRun = async () => {
+    try {
+      setManualRunLoading(true);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("Utilizador não autenticado");
+
+      const res = await fetch("/api/gpt/manual-run", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${session.access_token}`
+        }
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erro ao executar o assistente");
+
+      setManualRunResult(data.message);
+      toast({
+        title: "Análise Concluída",
+        description: data.emailSent ? "Resumo gerado e enviado por email." : "Resumo gerado com sucesso.",
+      });
+    } catch (error: any) {
+      console.error("Manual run error:", error);
+      toast({
+        title: "Erro na Execução",
+        description: error.message || "Não foi possível executar o assistente GPT.",
+        variant: "destructive",
+      });
+    } finally {
+      setManualRunLoading(false);
+    }
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -162,11 +199,32 @@ export function GptApiSettings() {
             Como configurar no ChatGPT
           </h4>
           <ol className="text-sm text-indigo-800 space-y-1 list-decimal list-inside ml-1">
-            <li>Gere uma nova chave acima e copie-a.</li>
+            <li>Gere uma nova chave abaixo e copie-a.</li>
             <li>No ChatGPT, crie um novo GPT e vá a <strong>Configure &gt; Create new action</strong>.</li>
             <li>Cole o URL <code>https://o-seu-dominio.com/openapi.yaml</code> no campo Schema.</li>
             <li>Na secção <strong>Authentication</strong>, escolha <strong>API Key</strong>, insira a sua chave e selecione o Auth Type <strong>Bearer</strong>.</li>
           </ol>
+        </div>
+
+        <div className="flex items-center justify-between p-4 border border-indigo-100 bg-indigo-50/50 rounded-lg mb-6">
+          <div>
+            <h3 className="font-medium text-indigo-900">Análise Rápida (Execução Manual)</h3>
+            <p className="text-sm text-indigo-700 mt-1">
+              Peça ao GPT para analisar as suas leads pendentes agora mesmo e gerar um plano de ação para hoje.
+            </p>
+          </div>
+          <Button 
+            onClick={handleManualRun} 
+            disabled={manualRunLoading}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white shrink-0 ml-4"
+          >
+            {manualRunLoading ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Play className="h-4 w-4 mr-2" />
+            )}
+            Gerar Resumo Agora
+          </Button>
         </div>
 
         <div className="space-y-4">
@@ -228,6 +286,21 @@ export function GptApiSettings() {
           )}
         </div>
       </CardContent>
+
+      <Dialog open={!!manualRunResult} onOpenChange={(open) => !open && setManualRunResult(null)}>
+        <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-indigo-700">
+              <Bot className="h-5 w-5" />
+              O seu Resumo Diário GPT
+            </DialogTitle>
+          </DialogHeader>
+          <div 
+            className="mt-4 text-sm text-gray-700 leading-relaxed prose prose-indigo max-w-none"
+            dangerouslySetInnerHTML={{ __html: manualRunResult || "" }}
+          />
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

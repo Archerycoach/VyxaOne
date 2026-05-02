@@ -102,8 +102,11 @@ export default function Settings() {
         setPhone(data.phone || "");
         setReplyEmail(data.reply_email || "");
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error loading profile:", error);
+      if (error?.message === "Not authenticated") {
+        router.push("/login");
+      }
     }
   };
 
