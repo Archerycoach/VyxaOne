@@ -37,8 +37,16 @@ export default function AiOrganizer() {
       });
 
       if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.error || "Falha ao gerar análise");
+        const errText = await response.text();
+        let errMsg = "Falha ao gerar análise";
+        try {
+          const errJson = JSON.parse(errText);
+          errMsg = errJson.error || errMsg;
+        } catch (e) {
+          errMsg = `Erro ${response.status}: Ocorreu um problema no servidor.`;
+          console.error("Non-JSON error response:", errText);
+        }
+        throw new Error(errMsg);
       }
 
       const data = await response.json();
