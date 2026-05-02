@@ -37,7 +37,7 @@ export default async function handler(
       .eq("id", user.id)
       .single();
 
-    // Buscar leads pendentes do utilizador (limitado a 15)
+    // Buscar leads pendentes do utilizador (limitado a 10 por causa dos tokens)
     const { data: leads } = await supabase
       .from("leads")
       .select("id, name, status, last_contact_date, next_follow_up, lead_type")
@@ -45,7 +45,7 @@ export default async function handler(
       .is("archived_at", null)
       .not("status", "in", '("won", "lost")')
       .order("next_follow_up", { ascending: true })
-      .limit(15);
+      .limit(10);
 
     if (!leads || leads.length === 0) {
       return res.status(200).json({ 
@@ -55,18 +55,59 @@ export default async function handler(
       });
     }
 
-    // Instruções para o OpenAI (System Prompt) - Similar ao CRON
+    const leadIds = leads.map(l => l.id);
+
+    // Buscar as notas das leads para dar contexto ao GPT
+    const { data: notes } = await supabase
+      .from("lead_notes")
+      .select("lead_id, note, created_at")
+      .in("lead_id", leadIds)
+      .order("created_at", { ascending: false });
+
+    // Buscar tarefas pendentes para evitar duplicações
+    const { data: pendingTasks } = await supabase
+      .from("tasks")
+      .select("id, title, related_lead_id, due_date")
+      .eq("user_id", user.id)
+      .eq("status", "pending")
+      .in("related_lead_id", leadIds);
+
+    const contextData = {
+      leads,
+      recent_notes: notes || [],
+      existing_pending_tasks: pendingTasks || []
+    };
+
+    // Instruções para o OpenAI (System Prompt) com formato JSON forçado
     const prompt = `És um assistente de vendas de elite de uma agência imobiliária. 
-Analisa as seguintes leads pendentes do consultor/agente ${profile?.full_name || 'Utilizador'}.
-Com base no estado e datas de follow_up (prioriza as que têm data de follow-up expirada ou mais antiga), redige um resumo diário.
-Gera 3 prioridades MÁXIMAS e claras para agora que ele deve focar-se a contactar.
+Analisa as leads pendentes do consultor/agente ${profile?.full_name || 'Utilizador'}.
+Vais receber os dados das leads, as notas reais recentes escritas sobre cada uma, e as tarefas pendentes atuais.
 
-A tua resposta DEVE ser estritamente escrita num formato HTML seguro para web.
-Usa apenas as tags <h3>, <p>, <ul>, <li>, <strong>, e <br>. Não uses blocos de código Markdown. Não cries tags <html> ou <body>, devolve apenas o conteúdo.
-Tem um tom motivador e direto ao assunto para fechar vendas.
+O teu objetivo é:
+1. Ler as notas para entender o contexto real da negociação de cada cliente.
+2. Identificar quem precisa de contacto urgente hoje.
+3. Sugerir tarefas de follow-up lógicas APENAS se a lead não tiver já uma tarefa pendente na lista 'existing_pending_tasks' para o mesmo assunto.
+4. Gerar um resumo motivador para o utilizador.
 
-Aqui estão os dados brutos das leads (formato JSON):
-${JSON.stringify(leads, null, 2)}`;
+A tua resposta DEVE ser OBRIGATORIAMENTE um objeto JSON válido com esta estrutura exata:
+{
+  "html_summary": "Resumo profissional em HTML. Usa <h3>, <p>, <ul>, <li>, <strong>, <br>. Não uses markdown. Foca-te no que descobriste lendo as notas.",
+  "new_tasks": [
+    {
+      "title": "Título da tarefa (ex: Ligar à Ana para confirmar visita à casa T3)",
+      "description": "Justificação com base na nota lida...",
+      "related_lead_id": "id_da_lead_aqui",
+      "priority": "high",
+      "due_date": "${new Date().toISOString()}"
+    }
+  ]
+}
+
+Prioridades aceites: 'low', 'medium', 'high', 'urgent'.
+Datas: Usa o formato ISO. Agenda as tarefas urgentes para hoje e as menos urgentes para amanhã.
+
+Dados para analisar:
+${JSON.stringify(contextData, null, 2)}`;
 
     const openAiRes = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -77,7 +118,8 @@ ${JSON.stringify(leads, null, 2)}`;
       body: JSON.stringify({
         model: "gpt-4o-mini",
         messages: [{ role: "system", content: prompt }],
-        temperature: 0.7
+        temperature: 0.7,
+        response_format: { type: "json_object" }
       })
     });
 
@@ -88,7 +130,38 @@ ${JSON.stringify(leads, null, 2)}`;
     }
 
     const gptData = await openAiRes.json();
-    const gptMessage = gptData.choices[0].message.content;
+    const gptResponse = JSON.parse(gptData.choices[0].message.content);
+    
+    let gptMessage = gptResponse.html_summary || "<p>Resumo gerado.</p>";
+    const newTasks = gptResponse.new_tasks || [];
+
+    // Criar as novas tarefas na base de dados
+    let tasksCreatedCount = 0;
+    if (Array.isArray(newTasks) && newTasks.length > 0) {
+      const tasksToInsert = newTasks.map((t: any) => ({
+        user_id: user.id,
+        assigned_to: user.id,
+        title: t.title,
+        description: t.description || "Agendado pelo Vyxa AI",
+        status: "pending",
+        priority: ["low", "medium", "high", "urgent"].includes(t.priority) ? t.priority : "medium",
+        related_lead_id: t.related_lead_id,
+        due_date: t.due_date || new Date().toISOString()
+      }));
+
+      const { error: insertError } = await supabase.from("tasks").insert(tasksToInsert);
+      if (!insertError) {
+        tasksCreatedCount = tasksToInsert.length;
+        gptMessage += `
+          <div style="margin-top: 20px; padding: 15px; background-color: #eef2ff; border-left: 4px solid #4f46e5; border-radius: 4px;">
+            <strong style="color: #3730a3;">🤖 Automação Concluída:</strong><br>
+            Li as suas notas e adicionei automaticamente <strong>${tasksCreatedCount} novas tarefas</strong> ao seu calendário para hoje!
+          </div>
+        `;
+      } else {
+        console.error("Erro ao inserir tarefas GPT:", insertError);
+      }
+    }
 
     let emailSent = false;
 
@@ -118,11 +191,11 @@ ${JSON.stringify(leads, null, 2)}`;
         await transporter.sendMail({
           from: `"${smtpSettings.from_name}" <${smtpSettings.from_email}>`,
           to: user.email,
-          subject: "🤖 O seu Resumo GPT - Execução Manual",
+          subject: "🤖 O seu Resumo Inteligente GPT - Execução Manual",
           html: `
             <div style="font-family: sans-serif; max-width: 650px; margin: 0 auto; padding: 20px;">
               <div style="border-bottom: 2px solid #e2e8f0; padding-bottom: 15px; margin-bottom: 20px;">
-                <h2 style="color: #4f46e5; margin: 0; font-size: 24px;">Resumo Analítico a Pedido</h2>
+                <h2 style="color: #4f46e5; margin: 0; font-size: 24px;">Análise Contextual de Leads</h2>
               </div>
               <div style="background-color: #f8fafc; padding: 20px; border-radius: 8px; border-left: 4px solid #4f46e5; line-height: 1.6;">
                 ${gptMessage}
@@ -139,6 +212,7 @@ ${JSON.stringify(leads, null, 2)}`;
     return res.status(200).json({ 
       success: true, 
       message: gptMessage, 
+      tasksCreated: tasksCreatedCount,
       emailSent 
     });
   } catch (error) {

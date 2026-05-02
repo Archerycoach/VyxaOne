@@ -48,15 +48,13 @@ export default function Integrations() {
       if (gcError) throw gcError;
 
       if (gcData) {
-        // Cast settings to unknown first, then to our interface to handle Json type safely
-        const settings = gcData.settings as unknown as GoogleCalendarSettings;
-        
+        const data = gcData as any;
         setGoogleCalendar({
-          client_id: settings?.client_id || "",
-          client_secret: settings?.client_secret || "",
-          enabled: gcData.is_active || false
+          client_id: data.client_id || "",
+          client_secret: data.client_secret || "",
+          enabled: data.enabled || false
         });
-        setIsGoogleConfigured(!!(settings?.client_id && settings?.client_secret));
+        setIsGoogleConfigured(!!(data.client_id && data.client_secret));
       }
 
     } catch (error: any) {
@@ -139,7 +137,7 @@ export default function Integrations() {
       const { error } = await supabase
         .from("integration_settings")
         .update({ 
-          is_active: enabled,
+          enabled: enabled,
           updated_at: new Date().toISOString()
         })
         .eq("integration_name", "google_calendar");
