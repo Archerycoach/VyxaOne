@@ -44,30 +44,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const wonDealsCount = deals?.length || 0;
     const conversionRate = totalLeads > 0 ? ((wonDealsCount / totalLeads) * 100).toFixed(1) : 0;
 
-    // 3. Buscar Chave API
-    console.log("-> [COACH API] A verificar chave OpenAI...");
-    let openAIApiKey = process.env.OPENAI_API_KEY;
-    try {
-      // Usar a tabela diretamente sem falhar se ela não existir perfeitamente
-      const { data: keyData, error: keyError } = await (supabaseAdmin
-        .from('gpt_api_keys' as any)
-        .select('api_key')
-        .eq('user_id', user.id)
-        .eq('is_active', true)
-        .maybeSingle() as any);
-        
-      if (keyData && keyData.api_key) {
-        console.log("-> [COACH API] Chave do utilizador encontrada!");
-        openAIApiKey = keyData.api_key;
-      }
-    } catch (e) {
-      console.warn("-> [COACH API] Falha ao procurar chave na BD, a usar variável de ambiente se existir.", e);
-    }
+    // 3. Buscar Chave OpenAI do servidor
+    console.log("-> [COACH API] A verificar chave OpenAI do servidor...");
+    const openAIApiKey = process.env.OPENAI_API_KEY;
 
-    if (!openAIApiKey || openAIApiKey.trim() === '') {
-      console.log("-> [COACH API] Erro Crítico: OpenAI API Key não foi encontrada em lado nenhum!");
-      return res.status(400).json({ 
-        error: "OpenAI API Key não está configurada. Por favor vá a Definições > Inteligência Artificial e adicione a sua chave." 
+    if (!openAIApiKey || openAIApiKey.trim() === "") {
+      console.log("-> [COACH API] Erro Crítico: OPENAI_API_KEY não está configurada no servidor.");
+      return res.status(400).json({
+        error: "OpenAI API Key não está configurada no servidor. Atualize a variável OPENAI_API_KEY no ambiente do projeto."
       });
     }
 

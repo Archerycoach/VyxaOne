@@ -57,30 +57,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       
     if (eventsError) console.error("Erro events:", eventsError);
 
-    // 4. Buscar Chave API
-    console.log("-> [ORGANIZER API] A verificar chave OpenAI...");
-    let openAIApiKey = process.env.OPENAI_API_KEY;
-    try {
-      // Usar a tabela diretamente sem falhar se ela não existir perfeitamente
-      const { data: keyData, error: keyError } = await (supabaseAdmin
-        .from('gpt_api_keys' as any)
-        .select('api_key')
-        .eq('user_id', user.id)
-        .eq('is_active', true)
-        .maybeSingle() as any);
-        
-      if (keyData && keyData.api_key) {
-        console.log("-> [ORGANIZER API] Chave do utilizador encontrada!");
-        openAIApiKey = keyData.api_key;
-      }
-    } catch (e) {
-      console.warn("-> [ORGANIZER API] Falha ao procurar chave na BD, a usar variável de ambiente se existir.", e);
-    }
+    // 4. Buscar Chave OpenAI do servidor
+    console.log("-> [ORGANIZER API] A verificar chave OpenAI do servidor...");
+    const openAIApiKey = process.env.OPENAI_API_KEY;
 
-    if (!openAIApiKey || openAIApiKey.trim() === '') {
-      console.log("-> [ORGANIZER API] Erro Crítico: OpenAI API Key não foi encontrada em lado nenhum!");
-      return res.status(400).json({ 
-        error: "OpenAI API Key não está configurada. Por favor vá a Definições > Inteligência Artificial e adicione a sua chave." 
+    if (!openAIApiKey || openAIApiKey.trim() === "") {
+      console.log("-> [ORGANIZER API] Erro Crítico: OPENAI_API_KEY não está configurada no servidor.");
+      return res.status(400).json({
+        error: "OpenAI API Key não está configurada no servidor. Atualize a variável OPENAI_API_KEY no ambiente do projeto."
       });
     }
 
