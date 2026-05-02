@@ -2,6 +2,7 @@ import { NextApiRequest, NextApiResponse } from "next";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  console.log("-> [COACH API] Iniciou o pedido POST");
   if (req.method !== "POST") return res.status(405).end();
 
   try {
@@ -9,15 +10,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const token = authHeader?.split(" ")[1];
     if (!token) return res.status(401).json({ error: "Não autorizado" });
 
+    console.log("-> [COACH API] A verificar token do utilizador...");
     const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
     if (userError || !user) return res.status(401).json({ error: "Não autorizado" });
+    console.log("-> [COACH API] Utilizador autenticado:", user.id);
 
     // 1. Dados de Funil (Contagem de status)
-    const { data: leads } = await (supabaseAdmin
+    console.log("-> [COACH API] A procurar Leads...");
+    const { data: leads, error: leadsError } = await (supabaseAdmin
       .from("leads" as any)
       .select("status, estimated_value")
       .eq("user_id", user.id)
       .is("archived_at", null) as any);
+      
+    if (leadsError) console.error("Erro leads:", leadsError);
 
     const funnelCounts = (leads || []).reduce((acc: any, lead: any) => {
       acc[lead.status] = (acc[lead.status] || 0) + 1;
@@ -26,17 +32,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const totalLeads = leads?.length || 0;
 
     // 2. Negócios Fechados (Este ano)
+    console.log("-> [COACH API] A procurar Deals...");
     const currentYear = new Date().getFullYear();
-    const { data: deals } = await (supabaseAdmin
+    const { data: deals, error: dealsError } = await (supabaseAdmin
       .from("deals" as any)
       .select("amount")
-      .eq("user_id", user.id)
-      .gte("transaction_date", `${currentYear}-01-01`) as any);
+      .eq("user_id", user.id) as any);
+      
+    if (dealsError) console.error("Erro deals:", dealsError);
 
     const wonDealsCount = deals?.length || 0;
     const conversionRate = totalLeads > 0 ? ((wonDealsCount / totalLeads) * 100).toFixed(1) : 0;
 
     // 3. Buscar Chave API
+    console.log("-> [COACH API] A verificar chave OpenAI...");
     let openAIApiKey = process.env.OPENAI_API_KEY;
     try {
       const { data: keyData } = await (supabaseAdmin
@@ -51,6 +60,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     if (!openAIApiKey) {
+      console.log("-> [COACH API] Erro: OpenAI API Key em falta!");
       return res.status(400).json({ error: "OpenAI API Key não configurada." });
     }
 
@@ -66,12 +76,18 @@ Regras:
 
     const userPrompt = `O meu funil atual: ${JSON.stringify(funnelCounts)}
 Leads Totais no sistema: ${totalLeads}
-Negócios ganhos este ano: ${wonDealsCount}
+Negócios ganhos: ${wonDealsCount}
 Taxa de conversão atual calculada: ${conversionRate}%
 
 Diz-me a verdade sobre o meu funil e onde preciso de focar esforços esta semana.`;
 
     // 5. Chamar OpenAI
+    console.log("-> [COACH API] A chamar OpenAI...");
+    
+    // Adicionar um controlador de timeout (15 segundos)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -86,7 +102,10 @@ Diz-me a verdade sobre o meu funil e onde preciso de focar esforços esta semana
         ],
         temperature: 0.7,
       }),
+      signal: controller.signal
     });
+    
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       const errText = await response.text();
@@ -94,11 +113,15 @@ Diz-me a verdade sobre o meu funil e onde preciso de focar esforços esta semana
       return res.status(500).json({ error: "Falha na comunicação com a IA." });
     }
 
+    console.log("-> [COACH API] Resposta OpenAI recebida com sucesso!");
     const aiData = await response.json();
     return res.status(200).json({ advice: aiData.choices[0].message.content });
 
   } catch (error: any) {
     console.error("Coach Agent Error:", error);
+    if (error.name === 'AbortError') {
+      return res.status(504).json({ error: "A OpenAI demorou demasiado tempo a responder. Tente novamente." });
+    }
     return res.status(500).json({ error: error.message || "Internal server error" });
   }
 }
