@@ -542,19 +542,29 @@ export default function Settings() {
                     <Button
                       onClick={async () => {
                         try {
-                          // Check integration_settings to see if Google Calendar OAuth is configured
-                          const { data: rawSettings } = await supabase
-                            .from("integration_settings")
-                            .select("*")
-                            .eq("integration_name", "google_calendar")
-                            .maybeSingle();
+                          console.log("[Google Auth] Botão clicado");
+                          toast({
+                            title: "A iniciar ligação...",
+                            description: "Aguarde enquanto preparamos o ambiente seguro da Google.",
+                          });
 
-                          const settings = rawSettings as any;
+                          // Obter configuração através da API segura em vez de ler diretamente da tabela
+                          console.log("[Google Auth] A pedir configurações à API...");
+                          const response = await fetch('/api/google-calendar/settings');
+                          
+                          if (!response.ok) {
+                            console.error("[Google Auth] Erro da API:", response.status, response.statusText);
+                            throw new Error(`Falha ao obter configurações: ${response.statusText}`);
+                          }
+                          
+                          const settings = await response.json();
+                          console.log("[Google Auth] Configurações obtidas:", { hasClientId: !!settings.clientId });
 
                           // Check if user has an active connection in google_calendar_integrations table
-                          const { data: user } = await supabase.auth.getUser();
+                          const { data: user, error: authError } = await supabase.auth.getUser();
                           
-                          if (!user.user) {
+                          if (authError || !user?.user) {
+                            console.error("[Google Auth] Erro de sessão:", authError);
                             toast({
                               title: "Erro de autenticação",
                               description: "Por favor, faça login novamente.",
@@ -563,30 +573,44 @@ export default function Settings() {
                             return;
                           }
 
+                          console.log("[Google Auth] Utilizador verificado:", user.user.id);
+
                           // Use type assertion to bypass TypeScript error with google_calendar_integrations
-                          const { data: userIntegration } = await supabase
+                          const { data: userIntegration, error: dbError } = await supabase
                             .from("google_calendar_integrations" as any)
                             .select("id")
                             .eq("user_id", user.user.id)
                             .maybeSingle();
 
+                          if (dbError) {
+                            console.error("[Google Auth] Erro ao verificar integração existente:", dbError);
+                            // Continuar mesmo com erro, para permitir a ligação
+                          }
+
                           if (userIntegration) {
+                            console.log("[Google Auth] Conta já conectada.");
                             toast({
                               title: "Google Calendar Conectado",
-                              description: "Sua conta está conectada e sincronizando.",
+                              description: "Sua conta já está conectada e sincronizando.",
                             });
                           } else {
+                            console.log("[Google Auth] A preparar URL de redirecionamento...");
                             // If credentials exist but user not connected, start OAuth flow
-                            if (settings && settings.client_id) {
+                            if (settings && settings.clientId) {
                               // Build OAuth URL
                               const scopes = Array.isArray(settings.scopes) 
                                 ? settings.scopes.join(" ")
-                                : "https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/userinfo.email";
+                                : (typeof settings.scopes === 'string' && settings.scopes.length > 0 
+                                    ? settings.scopes 
+                                    : "https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/userinfo.email");
                               
-                              const redirectUri = settings.redirect_uri || `${window.location.origin}/api/google-calendar/callback`;
+                              // Usar preferencialmente a origem atual para o redirectUri na preview
+                              const redirectUri = window.location.origin.includes('localhost') || window.location.origin.includes('softgen') 
+                                ? `${window.location.origin}/api/google-calendar/callback`
+                                : (settings.redirectUri || `${window.location.origin}/api/google-calendar/callback`);
                               
                               const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
-                              authUrl.searchParams.set("client_id", settings.client_id);
+                              authUrl.searchParams.set("client_id", settings.clientId);
                               authUrl.searchParams.set("redirect_uri", redirectUri);
                               authUrl.searchParams.set("response_type", "code");
                               authUrl.searchParams.set("scope", scopes);
@@ -594,8 +618,10 @@ export default function Settings() {
                               authUrl.searchParams.set("prompt", "consent");
                               authUrl.searchParams.set("state", user.user.id);
                               
-                              window.location.href = authUrl.toString();
+                              console.log("[Google Auth] Redirecionando para:", authUrl.toString());
+                              window.location.assign(authUrl.toString());
                             } else {
+                              console.error("[Google Auth] ClientID não encontrado nas configurações");
                               toast({
                                 title: "Configuração em falta",
                                 description: "Contacte o administrador para configurar a integração Google Calendar.",
@@ -603,11 +629,11 @@ export default function Settings() {
                               });
                             }
                           }
-                        } catch (error) {
-                          console.error("Error checking calendar connection:", error);
+                        } catch (error: any) {
+                          console.error("[Google Auth] Erro geral capturado:", error);
                           toast({
-                            title: "Erro",
-                            description: "Não foi possível verificar a conexão. Tente novamente.",
+                            title: "Erro inesperado",
+                            description: `Não foi possível iniciar a ligação: ${error.message || "Erro desconhecido"}`,
                             variant: "destructive",
                           });
                         }
