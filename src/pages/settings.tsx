@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
-import { ArrowLeft, User, Lock, Building2, Bell, Save, Loader2, Mail, Facebook, Calendar, Bot } from "lucide-react";
+import { ArrowLeft, User, Lock, Building2, Bell, Save, Loader2, Mail, Facebook, Calendar, Bot, Activity } from "lucide-react";
 import { getUserProfile, updateUserProfile } from "@/services/profileService";
 import { updatePassword, getSession, signOut } from "@/services/authService";
 import { useToast } from "@/hooks/use-toast";
@@ -51,9 +51,48 @@ export default function Settings() {
   // Meta Integration
   const [selectedMetaIntegration, setSelectedMetaIntegration] = useState<{id: string; name: string} | null>(null);
 
+  const [isGoogleConnected, setIsGoogleConnected] = useState(false);
+  const [isTestingGoogle, setIsTestingGoogle] = useState(false);
+
   useEffect(() => {
     checkAuthentication();
+    checkGoogleStatus();
   }, []);
+
+  const checkGoogleStatus = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data } = await supabase.from("google_calendar_integrations" as any).select("id").eq("user_id", user.id).maybeSingle();
+      setIsGoogleConnected(!!data);
+    }
+  };
+
+  const handleTestGoogleConnection = async () => {
+    try {
+      setIsTestingGoogle(true);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      
+      const res = await fetch("/api/google-calendar/test-connection", {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({ type: "user" })
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast({ title: "✅ Teste Bem Sucedido", description: data.message });
+      } else {
+        toast({ title: "❌ Falha no Teste", description: data.message, variant: "destructive" });
+      }
+    } catch (error) {
+      toast({ title: "Erro", description: "Falha ao testar a ligação com a Google.", variant: "destructive" });
+    } finally {
+      setIsTestingGoogle(false);
+    }
+  };
 
   const checkAuthentication = async () => {
     try {
@@ -643,6 +682,18 @@ export default function Settings() {
                       <Calendar className="mr-2 h-4 w-4" />
                       Conectar Google Calendar
                     </Button>
+                    
+                    {isGoogleConnected && (
+                      <Button
+                        variant="outline"
+                        onClick={handleTestGoogleConnection}
+                        disabled={isTestingGoogle}
+                        className="ml-3"
+                      >
+                        <Activity className="mr-2 h-4 w-4" />
+                        {isTestingGoogle ? "A testar..." : "Testar Ligação"}
+                      </Button>
+                    )}
                   </div>
 
                   <div className="space-y-2 p-4 bg-blue-50 rounded-lg border border-blue-200">

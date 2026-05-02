@@ -98,6 +98,8 @@ export default async function handler(
     
     Data e hora atual: ${now.toISOString()}
     Responde SEMPRE em formato JSON com "html_summary" e "new_events".
+    O "new_events" é uma lista de tarefas/eventos a criar no calendário.
+    ATENÇÃO: O campo "lead_id" de cada evento DEVE conter o ID (UUID) real da lead que encontraste nos dados fornecidos!
     
     Dados para analisar:
     ${JSON.stringify(contextData, null, 2)}` 
@@ -121,7 +123,7 @@ A tua resposta DEVE ser OBRIGATORIAMENTE um objeto JSON com esta estrutura:
     {
       "title": "Ligar à Ana para confirmar visita",
       "description": "Justificação baseada na nota...",
-      "lead_id": "id_da_lead_aqui",
+      "lead_id": "INSERIR_AQUI_O_ID_REAL_DA_LEAD",
       "event_type": "call",
       "start_time": "2026-05-02T10:00:00Z",
       "end_time": "2026-05-02T10:30:00Z"
@@ -131,6 +133,7 @@ A tua resposta DEVE ser OBRIGATORIAMENTE um objeto JSON com esta estrutura:
 
 Tipos de evento aceites: 'call', 'meeting', 'visit', 'task'.
 Marca os eventos com duração de 30 a 60 mins dentro do horário de trabalho para hoje ou amanhã.
+O campo "lead_id" é OBRIGATÓRIO e tem de ser o ID real (UUID) da lead presente nos dados!
 
 Dados para analisar:
 ${JSON.stringify(contextData, null, 2)}`;
@@ -176,17 +179,22 @@ ${JSON.stringify(contextData, null, 2)}`;
     // Criar os novos eventos na base de dados
     let eventsCreatedCount = 0;
     if (Array.isArray(newEvents) && newEvents.length > 0) {
-      const eventsToInsert = newEvents.map((e: any) => ({
-        user_id: user.id,
-        title: e.title,
-        description: e.description || "Agendado pelo Vyxa AI",
-        event_type: ["call", "meeting", "visit", "task"].includes(e.event_type) ? e.event_type : "task",
-        start_time: e.start_time || new Date().toISOString(),
-        end_time: e.end_time || new Date(Date.now() + 30 * 60000).toISOString(),
-        lead_id: e.lead_id,
-        is_all_day: false,
-        status: "scheduled"
-      }));
+      const eventsToInsert = newEvents.map((e: any) => {
+        // Garantir que o GPT não inventou um ID ou enviou texto solto (prevenindo erro de foreign key do Supabase)
+        const isValidLead = e.lead_id && leadIds.includes(e.lead_id);
+        
+        return {
+          user_id: user.id,
+          title: e.title || "Follow-up AI",
+          description: e.description || "Agendado pelo Vyxa AI",
+          event_type: ["call", "meeting", "visit", "task"].includes(e.event_type) ? e.event_type : "task",
+          start_time: e.start_time || new Date().toISOString(),
+          end_time: e.end_time || new Date(Date.now() + 30 * 60000).toISOString(),
+          lead_id: isValidLead ? e.lead_id : null,
+          is_all_day: false,
+          status: "scheduled"
+        };
+      });
 
       const { error: insertError } = await supabase.from("calendar_events").insert(eventsToInsert);
       if (!insertError) {
@@ -199,6 +207,12 @@ ${JSON.stringify(contextData, null, 2)}`;
         `;
       } else {
         console.error("Erro ao inserir eventos GPT:", insertError);
+        gptMessage += `
+          <div style="margin-top: 20px; padding: 15px; background-color: #fef2f2; border-left: 4px solid #ef4444; border-radius: 4px;">
+            <strong style="color: #b91c1c;">⚠️ Aviso de Agendamento:</strong><br>
+            O resumo foi gerado com sucesso, mas o sistema bloqueou a criação automática dos eventos no calendário devido a um erro de formatação da IA: ${insertError.message}
+          </div>
+        `;
       }
     }
 

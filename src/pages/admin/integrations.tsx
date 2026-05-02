@@ -8,7 +8,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { InfoIcon, ExternalLink, CheckCircle2, Settings } from "lucide-react";
+import { InfoIcon, ExternalLink, CheckCircle2, Settings, Activity } from "lucide-react";
 import { MetaAppSettings } from "@/components/admin/MetaAppSettings";
 
 // Define interface for the settings JSON structure
@@ -22,6 +22,7 @@ export default function Integrations() {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [isTesting, setIsTesting] = useState(false);
   
   // Google Calendar Settings
   const [googleCalendar, setGoogleCalendar] = useState({
@@ -120,6 +121,27 @@ export default function Integrations() {
       });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleTestGoogleCalendar = async () => {
+    try {
+      setIsTesting(true);
+      const res = await fetch("/api/google-calendar/test-connection", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "admin" })
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast({ title: "✅ Teste Bem Sucedido", description: data.message });
+      } else {
+        toast({ title: "❌ Falha no Teste", description: data.message, variant: "destructive" });
+      }
+    } catch (error: any) {
+      toast({ title: "Erro", description: "Falha ao testar a ligação.", variant: "destructive" });
+    } finally {
+      setIsTesting(false);
     }
   };
 
@@ -295,12 +317,22 @@ export default function Integrations() {
                 </Button>
 
                 {isGoogleConfigured && (
-                  <Button
-                    variant="destructive"
-                    onClick={handleClearGoogleConfig}
-                  >
-                    Limpar Configuração OAuth
-                  </Button>
+                  <>
+                    <Button
+                      variant="secondary"
+                      onClick={handleTestGoogleCalendar}
+                      disabled={isTesting}
+                    >
+                      <Activity className="mr-2 h-4 w-4" />
+                      {isTesting ? "A testar..." : "Testar Ligação"}
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      onClick={handleClearGoogleConfig}
+                    >
+                      Limpar Configuração OAuth
+                    </Button>
+                  </>
                 )}
 
                 <Button
