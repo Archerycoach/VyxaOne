@@ -231,6 +231,7 @@ paths:
           description: Successful response
 
 components:
+  schemas: {}
   securitySchemes:
     bearerAuth:
       type: http
