@@ -8,9 +8,12 @@ const LEADS_CACHE_KEY = CacheKey.LEADS;
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutos
 
 // Use standard types from Database
-type Lead = Database["public"]["Tables"]["leads"]["Row"];
-type LeadInsert = Database["public"]["Tables"]["leads"]["Insert"];
-type LeadUpdate = Database["public"]["Tables"]["leads"]["Update"];
+type BaseLead = Database["public"]["Tables"]["leads"]["Row"];
+type Lead = BaseLead & { last_contact_outcome?: string | null };
+type BaseLeadInsert = Database["public"]["Tables"]["leads"]["Insert"];
+type LeadInsert = BaseLeadInsert & { last_contact_outcome?: string | null };
+type BaseLeadUpdate = Database["public"]["Tables"]["leads"]["Update"];
+type LeadUpdate = BaseLeadUpdate & { last_contact_outcome?: string | null };
 type Interaction = Database["public"]["Tables"]["interactions"]["Row"];
 type InteractionInsert = Database["public"]["Tables"]["interactions"]["Insert"];
 
@@ -153,7 +156,7 @@ export const createLead = async (lead: LeadInsert): Promise<Lead> => {
   
   const { data, error } = await supabase
     .from("leads")
-    .insert(lead)
+    .insert(lead as any)
     .select()
     .single();
 
@@ -186,7 +189,7 @@ export const createLead = async (lead: LeadInsert): Promise<Lead> => {
 };
 
 // Update lead
-export const updateLead = async (id: string, updates: Partial<Lead>) => {
+export const updateLead = async (id: string, updates: Partial<LeadUpdate>) => {
   // Get current lead to compare assigned_to
   const { data: currentLead } = await supabase
     .from("leads")
@@ -196,7 +199,7 @@ export const updateLead = async (id: string, updates: Partial<Lead>) => {
 
   const { data, error } = await supabase
     .from("leads")
-    .update(updates)
+    .update(updates as any)
     .eq("id", id)
     .select()
     .single();

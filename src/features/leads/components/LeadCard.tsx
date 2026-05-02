@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import type { LeadWithContacts } from "@/services/leadsService";
 import { supabase } from "@/integrations/supabase/client";
+import { QuickContactDialog } from "@/components/leads/QuickContactDialog";
 
 interface Lead {
   id: string;
@@ -44,6 +45,7 @@ interface Lead {
   requires_financing?: boolean | null;
   created_at?: string | null;
   assigned_to?: string | null;
+  last_contact_outcome?: string | null;
   [key: string]: any;
 }
 
@@ -89,6 +91,7 @@ export function LeadCard({
   onWhatsApp,
 }: LeadCardProps) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [quickContactOpen, setQuickContactOpen] = useState(false);
   const [activitiesCount, setActivitiesCount] = useState<{
     events: number;
     tasks: number;
@@ -229,6 +232,10 @@ export function LeadCard({
                 <div className="px-2 py-1.5 text-xs font-semibold text-gray-500 uppercase">
                   Comunicação
                 </div>
+                <DropdownMenuItem onClick={() => handleMenuItemClick(() => setQuickContactOpen(true))}>
+                  <Phone className="h-4 w-4 mr-2" />
+                  Registar Contacto Rápido
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => handleMenuItemClick(() => onEmail(lead))}>
                   <Mail className="h-4 w-4 mr-2" />
                   Email
@@ -336,6 +343,11 @@ export function LeadCard({
             {getStatusLabel(lead.status)}
           </Badge>
           <Badge variant="outline" className="text-xs">{getLeadTypeLabel(lead.lead_type)}</Badge>
+          {lead.last_contact_outcome && (
+            <Badge variant="outline" className="text-xs bg-gray-50 border-gray-200">
+              📞 {lead.last_contact_outcome}
+            </Badge>
+          )}
         </div>
 
         {activitiesCount && (activitiesCount.events > 0 || activitiesCount.tasks > 0) && (
@@ -397,6 +409,16 @@ export function LeadCard({
         <div className="text-xs text-gray-500 mt-3 pt-2 border-t">
           📅 {formatDate(lead.created_at)}
         </div>
+
+        <QuickContactDialog
+          leadId={lead.id}
+          leadName={lead.name}
+          open={quickContactOpen}
+          onOpenChange={setQuickContactOpen}
+          onSuccess={() => {
+            // Trigger refresh externally if needed, or rely on real-time/refetch
+          }}
+        />
       </Card>
     );
   }
@@ -429,6 +451,10 @@ export function LeadCard({
               <div className="px-2 py-1.5 text-xs font-semibold text-gray-500 uppercase">
                 Comunicação
               </div>
+              <DropdownMenuItem onClick={() => handleMenuItemClick(() => setQuickContactOpen(true))}>
+                <Phone className="h-4 w-4 mr-2" />
+                Registar Contacto Rápido
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={() => handleMenuItemClick(() => onEmail(lead))}>
                 <Mail className="h-4 w-4 mr-2" />
                 Email
@@ -536,6 +562,11 @@ export function LeadCard({
           {getStatusLabel(lead.status)}
         </Badge>
         <Badge variant="outline">{getLeadTypeLabel(lead.lead_type)}</Badge>
+        {lead.last_contact_outcome && (
+          <Badge variant="outline" className="bg-gray-50 border-gray-200">
+            📞 {lead.last_contact_outcome}
+          </Badge>
+        )}
       </div>
 
       {activitiesCount && (activitiesCount.events > 0 || activitiesCount.tasks > 0) && (
@@ -608,6 +639,16 @@ export function LeadCard({
       <div className="text-xs text-gray-500">
         📅 Criado a {formatDate(lead.created_at)}
       </div>
+
+      <QuickContactDialog
+        leadId={lead.id}
+        leadName={lead.name}
+        open={quickContactOpen}
+        onOpenChange={setQuickContactOpen}
+        onSuccess={() => {
+          // Trigger refresh externally if needed
+        }}
+      />
     </Card>
   );
 }

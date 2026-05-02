@@ -37,6 +37,7 @@ import type { LeadWithContacts } from "@/services/leadsService";
 import type { InteractionWithDetails } from "@/services/interactionsService";
 import type { LeadNote } from "@/services/notesService";
 import type { CalendarEvent, Task } from "@/types";
+import { QuickContactDialog } from "./QuickContactDialog";
 
 interface LeadDetailsDialogProps {
   leadId: string | null;
@@ -55,6 +56,7 @@ export function LeadDetailsDialog({
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [quickContactOpen, setQuickContactOpen] = useState(false);
   
   // Use ref to prevent multiple fetches
   const fetchingRef = useRef(false);
@@ -197,13 +199,21 @@ export function LeadDetailsDialog({
               <User className="h-5 w-5" />
               {isLoading ? "A carregar..." : lead?.name || "Detalhes do Lead"}
             </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => onOpenChange(false)}
-            >
-              <X className="h-4 w-4" />
-            </Button>
+            <div className="flex items-center gap-2">
+              {lead && (
+                <Button size="sm" variant="outline" onClick={() => setQuickContactOpen(true)}>
+                  <Phone className="h-4 w-4 mr-2" />
+                  Registar Contacto
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => onOpenChange(false)}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
           </DialogTitle>
         </DialogHeader>
 
@@ -273,6 +283,18 @@ export function LeadDetailsDialog({
                       <p className="font-medium">{formatDate(lead.created_at)}</p>
                     </div>
                   </div>
+                  {lead.last_contact_outcome && (
+                    <div className="flex items-center gap-2">
+                      <Phone className="h-4 w-4 text-gray-400" />
+                      <div>
+                        <p className="text-sm text-gray-500">Último Contacto</p>
+                        <p className="font-medium flex items-center gap-2">
+                          <Badge variant="outline" className="bg-gray-50">{lead.last_contact_outcome}</Badge>
+                          {lead.last_contact_date && <span className="text-xs text-gray-500">({formatDate(lead.last_contact_date)})</span>}
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
 
@@ -524,6 +546,22 @@ export function LeadDetailsDialog({
           <div className="text-center py-12 text-gray-500">
             <p>Não foi possível carregar os detalhes do lead</p>
           </div>
+        )}
+
+        {lead && (
+          <QuickContactDialog
+            leadId={lead.id}
+            leadName={lead.name}
+            open={quickContactOpen}
+            onOpenChange={setQuickContactOpen}
+            onSuccess={() => {
+              // Refresh interactions and lead info
+              if (leadId) {
+                getInteractionsByLead(leadId).then(setInteractions);
+                getLeadById(leadId).then(setLead);
+              }
+            }}
+          />
         )}
       </DialogContent>
     </Dialog>

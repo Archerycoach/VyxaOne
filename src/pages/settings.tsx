@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
-import { ArrowLeft, User, Lock, Building2, Bell, Save, Loader2, Mail, Facebook, Calendar } from "lucide-react";
+import { ArrowLeft, User, Lock, Building2, Bell, Save, Loader2, Mail, Facebook, Calendar, Bot } from "lucide-react";
 import { getUserProfile, updateUserProfile } from "@/services/profileService";
 import { updatePassword, getSession, signOut } from "@/services/authService";
 import { useToast } from "@/hooks/use-toast";
@@ -14,6 +14,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { SMTPSettingsDialog } from "@/components/SMTPSettingsDialog";
 import { MetaAccountConnection } from "@/components/settings/MetaAccountConnection";
 import { MetaFormsManagement } from "@/components/settings/MetaFormsManagement";
+import { GptApiSettings } from "@/components/settings/GptApiSettings";
 
 export default function Settings() {
   const router = useRouter();
@@ -231,17 +232,17 @@ export default function Settings() {
               <Mail className="h-4 w-4 mr-2" />
               SMTP
             </TabsTrigger>
-            <TabsTrigger value="notifications">
-              <Bell className="h-4 w-4 mr-2" />
-              Notificações
-            </TabsTrigger>
             <TabsTrigger value="meta">
               <Facebook className="h-4 w-4 mr-2" />
               Meta
             </TabsTrigger>
             <TabsTrigger value="google-calendar">
               <Calendar className="h-4 w-4 mr-2" />
-              Google Calendar
+              Calendário
+            </TabsTrigger>
+            <TabsTrigger value="gpt-agent">
+              <Bot className="h-4 w-4 mr-2" />
+              GPT Agent
             </TabsTrigger>
           </TabsList>
 
@@ -627,6 +628,10 @@ export default function Settings() {
                 </div>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="gpt-agent" className="space-y-6">
+            <GptApiSettings />
           </TabsContent>
         </Tabs>
 

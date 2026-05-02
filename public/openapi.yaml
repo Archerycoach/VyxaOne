@@ -1,0 +1,238 @@
+openapi: 3.1.0
+info:
+  title: CRM Follow-up Agent API
+  description: API for ChatGPT Custom Actions to manage leads follow-up, tasks, and notes securely.
+  version: 1.0.0
+servers:
+  - url: https://{YOUR_VERCEL_DOMAIN}
+    description: Production Server
+security:
+  - bearerAuth: []
+paths:
+  /api/gpt/leads/pending:
+    get:
+      summary: List pending leads
+      description: Returns a list of active leads that might need follow-up.
+      operationId: getPendingLeads
+      parameters:
+        - name: days_without_contact
+          in: query
+          description: Filter leads that haven't been contacted in the last X days.
+          schema:
+            type: integer
+        - name: overdue_only
+          in: query
+          description: If true, returns only leads where the next follow-up date is in the past.
+          schema:
+            type: boolean
+        - name: status
+          in: query
+          description: Comma-separated list of statuses to filter by (e.g. "new,contacted,qualified").
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  leads:
+                    type: array
+                    items:
+                      type: object
+
+  /api/gpt/leads/{id}:
+    get:
+      summary: Get lead details
+      description: Returns detailed information for a specific lead, including notes, tasks, and interaction history.
+      operationId: getLeadDetails
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Successful response
+
+  /api/gpt/leads/{id}/tasks:
+    post:
+      summary: Create a follow-up task
+      description: Creates a new task associated with the lead.
+      operationId: createLeadTask
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - title
+              properties:
+                title:
+                  type: string
+                  description: "E.g., Contactar lead hoje, Enviar mensagem WhatsApp"
+                description:
+                  type: string
+                due_date:
+                  type: string
+                  format: date-time
+                priority:
+                  type: string
+                  enum: [low, medium, high, urgent]
+      responses:
+        '201':
+          description: Task created successfully
+
+  /api/gpt/leads/{id}/notes:
+    post:
+      summary: Add a note to a lead
+      description: Registers an automatic note/justification on the lead.
+      operationId: addLeadNote
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - note
+              properties:
+                note:
+                  type: string
+                  description: The justification or note content.
+      responses:
+        '201':
+          description: Note added successfully
+
+  /api/gpt/leads/{id}/followup:
+    patch:
+      summary: Update next follow-up date
+      description: Updates exclusively the next_follow_up date field for the lead.
+      operationId: updateLeadFollowup
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - next_follow_up
+              properties:
+                next_follow_up:
+                  type: string
+                  format: date-time
+                  description: ISO 8601 timestamp for the new follow-up date.
+      responses:
+        '200':
+          description: Follow-up date updated
+
+  /api/gpt/calendar/events:
+    get:
+      summary: List calendar events
+      description: Returns a list of scheduled events from the user's calendar.
+      operationId: getCalendarEvents
+      parameters:
+        - name: start_date
+          in: query
+          description: Filter events starting from this date (ISO 8601).
+          schema:
+            type: string
+            format: date-time
+        - name: end_date
+          in: query
+          description: Filter events ending before this date (ISO 8601).
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Successful response
+    post:
+      summary: Schedule a new calendar event
+      description: Creates a new event (meeting, call, visit) in the calendar.
+      operationId: createCalendarEvent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - title
+                - start_time
+                - end_time
+              properties:
+                title:
+                  type: string
+                description:
+                  type: string
+                start_time:
+                  type: string
+                  format: date-time
+                end_time:
+                  type: string
+                  format: date-time
+                event_type:
+                  type: string
+                  enum: [meeting, call, visit, viewing, task, deadline, other]
+                lead_id:
+                  type: string
+                  format: uuid
+                location:
+                  type: string
+      responses:
+        '201':
+          description: Event scheduled successfully
+
+  /api/gpt/calendar/tasks:
+    get:
+      summary: List calendar tasks
+      description: Returns a list of general or lead-related tasks for the user.
+      operationId: getCalendarTasks
+      parameters:
+        - name: status
+          in: query
+          description: Filter tasks by status (e.g., pending, in_progress, completed).
+          schema:
+            type: string
+        - name: overdue_only
+          in: query
+          description: If true, returns only overdue tasks.
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Successful response
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: API Key
