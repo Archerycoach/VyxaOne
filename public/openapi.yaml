@@ -1,10 +1,10 @@
 openapi: 3.1.0
 info:
   title: CRM Follow-up Agent API
-  description: API for ChatGPT Custom Actions to manage leads follow-up, tasks, and notes securely.
+  description: API for ChatGPT Custom GPT to manage leads, follow-ups, and calendar.
   version: 1.0.0
 servers:
-  - url: https://{YOUR_VERCEL_DOMAIN}
+  - url: https://www.vyxa.pt
     description: Production Server
 security:
   - bearerAuth: []
