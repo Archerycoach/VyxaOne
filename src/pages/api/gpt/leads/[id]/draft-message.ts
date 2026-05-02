@@ -29,9 +29,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       .order("created_at", { ascending: false })
       .limit(5) as any);
 
-    const openAIApiKey = process.env.OPENAI_API_KEY;
+    // Buscar chave da base de dados (dinâmica) com fallback para variável de ambiente
+    const { data: keyData } = await (supabaseAdmin
+      .from("gpt_api_keys" as any)
+      .select("api_key")
+      .eq("user_id", user.id)
+      .eq("is_active", true)
+      .maybeSingle() as any);
+
+    const openAIApiKey = keyData?.api_key || process.env.OPENAI_API_KEY;
+    
     if (!openAIApiKey) {
-      return res.status(400).json({ error: "OpenAI API Key não configurada. Configure no ambiente do servidor." });
+      return res.status(400).json({ error: "OpenAI API Key não configurada. Configure no menu Definições > Agente GPT." });
     }
 
     const channelInstructions = channel === 'whatsapp' 
@@ -68,7 +77,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
 
     if (!openAiRes.ok) {
-      throw new Error("Erro ao gerar rascunho na OpenAI");
+      const errorText = await openAiRes.text();
+      console.error("OpenAI erro no rascunho:", errorText);
+      let openAiErrorMessage = "Erro ao gerar rascunho na OpenAI";
+      try {
+        const errorJson = JSON.parse(errorText);
+        if (errorJson.error && errorJson.error.message) {
+          openAiErrorMessage = `Erro OpenAI: ${errorJson.error.message}`;
+        }
+      } catch (e) {
+        openAiErrorMessage = `Erro OpenAI: ${errorText}`;
+      }
+      throw new Error(openAiErrorMessage);
     }
 
     const gptData = await openAiRes.json();
