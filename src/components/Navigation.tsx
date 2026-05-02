@@ -23,6 +23,9 @@ import {
   Handshake,
   Trophy,
   Send,
+  Menu,
+  X,
+  Bot,
 } from "lucide-react";
 
 interface NavItem {
@@ -86,6 +89,7 @@ export function Navigation() {
     },
     { icon: Target, label: "Objetivos", path: "/goals" },
     { icon: FolderOpen, label: "Documentos", path: "/documents" },
+    { icon: Bot, label: "Agente IA", path: "/ai-agent" },
     
     // Settings
     { icon: CreditCard, label: "Subscrição", path: "/subscription" },

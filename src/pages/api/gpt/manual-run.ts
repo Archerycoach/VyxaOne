@@ -31,6 +31,8 @@ export default async function handler(
       return res.status(401).json({ error: "Invalid token" });
     }
 
+    const { task_id } = req.body || {};
+
     const { data: profile } = await supabase
       .from("profiles")
       .select("*")
@@ -79,23 +81,42 @@ export default async function handler(
 
     const now = new Date();
 
+    let customSystemPrompt = "";
+    let reportTitle = "Resumo Diário Automático";
+
+    if (task_id) {
+      const { data: aiTask } = await (supabase.from("ai_tasks" as any).select("system_prompt, title").eq("id", task_id).single() as any);
+      if (aiTask) {
+        customSystemPrompt = aiTask.system_prompt;
+        reportTitle = aiTask.title;
+      }
+    }
+
     // Instruções para o OpenAI (System Prompt) com formato JSON forçado
-    const prompt = `És um assistente de vendas de elite de uma agência imobiliária. 
+    const prompt = customSystemPrompt ? 
+    `${customSystemPrompt}
+    
+    Data e hora atual: ${now.toISOString()}
+    Responde SEMPRE em formato JSON com "html_summary" e "new_events".
+    
+    Dados para analisar:
+    ${JSON.stringify(contextData, null, 2)}` 
+    : 
+    `És um assistente de vendas de elite de uma agência imobiliária. 
 Analisa as leads pendentes do consultor/agente ${profile?.full_name || 'Utilizador'}.
-Vais receber os dados das leads, as notas reais recentes escritas sobre cada uma, e os eventos já agendados no calendário.
+Vais receber os dados das leads, as notas reais recentes escritas sobre cada uma, e os eventos de calendário já marcados.
 
 Data e hora atual: ${now.toISOString()}
 
 O teu objetivo é:
-1. Ler as notas para entender o contexto real da negociação de cada cliente.
-2. Identificar quem precisa de contacto.
-3. Agendar EVENTOS DE CALENDÁRIO de follow-up lógicos APENAS se a lead não tiver já um evento sobre esse assunto.
-4. Evitar sobrepor horários com os 'existing_upcoming_events'. Marca eventos de 30 a 60 minutos para horários laborais.
-5. Gerar um resumo motivador.
+1. Ler as notas para entender o contexto da negociação.
+2. Agendar EVENTOS DE CALENDÁRIO (hora de início e fim) baseados nessas notas.
+3. Evitar sobrepor horários (verifica 'existing_upcoming_events').
+4. Formatar um resumo motivador.
 
-A tua resposta DEVE ser OBRIGATORIAMENTE um objeto JSON válido com esta estrutura exata:
+A tua resposta DEVE ser OBRIGATORIAMENTE um objeto JSON com esta estrutura:
 {
-  "html_summary": "Resumo profissional em HTML. Usa <h3>, <p>, <ul>, <li>, <strong>, <br>. Não uses markdown. Foca-te no que descobriste lendo as notas.",
+  "html_summary": "E-mail em HTML (<h3>, <p>, <ul>, <li>). Foca-te no contexto lido nas notas.",
   "new_events": [
     {
       "title": "Ligar à Ana para confirmar visita",
@@ -108,8 +129,8 @@ A tua resposta DEVE ser OBRIGATORIAMENTE um objeto JSON válido com esta estrutu
   ]
 }
 
-Tipos de evento válidos (event_type): 'call', 'meeting', 'visit', 'task'.
-Datas: Usa o formato ISO real. Agenda os eventos dentro do horário laboral para hoje ou amanhã, verificando para não chocar com a lista de existing_upcoming_events.
+Tipos de evento aceites: 'call', 'meeting', 'visit', 'task'.
+Marca os eventos com duração de 30 a 60 mins dentro do horário de trabalho para hoje ou amanhã.
 
 Dados para analisar:
 ${JSON.stringify(contextData, null, 2)}`;
@@ -180,6 +201,13 @@ ${JSON.stringify(contextData, null, 2)}`;
         console.error("Erro ao inserir eventos GPT:", insertError);
       }
     }
+
+    // Gravar o relatório na base de dados para o utilizador consultar no painel "Agente IA"
+    await (supabase.from("ai_reports" as any).insert({
+      user_id: user.id,
+      title: `${reportTitle} - ${now.toLocaleDateString('pt-PT')}`,
+      content: gptMessage
+    }) as any);
 
     let emailSent = false;
 

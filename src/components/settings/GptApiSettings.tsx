@@ -32,9 +32,6 @@ export function GptApiSettings() {
   const [generating, setGenerating] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  const [manualRunLoading, setManualRunLoading] = useState(false);
-  const [manualRunResult, setManualRunResult] = useState<string | null>(null);
-
   useEffect(() => {
     loadKeys();
   }, []);
@@ -135,39 +132,6 @@ export function GptApiSettings() {
     });
   };
 
-  const handleManualRun = async () => {
-    try {
-      setManualRunLoading(true);
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error("Utilizador não autenticado");
-
-      const res = await fetch("/api/gpt/manual-run", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${session.access_token}`
-        }
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || data.error || "Erro ao executar o assistente");
-
-      setManualRunResult(data.message);
-      toast({
-        title: "Análise Concluída",
-        description: data.emailSent ? "Resumo gerado e enviado por email." : "Resumo gerado com sucesso.",
-      });
-    } catch (error: any) {
-      console.error("Manual run error:", error);
-      toast({
-        title: "Erro na Execução",
-        description: error.message || "Não foi possível executar o assistente GPT.",
-        variant: "destructive",
-      });
-    } finally {
-      setManualRunLoading(false);
-    }
-  };
-
   return (
     <Card>
       <CardHeader>
@@ -206,24 +170,13 @@ export function GptApiSettings() {
           </ol>
         </div>
 
-        <div className="flex items-center justify-between p-4 border border-indigo-100 bg-indigo-50/50 rounded-lg mb-6">
+        <div className="bg-white border rounded-lg p-4 mb-6 flex items-center justify-between">
           <div>
-            <h3 className="font-medium text-indigo-900">Análise Rápida (Execução Manual)</h3>
-            <p className="text-sm text-indigo-700 mt-1">
-              Peça ao GPT para analisar as suas leads pendentes agora mesmo e gerar um plano de ação para hoje.
-            </p>
+            <h4 className="text-sm font-semibold text-gray-900">Novo: Área do Agente IA</h4>
+            <p className="text-sm text-gray-500 mt-1">A execução manual e a leitura de relatórios mudou de lugar.</p>
           </div>
-          <Button 
-            onClick={handleManualRun} 
-            disabled={manualRunLoading}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white shrink-0 ml-4"
-          >
-            {manualRunLoading ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            ) : (
-              <Play className="h-4 w-4 mr-2" />
-            )}
-            Gerar Resumo Agora
+          <Button variant="outline" onClick={() => window.location.href = "/ai-agent"}>
+            Ir para Agente IA
           </Button>
         </div>
 
@@ -286,21 +239,6 @@ export function GptApiSettings() {
           )}
         </div>
       </CardContent>
-
-      <Dialog open={!!manualRunResult} onOpenChange={(open) => !open && setManualRunResult(null)}>
-        <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-indigo-700">
-              <Bot className="h-5 w-5" />
-              O seu Resumo Diário GPT
-            </DialogTitle>
-          </DialogHeader>
-          <div 
-            className="mt-4 text-sm text-gray-700 leading-relaxed prose prose-indigo max-w-none"
-            dangerouslySetInnerHTML={{ __html: manualRunResult || "" }}
-          />
-        </DialogContent>
-      </Dialog>
     </Card>
   );
 }

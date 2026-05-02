@@ -182,6 +182,13 @@ ${JSON.stringify(contextData, null, 2)}`;
           }
         }
 
+        // Gravar o relatório automático na base de dados
+        await (supabase.from("ai_reports" as any).insert({
+          user_id: user.id,
+          title: `Planeamento Diário - ${now.toLocaleDateString('pt-PT')}`,
+          content: gptMessage
+        }) as any);
+
         const transporter = nodemailer.createTransport({
           host: smtpSettings.smtp_host,
           port: smtpSettings.smtp_port,
