@@ -19,6 +19,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { createProperty, updateProperty } from "@/services/propertiesService";
 import { supabase } from "@/integrations/supabase/client";
+import { Wand2 } from "lucide-react";
 import type { Property } from "@/types";
 
 // Tipos simplificados para os seletores
@@ -77,6 +78,10 @@ export function PropertyForm({
     lead_id: preselectedLeadId || "none",
     contact_id: preselectedContactId || "none"
   });
+
+  const [generatingDesc, setGeneratingDesc] = useState(false);
+  const [descKeywords, setDescKeywords] = useState("");
+  const [showAiDialog, setShowAiDialog] = useState(false);
 
   // Fetch leads and contacts whenever modal opens
   useEffect(() => {
@@ -247,7 +252,31 @@ export function PropertyForm({
     }
   };
 
+  const handleGenerateDescription = async () => {
+    setGeneratingDesc(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch("/api/gpt/properties/generate-description", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ keywords: descKeywords, propertyDetails: formData })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      
+      setFormData(prev => ({ ...prev, description: data.description }));
+      setShowAiDialog(false);
+      setDescKeywords("");
+      toast({ title: "Sucesso", description: "Descrição gerada pela IA!" });
+    } catch (err: any) {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    } finally {
+      setGeneratingDesc(false);
+    }
+  };
+
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
@@ -459,7 +488,13 @@ export function PropertyForm({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="description">Descrição</Label>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="description">Descrição</Label>
+              <Button type="button" variant="outline" size="sm" onClick={() => setShowAiDialog(true)} className="h-7 text-xs bg-indigo-50 text-indigo-700 hover:bg-indigo-100 hover:text-indigo-800 border-indigo-200">
+                <Wand2 className="h-3 w-3 mr-1" />
+                Gerar com IA
+              </Button>
+            </div>
             <Textarea
               id="description"
               value={formData.description}
@@ -485,5 +520,32 @@ export function PropertyForm({
         </form>
       </DialogContent>
     </Dialog>
+
+    <Dialog open={showAiDialog} onOpenChange={setShowAiDialog}>
+      <DialogContent className="sm:max-w-[425px] z-[100]">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2"><Wand2 className="h-5 w-5 text-indigo-600" /> Assistente IA de Copywriting</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 pt-4">
+          <div className="space-y-2">
+            <Label>Palavras-chave ou Destaques</Label>
+            <Textarea 
+              placeholder="Ex: T2 moderno, vista mar, remodelado em 2024, marquise espaçosa..." 
+              value={descKeywords}
+              onChange={e => setDescKeywords(e.target.value)}
+              rows={3}
+            />
+            <p className="text-xs text-muted-foreground">A IA vai usar estes dados combinados com as áreas e preço do formulário.</p>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setShowAiDialog(false)} disabled={generatingDesc}>Cancelar</Button>
+            <Button onClick={handleGenerateDescription} disabled={generatingDesc || !descKeywords} className="bg-indigo-600 hover:bg-indigo-700 text-white">
+              {generatingDesc ? "A gerar..." : "Gerar Texto Mágico"}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }

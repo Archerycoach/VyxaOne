@@ -27,6 +27,7 @@ import {
   X,
   CheckSquare,
   Clock,
+  Bot
 } from "lucide-react";
 import { getLeadById } from "@/services/leadsService";
 import { getInteractionsByLead } from "@/services/interactionsService";
@@ -38,6 +39,8 @@ import type { InteractionWithDetails } from "@/services/interactionsService";
 import type { LeadNote } from "@/services/notesService";
 import type { CalendarEvent, Task } from "@/types";
 import { QuickContactDialog } from "./QuickContactDialog";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
 interface LeadDetailsDialogProps {
   leadId: string | null;
@@ -57,6 +60,8 @@ export function LeadDetailsDialog({
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [quickContactOpen, setQuickContactOpen] = useState(false);
+  const [drafting, setDrafting] = useState<string | null>(null);
+  const { toast } = useToast();
   
   // Use ref to prevent multiple fetches
   const fetchingRef = useRef(false);
@@ -190,6 +195,38 @@ export function LeadDetailsDialog({
     return typeMap[type || ""] || "-";
   };
 
+  const handleGenerateDraft = async (channel: 'email' | 'whatsapp') => {
+    if (!leadId) return;
+    setDrafting(channel);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`/api/gpt/leads/${leadId}/draft-message`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ channel })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+
+      if (channel === 'whatsapp') {
+        const url = `https://wa.me/${lead?.phone?.replace(/\D/g, '') || ''}?text=${encodeURIComponent(data.draft)}`;
+        window.open(url, "_blank");
+      } else {
+        const subjectMatch = data.draft.match(/^Assunto: (.*)/m);
+        const subject = subjectMatch ? subjectMatch[1] : "Follow-up";
+        const body = data.draft.replace(/^Assunto: .*\n?/, "").trim();
+        const url = `mailto:${lead?.email || ''}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+        window.open(url, "_blank");
+      }
+      
+      toast({ title: "Rascunho Gerado", description: "Mensagem pronta a enviar no seu aplicativo!" });
+    } catch (err: any) {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    } finally {
+      setDrafting(null);
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
@@ -201,10 +238,16 @@ export function LeadDetailsDialog({
             </span>
             <div className="flex items-center gap-2">
               {lead && (
-                <Button size="sm" variant="outline" onClick={() => setQuickContactOpen(true)}>
-                  <Phone className="h-4 w-4 mr-2" />
-                  Registar Contacto
-                </Button>
+                <>
+                  <Button size="sm" variant="outline" onClick={() => handleGenerateDraft('whatsapp')} disabled={drafting === 'whatsapp'} className="text-green-700 border-green-200 hover:bg-green-50">
+                    {drafting === 'whatsapp' ? <div className="animate-spin h-4 w-4 mr-2 border-2 border-green-700 border-t-transparent rounded-full" /> : <Bot className="h-4 w-4 mr-2" />}
+                    WhatsApp IA
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => setQuickContactOpen(true)}>
+                    <Phone className="h-4 w-4 mr-2" />
+                    Registar Contacto
+                  </Button>
+                </>
               )}
               <Button
                 variant="ghost"

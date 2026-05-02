@@ -10,9 +10,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, Edit, Trash2, Bed, Bath, Maximize, MapPin, Euro } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Search, Edit, Trash2, Bed, Bath, Maximize, MapPin, Euro, Bot } from "lucide-react";
 import { deleteProperty } from "@/services/propertiesService";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 import type { Property } from "@/types";
 
 interface PropertiesListProps {
@@ -27,6 +34,10 @@ export function PropertiesList({ properties, onEdit, onRefresh }: PropertiesList
   const [filterType, setFilterType] = useState<string>("all");
   const [filterTransaction, setFilterTransaction] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
+
+  const [generatingReport, setGeneratingReport] = useState<string | null>(null);
+  const [reportHtml, setReportHtml] = useState<string | null>(null);
+  const [reportModalOpen, setReportModalOpen] = useState(false);
 
   const handleDelete = async (id: string) => {
     if (!confirm("Tem a certeza que deseja eliminar este imóvel?")) return;
@@ -115,6 +126,27 @@ export function PropertiesList({ properties, onEdit, onRefresh }: PropertiesList
 
     return matchesSearch && matchesType && matchesTransaction && matchesStatus;
   });
+
+  const handleGenerateReport = async (id: string) => {
+    setGeneratingReport(id);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`/api/gpt/properties/${id}/seller-report`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${session?.access_token}` }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+
+      setReportHtml(data.report_html);
+      setReportModalOpen(true);
+      toast({ title: "Sucesso", description: "Relatório gerado com sucesso!" });
+    } catch (err: any) {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    } finally {
+      setGeneratingReport(null);
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -254,6 +286,16 @@ export function PropertiesList({ properties, onEdit, onRefresh }: PropertiesList
                   <Button
                     variant="outline"
                     size="sm"
+                    onClick={() => handleGenerateReport(property.id)}
+                    disabled={generatingReport === property.id}
+                    className="text-indigo-700 border-indigo-200 hover:bg-indigo-50"
+                  >
+                    {generatingReport === property.id ? <div className="animate-spin h-4 w-4 mr-1 border-2 border-indigo-600 border-t-transparent rounded-full" /> : <Bot className="h-4 w-4 mr-1" />}
+                    Relatório IA
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
                     onClick={() => onEdit(property)}
                   >
                     <Edit className="h-4 w-4 mr-1" />
@@ -272,6 +314,22 @@ export function PropertiesList({ properties, onEdit, onRefresh }: PropertiesList
           ))}
         </div>
       )}
+
+      <Dialog open={reportModalOpen} onOpenChange={setReportModalOpen}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto z-[100]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Bot className="h-5 w-5 text-indigo-600" /> Relatório de Proprietário (Seller's Report)</DialogTitle>
+          </DialogHeader>
+          <div className="mt-4 p-6 bg-white border rounded-lg prose prose-sm max-w-none text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: reportHtml || "" }} />
+          <div className="flex justify-end gap-2 mt-4">
+            <Button variant="outline" onClick={() => {
+              navigator.clipboard.writeText(reportHtml || "");
+              toast({ title: "Copiado", description: "HTML copiado para a área de transferência." });
+            }}>Copiar HTML</Button>
+            <Button onClick={() => setReportModalOpen(false)}>Fechar</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

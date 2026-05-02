@@ -108,6 +108,7 @@ O teu objetivo é:
 2. Agendar EVENTOS DE CALENDÁRIO (hora de início e fim) baseados nessas notas.
 3. Evitar sobrepor horários (verifica 'existing_upcoming_events').
 4. Formatar um resumo motivador para o e-mail matinal.
+5. NOVO: Avaliar a "temperatura" (hot, warm, cold) de cada lead baseada nas notas e sugerir a atualização. Se falar em dinheiro, visitas ou forte interesse é "hot". Se não atende é "cold".
 
 A tua resposta DEVE ser OBRIGATORIAMENTE um objeto JSON com esta estrutura:
 {
@@ -120,6 +121,12 @@ A tua resposta DEVE ser OBRIGATORIAMENTE um objeto JSON com esta estrutura:
       "event_type": "call",
       "start_time": "2026-05-02T10:00:00Z",
       "end_time": "2026-05-02T10:30:00Z"
+    }
+  ],
+  "lead_temperatures": [
+    {
+      "lead_id": "INSERIR_AQUI_O_ID_REAL_DA_LEAD",
+      "temperature": "hot"
     }
   ]
 }
@@ -154,6 +161,22 @@ ${JSON.stringify(contextData, null, 2)}`;
         
         let gptMessage = gptResponse.html_summary || "<p>Resumo processado.</p>";
         const newEvents = gptResponse.new_events || [];
+
+        // NOVIDADE: O GPT atualiza a "temperatura" da lead (hot, warm, cold) com base no seu contexto
+        const leadTemperatures = gptResponse.lead_temperatures || [];
+        if (Array.isArray(leadTemperatures) && leadTemperatures.length > 0) {
+          for (const tempUpdate of leadTemperatures) {
+            const isValidLead = leadIds.includes(tempUpdate.lead_id);
+            const isValidTemp = ["hot", "warm", "cold"].includes(tempUpdate.temperature);
+            
+            if (isValidLead && isValidTemp) {
+              await supabase
+                .from("leads")
+                .update({ temperature: tempUpdate.temperature })
+                .eq("id", tempUpdate.lead_id);
+            }
+          }
+        }
 
         let eventsCreatedCount = 0;
         if (Array.isArray(newEvents) && newEvents.length > 0) {
