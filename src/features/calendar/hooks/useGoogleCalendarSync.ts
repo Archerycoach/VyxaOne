@@ -31,13 +31,18 @@ export function useGoogleCalendarSync() {
 
   const checkConnection = useCallback(async () => {
     try {
+      console.log("[useGoogleCalendarSync] Verificando conexão...");
       setLoading(true);
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      
+      if (userError || !user) {
+        console.error("[useGoogleCalendarSync] Erro de user:", userError);
         setIsConnected(false);
         setSyncSettings(null);
         return;
       }
+
+      console.log("[useGoogleCalendarSync] User id atual:", user.id);
 
       const { data, error } = await supabase
         .from("google_calendar_integrations" as any)
@@ -45,7 +50,10 @@ export function useGoogleCalendarSync() {
         .eq("user_id", user.id)
         .maybeSingle();
 
+      console.log("[useGoogleCalendarSync] Resposta BD integração:", { data: data ? "Existe" : "Nulo", error });
+
       if (error || !data) {
+        console.log("[useGoogleCalendarSync] Sem integração encontrada ou erro de leitura");
         setIsConnected(false);
         setSyncSettings(null);
         return;
@@ -53,6 +61,7 @@ export function useGoogleCalendarSync() {
 
       // Check if token is still valid
       const integration = data as any;
+      console.log("[useGoogleCalendarSync] Integração encontrada, validando...", { sync_direction: integration.sync_direction });
       
       // Store sync settings
       setSyncSettings({
