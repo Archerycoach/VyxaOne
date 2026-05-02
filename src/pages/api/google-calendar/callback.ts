@@ -78,7 +78,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.redirect(302, "/calendar?error=missing_credentials");
     }
 
-    const actualRedirectUri = redirect_uri || `${process.env.NEXT_PUBLIC_APP_URL || "https://www.vyxa.pt"}/api/google-calendar/callback`;
+    const host = req.headers.host || "";
+    const protocol = req.headers["x-forwarded-proto"] || (host.includes("localhost") ? "http" : "https");
+    const origin = `${protocol}://${host}`;
+    
+    let actualRedirectUri = redirect_uri;
+    if (!actualRedirectUri || host.includes("localhost") || host.includes("softgen")) {
+      actualRedirectUri = `${origin}/api/google-calendar/callback`;
+    }
 
     console.log("[Google Calendar Callback] Step 3: Using OAuth credentials:", {
       redirect_uri: actualRedirectUri,
