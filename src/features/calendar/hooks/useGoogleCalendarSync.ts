@@ -3,6 +3,25 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { triggerManualSync } from "@/lib/googleCalendar";
 
+const REQUIRED_GOOGLE_SCOPES = [
+  "openid",
+  "email",
+  "profile",
+  "https://www.googleapis.com/auth/calendar",
+  "https://www.googleapis.com/auth/calendar.events",
+  "https://www.googleapis.com/auth/userinfo.email",
+];
+
+function buildGoogleScopeString(scopes: unknown) {
+  const configuredScopes = Array.isArray(scopes)
+    ? scopes.filter((scope): scope is string => typeof scope === "string" && scope.trim().length > 0)
+    : typeof scopes === "string"
+      ? scopes.split(/\s+/).filter(Boolean)
+      : [];
+
+  return Array.from(new Set([...configuredScopes, ...REQUIRED_GOOGLE_SCOPES])).join(" ");
+}
+
 export function useGoogleCalendarSync() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
@@ -204,11 +223,7 @@ export function useGoogleCalendarSync() {
         ? `${window.location.origin}/api/google-calendar/callback`
         : (settings.redirectUri || `${window.location.origin}/api/google-calendar/callback`);
 
-      const scopeString = Array.isArray(settings.scopes) 
-        ? settings.scopes.join(" ") 
-        : (typeof settings.scopes === 'string' && settings.scopes.length > 0 
-            ? settings.scopes 
-            : "https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/userinfo.email");
+      const scopeString = buildGoogleScopeString(settings.scopes);
 
       // Codificar o estado para enviar o ID e o URL de redirecionamento de forma segura
       const stateObj = {

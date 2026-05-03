@@ -159,29 +159,46 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // Get user info
     console.log("[Google Calendar Callback] Step 7: Fetching user info from Google...");
     
-    const userInfoResponse = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
-      headers: {
-        Authorization: `Bearer ${tokens.access_token}`,
-      },
-    });
+    const userInfoEndpoints = [
+      "https://openidconnect.googleapis.com/v1/userinfo",
+      "https://www.googleapis.com/oauth2/v2/userinfo",
+    ];
 
-    console.log("[Google Calendar Callback] Step 8: User info response received:", {
-      status: userInfoResponse.status,
-      statusText: userInfoResponse.statusText,
-      ok: userInfoResponse.ok
-    });
+    let userInfo: Record<string, any> | null = null;
+    let lastUserInfoError = "";
 
-    if (!userInfoResponse.ok) {
-      const errorText = await userInfoResponse.text();
-      console.error("[Google Calendar Callback] User info request failed:", {
+    for (const endpoint of userInfoEndpoints) {
+      const userInfoResponse = await fetch(endpoint, {
+        headers: {
+          Authorization: `Bearer ${tokens.access_token}`,
+        },
+      });
+
+      console.log("[Google Calendar Callback] Step 8: User info response received:", {
+        endpoint,
         status: userInfoResponse.status,
         statusText: userInfoResponse.statusText,
-        error: errorText
+        ok: userInfoResponse.ok
       });
+
+      if (userInfoResponse.ok) {
+        userInfo = await userInfoResponse.json();
+        break;
+      }
+
+      lastUserInfoError = await userInfoResponse.text();
+      console.error("[Google Calendar Callback] User info request failed:", {
+        endpoint,
+        status: userInfoResponse.status,
+        statusText: userInfoResponse.statusText,
+        error: lastUserInfoError
+      });
+    }
+
+    if (!userInfo?.email) {
       return res.redirect(302, "/calendar?error=user_info_failed");
     }
 
-    const userInfo = await userInfoResponse.json();
     console.log("[Google Calendar Callback] Step 9: User info parsed successfully:", { 
       email: userInfo.email,
       verified_email: userInfo.verified_email,

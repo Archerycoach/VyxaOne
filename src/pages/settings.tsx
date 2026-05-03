@@ -16,6 +16,25 @@ import { MetaAccountConnection } from "@/components/settings/MetaAccountConnecti
 import { MetaFormsManagement } from "@/components/settings/MetaFormsManagement";
 import { GptApiSettings } from "@/components/settings/GptApiSettings";
 
+const REQUIRED_GOOGLE_SCOPES = [
+  "openid",
+  "email",
+  "profile",
+  "https://www.googleapis.com/auth/calendar",
+  "https://www.googleapis.com/auth/calendar.events",
+  "https://www.googleapis.com/auth/userinfo.email",
+];
+
+function buildGoogleScopeString(scopes: unknown) {
+  const configuredScopes = Array.isArray(scopes)
+    ? scopes.filter((scope): scope is string => typeof scope === "string" && scope.trim().length > 0)
+    : typeof scopes === "string"
+      ? scopes.split(/\s+/).filter(Boolean)
+      : [];
+
+  return Array.from(new Set([...configuredScopes, ...REQUIRED_GOOGLE_SCOPES])).join(" ");
+}
+
 export default function Settings() {
   const router = useRouter();
   const { toast } = useToast();
@@ -636,14 +655,8 @@ export default function Settings() {
                             console.log("[Google Auth] A preparar URL de redirecionamento...");
                             // If credentials exist but user not connected, start OAuth flow
                             if (settings && settings.clientId) {
-                              // Build OAuth URL
-                              const scopes = Array.isArray(settings.scopes) 
-                                ? settings.scopes.join(" ")
-                                : (typeof settings.scopes === 'string' && settings.scopes.length > 0 
-                                    ? settings.scopes 
-                                    : "https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/userinfo.email");
+                              const scopes = buildGoogleScopeString(settings.scopes);
                               
-                              // Usar preferencialmente a origem atual para o redirectUri na preview
                               const redirectUri = window.location.origin.includes('localhost') || window.location.origin.includes('softgen') 
                                 ? `${window.location.origin}/api/google-calendar/callback`
                                 : (settings.redirectUri || `${window.location.origin}/api/google-calendar/callback`);
