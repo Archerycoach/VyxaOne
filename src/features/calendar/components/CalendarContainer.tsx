@@ -90,42 +90,53 @@ export function CalendarContainer() {
   // Handle successful Google connection and auto-sync
   useEffect(() => {
     const handleGoogleConnection = async () => {
-      const { google_connected, auto_sync, error } = router.query;
+      const {
+        google_connected,
+        auto_sync,
+        connected,
+        sync,
+        error,
+        details,
+        status,
+      } = router.query;
       
       if (error) {
         const errorMessages: Record<string, string> = {
+          authorization_denied: "A autorização foi cancelada na Google",
           invalid_params: "Parâmetros inválidos na conexão",
+          db_settings_error: "Erro ao carregar a configuração do Google Calendar",
           config_not_found: "Configuração do Google Calendar não encontrada",
           missing_credentials: "Credenciais OAuth não configuradas",
-          token_exchange: "Erro ao trocar código por tokens",
-          user_info: "Erro ao obter informações do utilizador",
+          token_exchange: `Erro ao trocar código por tokens${typeof status === "string" ? ` (HTTP ${status})` : ""}`,
+          user_info_failed: "Erro ao obter informações do utilizador Google",
           save_failed: "Erro ao guardar integração",
+          unexpected: typeof details === "string" ? `Erro inesperado: ${details}` : "Erro inesperado ao concluir a ligação",
         };
         
         toast({
           title: "Erro na conexão",
-          description: errorMessages[error as string] || "Erro desconhecido ao conectar Google Calendar",
+          description: errorMessages[error as string] || (typeof details === "string" ? details : "Erro desconhecido ao conectar Google Calendar"),
           variant: "destructive",
         });
         
-        // Clean URL
         router.replace("/calendar", undefined, { shallow: true });
         return;
       }
 
-      if (google_connected === "true" && auto_sync === "true") {
+      const googleConnected = google_connected === "true" || connected === "true";
+      const shouldSync = auto_sync === "true" || sync === "true";
+
+      if (googleConnected && shouldSync) {
         toast({
           title: "Conectado com sucesso!",
           description: "A iniciar sincronização com Google Calendar...",
         });
         
-        // Wait a bit for the connection to be fully established
         setTimeout(async () => {
           await checkConnection();
           await syncWithGoogle();
         }, 1000);
         
-        // Clean URL
         router.replace("/calendar", undefined, { shallow: true });
       }
     };
