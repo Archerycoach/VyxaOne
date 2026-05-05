@@ -83,6 +83,7 @@ export function Navigation() {
     { icon: Users, label: "Leads", path: "/leads" },
     { icon: Target, label: "Pipeline", path: "/pipeline" },
     { icon: Building2, label: "Imóveis", path: "/properties" },
+    { icon: Building2, label: "Empreendimentos", path: "/developments" },
     { icon: Users, label: "Contactos", path: "/contacts" },
     { icon: Calendar, label: "Agenda", path: "/calendar" },
     

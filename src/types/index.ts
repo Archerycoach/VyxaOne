@@ -94,16 +94,41 @@ export interface Property {
   images?: string[];
   created_at: string;
   updated_at: string;
-  // Additional fields from database
   rental_price?: number;
   district?: string;
   postal_code?: string;
-  // Association fields
   lead_id?: string | null;
   contact_id?: string | null;
-  // Compatibility fields
   typology?: string;
   energy_rating?: string;
+}
+
+export type DevelopmentStatus = "draft" | "published" | "under_construction" | "completed" | "sold_out";
+
+export interface Development {
+  id: string;
+  user_id: string;
+  name: string;
+  description?: string | null;
+  status: DevelopmentStatus;
+  address?: string | null;
+  city?: string | null;
+  district?: string | null;
+  postal_code?: string | null;
+  developer_name?: string | null;
+  price_from?: number | null;
+  price_to?: number | null;
+  typologies?: string[] | null;
+  total_units?: number | null;
+  available_units?: number | null;
+  delivery_date?: string | null;
+  published_at?: string | null;
+  highlights?: string[] | null;
+  images?: string[] | null;
+  main_image_url?: string | null;
+  reference_code?: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 // Interaction Types

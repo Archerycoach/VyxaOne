@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import nodemailer from "nodemailer";
 import { createClient } from "@supabase/supabase-js";
+import { dedupeCalendarEventCandidates } from "@/lib/calendarEventDedup";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -181,7 +182,6 @@ ${JSON.stringify(contextData, null, 2)}`;
         let eventsCreatedCount = 0;
         if (Array.isArray(newEvents) && newEvents.length > 0) {
           const eventsToInsert = newEvents.map((e: any) => {
-            // Garantir validação do ID para não bloquear o calendário
             const isValidLead = e.lead_id && leadIds.includes(e.lead_id);
             
             return {
@@ -195,32 +195,58 @@ ${JSON.stringify(contextData, null, 2)}`;
             };
           });
 
-          const { error: insertError } = await supabase.from("calendar_events").insert(eventsToInsert);
-          if (!insertError) {
-            eventsCreatedCount = eventsToInsert.length;
-            
-            let eventsListHtml = "<ul style='margin-top: 10px; padding-left: 20px; font-size: 14px;'>";
-            eventsToInsert.forEach((e: any) => {
-              const dateStr = new Date(e.start_time).toLocaleString('pt-PT', { 
-                day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' 
-              });
-              eventsListHtml += `<li style='margin-bottom: 5px;'><strong>${dateStr}</strong>: ${e.title}</li>`;
-            });
-            eventsListHtml += "</ul>";
+          const {
+            uniqueEvents,
+            skippedDuplicates,
+            skippedInvalid,
+          } = dedupeCalendarEventCandidates(eventsToInsert, upcomingEvents || []);
 
+          if (uniqueEvents.length > 0) {
+            const { error: insertError } = await supabase.from("calendar_events").insert(uniqueEvents);
+            if (!insertError) {
+              eventsCreatedCount = uniqueEvents.length;
+              
+              let eventsListHtml = "<ul style='margin-top: 10px; padding-left: 20px; font-size: 14px;'>";
+              uniqueEvents.forEach((e: any) => {
+                const dateStr = new Date(e.start_time).toLocaleString("pt-PT", { 
+                  day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" 
+                });
+                eventsListHtml += `<li style='margin-bottom: 5px;'><strong>${dateStr}</strong>: ${e.title}</li>`;
+              });
+              eventsListHtml += "</ul>";
+
+              gptMessage += `
+                <div style="margin-top: 20px; padding: 15px; background-color: #eef2ff; border-left: 4px solid #4f46e5; border-radius: 4px; color: #3730a3;">
+                  <strong>📅 Agendamento Automático:</strong><br>
+                  Li as suas notas e já agendei <strong>${eventsCreatedCount} eventos</strong> no seu calendário para hoje!
+                  ${eventsListHtml}
+                </div>
+              `;
+            } else {
+              console.error("Erro ao inserir eventos GPT:", insertError);
+              gptMessage += `
+                <div style="margin-top: 20px; padding: 15px; background-color: #fef2f2; border-left: 4px solid #ef4444; border-radius: 4px; color: #b91c1c;">
+                  <strong>⚠️ Aviso de Agendamento:</strong><br>
+                  O assistente sugeriu eventos, mas não os conseguiu gravar no calendário (${insertError.message}).
+                </div>
+              `;
+            }
+          }
+
+          if (skippedDuplicates > 0) {
             gptMessage += `
-              <div style="margin-top: 20px; padding: 15px; background-color: #eef2ff; border-left: 4px solid #4f46e5; border-radius: 4px; color: #3730a3;">
-                <strong>📅 Agendamento Automático:</strong><br>
-                Li as suas notas e já agendei <strong>${eventsCreatedCount} eventos</strong> no seu calendário para hoje!
-                ${eventsListHtml}
+              <div style="margin-top: 20px; padding: 15px; background-color: #f8fafc; border-left: 4px solid #64748b; border-radius: 4px; color: #334155;">
+                <strong>🛡️ Duplicados evitados:</strong><br>
+                ${skippedDuplicates} evento(s) já existiam no calendário para a mesma lead e horário, por isso não foram recriados.
               </div>
             `;
-          } else {
-            console.error("Erro ao inserir eventos GPT:", insertError);
+          }
+
+          if (skippedInvalid > 0) {
             gptMessage += `
-              <div style="margin-top: 20px; padding: 15px; background-color: #fef2f2; border-left: 4px solid #ef4444; border-radius: 4px; color: #b91c1c;">
-                <strong>⚠️ Aviso de Agendamento:</strong><br>
-                O assistente sugeriu eventos, mas não os conseguiu gravar no calendário (${insertError.message}).
+              <div style="margin-top: 20px; padding: 15px; background-color: #fff7ed; border-left: 4px solid #f97316; border-radius: 4px; color: #9a3412;">
+                <strong>⚠️ Sugestões ignoradas:</strong><br>
+                ${skippedInvalid} evento(s) foram ignorados porque tinham dados de data/hora inválidos.
               </div>
             `;
           }
