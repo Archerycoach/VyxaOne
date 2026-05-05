@@ -21,6 +21,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { ContactAlertRequestsPanel } from "./ContactAlertRequestsPanel";
 import {
   Plus,
   Trash2,
@@ -491,6 +492,15 @@ export function ContactDialogs({
                 </div>
               )}
             </div>
+
+            {selectedContact && (
+              <ContactAlertRequestsPanel
+                contact={{
+                  id: selectedContact.id,
+                  name: selectedContact.name,
+                }}
+              />
+            )}
 
             {/* Interactions Timeline */}
             <div>

@@ -40,6 +40,25 @@ export default async function handler(
       .eq("id", user.id)
       .single();
 
+    const { data: contactMatches } = await (supabase
+      .from("contact_opportunity_matches" as any)
+      .select(`
+        id,
+        match_score,
+        match_reasons,
+        status,
+        created_at,
+        notification_channel,
+        contacts:contact_id(name, email, phone),
+        contact_alert_requests:request_id(name, urgency, notification_channel),
+        properties:property_id(title, city, price, listed_at),
+        developments:development_id(name, city, price_from, price_to, published_at)
+      `)
+      .eq("user_id", user.id)
+      .in("status", ["new", "task_created"])
+      .order("created_at", { ascending: false })
+      .limit(20) as any);
+
     // Buscar leads pendentes do utilizador (limitado a 10 por causa dos tokens)
     const { data: leads } = await supabase
       .from("leads")
@@ -50,22 +69,23 @@ export default async function handler(
       .order("next_follow_up", { ascending: true })
       .limit(10);
 
-    if (!leads || leads.length === 0) {
+    if ((!leads || leads.length === 0) && (!contactMatches || contactMatches.length === 0)) {
       return res.status(200).json({ 
         success: true, 
-        message: "<p>Nenhuma lead urgente pendente encontrada. Bom trabalho!</p>", 
+        message: "<p>Nenhuma lead urgente ou oportunidade nova de contacto encontrada. Bom trabalho!</p>", 
         emailSent: false 
       });
     }
 
-    const leadIds = leads.map(l => l.id);
+    const leadIds = (leads ?? []).map((lead) => lead.id);
 
-    // Buscar as notas das leads para dar contexto ao GPT
-    const { data: notes } = await supabase
-      .from("lead_notes")
-      .select("lead_id, note, created_at")
-      .in("lead_id", leadIds)
-      .order("created_at", { ascending: false });
+    const notes = leadIds.length > 0
+      ? (await supabase
+          .from("lead_notes")
+          .select("lead_id, note, created_at")
+          .in("lead_id", leadIds)
+          .order("created_at", { ascending: false })).data
+      : [];
 
     // Buscar eventos já marcados para evitar sobreposição de horários
     const { data: upcomingEvents } = await supabase
@@ -75,9 +95,10 @@ export default async function handler(
       .gte("start_time", new Date().toISOString());
 
     const contextData = {
-      leads,
+      leads: leads || [],
       recent_notes: notes || [],
-      existing_upcoming_events: upcomingEvents || []
+      existing_upcoming_events: upcomingEvents || [],
+      contact_opportunity_matches: contactMatches || []
     };
 
     const now = new Date();
@@ -107,23 +128,24 @@ export default async function handler(
     : 
     `És um assistente de vendas de elite de uma agência imobiliária. 
 Analisa as leads pendentes do consultor/agente ${profile?.full_name || 'Utilizador'}.
-Vais receber os dados das leads, as notas reais recentes escritas sobre cada uma, e os eventos de calendário já marcados.
+Vais receber os dados das leads, as notas reais recentes escritas sobre cada uma, os eventos de calendário já marcados e os matches pendentes entre contactos e novas oportunidades (imóveis ou empreendimentos).
 
 Data e hora atual: ${now.toISOString()}
 
 O teu objetivo é:
 1. Ler as notas para entender o contexto da negociação.
-2. Agendar EVENTOS DE CALENDÁRIO (hora de início e fim) baseados nessas notas.
-3. Evitar sobrepor horários (verifica 'existing_upcoming_events').
-4. Formatar um resumo motivador.
+2. Priorizar também os matches pendentes dos contactos com novas oportunidades publicadas.
+3. Agendar EVENTOS DE CALENDÁRIO (hora de início e fim) apenas quando fizer sentido operacional.
+4. Evitar sobrepor horários (verifica 'existing_upcoming_events').
+5. Formatar um resumo motivador.
 
 A tua resposta DEVE ser OBRIGATORIAMENTE um objeto JSON com esta estrutura:
 {
-  "html_summary": "E-mail em HTML (<h3>, <p>, <ul>, <li>). Foca-te no contexto lido nas notas.",
+  "html_summary": "E-mail em HTML (<h3>, <p>, <ul>, <li>). Foca-te no contexto lido nas notas e nos matches pendentes dos contactos.",
   "new_events": [
     {
       "title": "Ligar à Ana para confirmar visita",
-      "description": "Justificação baseada na nota...",
+      "description": "Justificação baseada na nota ou no novo match...",
       "lead_id": "INSERIR_AQUI_O_ID_REAL_DA_LEAD",
       "event_type": "call",
       "start_time": "2026-05-02T10:00:00Z",
@@ -134,7 +156,7 @@ A tua resposta DEVE ser OBRIGATORIAMENTE um objeto JSON com esta estrutura:
 
 Tipos de evento aceites: 'call', 'meeting', 'visit', 'task'.
 Marca os eventos com duração de 30 a 60 mins dentro do horário de trabalho para hoje ou amanhã.
-O campo "lead_id" é OBRIGATÓRIO e tem de ser o ID real (UUID) da lead presente nos dados!
+O campo "lead_id" é obrigatório apenas quando o evento estiver relacionado com uma lead existente. Para matches de contactos sem lead associada, usa "lead_id": null.
 
 Dados para analisar:
 ${JSON.stringify(contextData, null, 2)}`;

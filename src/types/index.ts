@@ -50,6 +50,55 @@ export interface Contact {
   updated_at: string | null;
 }
 
+export type ContactAlertOpportunityType = "property" | "development" | "both";
+export type ContactAlertNotificationChannel = "ia" | "agenda" | "both";
+export type ContactAlertUrgency = "low" | "medium" | "high" | "urgent";
+export type ContactOpportunityMatchStatus = "new" | "task_created" | "contacted" | "dismissed";
+
+export interface ContactAlertRequest {
+  id: string;
+  user_id: string;
+  contact_id: string;
+  name: string;
+  opportunity_type: ContactAlertOpportunityType;
+  preferred_cities: string[];
+  preferred_districts: string[];
+  property_types: string[];
+  typologies: string[];
+  min_price?: number | null;
+  max_price?: number | null;
+  min_bedrooms?: number | null;
+  urgency: ContactAlertUrgency;
+  notification_channel: ContactAlertNotificationChannel;
+  is_active: boolean;
+  notes?: string | null;
+  last_synced_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ContactOpportunityMatch {
+  id: string;
+  user_id: string;
+  request_id: string;
+  contact_id: string;
+  property_id?: string | null;
+  development_id?: string | null;
+  opportunity_type: "property" | "development";
+  match_score: number;
+  match_reasons: string[];
+  status: ContactOpportunityMatchStatus;
+  notification_channel: ContactAlertNotificationChannel;
+  task_id?: string | null;
+  opportunity_title: string;
+  opportunity_location?: string | null;
+  opportunity_price_label?: string | null;
+  request_name?: string | null;
+  request_urgency?: ContactAlertUrgency | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Lead {
   id: string;
   user_id: string;
@@ -94,6 +143,7 @@ export interface Property {
   images?: string[];
   created_at: string;
   updated_at: string;
+  listed_at?: string | null;
   rental_price?: number;
   district?: string;
   postal_code?: string;
