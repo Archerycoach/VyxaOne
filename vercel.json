@@ -3,6 +3,10 @@
   "installCommand": "npm install",
   "crons": [
     {
+      "path": "/api/cron/contact-alerts",
+      "schedule": "15 7 * * *"
+    },
+    {
       "path": "/api/cron/daily-emails",
       "schedule": "0 8 * * *"
     },
