@@ -41,6 +41,7 @@ import type { InteractionWithDetails } from "@/services/interactionsService";
 import type { LeadNote } from "@/services/notesService";
 import type { CalendarEvent, Task } from "@/types";
 import { QuickContactDialog } from "./QuickContactDialog";
+import { ContactAlertRequestsPanel } from "@/features/contacts/components/ContactAlertRequestsPanel";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
@@ -220,6 +221,9 @@ export function LeadDetailsDialog({
     }
   };
 
+  const linkedContactId = (lead as any)?.contact_id ?? null;
+  const linkedContactName = (lead as any)?.contact?.name ?? lead?.name ?? "Contacto associado";
+
   return (
     <>
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -334,6 +338,26 @@ export function LeadDetailsDialog({
                   )}
                 </CardContent>
               </Card>
+
+              {linkedContactId ? (
+                <ContactAlertRequestsPanel
+                  contact={{
+                    id: linkedContactId,
+                    name: linkedContactName,
+                  }}
+                />
+              ) : (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Pedidos de alerta</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-muted-foreground">
+                      Associe primeiro um contacto a esta lead para gerir alertas de novos imóveis ou empreendimentos sem sair do fluxo comercial.
+                    </p>
+                  </CardContent>
+                </Card>
+              )}
 
               {lead.lead_type === "buyer" && (
                 <Card>
