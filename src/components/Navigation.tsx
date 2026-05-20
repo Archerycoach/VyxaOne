@@ -134,7 +134,7 @@ export function Navigation() {
           <img 
             src="/vyxa-logo.png" 
             alt="Vyxa" 
-            className="h-12 w-auto"
+            className="h-20 w-auto max-w-full object-contain"
           />
         </div>
       </div>
