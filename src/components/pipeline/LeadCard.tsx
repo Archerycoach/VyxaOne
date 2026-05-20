@@ -550,6 +550,12 @@ export function LeadCard({ lead, onClick, onDelete, onConvertSuccess }: LeadCard
                 <span>Necessita Financiamento</span>
               </div>
             )}
+            {lead.has_property_to_sell && (
+              <div className="flex items-center gap-2">
+                <span>🔑</span>
+                <span>Tem imóvel p/ vender</span>
+              </div>
+            )}
           </div>
         )}
 

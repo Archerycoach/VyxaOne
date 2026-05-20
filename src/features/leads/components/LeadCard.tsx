@@ -617,6 +617,7 @@ export function LeadCard({
             </div>
           )}
           {lead.needs_financing && <div>💳 Recorre a Crédito</div>}
+          {lead.has_property_to_sell && <div>🔑 Tem imóvel p/ vender</div>}
         </div>
       )}
 

@@ -120,6 +120,8 @@ export interface Lead {
   lastInteraction?: string; // Keep for UI/Storage compatibility
   is_development?: boolean;
   development_name?: string;
+  has_property_to_sell?: boolean;
+  buy_purpose?: string;
 }
 
 // Property Types

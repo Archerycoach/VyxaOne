@@ -1,0 +1,1 @@
+ALTER TABLE leads ADD COLUMN has_property_to_sell BOOLEAN DEFAULT false;

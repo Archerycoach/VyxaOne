@@ -696,7 +696,7 @@ export function LeadsList({ leads, onEdit, onDelete, isLoading, onRefresh, onVie
                   </div>
 
                   {(lead.lead_type === 'buyer' || lead.lead_type === 'both') && (
-                    lead.property_type || lead.location_preference || lead.bedrooms || lead.min_area || lead.budget || lead.needs_financing
+                    lead.property_type || lead.location_preference || lead.bedrooms || lead.min_area || lead.budget || lead.needs_financing || lead.has_property_to_sell
                   ) && (
                     <div className="mt-3 pt-3 border-t border-gray-100 bg-blue-50/50 p-3 rounded-md space-y-2">
                       <p className="font-semibold text-blue-900 mb-2 text-sm">Preferências de Compra:</p>
@@ -751,6 +751,14 @@ export function LeadsList({ leads, onEdit, onDelete, isLoading, onRefresh, onVie
                           <Banknote className="h-4 w-4 text-blue-600" />
                           <span className="text-blue-800 font-semibold bg-blue-100 px-2 py-0.5 rounded">
                             Recorre a Crédito
+                          </span>
+                        </div>
+                      )}
+                      {lead.has_property_to_sell && (
+                        <div className="flex items-center gap-2 text-sm">
+                          <Home className="h-4 w-4 text-blue-600" />
+                          <span className="text-blue-800 font-semibold bg-blue-100 px-2 py-0.5 rounded">
+                            Tem imóvel p/ vender
                           </span>
                         </div>
                       )}

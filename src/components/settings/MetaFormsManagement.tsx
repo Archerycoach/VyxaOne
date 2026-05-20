@@ -577,6 +577,7 @@ export function MetaFormsManagement({ integrationId, integrationName }: MetaForm
                             <SelectItem value="budget_min">Orçamento Mínimo</SelectItem>
                             <SelectItem value="budget_max">Orçamento Máximo</SelectItem>
                             <SelectItem value="desired_price">Preço Desejado</SelectItem>
+                            <SelectItem value="buy_purpose">Objetivo (Habitação/Investimento)</SelectItem>
                             <SelectItem value="location_preference">Localização / Zona</SelectItem>
                             <SelectItem value="property_type">Tipo de Imóvel</SelectItem>
                             <SelectItem value="lead_type">Tipo de Cliente (buyer/seller)</SelectItem>
@@ -586,6 +587,7 @@ export function MetaFormsManagement({ integrationId, integrationName }: MetaForm
                             <SelectItem value="max_area">Área Máxima (m2)</SelectItem>
                             <SelectItem value="property_area">Área do Imóvel (m2)</SelectItem>
                             <SelectItem value="needs_financing">Precisa Financiamento (true/false)</SelectItem>
+                            <SelectItem value="has_property_to_sell">Tem imóvel p/ vender (true/false)</SelectItem>
                             <SelectItem value="development_name">Nome do Empreendimento</SelectItem>
                             <SelectItem value="birthday">Data de Nascimento</SelectItem>
                             <SelectItem value="notes">Notas / Observações</SelectItem>

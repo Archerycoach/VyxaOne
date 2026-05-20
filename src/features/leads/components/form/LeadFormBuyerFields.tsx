@@ -18,8 +18,10 @@ interface LeadFormBuyerFieldsProps {
     budget: string;
     location_preference: string;
     needs_financing: boolean;
+    has_property_to_sell?: boolean;
     is_development?: boolean;
     development_name?: string;
+    buy_purpose?: string;
   };
   onChange: (field: string, value: any) => void;
 }
@@ -47,6 +49,7 @@ export function LeadFormBuyerFields({ formData, onChange }: LeadFormBuyerFieldsP
               <SelectItem value="house">Moradia</SelectItem>
               <SelectItem value="land">Terreno</SelectItem>
               <SelectItem value="commercial">Comercial</SelectItem>
+              <SelectItem value="store">Loja</SelectItem>
               <SelectItem value="office">Escritório</SelectItem>
               <SelectItem value="warehouse">Armazém</SelectItem>
             </SelectContent>
@@ -54,15 +57,20 @@ export function LeadFormBuyerFields({ formData, onChange }: LeadFormBuyerFieldsP
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="bedrooms">Número de Quartos (Pretendido)</Label>
-          <Input
-            id="bedrooms"
-            type="number"
-            min="0"
-            value={formData.bedrooms}
-            onChange={(e) => onChange("bedrooms", e.target.value)}
-            placeholder="Ex: 2"
-          />
+          <Label htmlFor="buy_purpose">Objetivo da Procura</Label>
+          <Select
+            value={formData.buy_purpose || ""}
+            onValueChange={(value) => onChange("buy_purpose", value)}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Selecione objetivo" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="housing">Habitação Própria</SelectItem>
+              <SelectItem value="investment">Investimento</SelectItem>
+              <SelectItem value="secondary">Habitação Secundária</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
@@ -113,6 +121,20 @@ export function LeadFormBuyerFields({ formData, onChange }: LeadFormBuyerFieldsP
             Vai recorrer a crédito?
           </Label>
           <p className="text-xs text-gray-500">Marque se o comprador precisa de financiamento</p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="has_property_to_sell" className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="has_property_to_sell"
+              checked={formData.has_property_to_sell || false}
+              onChange={(e) => onChange("has_property_to_sell", e.target.checked)}
+              className="w-4 h-4 rounded border-gray-300"
+            />
+            Tem imóvel para vender?
+          </Label>
+          <p className="text-xs text-gray-500">Marque se o comprador também quer vender um imóvel</p>
         </div>
       </div>
 

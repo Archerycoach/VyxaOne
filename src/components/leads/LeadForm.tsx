@@ -46,6 +46,8 @@ export function LeadForm({ initialData, onSuccess, onCancel }: LeadFormProps) {
     bedrooms: "",
     min_area: "",
     needs_financing: false,
+    has_property_to_sell: false,
+    buy_purpose: "",
     // Seller specific fields
     bathrooms: "",
     property_area: "",
@@ -68,6 +70,8 @@ export function LeadForm({ initialData, onSuccess, onCancel }: LeadFormProps) {
         bedrooms: initialData.bedrooms ? initialData.bedrooms.toString() : "",
         min_area: initialData.min_area ? initialData.min_area.toString() : "",
         needs_financing: initialData.needs_financing || false,
+        has_property_to_sell: initialData.has_property_to_sell || false,
+        buy_purpose: initialData.buy_purpose || "",
         bathrooms: initialData.bathrooms ? initialData.bathrooms.toString() : "",
         property_area: initialData.property_area ? initialData.property_area.toString() : "",
         desired_price: initialData.desired_price ? initialData.desired_price.toString() : "",
@@ -107,6 +111,8 @@ export function LeadForm({ initialData, onSuccess, onCancel }: LeadFormProps) {
         max_area: parseFloat(formData.property_area) || 0,
         property_area: parseFloat(formData.property_area) || 0,
         needs_financing: formData.needs_financing,
+        has_property_to_sell: formData.has_property_to_sell,
+        buy_purpose: formData.buy_purpose || null,
         desired_price: parseFloat(formData.desired_price) || 0,
         contact_id: null,
         custom_fields: {},
@@ -282,12 +288,32 @@ export function LeadForm({ initialData, onSuccess, onCancel }: LeadFormProps) {
                       <SelectItem value="house">Moradia</SelectItem>
                       <SelectItem value="land">Terreno</SelectItem>
                       <SelectItem value="commercial">Comercial</SelectItem>
+                      <SelectItem value="store">Loja</SelectItem>
                       <SelectItem value="office">Escritório</SelectItem>
                       <SelectItem value="warehouse">Armazém</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
 
+                <div className="space-y-2">
+                  <Label htmlFor="buy_purpose">Objetivo da Procura</Label>
+                  <Select
+                    value={formData.buy_purpose || ""}
+                    onValueChange={(value) => setFormData({ ...formData, buy_purpose: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione objetivo" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="housing">Habitação Própria</SelectItem>
+                      <SelectItem value="investment">Investimento</SelectItem>
+                      <SelectItem value="secondary">Habitação Secundária</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="bedrooms">Número de Quartos</Label>
                   <Input
@@ -348,6 +374,20 @@ export function LeadForm({ initialData, onSuccess, onCancel }: LeadFormProps) {
                     Vai recorrer a crédito?
                   </Label>
                   <p className="text-xs text-gray-500">Marque se o comprador precisa de financiamento</p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="has_property_to_sell" className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="has_property_to_sell"
+                      checked={formData.has_property_to_sell}
+                      onChange={(e) => setFormData({ ...formData, has_property_to_sell: e.target.checked })}
+                      className="w-4 h-4 rounded border-gray-300"
+                    />
+                    Tem imóvel para vender?
+                  </Label>
+                  <p className="text-xs text-gray-500">Marque se o comprador também quer vender</p>
                 </div>
               </div>
             </div>

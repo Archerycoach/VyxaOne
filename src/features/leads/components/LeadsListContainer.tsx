@@ -517,6 +517,8 @@ export function LeadsListContainer({
         return formatCurrency(lead.desired_price);
       case "needs_financing":
         return lead.needs_financing ? "Sim" : "Não";
+      case "has_property_to_sell":
+        return lead.has_property_to_sell ? "Sim" : "Não";
       case "created_at":
         return formatDate(lead.created_at);
       case "assigned_to":

@@ -1,0 +1,1 @@
+ALTER TABLE leads ADD COLUMN buy_purpose TEXT;
