@@ -59,15 +59,14 @@ export default async function handler(
       .order("created_at", { ascending: false })
       .limit(20) as any);
 
-    // Buscar leads pendentes do utilizador (limitado a 10 por causa dos tokens)
+    // Buscar leads pendentes do utilizador (expandido para 30 leads para incluir inícios de funil)
     const { data: leads } = await supabase
       .from("leads")
       .select("id, name, status, last_contact_date, next_follow_up, lead_type")
       .eq("assigned_to", user.id)
       .is("archived_at", null)
-      .not("status", "in", '("won", "lost")')
-      .order("next_follow_up", { ascending: true })
-      .limit(10);
+      .in("status", ["new", "contacted", "qualified", "proposal", "negotiation"])
+      .limit(30);
 
     if ((!leads || leads.length === 0) && (!contactMatches || contactMatches.length === 0)) {
       return res.status(200).json({ 
@@ -122,6 +121,7 @@ export default async function handler(
     Responde SEMPRE em formato JSON com "html_summary" e "new_events".
     O "new_events" é uma lista de tarefas/eventos a criar no calendário.
     ATENÇÃO: O campo "lead_id" de cada evento DEVE conter o ID (UUID) real da lead que encontraste nos dados fornecidos!
+    REGRA DE DATAS CRÍTICA: Se a nota referir datas futuras ("em Junho", "próxima semana"), agenda para essa data futura e nunca para hoje!
     
     Dados para analisar:
     ${JSON.stringify(contextData, null, 2)}` 
@@ -148,14 +148,15 @@ A tua resposta DEVE ser OBRIGATORIAMENTE um objeto JSON com esta estrutura:
       "description": "Justificação baseada na nota ou no novo match...",
       "lead_id": "INSERIR_AQUI_O_ID_REAL_DA_LEAD",
       "event_type": "call",
-      "start_time": "2026-05-02T10:00:00Z",
-      "end_time": "2026-05-02T10:30:00Z"
+      "start_time": "2026-06-15T10:00:00Z",
+      "end_time": "2026-06-15T10:30:00Z"
     }
   ]
 }
 
 Tipos de evento aceites: 'call', 'meeting', 'visit', 'task'.
-Marca os eventos com duração de 30 a 60 mins dentro do horário de trabalho para hoje ou amanhã.
+REGRA DE DATAS CRÍTICA: LÊ BEM AS NOTAS. Se a nota pedir para contactar numa data futura (ex: "em Junho", "próxima semana"), marca o \`start_time\` para essa exata data futura. NUNCA agendes para hoje o que foi pedido para depois! Se não houver data, agenda para os próximos dias úteis.
+Marca os eventos com duração de 30 a 60 mins dentro do horário de trabalho.
 O campo "lead_id" é obrigatório apenas quando o evento estiver relacionado com uma lead existente. Para matches de contactos sem lead associada, usa "lead_id": null.
 
 Dados para analisar:

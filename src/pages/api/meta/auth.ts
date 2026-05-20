@@ -36,15 +36,21 @@ export default async function handler(
       return res.status(400).json({ error: "Meta integration not configured" });
     }
 
-    // Build OAuth URL
-    const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL || "https://www.vyxa.pt"}/api/meta/callback`;
+    // Build OAuth URL dynamically based on current environment
+    const clientOrigin = req.headers["x-origin"];
+    const host = req.headers.host;
+    const protocol = host?.includes('localhost') ? 'http' : 'https';
+    
+    const origin = clientOrigin || (host ? `${protocol}://${host}` : process.env.NEXT_PUBLIC_APP_URL || "https://www.vyxa.pt");
+    const redirectUri = `${origin}/api/meta/callback`;
+    
     const state = Buffer.from(JSON.stringify({ userId: user.id })).toString("base64");
 
     const authUrl = 
       `https://www.facebook.com/v18.0/dialog/oauth?` +
       `client_id=${settings.app_id}` +
       `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-      `&scope=leads_retrieval,pages_manage_ads,pages_read_engagement` +
+      `&scope=leads_retrieval,pages_manage_ads,pages_read_engagement,pages_show_list,pages_manage_metadata` +
       `&state=${state}`;
 
     return res.status(200).json({ authUrl });

@@ -1,6 +1,6 @@
 ---
 title: "Ligação Google Calendar"
-status: "in_progress"
+status: "done"
 priority: "urgent"
 type: "bug"
 tags:

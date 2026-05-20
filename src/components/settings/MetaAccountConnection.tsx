@@ -32,6 +32,14 @@ export function MetaAccountConnection({ onSelectIntegration }: MetaAccountConnec
       });
       // Clean URL
       window.history.replaceState({}, document.title, window.location.pathname);
+    } else if (metaError === "no_pages_selected") {
+      toast({
+        title: "Nenhuma página selecionada",
+        description: "Tem de selecionar as páginas a que pretende dar acesso durante a janela do Facebook. Tente novamente.",
+        variant: "destructive",
+      });
+      // Clean URL
+      window.history.replaceState({}, document.title, window.location.pathname);
     } else if (metaError) {
       toast({
         title: "Erro na conexão",
@@ -71,7 +79,8 @@ export function MetaAccountConnection({ onSelectIntegration }: MetaAccountConnec
       
       const response = await fetch("/api/meta/auth", {
         headers: {
-          Authorization: `Bearer ${token}`
+          Authorization: `Bearer ${token}`,
+          "X-Origin": typeof window !== 'undefined' ? window.location.origin : ''
         }
       });
       

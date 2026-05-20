@@ -67,9 +67,8 @@ export default async function handler(
           .select("id, name, status, last_contact_date, next_follow_up, lead_type")
           .eq("assigned_to", user.id)
           .is("archived_at", null)
-          .not("status", "in", '("won", "lost")')
-          .order("next_follow_up", { ascending: true })
-          .limit(10);
+          .in("status", ["new", "contacted", "qualified", "proposal", "negotiation"])
+          .limit(30);
 
         if (!leads || leads.length === 0) {
           results.skipped++;
@@ -120,8 +119,8 @@ A tua resposta DEVE ser OBRIGATORIAMENTE um objeto JSON com esta estrutura:
       "description": "Justificação baseada na nota...",
       "lead_id": "INSERIR_AQUI_O_ID_REAL_DA_LEAD",
       "event_type": "call",
-      "start_time": "2026-05-02T10:00:00Z",
-      "end_time": "2026-05-02T10:30:00Z"
+      "start_time": "2026-06-15T10:00:00Z",
+      "end_time": "2026-06-15T10:30:00Z"
     }
   ],
   "lead_temperatures": [
@@ -133,7 +132,8 @@ A tua resposta DEVE ser OBRIGATORIAMENTE um objeto JSON com esta estrutura:
 }
 
 Tipos de evento aceites: 'call', 'meeting', 'visit', 'task'.
-Marca os eventos com duração de 30 a 60 mins dentro do horário de trabalho para hoje ou amanhã.
+REGRA DE DATAS CRÍTICA: LÊ BEM AS NOTAS. Se a nota pedir para contactar numa data futura específica (ex: "em Junho", "próxima semana", "daqui a 3 meses"), tens OBRIGATORIAMENTE de marcar o \`start_time\` para essa data futura. NUNCA agendes para hoje o que foi pedido para depois! Se não houver data, agenda para um dos próximos dias úteis.
+Marca os eventos com duração de 30 a 60 mins dentro do horário de trabalho.
 O campo "lead_id" é OBRIGATÓRIO e tem de ser o ID real (UUID) da lead presente nos dados!
 
 Dados para analisar:

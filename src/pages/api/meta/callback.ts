@@ -75,6 +75,10 @@ export default async function handler(
     const pagesData = await pagesResponse.json();
     const pages = pagesData.data || [];
 
+    if (pages.length === 0) {
+      return res.redirect("/settings?meta_error=no_pages_selected");
+    }
+
     // Save each page as a separate integration
     for (const page of pages) {
       // Subscribe page to webhooks
