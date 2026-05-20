@@ -104,26 +104,81 @@ serve(async (req) => {
 
             // Process each lead
             for (const metaLead of leads) {
-              // Check if already exists
-              const { data: existingLead } = await supabase
+              // Check if already exists by meta_lead_id
+              const { data: existingLeadByMetaId } = await supabase
                 .from("leads")
                 .select("id")
                 .eq("meta_lead_id", metaLead.id)
                 .single();
 
-              if (existingLead) {
+              if (existingLeadByMetaId) {
+                leadsSkipped++;
+                continue;
+              }
+              
+              // Also check if we already added a note for this meta_lead_id
+              const { data: existingNoteByMetaId } = await supabase
+                .from("notes")
+                .select("id")
+                .like("content", `%[MetaLeadID: ${metaLead.id}]%`)
+                .limit(1);
+
+              if (existingNoteByMetaId && existingNoteByMetaId.length > 0) {
                 leadsSkipped++;
                 continue;
               }
 
               // Map fields
               const leadData = mapMetaFieldsToLead(metaLead, fieldMappings || [], formConfig);
+              
+              // Check by email or phone
+              let existingLead = null;
+              
+              if (leadData.email) {
+                const { data } = await supabase
+                  .from("leads")
+                  .select("id, name")
+                  .eq("user_id", integration.user_id)
+                  .eq("email", leadData.email)
+                  .limit(1);
+                if (data && data.length > 0) existingLead = data[0];
+              }
+              
+              if (!existingLead && leadData.phone) {
+                const { data } = await supabase
+                  .from("leads")
+                  .select("id, name")
+                  .eq("user_id", integration.user_id)
+                  .eq("phone", leadData.phone)
+                  .limit(1);
+                if (data && data.length > 0) existingLead = data[0];
+              }
 
-              // Create lead
+              if (existingLead) {
+                // Create note for existing lead
+                const noteContent = `🔄 **Novo formulário submetido na Meta:**\n\n${leadData.notes || 'Sem dados extra.'}\n\n[MetaLeadID: ${metaLead.id}]`;
+                
+                await supabase.from("notes").insert({
+                  lead_id: existingLead.id,
+                  user_id: integration.user_id,
+                  content: noteContent
+                });
+                
+                leadsCreated++;
+                
+                // Send email notification for existing lead if enabled
+                if (formConfig.auto_email_notification) {
+                  await sendEmailNotification(integration.user_id, existingLead, integration.page_name, true, leadData);
+                }
+                continue;
+              }
+
+              // Create new lead
               const { data: newLead, error: createError } = await supabase
                 .from("leads")
                 .insert({
                   ...leadData,
+                  notes: leadData.notes ? `${leadData.notes}\n\n[MetaLeadID: ${metaLead.id}]` : `[MetaLeadID: ${metaLead.id}]`,
                   user_id: integration.user_id,
                   meta_lead_id: metaLead.id,
                   meta_form_id: formConfig.form_id,
@@ -141,9 +196,9 @@ serve(async (req) => {
 
               leadsCreated++;
 
-              // Send email notification if enabled
+              // Send email notification for new lead if enabled
               if (formConfig.auto_email_notification && newLead) {
-                await sendEmailNotification(integration.user_id, newLead, integration.page_name);
+                await sendEmailNotification(integration.user_id, newLead, integration.page_name, false, leadData);
               }
             }
 
@@ -251,7 +306,7 @@ function mapMetaFieldsToLead(metaLead: any, mappings: any[], config: any) {
   return leadData;
 }
 
-async function sendEmailNotification(userId: string, lead: any, pageName: string) {
+async function sendEmailNotification(userId: string, lead: any, pageName: string, isExisting: boolean = false, leadData: any = null) {
   try {
     // Get notification settings
     const { data: notifSettings } = await supabase
@@ -299,20 +354,32 @@ async function sendEmailNotification(userId: string, lead: any, pageName: string
         .single();
 
       if (consultantTemplate) {
-        const consultantBody = consultantTemplate.template_html
+        const leadPhone = leadData?.phone || lead.phone || "N/A";
+        const leadEmail = leadData?.email || lead.email || "N/A";
+        
+        let consultantBody = consultantTemplate.template_html
           .replace(/\{\{lead_name\}\}/g, lead.name || "N/A")
-          .replace(/\{\{lead_email\}\}/g, lead.email || "N/A")
-          .replace(/\{\{lead_phone\}\}/g, lead.phone || "N/A")
+          .replace(/\{\{lead_email\}\}/g, leadEmail)
+          .replace(/\{\{lead_phone\}\}/g, leadPhone)
           .replace(/\{\{page_name\}\}/g, pageName)
-          .replace(/\{\{budget\}\}/g, lead.budget || "N/A")
-          .replace(/\{\{location\}\}/g, lead.location_preference || "N/A")
-          .replace(/\{\{property_type\}\}/g, lead.property_type || "N/A")
-          .replace(/\{\{notes\}\}/g, lead.notes || "Nenhuma nota adicional")
+          .replace(/\{\{budget\}\}/g, leadData?.budget || lead.budget || "N/A")
+          .replace(/\{\{location\}\}/g, leadData?.location_preference || lead.location_preference || "N/A")
+          .replace(/\{\{property_type\}\}/g, leadData?.property_type || lead.property_type || "N/A")
+          .replace(/\{\{notes\}\}/g, leadData?.notes || lead.notes || "Nenhuma nota adicional")
           .replace(/\{\{crm_url\}\}/g, `${Deno.env.get("NEXT_PUBLIC_APP_URL") || ""}/leads`);
+
+        if (isExisting) {
+          consultantBody = `<div style="background-color: #e6f2ff; padding: 10px; margin-bottom: 15px; border-left: 4px solid #1877F2;">
+            <strong>Aviso:</strong> Esta lead já existia no CRM. Os dados do novo formulário foram adicionados como uma nota ao perfil existente.
+          </div>` + consultantBody;
+        }
+
+        const subjectPrefix = isExisting ? "🔄 Formulário Meta: " : "🎯 ";
+        const subject = consultantTemplate.subject.replace(/\{\{lead_name\}\}/g, lead.name || "Nova Lead");
 
         await sendEmailViaSMTP({
           to: user.email,
-          subject: consultantTemplate.subject.replace(/\{\{lead_name\}\}/g, lead.name || "Nova Lead"),
+          subject: subjectPrefix + subject,
           html: consultantBody,
           smtpSettings,
         });
@@ -321,8 +388,8 @@ async function sendEmailNotification(userId: string, lead: any, pageName: string
       }
     }
 
-    // Send email to client (lead) if enabled and lead has email
-    if (notifSettings.notify_client && lead.email) {
+    // Send email to client (lead) if enabled and lead has email - only for NEW leads
+    if (!isExisting && notifSettings.notify_client && lead.email) {
       const { data: clientTemplate } = await supabase
         .from("email_templates")
         .select("*")

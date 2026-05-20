@@ -109,26 +109,76 @@ export default async function handler(
 
       // Process each lead
       for (const metaLead of leads) {
-        // Check if lead already exists
-        const { data: existingLead } = await supabase
+        // Check if lead already exists by meta_lead_id
+        const { data: existingLeadByMetaId } = await supabase
           .from("leads")
           .select("id")
           .eq("meta_lead_id", metaLead.id)
           .single();
 
-        if (existingLead) {
+        if (existingLeadByMetaId) {
+          leadsSkipped++;
+          continue;
+        }
+        
+        // Also check if we already added a note for this meta_lead_id
+        const { data: existingNoteByMetaId } = await supabase
+          .from("notes")
+          .select("id")
+          .like("content", `%[MetaLeadID: ${metaLead.id}]%`)
+          .limit(1);
+
+        if (existingNoteByMetaId && existingNoteByMetaId.length > 0) {
           leadsSkipped++;
           continue;
         }
 
         // Map fields
         const leadData = mapMetaFieldsToLead(metaLead, fieldMappings || [], formConfig);
+        
+        // Check if lead exists by email or phone
+        let existingLead = null;
+        
+        if (leadData.email) {
+          const { data } = await supabase
+            .from("leads")
+            .select("id, name")
+            .eq("user_id", user.id)
+            .eq("email", leadData.email)
+            .limit(1);
+          if (data && data.length > 0) existingLead = data[0];
+        }
+        
+        if (!existingLead && leadData.phone) {
+          const { data } = await supabase
+            .from("leads")
+            .select("id, name")
+            .eq("user_id", user.id)
+            .eq("phone", leadData.phone)
+            .limit(1);
+          if (data && data.length > 0) existingLead = data[0];
+        }
 
-        // Create lead
+        if (existingLead) {
+          // Add note to existing lead
+          const noteContent = `🔄 **Novo formulário submetido na Meta (Sincronização):**\n\n${leadData.notes || 'Sem dados extra.'}\n\n[MetaLeadID: ${metaLead.id}]`;
+          
+          await supabase.from("notes").insert({
+            lead_id: existingLead.id,
+            user_id: user.id,
+            content: noteContent
+          });
+          
+          leadsCreated++; // Increment created since we successfully processed it as a note
+          continue;
+        }
+
+        // Create new lead
         const { error: createError } = await supabase
           .from("leads")
           .insert({
             ...leadData,
+            notes: leadData.notes ? `${leadData.notes}\n\n[MetaLeadID: ${metaLead.id}]` : `[MetaLeadID: ${metaLead.id}]`,
             user_id: user.id,
             meta_lead_id: metaLead.id,
             meta_form_id: form_id,

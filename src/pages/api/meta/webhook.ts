@@ -84,13 +84,76 @@ export default async function handler(
             }
 
             console.log("📋 Lead fields:", leadFields);
+            
+            const emailValue = leadFields.email || "";
+            const phoneValue = leadFields.phone_number || leadFields.phone || "";
+            
+            // Check if this Meta lead was already processed
+            const { data: alreadyProcessed } = await supabase
+              .from("meta_webhook_logs")
+              .select("id")
+              .eq("leadgen_id", leadgenId)
+              .eq("status", "success")
+              .single();
 
-            // Map Meta fields to CRM fields
+            if (alreadyProcessed) {
+              console.log("Lead already processed in logs:", leadgenId);
+              continue;
+            }
+
+            // Check if lead already exists by Email or Phone
+            let existingLead = null;
+            
+            if (emailValue) {
+              const { data } = await supabase
+                .from("leads")
+                .select("id, name")
+                .eq("user_id", integration.user_id)
+                .eq("email", emailValue)
+                .limit(1);
+              if (data && data.length > 0) existingLead = data[0];
+            }
+            
+            if (!existingLead && phoneValue) {
+              const { data } = await supabase
+                .from("leads")
+                .select("id, name")
+                .eq("user_id", integration.user_id)
+                .eq("phone", phoneValue)
+                .limit(1);
+              if (data && data.length > 0) existingLead = data[0];
+            }
+
+            if (existingLead) {
+              // Create a note instead of a duplicate lead
+              const noteContent = `🔄 **Novo formulário submetido na Meta:**\n\n` + 
+                Object.entries(leadFields)
+                  .map(([key, value]) => `- **${key}:** ${value}`)
+                  .join("\n") + 
+                `\n\n[MetaLeadID: ${leadgenId}]`;
+
+              await supabase.from("notes").insert({
+                lead_id: existingLead.id,
+                user_id: integration.user_id,
+                content: noteContent
+              });
+              
+              console.log("✅ Note added to existing lead:", existingLead.id);
+              
+              // Send notification email for existing lead
+              await sendLeadNotificationEmail(integration.user_id, existingLead, leadFields, true);
+              
+              // Log successful webhook
+              await logWebhook(pageId, leadgenId, formId, adId, body, "success", null);
+              continue;
+            }
+
+            // Map Meta fields to CRM fields for NEW lead
             const leadRecord = {
               user_id: integration.user_id,
               name: leadFields.full_name || leadFields.name || "Lead sem nome",
-              email: leadFields.email || null,
-              phone: leadFields.phone_number || null,
+              email: emailValue || null,
+              phone: phoneValue || null,
               lead_source: `Meta Lead Ads - ${integration.page_name}`,
               status: "new",
               lead_type: "buyer", // Default to buyer
@@ -115,15 +178,15 @@ export default async function handler(
 
             console.log("✅ Lead created:", newLead.id);
 
-            // 4. Handle Extra Fields (Custom Questions) as a Note
-            // Filter out fields already mapped
-            const standardFields = ['full_name', 'name', 'email', 'phone_number'];
+            // Handle Extra Fields (Custom Questions) as a Note
+            const standardFields = ['full_name', 'name', 'email', 'phone_number', 'phone'];
             const extraFields = Object.entries(leadFields)
               .filter(([key]) => !standardFields.includes(key));
 
             if (extraFields.length > 0) {
               const noteContent = "📋 **Dados Adicionais do Formulário Meta:**\n\n" + 
-                extraFields.map(([key, value]) => `- **${key}:** ${value}`).join("\n");
+                extraFields.map(([key, value]) => `- **${key}:** ${value}`).join("\n") +
+                `\n\n[MetaLeadID: ${leadgenId}]`;
 
               await supabase.from("notes").insert({
                 lead_id: newLead.id,
@@ -133,8 +196,8 @@ export default async function handler(
               console.log("📝 Note created with extra fields");
             }
 
-            // Send notification email to user
-            await sendLeadNotificationEmail(integration.user_id, newLead, leadFields);
+            // Send notification email for new lead
+            await sendLeadNotificationEmail(integration.user_id, newLead, leadFields, false);
 
             // Log successful webhook
             await logWebhook(pageId, leadgenId, formId, adId, body, "success", null);
@@ -174,7 +237,7 @@ async function logWebhook(
     });
 }
 
-async function sendLeadNotificationEmail(userId: string, lead: any, leadFields: Record<string, string>) {
+async function sendLeadNotificationEmail(userId: string, lead: any, leadFields: Record<string, string>, isExisting: boolean = false) {
   try {
     // Get user email and SMTP settings
     const { data: profile } = await supabase
@@ -205,27 +268,31 @@ async function sendLeadNotificationEmail(userId: string, lead: any, leadFields: 
     const fieldsHtml = Object.entries(leadFields)
       .map(([key, value]) => `<li><strong>${key}:</strong> ${value}</li>`)
       .join("");
+      
+    const title = isExisting ? "🔄 Lead Existente Submeteu Novo Formulário" : "🎯 Nova Lead Recebida da Meta!";
+    const description = isExisting 
+      ? "Uma lead que já existia no sistema submeteu um novo formulário nas suas campanhas Meta. Os dados foram adicionados como uma nota à lead existente."
+      : "Você recebeu uma nova lead através das suas campanhas de Lead Ads na Meta (Facebook/Instagram).";
 
     const emailHtml = `
       <!DOCTYPE html>
       <html>
         <head>
           <meta charset="utf-8">
-          <title>Nova Lead da Meta</title>
+          <title>${isExisting ? "Novo Formulário - Meta" : "Nova Lead da Meta"}</title>
         </head>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
           <div style="max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #ddd; border-radius: 10px;">
-            <h2 style="color: #1877F2;">🎯 Nova Lead Recebida da Meta!</h2>
+            <h2 style="color: #1877F2;">${title}</h2>
             <p>Olá ${profile.full_name || ""},</p>
-            <p>Você recebeu uma nova lead através das suas campanhas de Lead Ads na Meta (Facebook/Instagram).</p>
+            <p>${description}</p>
             
             <div style="background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
               <h3 style="margin-top: 0;">📋 Informações da Lead:</h3>
               <ul style="list-style: none; padding: 0;">
                 <li><strong>Nome:</strong> ${lead.name}</li>
-                <li><strong>Email:</strong> ${lead.email || "Não fornecido"}</li>
-                <li><strong>Telefone:</strong> ${lead.phone || "Não fornecido"}</li>
-                <li><strong>Origem:</strong> ${lead.lead_source}</li>
+                <li><strong>Email:</strong> ${leadFields.email || lead.email || "Não fornecido"}</li>
+                <li><strong>Telefone:</strong> ${leadFields.phone_number || leadFields.phone || lead.phone || "Não fornecido"}</li>
               </ul>
               
               ${fieldsHtml ? `<h4>Campos do Formulário:</h4><ul>${fieldsHtml}</ul>` : ""}
@@ -253,7 +320,7 @@ async function sendLeadNotificationEmail(userId: string, lead: any, leadFields: 
       body: JSON.stringify({
         userId: userId,
         to: profile.email,
-        subject: "🎯 Nova Lead da Meta - Vyxa CRM",
+        subject: isExisting ? `🔄 Formulário Meta: ${lead.name} - Vyxa CRM` : "🎯 Nova Lead da Meta - Vyxa CRM",
         html: emailHtml,
       }),
     });
