@@ -51,7 +51,7 @@ export default async function handler(
     const response = await fetch(
       `https://graph.facebook.com/v18.0/${integration.page_id}/leadgen_forms?` +
       `access_token=${integration.page_access_token}&` +
-      `fields=id,name,status,leads_count,created_time`
+      `fields=id,name,status,leads_count,created_time,questions`
     );
 
     if (!response.ok) {

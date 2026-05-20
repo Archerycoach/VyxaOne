@@ -21,7 +21,8 @@ import {
   XCircle,
   ArrowRight,
   Plus,
-  Save
+  Save,
+  Wand2
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -42,6 +43,7 @@ interface MetaForm {
   leads_count: number;
   created_time: string;
   config: MetaFormConfig | null;
+  questions?: Array<{ key: string; label: string; type: string }>;
 }
 
 interface MetaFormsManagementProps {
@@ -119,7 +121,11 @@ export function MetaFormsManagement({ integrationId, integrationName }: MetaForm
           default_lead_source: `Meta - ${integrationName}`,
           is_active: true,
         });
-        setFieldMappings([]);
+        setFieldMappings([
+          { meta_field_name: "full_name", crm_field_name: "name", field_type: "text", is_required: true, priority_order: 0 },
+          { meta_field_name: "email", crm_field_name: "email", field_type: "text", is_required: false, priority_order: 1 },
+          { meta_field_name: "phone_number", crm_field_name: "phone", field_type: "text", is_required: false, priority_order: 2 },
+        ]);
       }
     } catch (error) {
       console.error("Error loading form config:", error);
@@ -228,6 +234,33 @@ export function MetaFormsManagement({ integrationId, integrationName }: MetaForm
     const updated = [...fieldMappings];
     updated[index] = { ...updated[index], [field]: value };
     setFieldMappings(updated);
+  };
+
+  const autoGenerateMappings = () => {
+    const defaultMappings: Partial<MetaFieldMapping>[] = [
+      { meta_field_name: "full_name", crm_field_name: "name", field_type: "text", is_required: true },
+      { meta_field_name: "email", crm_field_name: "email", field_type: "text", is_required: false },
+      { meta_field_name: "phone_number", crm_field_name: "phone", field_type: "text", is_required: false },
+      { meta_field_name: "city", crm_field_name: "location_preference", field_type: "text", is_required: false },
+    ];
+
+    const existingMetaFields = fieldMappings.map(m => m.meta_field_name?.toLowerCase());
+    const newMappings = defaultMappings
+      .filter(m => !existingMetaFields.includes(m.meta_field_name?.toLowerCase()))
+      .map((m, i) => ({ ...m, priority_order: fieldMappings.length + i }));
+
+    if (newMappings.length > 0) {
+      setFieldMappings([...fieldMappings, ...newMappings]);
+      toast({
+        title: "Mapeamento Gerado",
+        description: "Foram adicionados os campos padrão da Meta.",
+      });
+    } else {
+      toast({
+        title: "Sem alterações",
+        description: "Os campos padrão já estão mapeados.",
+      });
+    }
   };
 
   if (loading) {
@@ -415,10 +448,16 @@ export function MetaFormsManagement({ integrationId, integrationName }: MetaForm
                       Configure como os campos do formulário Meta são mapeados para o CRM
                     </p>
                   </div>
-                  <Button size="sm" onClick={addFieldMapping}>
-                    <Plus className="h-4 w-4 mr-2" />
-                    Adicionar
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" onClick={autoGenerateMappings}>
+                      <Wand2 className="h-4 w-4 mr-2" />
+                      Gerar Padrão
+                    </Button>
+                    <Button size="sm" onClick={addFieldMapping}>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Adicionar
+                    </Button>
+                  </div>
                 </div>
 
                 {fieldMappings.length === 0 ? (
@@ -432,14 +471,39 @@ export function MetaFormsManagement({ integrationId, integrationName }: MetaForm
                   <div className="space-y-3">
                     {fieldMappings.map((mapping, index) => (
                       <div key={index} className="flex items-center gap-3 p-3 border rounded-lg">
-                        <Input
-                          placeholder="Campo Meta (ex: qual_o_seu_orcamento)"
-                          value={mapping.meta_field_name}
-                          onChange={(e) =>
-                            updateFieldMapping(index, "meta_field_name", e.target.value)
-                          }
-                          className="flex-1"
-                        />
+                        {selectedForm?.questions && selectedForm.questions.length > 0 ? (
+                          <Select
+                            value={mapping.meta_field_name}
+                            onValueChange={(value) =>
+                              updateFieldMapping(index, "meta_field_name", value)
+                            }
+                          >
+                            <SelectTrigger className="flex-1">
+                              <SelectValue placeholder="Campo Meta" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {selectedForm.questions.map((q) => (
+                                <SelectItem key={q.key} value={q.key}>
+                                  {q.label} ({q.key})
+                                </SelectItem>
+                              ))}
+                              {mapping.meta_field_name && !selectedForm.questions.some(q => q.key === mapping.meta_field_name) && (
+                                <SelectItem value={mapping.meta_field_name}>
+                                  {mapping.meta_field_name}
+                                </SelectItem>
+                              )}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <Input
+                            placeholder="Campo Meta (ex: qual_o_seu_orcamento)"
+                            value={mapping.meta_field_name}
+                            onChange={(e) =>
+                              updateFieldMapping(index, "meta_field_name", e.target.value)
+                            }
+                            className="flex-1"
+                          />
+                        )}
                         <ArrowRight className="h-4 w-4 text-gray-400" />
                         <Select
                           value={mapping.crm_field_name}
