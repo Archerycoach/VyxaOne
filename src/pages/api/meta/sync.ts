@@ -2,8 +2,8 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { createClient } from "@supabase/supabase-js";
 
 const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
+  process.env.NEXT_PUBLIC_SUPABASE_URL || "",
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
 );
 
 /**
@@ -67,7 +67,7 @@ export default async function handler(
       .from("meta_sync_history")
       .insert({
         user_id: user.id,
-        integration_id,
+        page_id: integration.page_id,
         form_id,
         sync_type: "manual",
         status: "running",
@@ -77,7 +77,8 @@ export default async function handler(
       .single();
 
     if (syncError) {
-      return res.status(500).json({ error: "Failed to create sync history" });
+      console.error("Sync history error:", syncError);
+      return res.status(500).json({ error: `Failed to create sync history: ${syncError.message}` });
     }
 
     let leadsFetched = 0;
@@ -100,7 +101,12 @@ export default async function handler(
       );
 
       if (!response.ok) {
-        throw new Error(`Meta API error: ${response.statusText}`);
+        let errorMsg = response.statusText;
+        try {
+          const errData = await response.json();
+          errorMsg = JSON.stringify(errData.error || errData);
+        } catch(e) {}
+        throw new Error(`Meta API error: ${errorMsg}`);
       }
 
       const data = await response.json();
@@ -123,9 +129,9 @@ export default async function handler(
         
         // Also check if we already added a note for this meta_lead_id
         const { data: existingNoteByMetaId } = await supabase
-          .from("notes")
+          .from("lead_notes")
           .select("id")
-          .like("content", `%[MetaLeadID: ${metaLead.id}]%`)
+          .like("note", `%[MetaLeadID: ${metaLead.id}]%`)
           .limit(1);
 
         if (existingNoteByMetaId && existingNoteByMetaId.length > 0) {
@@ -136,13 +142,38 @@ export default async function handler(
         // Map fields
         const leadData = mapMetaFieldsToLead(metaLead, fieldMappings || [], formConfig);
         
+        // Clean numeric fields
+        const numericFields = ['budget', 'budget_min', 'budget_max', 'bedrooms', 'bathrooms', 'min_area', 'max_area', 'desired_price', 'property_area', 'probability', 'lead_score', 'estimated_value'];
+        for (const field of numericFields) {
+          if (leadData[field] === "") {
+            delete leadData[field];
+          } else if (leadData[field] !== undefined) {
+            const parsed = Number(leadData[field]);
+            if (!isNaN(parsed)) {
+              leadData[field] = parsed;
+            } else {
+              const digits = String(leadData[field]).replace(/[^\d.-]/g, '');
+              leadData[field] = digits ? Number(digits) : null;
+            }
+          }
+        }
+        
+        // Clean boolean fields
+        const booleanFields = ['has_property_to_sell', 'needs_financing', 'is_development'];
+        for (const field of booleanFields) {
+           if (typeof leadData[field] === 'string') {
+             const lower = String(leadData[field]).toLowerCase();
+             leadData[field] = lower === 'true' || lower === 'sim' || lower === 'yes' || lower === '1';
+           }
+        }
+        
         // Check if lead exists by email or phone
         let existingLead = null;
         
         if (leadData.email) {
           const { data } = await supabase
             .from("leads")
-            .select("id, name")
+            .select("id, name, contact_id")
             .eq("user_id", user.id)
             .eq("email", leadData.email)
             .limit(1);
@@ -152,7 +183,7 @@ export default async function handler(
         if (!existingLead && leadData.phone) {
           const { data } = await supabase
             .from("leads")
-            .select("id, name")
+            .select("id, name, contact_id")
             .eq("user_id", user.id)
             .eq("phone", leadData.phone)
             .limit(1);
@@ -171,21 +202,22 @@ export default async function handler(
           if (leadData.notes) noteContent += `**Notas / Campos Extra:**\n${leadData.notes}\n\n`;
           noteContent += `[MetaLeadID: ${metaLead.id}]`;
           
-          await supabase.from("notes").insert({
+          await supabase.from("lead_notes").insert({
             lead_id: existingLead.id,
-            user_id: user.id,
-            content: noteContent
+            created_by: user.id,
+            note: noteContent
           });
           
           leadsCreated++; // Increment created since we successfully processed it as a note
           continue;
         }
 
-        // Create new lead
+        // Create new lead without creating a contact
         const { error: createError } = await supabase
           .from("leads")
           .insert({
             ...leadData,
+            contact_id: null,
             notes: leadData.notes ? `${leadData.notes}\n\n[MetaLeadID: ${metaLead.id}]` : `[MetaLeadID: ${metaLead.id}]`,
             user_id: user.id,
             meta_lead_id: metaLead.id,
@@ -232,7 +264,7 @@ export default async function handler(
         .from("meta_sync_history")
         .update({
           status: "failed",
-          error_details: { message: error.message },
+          error_details: { message: error.message, stack: error.stack },
           leads_processed: leadsFetched,
           leads_created: leadsCreated,
           leads_updated: leadsUpdated,
@@ -243,9 +275,9 @@ export default async function handler(
 
       throw error;
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error in Meta sync:", error);
-    return res.status(500).json({ error: "Internal server error" });
+    return res.status(500).json({ error: error.message || "Internal server error", stack: error.stack });
   }
 }
 
@@ -298,6 +330,11 @@ function mapMetaFieldsToLead(metaLead: any, mappings: any[], config: any) {
   if (combinedNotes) {
     leadData.notes = combinedNotes;
   }
+
+  // Clean empty strings for constraint-sensitive fields
+  if (!leadData.email || leadData.email.trim() === "") delete leadData.email;
+  if (!leadData.phone || leadData.phone.trim() === "") delete leadData.phone;
+  if (!leadData.name || leadData.name.trim() === "") leadData.name = "Lead Sem Nome";
 
   return leadData;
 }
