@@ -208,7 +208,7 @@ export default async function handler(
         .from("meta_sync_history")
         .update({
           status: "completed",
-          leads_fetched: leadsFetched,
+          leads_processed: leadsFetched,
           leads_created: leadsCreated,
           leads_updated: leadsUpdated,
           leads_skipped: leadsSkipped,
@@ -232,8 +232,8 @@ export default async function handler(
         .from("meta_sync_history")
         .update({
           status: "failed",
-          error_message: error.message,
-          leads_fetched: leadsFetched,
+          error_details: { message: error.message },
+          leads_processed: leadsFetched,
           leads_created: leadsCreated,
           leads_updated: leadsUpdated,
           leads_skipped: leadsSkipped,
