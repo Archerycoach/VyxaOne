@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -35,6 +35,7 @@ import {
   type MetaFieldMapping,
   type MetaSyncHistory
 } from "@/services/metaService";
+import { getBuyerStages, getSellerStages, type PipelineStage } from "@/services/pipelineSettingsService";
 
 interface MetaForm {
   id: string;
@@ -60,11 +61,28 @@ export function MetaFormsManagement({ integrationId, integrationName }: MetaForm
   const [fieldMappings, setFieldMappings] = useState<Partial<MetaFieldMapping>[]>([]);
   const [syncHistory, setSyncHistory] = useState<MetaSyncHistory[]>([]);
   const [configDialogOpen, setConfigDialogOpen] = useState(false);
+  const [showOnlyActive, setShowOnlyActive] = useState(true);
+  const [buyerStages, setBuyerStages] = useState<PipelineStage[]>([]);
+  const [sellerStages, setSellerStages] = useState<PipelineStage[]>([]);
   const { toast } = useToast();
 
   useEffect(() => {
     loadForms();
+    loadPipelineStages();
   }, [integrationId]);
+
+  const loadPipelineStages = async () => {
+    try {
+      const [buyers, sellers] = await Promise.all([
+        getBuyerStages(),
+        getSellerStages()
+      ]);
+      setBuyerStages(buyers);
+      setSellerStages(sellers);
+    } catch (err) {
+      console.error("Error loading pipeline stages:", err);
+    }
+  };
 
   useEffect(() => {
     if (selectedForm?.id) {
@@ -273,27 +291,41 @@ export function MetaFormsManagement({ integrationId, integrationName }: MetaForm
     );
   }
 
+  const displayedForms = forms.filter(form => showOnlyActive ? form.status === "ACTIVE" : true);
+
   return (
     <div className="space-y-4">
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <FileText className="h-5 w-5" />
-            Formulários - {integrationName}
-          </CardTitle>
-          <CardDescription>
-            Configure a captura e mapeamento de campos para cada formulário Meta.
-          </CardDescription>
+        <CardHeader className="flex flex-row items-center justify-between pb-4">
+          <div className="space-y-1.5">
+            <CardTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5" />
+              Formulários - {integrationName}
+            </CardTitle>
+            <CardDescription>
+              Configure a captura e mapeamento de campos para cada formulário Meta.
+            </CardDescription>
+          </div>
+          <div className="flex items-center space-x-2">
+            <Switch 
+              id="show-active-only" 
+              checked={showOnlyActive} 
+              onCheckedChange={setShowOnlyActive} 
+            />
+            <Label htmlFor="show-active-only" className="text-sm font-medium cursor-pointer">
+              Apenas ativos
+            </Label>
+          </div>
         </CardHeader>
         <CardContent>
-          {forms.length === 0 ? (
+          {displayedForms.length === 0 ? (
             <div className="text-center py-8 text-gray-500">
               <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p>Nenhum formulário encontrado nesta página Meta.</p>
+              <p>Nenhum formulário {showOnlyActive ? "ativo " : ""}encontrado nesta página Meta.</p>
             </div>
           ) : (
             <div className="space-y-3">
-              {forms.map((form) => (
+              {displayedForms.map((form) => (
                 <div
                   key={form.id}
                   className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50"
@@ -301,15 +333,26 @@ export function MetaFormsManagement({ integrationId, integrationName }: MetaForm
                   <div className="flex-1">
                     <div className="flex items-center gap-3">
                       <h4 className="font-medium">{form.name}</h4>
+                      
+                      {form.status === "ACTIVE" ? (
+                        <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                          Meta: Ativo
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="bg-gray-50 text-gray-600 border-gray-200">
+                          Meta: {form.status}
+                        </Badge>
+                      )}
+
                       {form.config?.is_active ? (
                         <Badge variant="secondary" className="bg-green-100 text-green-700">
                           <CheckCircle className="h-3 w-3 mr-1" />
-                          Ativo
+                          Sinc. Ativa
                         </Badge>
                       ) : (
                         <Badge variant="secondary" className="bg-gray-100 text-gray-700">
                           <XCircle className="h-3 w-3 mr-1" />
-                          Inativo
+                          Sinc. Inativa
                         </Badge>
                       )}
                     </div>
@@ -428,10 +471,22 @@ export function MetaFormsManagement({ integrationId, integrationName }: MetaForm
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="new">Nova</SelectItem>
-                      <SelectItem value="contacted">Contactada</SelectItem>
-                      <SelectItem value="qualified">Qualificada</SelectItem>
-                      <SelectItem value="meeting">Reunião Agendada</SelectItem>
+                      <SelectGroup>
+                        <SelectLabel className="bg-gray-50">Compradores</SelectLabel>
+                        {buyerStages.map(stage => (
+                          <SelectItem key={`buyer-${stage.id}`} value={stage.id}>
+                            {stage.name}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                      <SelectGroup>
+                        <SelectLabel className="bg-gray-50 mt-2">Vendedores</SelectLabel>
+                        {sellerStages.map(stage => (
+                          <SelectItem key={`seller-${stage.id}`} value={stage.id}>
+                            {stage.name}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
                     </SelectContent>
                   </Select>
                 </div>
@@ -518,10 +573,22 @@ export function MetaFormsManagement({ integrationId, integrationName }: MetaForm
                             <SelectItem value="name">Nome</SelectItem>
                             <SelectItem value="email">Email</SelectItem>
                             <SelectItem value="phone">Telefone</SelectItem>
-                            <SelectItem value="budget">Orçamento</SelectItem>
-                            <SelectItem value="location_preference">Localização</SelectItem>
+                            <SelectItem value="budget">Orçamento (Texto)</SelectItem>
+                            <SelectItem value="budget_min">Orçamento Mínimo</SelectItem>
+                            <SelectItem value="budget_max">Orçamento Máximo</SelectItem>
+                            <SelectItem value="desired_price">Preço Desejado</SelectItem>
+                            <SelectItem value="location_preference">Localização / Zona</SelectItem>
                             <SelectItem value="property_type">Tipo de Imóvel</SelectItem>
-                            <SelectItem value="notes">Notas</SelectItem>
+                            <SelectItem value="lead_type">Tipo de Cliente (buyer/seller)</SelectItem>
+                            <SelectItem value="bedrooms">Nº de Quartos</SelectItem>
+                            <SelectItem value="bathrooms">Nº de Casas de Banho</SelectItem>
+                            <SelectItem value="min_area">Área Mínima (m2)</SelectItem>
+                            <SelectItem value="max_area">Área Máxima (m2)</SelectItem>
+                            <SelectItem value="property_area">Área do Imóvel (m2)</SelectItem>
+                            <SelectItem value="needs_financing">Precisa Financiamento (true/false)</SelectItem>
+                            <SelectItem value="development_name">Nome do Empreendimento</SelectItem>
+                            <SelectItem value="birthday">Data de Nascimento</SelectItem>
+                            <SelectItem value="notes">Notas / Observações</SelectItem>
                           </SelectContent>
                         </Select>
                         <Button

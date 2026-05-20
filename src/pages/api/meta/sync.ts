@@ -160,8 +160,16 @@ export default async function handler(
         }
 
         if (existingLead) {
-          // Add note to existing lead
-          const noteContent = `🔄 **Novo formulário submetido na Meta (Sincronização):**\n\n${leadData.notes || 'Sem dados extra.'}\n\n[MetaLeadID: ${metaLead.id}]`;
+          // Add note to existing lead with all form fields
+          const updatedFields = Object.entries(leadData)
+            .filter(([k, v]) => k !== 'notes' && v)
+            .map(([k, v]) => `- **${k}:** ${v}`)
+            .join("\n");
+
+          let noteContent = `🔄 **Novo formulário submetido na Meta:**\n\n`;
+          if (updatedFields) noteContent += `${updatedFields}\n\n`;
+          if (leadData.notes) noteContent += `**Notas / Campos Extra:**\n${leadData.notes}\n\n`;
+          noteContent += `[MetaLeadID: ${metaLead.id}]`;
           
           await supabase.from("notes").insert({
             lead_id: existingLead.id,
@@ -270,7 +278,7 @@ function mapMetaFieldsToLead(metaLead: any, mappings: any[], config: any) {
         leadData.phone = fieldValue;
       } else if (fieldName.includes("budget") || fieldName.includes("orcamento")) {
         leadData.budget = fieldValue;
-      } else if (fieldName.includes("location") || fieldName.includes("bairro") || fieldName.includes("zona")) {
+      } else if (fieldName.includes("location") || fieldName.includes("bairro") || fieldName.includes("zona") || fieldName === "city") {
         leadData.location_preference = fieldValue;
       } else if (fieldName.includes("property") || fieldName.includes("imovel") || fieldName.includes("tipo")) {
         leadData.property_type = fieldValue;
@@ -281,9 +289,14 @@ function mapMetaFieldsToLead(metaLead: any, mappings: any[], config: any) {
     }
   }
 
-  // Add extra fields as note
-  if (extraFields.length > 0 && config?.auto_import) {
-    leadData.notes = `📝 Informações Adicionais do Formulário Meta:\n\n${extraFields.join("\n")}`;
+  // Combine mapped notes and extra fields
+  let combinedNotes = leadData.notes || "";
+  if (extraFields.length > 0) {
+    const extraContent = extraFields.join("\n");
+    combinedNotes = combinedNotes ? `${combinedNotes}\n\n${extraContent}` : extraContent;
+  }
+  if (combinedNotes) {
+    leadData.notes = combinedNotes;
   }
 
   return leadData;

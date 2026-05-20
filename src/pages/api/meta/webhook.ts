@@ -101,36 +101,98 @@ export default async function handler(
               continue;
             }
 
+            // Get form config and mappings for this form
+            const { data: formConfig } = await supabase
+              .from("meta_form_configs")
+              .select("*")
+              .eq("form_id", formId)
+              .eq("is_active", true)
+              .single();
+
+            let fieldMappings = [];
+            if (formConfig) {
+              const { data } = await supabase
+                .from("meta_field_mappings")
+                .select("*")
+                .eq("form_config_id", formConfig.id);
+              fieldMappings = data || [];
+            }
+
+            // Apply mappings to get mapped data
+            const mappedData: any = { name: leadFields.full_name || leadFields.name || "Lead sem nome" };
+            const extraFields: string[] = [];
+
+            for (const [metaField, value] of Object.entries(leadFields)) {
+              const fieldName = metaField.toLowerCase();
+              const mapping = fieldMappings.find((m: any) => m.meta_field_name === metaField);
+
+              if (mapping) {
+                mappedData[mapping.crm_field_name] = value;
+              } else {
+                if (fieldName.includes("name") || fieldName === "full_name") {
+                  mappedData.name = value;
+                } else if (fieldName.includes("email")) {
+                  mappedData.email = value;
+                } else if (fieldName.includes("phone") || fieldName.includes("telefone")) {
+                  mappedData.phone = value;
+                } else if (fieldName.includes("budget") || fieldName.includes("orcamento")) {
+                  mappedData.budget = value;
+                } else if (fieldName.includes("location") || fieldName.includes("bairro") || fieldName.includes("zona") || fieldName === "city") {
+                  mappedData.location_preference = value;
+                } else if (fieldName.includes("property") || fieldName.includes("imovel") || fieldName.includes("tipo")) {
+                  mappedData.property_type = value;
+                } else {
+                  extraFields.push(`• ${metaField}: ${value}`);
+                }
+              }
+            }
+
+            let combinedNotes = mappedData.notes || "";
+            if (extraFields.length > 0) {
+              const extraContent = extraFields.join("\n");
+              combinedNotes = combinedNotes ? `${combinedNotes}\n\n${extraContent}` : extraContent;
+            }
+            if (combinedNotes) {
+              mappedData.notes = combinedNotes;
+            }
+
+            const finalEmail = mappedData.email || emailValue;
+            const finalPhone = mappedData.phone || phoneValue;
+
             // Check if lead already exists by Email or Phone
             let existingLead = null;
             
-            if (emailValue) {
+            if (finalEmail) {
               const { data } = await supabase
                 .from("leads")
                 .select("id, name")
                 .eq("user_id", integration.user_id)
-                .eq("email", emailValue)
+                .eq("email", finalEmail)
                 .limit(1);
               if (data && data.length > 0) existingLead = data[0];
             }
             
-            if (!existingLead && phoneValue) {
+            if (!existingLead && finalPhone) {
               const { data } = await supabase
                 .from("leads")
                 .select("id, name")
                 .eq("user_id", integration.user_id)
-                .eq("phone", phoneValue)
+                .eq("phone", finalPhone)
                 .limit(1);
               if (data && data.length > 0) existingLead = data[0];
             }
 
             if (existingLead) {
-              // Create a note instead of a duplicate lead
-              const noteContent = `🔄 **Novo formulário submetido na Meta:**\n\n` + 
-                Object.entries(leadFields)
-                  .map(([key, value]) => `- **${key}:** ${value}`)
-                  .join("\n") + 
-                `\n\n[MetaLeadID: ${leadgenId}]`;
+              // Create a note with all updated form fields and notes
+              const updatedFields = Object.entries(mappedData)
+                .filter(([k, v]) => k !== 'notes' && v)
+                .map(([k, v]) => `- **${k}:** ${v}`)
+                .join("\n");
+
+              let noteContent = `🔄 **Novo formulário submetido na Meta:**\n\n`;
+              if (updatedFields) noteContent += `${updatedFields}\n\n`;
+              if (mappedData.notes) noteContent += `**Notas / Campos Extra:**\n${mappedData.notes}\n\n`;
+              noteContent += `[MetaLeadID: ${leadgenId}]`;
 
               await supabase.from("notes").insert({
                 lead_id: existingLead.id,
@@ -150,18 +212,22 @@ export default async function handler(
 
             // Map Meta fields to CRM fields for NEW lead
             const leadRecord = {
+              ...mappedData,
               user_id: integration.user_id,
-              name: leadFields.full_name || leadFields.name || "Lead sem nome",
-              email: emailValue || null,
-              phone: phoneValue || null,
-              lead_source: `Meta Lead Ads - ${integration.page_name}`,
-              status: "new",
-              lead_type: "buyer", // Default to buyer
+              email: finalEmail || null,
+              phone: finalPhone || null,
+              lead_source: formConfig?.default_lead_source || `Meta Lead Ads - ${integration.page_name}`,
+              status: formConfig?.default_pipeline_stage || "new",
               meta_lead_id: leadgenId,
               meta_form_id: formId,
               meta_ad_id: adId,
               created_at: leadData.created_time || new Date().toISOString(),
             };
+
+            // Remove any undefined values
+            Object.keys(leadRecord).forEach(key => {
+              if (leadRecord[key] === undefined) delete leadRecord[key];
+            });
 
             // Create lead in CRM
             const { data: newLead, error: leadError } = await supabase
@@ -177,24 +243,6 @@ export default async function handler(
             }
 
             console.log("✅ Lead created:", newLead.id);
-
-            // Handle Extra Fields (Custom Questions) as a Note
-            const standardFields = ['full_name', 'name', 'email', 'phone_number', 'phone'];
-            const extraFields = Object.entries(leadFields)
-              .filter(([key]) => !standardFields.includes(key));
-
-            if (extraFields.length > 0) {
-              const noteContent = "📋 **Dados Adicionais do Formulário Meta:**\n\n" + 
-                extraFields.map(([key, value]) => `- **${key}:** ${value}`).join("\n") +
-                `\n\n[MetaLeadID: ${leadgenId}]`;
-
-              await supabase.from("notes").insert({
-                lead_id: newLead.id,
-                user_id: integration.user_id,
-                content: noteContent
-              });
-              console.log("📝 Note created with extra fields");
-            }
 
             // Send notification email for new lead
             await sendLeadNotificationEmail(integration.user_id, newLead, leadFields, false);
