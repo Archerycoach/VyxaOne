@@ -291,31 +291,41 @@ export function useDashboardData({ userRole, currentUserId, selectedAgentId, lea
       }).length;
       const leadsGrowth = leadsLastMonth > 0 ? ((leadsThisMonth - leadsLastMonth) / leadsLastMonth) * 100 : 0;
 
-      // Calculate actual acquisitions (seller leads at final stage)
-      const acquisitionsCount = leads.filter(l => {
-        const isSellerLead = l.lead_type === "seller" || l.lead_type === "both";
-        const isAtFinalStage = l.status === lastSellerStageId;
-        return isSellerLead && isAtFinalStage;
-      }).length;
+      // Identify which stages count as "Acquisition/Angariação"
+      // It counts if it's the last stage, or if the stage name implies acquisition
+      const acquisitionStageIds = sellerStages
+        .filter(s => 
+          s.id === lastSellerStageId || 
+          s.name.toLowerCase().includes("angaria") || 
+          s.name.toLowerCase().includes("vendido") ||
+          s.name.toLowerCase().includes("sold")
+        )
+        .map(s => s.id);
+
+      const isAcquisition = (l: any) => {
+        const statusStr = (l.status || "").toLowerCase();
+        const isAtAcquisitionStage = acquisitionStageIds.includes(l.status) || statusStr.includes("angaria") || statusStr.includes("vendido");
+        // Count as acquisition if it's in the stage and not explicitly a buyer
+        return isAtAcquisitionStage && l.lead_type !== "buyer";
+      };
+
+      // Calculate actual acquisitions (seller leads at final stage or angariação)
+      const acquisitionsCount = leads.filter(l => isAcquisition(l)).length;
 
       // Acquisitions for current year
       const annualAcquisitionsCount = leads.filter(l => {
-        const isSellerLead = l.lead_type === "seller" || l.lead_type === "both";
-        const isAtFinalStage = l.status === lastSellerStageId;
         const createdDate = new Date(l.created_at || "");
         const isThisYear = createdDate.getFullYear() === currentYear;
-        return isSellerLead && isAtFinalStage && isThisYear;
+        return isAcquisition(l) && isThisYear;
       }).length;
 
       // Acquisitions for current semester
       const semesterAcquisitionsCount = leads.filter(l => {
-        const isSellerLead = l.lead_type === "seller" || l.lead_type === "both";
-        const isAtFinalStage = l.status === lastSellerStageId;
         const createdDate = new Date(l.created_at || "");
         const month = createdDate.getMonth() + 1;
         const semester = month <= 6 ? 1 : 2;
         const isThisSemester = createdDate.getFullYear() === currentYear && semester === currentSemester;
-        return isSellerLead && isAtFinalStage && isThisSemester;
+        return isAcquisition(l) && isThisSemester;
       }).length;
 
       // Progress Metrics - Fixed with correct acquisitions count

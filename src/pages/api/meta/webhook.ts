@@ -33,9 +33,31 @@ export default async function handler(
 
   // RECEIVE LEADS (Meta sends POST when there's a new lead)
   if (req.method === "POST") {
-    const body = req.body;
+    let body = req.body;
+
+    // Force parse if body is a string
+    if (typeof body === "string") {
+      try {
+        body = JSON.parse(body);
+      } catch (e) {
+        console.error("Failed to parse string body");
+      }
+    }
 
     console.log("📨 Webhook received:", JSON.stringify(body, null, 2));
+
+    // ALWAYS log the raw hit to DB so we know it reached us
+    try {
+      await supabase.from("meta_webhook_logs").insert({
+        page_id: "RAW_HIT",
+        leadgen_id: "RAW_HIT",
+        status: "debug",
+        webhook_payload: body,
+        error_message: "Raw hit received"
+      });
+    } catch (e) {
+      console.error("Failed to log raw hit", e);
+    }
 
     try {
       for (const entry of body.entry || []) {
@@ -194,10 +216,10 @@ export default async function handler(
               if (mappedData.notes) noteContent += `**Notas / Campos Extra:**\n${mappedData.notes}\n\n`;
               noteContent += `[MetaLeadID: ${leadgenId}]`;
 
-              await supabase.from("notes").insert({
+              await supabase.from("lead_notes").insert({
                 lead_id: existingLead.id,
-                user_id: integration.user_id,
-                content: noteContent
+                note: noteContent,
+                created_by: integration.user_id
               });
               
               console.log("✅ Note added to existing lead:", existingLead.id);
@@ -214,12 +236,11 @@ export default async function handler(
             const leadRecord = {
               ...mappedData,
               user_id: integration.user_id,
-              owner_id: integration.user_id, // Adding owner_id to ensure it shows in user's UI pipeline
-              assigned_to: integration.user_id, // Ensure lead is assigned to the user
+              assigned_to: formConfig?.auto_assign_to || integration.user_id, // Ensure lead is assigned to the user
               email: finalEmail || null,
               phone: finalPhone || null,
-              lead_source: formConfig?.default_lead_source || `Meta Lead Ads - ${integration.page_name}`,
-              status: formConfig?.default_pipeline_stage || "new",
+              source: `Meta Lead Ads - ${integration.page_name || 'Facebook'}`,
+              status: formConfig?.default_status || "new",
               meta_lead_id: leadgenId,
               meta_form_id: formId,
               meta_ad_id: adId,
@@ -274,17 +295,21 @@ async function logWebhook(
   status: string,
   errorMessage: string | null
 ) {
-  await supabase
+  const { error } = await supabase
     .from("meta_webhook_logs")
     .insert({
       page_id: pageId,
       leadgen_id: leadgenId,
       form_id: formId,
       ad_id: adId,
-      payload: payload,
+      webhook_payload: payload,
       status: status,
       error_message: errorMessage,
     });
+    
+  if (error) {
+    console.error("Failed to insert into meta_webhook_logs:", error);
+  }
 }
 
 async function sendLeadNotificationEmail(userId: string, lead: any, leadFields: Record<string, string>, isExisting: boolean = false) {
