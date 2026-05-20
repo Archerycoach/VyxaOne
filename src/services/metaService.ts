@@ -157,28 +157,54 @@ export const getFormConfigs = async (integrationId?: string): Promise<MetaFormCo
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error("Not authenticated");
 
-  let query = supabase
+  const query = supabase
     .from("meta_form_configs" as any)
     .select("*")
     .eq("user_id", user.id);
 
-  if (integrationId) {
-    query = query.eq("integration_id", integrationId);
-  }
-
   const { data, error } = await query.order("created_at", { ascending: false });
 
   if (error) throw error;
-  return (data || []) as unknown as MetaFormConfig[];
+  
+  return (data || []).map((d: any) => ({
+    id: d.id,
+    user_id: d.user_id,
+    integration_id: d.custom_settings?.integration_id || integrationId || "",
+    form_id: d.form_id,
+    form_name: d.form_name,
+    auto_import: d.custom_settings?.auto_import ?? true,
+    auto_email_notification: d.custom_settings?.auto_email_notification ?? true,
+    default_pipeline_stage: d.custom_settings?.default_pipeline_stage || null,
+    default_lead_source: d.custom_settings?.default_lead_source || "Meta",
+    is_active: d.is_active,
+    created_at: d.created_at,
+    updated_at: d.updated_at
+  })).filter((c: MetaFormConfig) => !integrationId || c.integration_id === integrationId);
 };
 
 export const createOrUpdateFormConfig = async (config: Partial<MetaFormConfig>) => {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error("Not authenticated");
 
-  const configData = {
-    ...config,
+  let page_id = "unknown";
+  if (config.integration_id) {
+    const { data: integ } = await supabase.from('meta_integrations' as any).select('page_id').eq('id', config.integration_id).single();
+    if (integ) page_id = (integ as any).page_id;
+  }
+
+  const dbPayload = {
     user_id: user.id,
+    form_id: config.form_id,
+    form_name: config.form_name,
+    is_active: config.is_active,
+    page_id: page_id,
+    custom_settings: {
+      integration_id: config.integration_id,
+      auto_import: config.auto_import,
+      auto_email_notification: config.auto_email_notification,
+      default_pipeline_stage: config.default_pipeline_stage,
+      default_lead_source: config.default_lead_source
+    },
     updated_at: new Date().toISOString(),
   };
 
@@ -186,23 +212,23 @@ export const createOrUpdateFormConfig = async (config: Partial<MetaFormConfig>) 
     // Update existing
     const { data, error } = await supabase
       .from("meta_form_configs" as any)
-      .update(configData)
+      .update(dbPayload)
       .eq("id", config.id)
       .select()
       .single();
 
     if (error) throw error;
-    return data as unknown as MetaFormConfig;
+    return { ...config, id: (data as any).id } as MetaFormConfig;
   } else {
     // Create new
     const { data, error } = await supabase
       .from("meta_form_configs" as any)
-      .insert(configData)
+      .insert(dbPayload)
       .select()
       .single();
 
     if (error) throw error;
-    return data as unknown as MetaFormConfig;
+    return { ...config, id: (data as any).id } as MetaFormConfig;
   }
 };
 
@@ -224,7 +250,7 @@ export const getFieldMappings = async (formConfigId: string): Promise<MetaFieldM
     .from("meta_field_mappings" as any)
     .select("*")
     .eq("form_config_id", formConfigId)
-    .order("priority_order", { ascending: true });
+    .order("created_at", { ascending: true });
 
   if (error) throw error;
   return (data || []) as unknown as MetaFieldMapping[];
@@ -238,12 +264,13 @@ export const saveFieldMappings = async (formConfigId: string, mappings: Partial<
     .eq("form_config_id", formConfigId);
 
   // Insert new mappings
-  const mappingsData = mappings.map((m, index) => ({
-    ...m,
+  const mappingsData = mappings.map((m) => ({
     form_config_id: formConfigId,
-    priority_order: m.priority_order || index,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    meta_field_name: m.meta_field_name,
+    crm_field_name: m.crm_field_name,
+    field_type: m.field_type || "text",
+    is_required: m.is_required || false,
+    transform_rule: m.transform_rule || null,
   }));
 
   const { data, error } = await supabase

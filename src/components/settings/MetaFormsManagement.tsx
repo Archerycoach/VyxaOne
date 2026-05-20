@@ -533,8 +533,8 @@ export function MetaFormsManagement({ integrationId, integrationName }: MetaForm
                               updateFieldMapping(index, "meta_field_name", value)
                             }
                           >
-                            <SelectTrigger className="flex-1">
-                              <SelectValue placeholder="Campo Meta" />
+                            <SelectTrigger className="flex-1 min-w-0 overflow-hidden text-left">
+                              <span className="truncate block w-full"><SelectValue placeholder="Campo Meta" /></span>
                             </SelectTrigger>
                             <SelectContent>
                               {selectedForm.questions.map((q) => (
@@ -556,18 +556,18 @@ export function MetaFormsManagement({ integrationId, integrationName }: MetaForm
                             onChange={(e) =>
                               updateFieldMapping(index, "meta_field_name", e.target.value)
                             }
-                            className="flex-1"
+                            className="flex-1 min-w-0"
                           />
                         )}
-                        <ArrowRight className="h-4 w-4 text-gray-400" />
+                        <ArrowRight className="h-4 w-4 text-gray-400 shrink-0" />
                         <Select
                           value={mapping.crm_field_name}
                           onValueChange={(value) =>
                             updateFieldMapping(index, "crm_field_name", value)
                           }
                         >
-                          <SelectTrigger className="flex-1">
-                            <SelectValue placeholder="Campo CRM" />
+                          <SelectTrigger className="flex-1 min-w-0 overflow-hidden text-left">
+                            <span className="truncate block w-full"><SelectValue placeholder="Campo CRM" /></span>
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="name">Nome</SelectItem>
