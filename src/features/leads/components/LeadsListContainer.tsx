@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { LeadCard } from "./LeadCard";
 import { LeadFilters } from "./LeadFilters";
 import { LeadDialogs } from "./LeadDialogs";
@@ -528,6 +528,23 @@ export function LeadsListContainer({
     }
   };
 
+  // Calculate statistics
+  const stats = React.useMemo(() => {
+    return {
+      total: leads.length,
+      buyers: leads.filter(l => l.lead_type === 'buyer' || l.lead_type === 'both').length,
+      sellers: leads.filter(l => l.lead_type === 'seller' || l.lead_type === 'both').length,
+      pipeline: {
+        new: leads.filter(l => l.status === 'new').length,
+        contacted: leads.filter(l => l.status === 'contacted').length,
+        qualified: leads.filter(l => l.status === 'qualified').length,
+        proposal: leads.filter(l => l.status === 'proposal').length,
+        negotiation: leads.filter(l => l.status === 'negotiation').length,
+        won: leads.filter(l => l.status === 'won').length,
+      }
+    };
+  }, [leads]);
+
   // Loading and error states
   if (isLoading) {
     return (
@@ -554,6 +571,43 @@ export function LeadsListContainer({
 
   return (
     <div className="space-y-6">
+      {!showArchived && (
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
+          <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm flex flex-col items-center justify-center transition-all hover:shadow-md">
+            <span className="text-xs text-gray-500 font-medium uppercase tracking-wider mb-1">Total</span>
+            <span className="text-xl font-bold text-gray-900">{stats.total}</span>
+          </div>
+          <div className="bg-blue-50 p-3 rounded-lg border border-blue-100 shadow-sm flex flex-col items-center justify-center transition-all hover:shadow-md">
+            <span className="text-xs text-blue-600 font-medium uppercase tracking-wider mb-1">Compradores</span>
+            <span className="text-xl font-bold text-blue-700">{stats.buyers}</span>
+          </div>
+          <div className="bg-purple-50 p-3 rounded-lg border border-purple-100 shadow-sm flex flex-col items-center justify-center transition-all hover:shadow-md">
+            <span className="text-xs text-purple-600 font-medium uppercase tracking-wider mb-1">Vendedores</span>
+            <span className="text-xl font-bold text-purple-700">{stats.sellers}</span>
+          </div>
+          <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm flex flex-col items-center justify-center transition-all hover:shadow-md">
+            <span className="text-xs text-gray-500 font-medium uppercase tracking-wider mb-1">Novos</span>
+            <span className="text-xl font-bold text-gray-900">{stats.pipeline.new}</span>
+          </div>
+          <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm flex flex-col items-center justify-center transition-all hover:shadow-md">
+            <span className="text-xs text-gray-500 font-medium uppercase tracking-wider mb-1">Contactados</span>
+            <span className="text-xl font-bold text-gray-900">{stats.pipeline.contacted}</span>
+          </div>
+          <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm flex flex-col items-center justify-center transition-all hover:shadow-md">
+            <span className="text-xs text-gray-500 font-medium uppercase tracking-wider mb-1">Qualificados</span>
+            <span className="text-xl font-bold text-gray-900">{stats.pipeline.qualified}</span>
+          </div>
+          <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm flex flex-col items-center justify-center transition-all hover:shadow-md">
+            <span className="text-xs text-gray-500 font-medium uppercase tracking-wider mb-1">Propostas</span>
+            <span className="text-xl font-bold text-gray-900">{stats.pipeline.proposal}</span>
+          </div>
+          <div className="bg-green-50 p-3 rounded-lg border border-green-100 shadow-sm flex flex-col items-center justify-center transition-all hover:shadow-md">
+            <span className="text-xs text-green-600 font-medium uppercase tracking-wider mb-1">Ganhos</span>
+            <span className="text-xl font-bold text-green-700">{stats.pipeline.won}</span>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
         <LeadFilters
           searchTerm={searchTerm}

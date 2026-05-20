@@ -218,6 +218,7 @@ export default async function handler(
           .insert({
             ...leadData,
             contact_id: null,
+            assigned_to: user.id, // Assign the lead to the user importing it
             notes: leadData.notes ? `${leadData.notes}\n\n[MetaLeadID: ${metaLead.id}]` : `[MetaLeadID: ${metaLead.id}]`,
             user_id: user.id,
             meta_lead_id: metaLead.id,

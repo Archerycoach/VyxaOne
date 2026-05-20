@@ -344,15 +344,15 @@ export function MetaFormsManagement({ integrationId, integrationName }: MetaForm
                         </Badge>
                       )}
 
-                      {form.config?.is_active ? (
+                      {form.config?.auto_import ? (
                         <Badge variant="secondary" className="bg-green-100 text-green-700">
                           <CheckCircle className="h-3 w-3 mr-1" />
-                          Sinc. Ativa
+                          Sinc. Automática Ativa
                         </Badge>
                       ) : (
                         <Badge variant="secondary" className="bg-gray-100 text-gray-700">
                           <XCircle className="h-3 w-3 mr-1" />
-                          Sinc. Inativa
+                          Sinc. Automática Inativa
                         </Badge>
                       )}
                     </div>
@@ -362,7 +362,7 @@ export function MetaFormsManagement({ integrationId, integrationName }: MetaForm
                     {form.config && (
                       <div className="flex gap-2 mt-2">
                         {form.config.auto_import && (
-                          <Badge variant="outline" className="text-xs">
+                          <Badge variant="outline" className="text-xs hidden">
                             Auto-import
                           </Badge>
                         )}

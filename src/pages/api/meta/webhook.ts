@@ -214,6 +214,8 @@ export default async function handler(
             const leadRecord = {
               ...mappedData,
               user_id: integration.user_id,
+              owner_id: integration.user_id, // Adding owner_id to ensure it shows in user's UI pipeline
+              assigned_to: integration.user_id, // Ensure lead is assigned to the user
               email: finalEmail || null,
               phone: finalPhone || null,
               lead_source: formConfig?.default_lead_source || `Meta Lead Ads - ${integration.page_name}`,
