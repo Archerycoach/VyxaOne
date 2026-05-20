@@ -68,14 +68,18 @@ export default async function handler(
     const userAccessToken = longLivedData.access_token || tokenData.access_token;
 
     // Get user's pages
+    console.log("Fetching pages for user token");
     const pagesResponse = await fetch(
       `https://graph.facebook.com/v18.0/me/accounts?access_token=${userAccessToken}`
     );
 
     const pagesData = await pagesResponse.json();
+    console.log("Pages response:", JSON.stringify(pagesData));
+    
     const pages = pagesData.data || [];
 
     if (pages.length === 0) {
+      console.error("No pages found in response:", pagesData);
       return res.redirect("/settings?meta_error=no_pages_selected");
     }
 

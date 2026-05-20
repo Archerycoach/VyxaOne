@@ -50,7 +50,7 @@ export default async function handler(
       `https://www.facebook.com/v18.0/dialog/oauth?` +
       `client_id=${settings.app_id}` +
       `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-      `&scope=leads_retrieval,pages_manage_ads,pages_read_engagement,pages_show_list,pages_manage_metadata` +
+      `&scope=leads_retrieval,pages_manage_ads,pages_read_engagement,pages_show_list,pages_manage_metadata,business_management` +
       `&state=${state}`;
 
     return res.status(200).json({ authUrl });
