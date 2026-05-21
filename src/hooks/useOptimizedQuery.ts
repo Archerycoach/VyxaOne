@@ -43,6 +43,10 @@ export function useOptimizedQuery<T>(
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
+  // Use JSON stringify to create a stable dependency string
+  // This prevents infinite re-render loops if components pass unstable object references in dependencies array
+  const stableDependenciesStr = JSON.stringify(dependencies);
+
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
@@ -80,7 +84,7 @@ export function useOptimizedQuery<T>(
     } finally {
       setLoading(false);
     }
-  }, dependencies);
+  }, [stableDependenciesStr, enableCache, cacheKey, cacheDuration]); // Use stable string and options
 
   useEffect(() => {
     fetchData();

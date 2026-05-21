@@ -19,7 +19,7 @@ export function useLeads(showArchived = false) {
       // Se for um refresh forçado pelo utilizador (botão de refresh manual)
       if (forceRefresh) {
         setIsLoading(true);
-        const freshData = showArchived ? await getArchivedLeads() : await getAllLeads(false);
+        const freshData = showArchived ? await getArchivedLeads(false) : await getAllLeads(false);
         setLeads(freshData as unknown as LeadWithContacts[]);
         setIsLoading(false);
         return;
@@ -27,7 +27,7 @@ export function useLeads(showArchived = false) {
 
       // 1. CARREGAMENTO INSTANTÂNEO (Memória/Cache)
       // Carrega imediatamente o que tem na memória para o ecrã não bloquear
-      const cachedData = showArchived ? await getArchivedLeads() : await getAllLeads(true);
+      const cachedData = showArchived ? await getArchivedLeads(true) : await getAllLeads(true);
       
       if (cachedData && cachedData.length > 0) {
         setLeads(cachedData as unknown as LeadWithContacts[]);
@@ -38,7 +38,7 @@ export function useLeads(showArchived = false) {
 
       // 2. ATUALIZAÇÃO INVISÍVEL DE FUNDO (Real-time Webhooks)
       // Vai à base de dados em silêncio procurar leads novas (ex: do Facebook)
-      const freshData = showArchived ? await getArchivedLeads() : await getAllLeads(false);
+      const freshData = showArchived ? await getArchivedLeads(false) : await getAllLeads(false);
       
       // Atualiza o ecrã silenciosamente com os dados novos
       setLeads(freshData as unknown as LeadWithContacts[]);

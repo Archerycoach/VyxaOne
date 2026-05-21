@@ -289,34 +289,54 @@ export const permanentlyDeleteLead = async (id: string): Promise<void> => {
 };
 
 // Get archived leads with visibility rules
-export const getArchivedLeads = async (): Promise<Lead[]> => {
-  const profile = await getCurrentUserProfile();
+export const getArchivedLeads = async (useCache = false): Promise<Lead[]> => {
+  try {
+    const profile = await getCurrentUserProfile();
+    
+    // Check cache first if enabled
+    const cacheKey = `${LEADS_CACHE_KEY}_archived_${profile.id}`;
+    if (useCache) {
+      const cached = getCachedData<Lead[]>(cacheKey, CACHE_TTL);
+      if (cached) {
+        return cached;
+      }
+    }
 
-  let query = supabase
-    .from("leads")
-    .select(`
-      *,
-      contact:contacts!leads_contact_id_fkey (*),
-      assigned_user:profiles!leads_assigned_to_fkey(id, full_name, email)
-    `)
-    .not("archived_at", "is", null);
+    let query = supabase
+      .from("leads")
+      .select(`
+        *,
+        contact:contacts!leads_contact_id_fkey (*),
+        assigned_user:profiles!leads_assigned_to_fkey(id, full_name, email)
+      `)
+      .not("archived_at", "is", null);
 
-  // Apply visibility rules
-  if (profile.role === "admin") {
-    // Admins see all archived leads
-  } else if (profile.role === "team_lead") {
-    const teamMemberIds = await getTeamMemberIds(profile.id);
-    const visibleUserIds = [profile.id, ...teamMemberIds];
-    query = query.in("assigned_to", visibleUserIds);
-  } else {
-    // Agents see only their own archived leads
-    query = query.eq("assigned_to", profile.id);
+    // Apply visibility rules
+    if (profile.role === "admin") {
+      // Admins see all archived leads
+    } else if (profile.role === "team_lead") {
+      const teamMemberIds = await getTeamMemberIds(profile.id);
+      const visibleUserIds = [profile.id, ...teamMemberIds];
+      query = query.in("assigned_to", visibleUserIds);
+    } else {
+      // Agents see only their own archived leads
+      query = query.eq("assigned_to", profile.id);
+    }
+
+    const { data, error } = await query.order("archived_at", { ascending: false });
+
+    if (error) throw error;
+    
+    const leads = (data || []) as unknown as Lead[];
+    
+    // Save to cache
+    setCachedData(cacheKey, leads);
+    
+    return leads;
+  } catch (e) {
+    console.error("[leadsService] Exception in getArchivedLeads:", e);
+    throw e;
   }
-
-  const { data, error } = await query.order("archived_at", { ascending: false });
-
-  if (error) throw error;
-  return (data as unknown) as Lead[];
 };
 
 // Keep deleteLead as alias for backward compatibility
