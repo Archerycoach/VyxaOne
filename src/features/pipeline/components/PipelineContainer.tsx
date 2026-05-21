@@ -20,10 +20,20 @@ export function PipelineContainer() {
 
   const fetchLeads = async () => {
     try {
-      setIsLoading(true);
-      // Bypass cache (false) so that new leads from Webhook appear instantly
-      const data = await getLeads(false);
-      setLeads(data);
+      // 1. CARREGAMENTO INSTANTÂNEO (Memória/Cache)
+      // Carrega imediatamente o que tem na memória para o ecrã não bloquear
+      const cachedData = await getLeads(true);
+      if (cachedData && cachedData.length > 0) {
+        setLeads(cachedData);
+        setIsLoading(false); // Desliga o Loading instantaneamente
+      } else {
+        setIsLoading(true); // Só mostra Loading se a cache estiver vazia
+      }
+
+      // 2. ATUALIZAÇÃO INVISÍVEL DE FUNDO
+      // Vai à base de dados procurar leads novas (ex: Webhook) sem bloquear o ecrã
+      const freshData = await getLeads(false);
+      setLeads(freshData);
     } catch (error) {
       console.error("Error fetching leads:", error);
       toast({

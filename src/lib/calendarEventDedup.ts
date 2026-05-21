@@ -26,6 +26,8 @@ function normalizeDateTime(value?: string | null): string | null {
     return null;
   }
 
+  // Remove os segundos e milissegundos para a comparação não falhar por diferenças mínimas de arredondamento da IA
+  parsedDate.setSeconds(0, 0);
   return parsedDate.toISOString();
 }
 

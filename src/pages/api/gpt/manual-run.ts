@@ -247,10 +247,11 @@ ${JSON.stringify(contextData, null, 2)}`;
           `;
         } else {
           console.error("Erro ao inserir eventos GPT:", insertError);
+          const safeErrorMessage = insertError ? (insertError.message || JSON.stringify(insertError)) : "Erro desconhecido";
           gptMessage += `
             <div style="margin-top: 20px; padding: 15px; background-color: #fef2f2; border-left: 4px solid #ef4444; border-radius: 4px;">
               <strong style="color: #b91c1c;">⚠️ Aviso de Agendamento:</strong><br>
-              O resumo foi gerado com sucesso, mas o sistema bloqueou a criação automática dos eventos no calendário devido a um erro de formatação da IA: ${insertError.message}
+              O resumo foi gerado com sucesso, mas o sistema bloqueou a criação automática dos eventos no calendário devido a um erro da base de dados: ${safeErrorMessage}
             </div>
           `;
         }

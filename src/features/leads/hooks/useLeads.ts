@@ -13,30 +13,45 @@ export function useLeads(showArchived = false) {
   const [error, setError] = useState<Error | null>(null);
 
   const fetchLeads = useCallback(async (forceRefresh = false) => {
-    console.log("[useLeads] fetchLeads START - archived:", showArchived, "forceRefresh:", forceRefresh, "timestamp:", Date.now());
-    setIsLoading(true);
     setError(null);
     
     try {
-      console.log("[useLeads] Fetching leads, archived:", showArchived, "forceRefresh:", forceRefresh);
+      // Se for um refresh forçado pelo utilizador (botão de refresh manual)
+      if (forceRefresh) {
+        setIsLoading(true);
+        const freshData = showArchived ? await getArchivedLeads() : await getAllLeads(false);
+        setLeads(freshData as unknown as LeadWithContacts[]);
+        setIsLoading(false);
+        return;
+      }
+
+      // 1. CARREGAMENTO INSTANTÂNEO (Memória/Cache)
+      // Carrega imediatamente o que tem na memória para o ecrã não bloquear
+      const cachedData = showArchived ? await getArchivedLeads() : await getAllLeads(true);
       
-      const data = showArchived 
-        ? await getArchivedLeads() 
-        : await getAllLeads(false); // ALWAYS bypass cache to ensure real-time data
-        
-      setLeads(data as unknown as LeadWithContacts[]);
-      console.log("[useLeads] Leads fetched successfully:", data.length, "timestamp:", Date.now());
+      if (cachedData && cachedData.length > 0) {
+        setLeads(cachedData as unknown as LeadWithContacts[]);
+        setIsLoading(false); // Desliga o Loading instantaneamente! A página abre num piscar de olhos.
+      } else {
+        setIsLoading(true); // Só mostra Loading se a cache estiver completamente vazia (1ª vez que entra no Vyxa)
+      }
+
+      // 2. ATUALIZAÇÃO INVISÍVEL DE FUNDO (Real-time Webhooks)
+      // Vai à base de dados em silêncio procurar leads novas (ex: do Facebook)
+      const freshData = showArchived ? await getArchivedLeads() : await getAllLeads(false);
+      
+      // Atualiza o ecrã silenciosamente com os dados novos
+      setLeads(freshData as unknown as LeadWithContacts[]);
+      
     } catch (err) {
       console.error("[useLeads] Error fetching leads:", err);
       setError(err as Error);
     } finally {
       setIsLoading(false);
-      console.log("[useLeads] fetchLeads END - timestamp:", Date.now());
     }
   }, [showArchived]);
 
   useEffect(() => {
-    console.log("[useLeads] useEffect triggered - calling fetchLeads");
     fetchLeads();
   }, [fetchLeads]);
 
@@ -44,9 +59,6 @@ export function useLeads(showArchived = false) {
     leads,
     isLoading,
     error,
-    refetch: () => {
-      console.log("[useLeads] refetch called manually");
-      return fetchLeads(true);
-    },
+    refetch: () => fetchLeads(true),
   };
 }

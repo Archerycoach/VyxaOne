@@ -224,10 +224,11 @@ ${JSON.stringify(contextData, null, 2)}`;
               `;
             } else {
               console.error("Erro ao inserir eventos GPT:", insertError);
+              const safeErrorMessage = insertError ? (insertError.message || JSON.stringify(insertError)) : "Erro desconhecido";
               gptMessage += `
                 <div style="margin-top: 20px; padding: 15px; background-color: #fef2f2; border-left: 4px solid #ef4444; border-radius: 4px; color: #b91c1c;">
                   <strong>⚠️ Aviso de Agendamento:</strong><br>
-                  O assistente sugeriu eventos, mas não os conseguiu gravar no calendário (${insertError.message}).
+                  O assistente sugeriu eventos, mas não os conseguiu gravar no calendário (${safeErrorMessage}).
                 </div>
               `;
             }
