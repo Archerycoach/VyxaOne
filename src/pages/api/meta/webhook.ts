@@ -303,8 +303,7 @@ export default async function handler(
               assigned_to: formConfig?.auto_assign_to || integration.user_id, // Ensure lead is assigned to the user
               email: finalEmail || null,
               phone: finalPhone || null,
-              source: `Redes Sociais`, // Set generic source to social networks
-              lead_source: `Meta Lead Ads - ${integration.page_name || 'Facebook'}`, // Keep specific origin here
+              source: `Meta Lead Ads - ${integration.page_name || 'Facebook'}`, // Set specific origin in the correct column
               status: safeStatus,
               meta_lead_id: leadgenId,
               meta_form_id: formId,

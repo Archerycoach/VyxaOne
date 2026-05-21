@@ -197,33 +197,9 @@ export default function Leads() {
     await loadLeads();
   }, [loadLeads]);
 
-  // Se ainda estiver a carregar o user ou as leads iniciais, mostra loading em vez de bloquear
-  if (!user && isLoading) {
-    return (
-      <Layout title="Leads">
-        <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 flex items-center justify-center">
-          <div className="bg-white rounded-lg p-6 shadow-xl flex items-center gap-4">
-            <Loader2 className="h-8 w-8 animate-spin text-purple-600" />
-            <p className="text-gray-700 font-medium">A carregar leads...</p>
-          </div>
-        </div>
-      </Layout>
-    );
-  }
-
   return (
     <Layout title="Leads">
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 p-8">
-        {/* Loading Overlay - Only show during data fetching */}
-        {isLoading && (
-          <div className="fixed inset-0 bg-black/20 backdrop-blur-sm z-50 flex items-center justify-center pointer-events-none">
-            <div className="bg-white rounded-lg p-6 shadow-xl flex items-center gap-4 pointer-events-auto">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
-              <p className="text-gray-700 font-medium">A atualizar dados...</p>
-            </div>
-          </div>
-        )}
-
         <div className="max-w-7xl mx-auto">
           <div className="mb-6 flex justify-between items-center">
             <div>
