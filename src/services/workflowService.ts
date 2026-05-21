@@ -193,7 +193,15 @@ export const executeWorkflowForLead = async (
 
   try {
     // Execute workflow actions
-    const actions = (workflow as any).actions || [];
+    let actions = (workflow as any).actions || [];
+    
+    // Compatibility with the unified action_type and action_config schema
+    if (actions.length === 0 && (workflow as any).action_type) {
+      actions = [{
+        type: (workflow as any).action_type,
+        config: (workflow as any).action_config || {}
+      }];
+    }
     
     for (const action of actions) {
       await executeWorkflowAction(action, lead, userId);
@@ -226,7 +234,7 @@ export const executeWorkflowForLead = async (
 
 // Execute individual workflow action
 async function executeWorkflowAction(action: any, lead: any, userId: string) {
-  const personalizedContent = personalizeContent(action.content || "", lead);
+  const personalizedContent = personalizeContent(action.content || action.config?.body || "", lead);
   
   switch (action.type) {
     case "send_email":
@@ -293,18 +301,19 @@ async function sendEmailAction(action: any, lead: any, content: string, userId: 
 // Create task
 async function createTaskAction(action: any, lead: any, content: string, userId: string) {
   try {
+    const config = action.config || action;
     const dueDate = new Date();
-    dueDate.setDate(dueDate.getDate() + (action.daysOffset || 1));
+    dueDate.setDate(dueDate.getDate() + (config.daysOffset || 1));
 
     const { error } = await supabase
       .from("tasks")
       .insert({
-        title: personalizeContent(action.title || "Tarefa automática", lead),
+        title: personalizeContent(config.subject || action.title || "Tarefa automática", lead),
         description: content,
         related_lead_id: lead.id,
         user_id: userId,
         status: "pending",
-        priority: action.priority || "medium",
+        priority: config.priority || "medium",
         due_date: dueDate.toISOString(),
       });
 
@@ -320,8 +329,9 @@ async function createTaskAction(action: any, lead: any, content: string, userId:
 // Create calendar event
 async function createCalendarEventAction(action: any, lead: any, content: string, userId: string) {
   try {
+    const config = action.config || action;
     const startTime = new Date();
-    startTime.setDate(startTime.getDate() + (action.daysOffset || 1));
+    startTime.setDate(startTime.getDate() + (config.daysOffset || 1));
     
     const endTime = new Date(startTime);
     endTime.setHours(endTime.getHours() + 1);
@@ -337,13 +347,13 @@ async function createCalendarEventAction(action: any, lead: any, content: string
     const { error } = await supabase
       .from("calendar_events")
       .insert({
-        title: personalizeContent(action.title || "Evento automático", lead),
+        title: personalizeContent(config.subject || action.title || "Evento automático", lead),
         description: content,
         start_time: startTimeISO,
         end_time: endTimeISO,
         lead_id: lead.id,
         user_id: userId,
-        event_type: action.eventType || "meeting",
+        event_type: config.eventType || "meeting",
       });
 
     if (error) throw error;
@@ -358,13 +368,14 @@ async function createCalendarEventAction(action: any, lead: any, content: string
 // Send notification
 async function sendNotificationAction(action: any, lead: any, content: string, userId: string) {
   try {
+    const config = action.config || action;
     const { error } = await supabase
       .from("notifications")
       .insert({
         user_id: userId,
-        title: personalizeContent(action.title || "Notificação automática", lead),
+        title: personalizeContent(config.subject || action.title || "Notificação automática", lead),
         message: content,
-        notification_type: action.notificationType || "info",
+        notification_type: config.notificationType || "info",
         is_read: false,
         related_entity_id: lead.id,
         related_entity_type: "lead",

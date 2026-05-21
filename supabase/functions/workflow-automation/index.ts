@@ -285,9 +285,77 @@ async function getLeadsForTrigger(supabase: any, rule: WorkflowRule): Promise<Le
 async function executeWorkflowAction(supabase: any, rule: WorkflowRule, lead: Lead) {
   if (rule.action_type === "send_email") {
     await sendEmailAction(supabase, rule, lead);
+  } else if (rule.action_type === "create_task") {
+    await createTaskAction(supabase, rule, lead);
+  } else if (rule.action_type === "create_calendar_event") {
+    await createCalendarEventAction(supabase, rule, lead);
+  } else if (rule.action_type === "send_notification") {
+    await sendNotificationAction(supabase, rule, lead);
   } else {
     console.warn(`Action type ${rule.action_type} not supported in cron automation`);
   }
+}
+
+async function createTaskAction(supabase: any, rule: WorkflowRule, lead: Lead) {
+  const config = rule.action_config || {};
+  const title = replaceVariables(config.subject || "Tarefa automática", lead);
+  const description = replaceVariables(config.body || "", lead);
+  
+  const dueDate = new Date();
+  dueDate.setDate(dueDate.getDate() + 1);
+
+  const { error } = await supabase.from("tasks").insert({
+    title,
+    description,
+    related_lead_id: lead.id,
+    user_id: rule.user_id,
+    status: "pending",
+    priority: "medium",
+    due_date: dueDate.toISOString(),
+  });
+  if (error) throw error;
+  console.log(`✅ Task created for lead: ${lead.name}`);
+}
+
+async function createCalendarEventAction(supabase: any, rule: WorkflowRule, lead: Lead) {
+  const config = rule.action_config || {};
+  const title = replaceVariables(config.subject || "Evento automático", lead);
+  const description = replaceVariables(config.body || "", lead);
+
+  const startTime = new Date();
+  startTime.setDate(startTime.getDate() + 1);
+  const endTime = new Date(startTime);
+  endTime.setHours(endTime.getHours() + 1);
+
+  const { error } = await supabase.from("calendar_events").insert({
+    title,
+    description,
+    start_time: startTime.toISOString(),
+    end_time: endTime.toISOString(),
+    lead_id: lead.id,
+    user_id: rule.user_id,
+    event_type: "meeting",
+  });
+  if (error) throw error;
+  console.log(`✅ Calendar event created for lead: ${lead.name}`);
+}
+
+async function sendNotificationAction(supabase: any, rule: WorkflowRule, lead: Lead) {
+  const config = rule.action_config || {};
+  const title = replaceVariables(config.subject || "Notificação Automática", lead);
+  const message = replaceVariables(config.body || "", lead);
+
+  const { error } = await supabase.from("notifications").insert({
+    user_id: rule.user_id,
+    title,
+    message,
+    notification_type: "info",
+    is_read: false,
+    related_entity_id: lead.id,
+    related_entity_type: "lead",
+  });
+  if (error) throw error;
+  console.log(`✅ Notification created for lead: ${lead.name}`);
 }
 
 async function sendEmailAction(supabase: any, rule: WorkflowRule, lead: Lead) {

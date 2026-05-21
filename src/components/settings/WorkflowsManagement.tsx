@@ -13,9 +13,11 @@ import {
   PlayCircle,
   Clock,
   CheckCircle,
-  XCircle
+  XCircle,
+  Pencil
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { executeWorkflowForLead } from "@/services/workflowService";
 import {
   Dialog,
   DialogContent,
@@ -60,6 +62,10 @@ type UserWorkflow = {
   trigger: string;
   enabled: boolean;
   actions: number;
+  action_type: string;
+  action_config: any;
+  delay_days: number;
+  delay_hours: number;
 };
 
 type WorkflowExecution = {
@@ -194,6 +200,7 @@ export function WorkflowsManagement() {
   const [isExecuteWorkflowOpen, setIsExecuteWorkflowOpen] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<WorkflowTemplate | null>(null);
   const [selectedWorkflowForExecution, setSelectedWorkflowForExecution] = useState<UserWorkflow | null>(null);
+  const [editingWorkflowId, setEditingWorkflowId] = useState<string | null>(null);
 
   const [formState, setFormState] = useState({
     name: "",
@@ -263,6 +270,10 @@ export function WorkflowsManagement() {
         description: w.description || "",
         trigger: w.trigger_status || "",
         enabled: w.enabled || false,
+        action_type: w.action_type || "send_email",
+        action_config: w.action_config || {},
+        delay_days: w.delay_days || 0,
+        delay_hours: w.delay_hours || 0,
         actions: 2
       })) || [];
 
@@ -349,6 +360,7 @@ export function WorkflowsManagement() {
 
   const handleUseTemplate = (template: WorkflowTemplate) => {
     setSelectedTemplate(template);
+    setEditingWorkflowId(null);
     
     // Valores padrão de email baseados no template
     let defaultSubject = "";
@@ -404,6 +416,24 @@ export function WorkflowsManagement() {
     setIsNewWorkflowOpen(true);
   };
 
+  const handleEditWorkflow = (workflow: UserWorkflow) => {
+    setFormState({
+      name: workflow.name,
+      description: workflow.description,
+      trigger: workflow.trigger,
+      action_type: workflow.action_type,
+      delay_days: workflow.delay_days || 0,
+      delay_hours: workflow.delay_hours || 0,
+      target_type: "lead",
+      target_id: "",
+      email_subject: workflow.action_config?.subject || "",
+      email_body: workflow.action_config?.body || ""
+    });
+    setEditingWorkflowId(workflow.id);
+    setSelectedTemplate(null);
+    setIsNewWorkflowOpen(true);
+  };
+
   const handleCreateWorkflow = async () => {
     try {
       if (!formState.name || !formState.trigger) {
@@ -415,10 +445,10 @@ export function WorkflowsManagement() {
         return;
       }
 
-      if (formState.action_type === "send_email" && (!formState.email_subject || !formState.email_body)) {
+      if (!formState.email_subject || !formState.email_body) {
         toast({
           title: "Erro",
-          description: "Preencha o assunto e corpo do email.",
+          description: formState.action_type === "send_email" ? "Preencha o assunto e corpo do email." : "Preencha o título e a descrição da ação.",
           variant: "destructive",
         });
         return;
@@ -430,35 +460,43 @@ export function WorkflowsManagement() {
         description: formState.description,
         trigger_status: formState.trigger,
         action_type: formState.action_type,
-        action_config: formState.action_type === "send_email" 
-          ? {
-              subject: formState.email_subject,
-              body: formState.email_body
-            }
-          : {},
+        action_config: {
+          subject: formState.email_subject,
+          body: formState.email_body
+        },
         delay_days: formState.delay_days,
         delay_hours: formState.delay_hours,
         enabled: true
       };
 
-      const { data: workflow, error: workflowError } = await createWorkflowInDB(workflowData);
+      if (editingWorkflowId) {
+        const { error: workflowError } = await supabase.from("lead_workflow_rules").update(workflowData as any).eq("id", editingWorkflowId);
+        if (workflowError) throw workflowError;
+        
+        toast({
+          title: "✅ Workflow atualizado",
+          description: "As alterações foram guardadas com sucesso.",
+        });
+      } else {
+        const { data: workflow, error: workflowError } = await createWorkflowInDB(workflowData);
+        if (workflowError) throw workflowError;
 
-      if (workflowError) throw workflowError;
+        // Se foi selecionado um lead/contacto, executar imediatamente
+        if (formState.target_id && workflow) {
+          await executeWorkflow(workflow.id, formState.target_id);
+        }
 
-      // Se foi selecionado um lead/contacto, executar imediatamente
-      if (formState.target_id && workflow) {
-        await executeWorkflow(workflow.id, formState.target_id);
+        toast({
+          title: "✅ Workflow criado",
+          description: formState.target_id 
+            ? `${formState.name} foi criado e executado com sucesso.`
+            : `${formState.name} foi criado com sucesso.`,
+        });
       }
-
-      toast({
-        title: "✅ Workflow criado",
-        description: formState.target_id 
-          ? `${formState.name} foi criado e executado com sucesso.`
-          : `${formState.name} foi criado com sucesso.`,
-      });
 
       setIsNewWorkflowOpen(false);
       setSelectedTemplate(null);
+      setEditingWorkflowId(null);
       setFormState({
         name: "",
         description: "",
@@ -477,10 +515,10 @@ export function WorkflowsManagement() {
         loadWorkflowExecutions(userId)
       ]);
     } catch (error) {
-      console.error("Error creating workflow:", error);
+      console.error("Error creating/updating workflow:", error);
       toast({
         title: "Erro",
-        description: "Erro ao criar workflow.",
+        description: "Erro ao gravar workflow.",
         variant: "destructive",
       });
     }
@@ -488,32 +526,8 @@ export function WorkflowsManagement() {
 
   const executeWorkflow = async (workflowId: string, targetId: string) => {
     try {
-      const { error } = await supabase
-        .from("workflow_executions")
-        .insert({
-          workflow_id: workflowId,
-          lead_id: targetId,
-          user_id: userId,
-          status: "pending",
-          executed_at: new Date().toISOString()
-        } as any);
-
-      if (error) throw error;
-
-      // Simular processamento
-      setTimeout(async () => {
-        await supabase
-          .from("workflow_executions")
-          .update({
-            status: "completed",
-            completed_at: new Date().toISOString()
-          } as any)
-          .eq("workflow_id", workflowId)
-          .eq("lead_id", targetId);
-
-        await loadWorkflowExecutions(userId);
-      }, 2000);
-
+      await executeWorkflowForLead(workflowId, targetId, userId);
+      await loadWorkflowExecutions(userId);
     } catch (error) {
       console.error("Error executing workflow:", error);
       throw error;
@@ -546,11 +560,11 @@ export function WorkflowsManagement() {
       });
 
       await loadWorkflowExecutions(userId);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error executing workflow:", error);
       toast({
-        title: "Erro",
-        description: "Erro ao executar workflow.",
+        title: "Erro ao Executar",
+        description: error.message || "Erro ao executar workflow. Verifique as configurações.",
         variant: "destructive",
       });
     }
@@ -655,9 +669,30 @@ export function WorkflowsManagement() {
             <p className="text-gray-500 mt-1">Configure automações para economizar tempo</p>
           </div>
         </div>
-        <Dialog open={isNewWorkflowOpen} onOpenChange={setIsNewWorkflowOpen}>
+        <Dialog open={isNewWorkflowOpen} onOpenChange={(open) => {
+          setIsNewWorkflowOpen(open);
+          if (!open) {
+            setEditingWorkflowId(null);
+            setSelectedTemplate(null);
+          }
+        }}>
           <DialogTrigger asChild>
-            <Button className="bg-blue-600 hover:bg-blue-700">
+            <Button className="bg-blue-600 hover:bg-blue-700" onClick={() => {
+              setEditingWorkflowId(null);
+              setSelectedTemplate(null);
+              setFormState({
+                name: "",
+                description: "",
+                trigger: "",
+                action_type: "send_email",
+                delay_days: 0,
+                delay_hours: 0,
+                target_type: "lead",
+                target_id: "",
+                email_subject: "",
+                email_body: ""
+              });
+            }}>
               <Plus className="h-4 w-4 mr-2" />
               Novo Workflow
             </Button>
@@ -665,7 +700,7 @@ export function WorkflowsManagement() {
           <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>
-                {selectedTemplate ? `Usar Template: ${selectedTemplate.name}` : "Criar Novo Workflow"}
+                {editingWorkflowId ? "Editar Workflow" : (selectedTemplate ? `Usar Template: ${selectedTemplate.name}` : "Criar Novo Workflow")}
               </DialogTitle>
               <DialogDescription>
                 Configure as regras de automação para este workflow
@@ -744,38 +779,43 @@ export function WorkflowsManagement() {
                   </SelectContent>
                 </Select>
               </div>
-              {formState.action_type === "send_email" && (
-                <div className="space-y-4 p-4 border rounded-lg bg-blue-50/50">
-                  <h4 className="font-semibold text-sm text-blue-900">Configuração do Email</h4>
-                  <div className="space-y-2">
-                    <Label htmlFor="email_subject">Assunto do Email *</Label>
-                    <Input
-                      id="email_subject"
-                      value={formState.email_subject}
-                      onChange={(e) => setFormState({ ...formState, email_subject: e.target.value })}
-                      placeholder="Ex: Bem-vindo à nossa equipa, {nome}!"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="email_body">Corpo do Email *</Label>
-                    <Textarea
-                      id="email_body"
-                      value={formState.email_body}
-                      onChange={(e) => setFormState({ ...formState, email_body: e.target.value })}
-                      placeholder="Ex: Olá {nome},&#10;&#10;Obrigado por entrar em contacto connosco!&#10;&#10;Telefone: {telefone}&#10;Email: {email}"
-                      rows={8}
-                    />
-                  </div>
-                  <div className="text-xs text-gray-600 space-y-1">
-                    <p className="font-semibold">Variáveis disponíveis:</p>
-                    <ul className="list-disc list-inside space-y-1">
-                      <li><code className="bg-white px-1 rounded">{"{nome}"}</code> - Nome da lead/contacto</li>
-                      <li><code className="bg-white px-1 rounded">{"{email}"}</code> - Email da lead/contacto</li>
-                      <li><code className="bg-white px-1 rounded">{"{telefone}"}</code> - Telefone da lead/contacto</li>
-                    </ul>
-                  </div>
+              
+              <div className="space-y-4 p-4 border rounded-lg bg-blue-50/50">
+                <h4 className="font-semibold text-sm text-blue-900">
+                  {formState.action_type === "send_email" ? "Configuração do Email" : "Configuração da Ação"}
+                </h4>
+                <div className="space-y-2">
+                  <Label htmlFor="email_subject">
+                    {formState.action_type === "send_email" ? "Assunto do Email *" : "Título *"}
+                  </Label>
+                  <Input
+                    id="email_subject"
+                    value={formState.email_subject}
+                    onChange={(e) => setFormState({ ...formState, email_subject: e.target.value })}
+                    placeholder={formState.action_type === "send_email" ? "Ex: Bem-vindo à nossa equipa, {nome}!" : "Ex: Ligar ao cliente {nome}"}
+                  />
                 </div>
-              )}
+                <div className="space-y-2">
+                  <Label htmlFor="email_body">
+                    {formState.action_type === "send_email" ? "Corpo do Email *" : "Descrição *"}
+                  </Label>
+                  <Textarea
+                    id="email_body"
+                    value={formState.email_body}
+                    onChange={(e) => setFormState({ ...formState, email_body: e.target.value })}
+                    placeholder="Introduza o texto ou descrição..."
+                    rows={8}
+                  />
+                </div>
+                <div className="text-xs text-gray-600 space-y-1">
+                  <p className="font-semibold">Variáveis disponíveis:</p>
+                  <ul className="list-disc list-inside space-y-1">
+                    <li><code className="bg-white px-1 rounded">{"{nome}"}</code> - Nome da lead/contacto</li>
+                    <li><code className="bg-white px-1 rounded">{"{email}"}</code> - Email da lead/contacto</li>
+                    <li><code className="bg-white px-1 rounded">{"{telefone}"}</code> - Telefone da lead/contacto</li>
+                  </ul>
+                </div>
+              </div>
               <div className="border-t pt-4 space-y-4">
                 <Label className="text-base font-semibold">Associar a Lead/Contacto (Opcional)</Label>
                 <p className="text-sm text-muted-foreground">
@@ -833,11 +873,12 @@ export function WorkflowsManagement() {
               <Button variant="outline" onClick={() => {
                 setIsNewWorkflowOpen(false);
                 setSelectedTemplate(null);
+                setEditingWorkflowId(null);
               }}>
                 Cancelar
               </Button>
               <Button onClick={handleCreateWorkflow} className="bg-blue-600 hover:bg-blue-700">
-                {formState.target_id ? "Criar e Executar" : "Criar Workflow"}
+                {editingWorkflowId ? "Guardar Alterações" : (formState.target_id ? "Criar e Executar" : "Criar Workflow")}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -937,6 +978,15 @@ export function WorkflowsManagement() {
                         >
                           <PlayCircle className="h-4 w-4 mr-2" />
                           Executar
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          onClick={() => handleEditWorkflow(workflow)}
+                          className="text-gray-600 hover:text-blue-600 hover:bg-blue-50"
+                          title="Editar"
+                        >
+                          <Pencil className="h-4 w-4" />
                         </Button>
                         <div className="flex items-center gap-2">
                           <Label htmlFor={`toggle-${workflow.id}`} className="text-sm text-gray-600">
