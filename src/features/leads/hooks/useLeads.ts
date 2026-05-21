@@ -22,7 +22,7 @@ export function useLeads(showArchived = false) {
       
       const data = showArchived 
         ? await getArchivedLeads() 
-        : await getAllLeads(!forceRefresh);
+        : await getAllLeads(false); // ALWAYS bypass cache to ensure real-time data
         
       setLeads(data as unknown as LeadWithContacts[]);
       console.log("[useLeads] Leads fetched successfully:", data.length, "timestamp:", Date.now());

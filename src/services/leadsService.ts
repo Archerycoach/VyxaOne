@@ -61,7 +61,7 @@ const getTeamMemberIds = async (teamLeadId: string): Promise<string[]> => {
 };
 
 // Get all leads with proper visibility rules
-export const getLeads = async (useCache = true) => {
+export const getLeads = async (useCache = false) => {
   try {
     console.log("[leadsService] getLeads called, useCache:", useCache);
     
@@ -127,7 +127,7 @@ export const getLeads = async (useCache = true) => {
 };
 
 // Alias for compatibility with existing code
-export const getAllLeads = async (useCache = true): Promise<Lead[]> => {
+export const getAllLeads = async (useCache = false): Promise<Lead[]> => {
   return getLeads(useCache);
 };
 

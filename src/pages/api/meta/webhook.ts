@@ -163,7 +163,7 @@ export default async function handler(
                   mappedData.email = value;
                 } else if (fieldName.includes("phone") || fieldName.includes("telefone")) {
                   mappedData.phone = value;
-                } else if (fieldName.includes("budget") || fieldName.includes("orcamento") || fieldName.includes("orçamento") || fieldName.includes("investir")) {
+                } else if (fieldName.includes("budget") || fieldName.includes("orcamento") || fieldName.includes("orçamento") || fieldName.includes("investir") || fieldName.includes("valor") || fieldName.includes("preço") || fieldName.includes("preco")) {
                   mappedData.budget_max = value;
                 } else if (fieldName.includes("location") || fieldName.includes("bairro") || fieldName.includes("zona") || fieldName === "city") {
                   mappedData.location_preference = value;
@@ -223,15 +223,37 @@ export default async function handler(
             const integerFields = ['bedrooms', 'bathrooms', 'score', 'probability', 'lead_score', 'budget', 'budget_min', 'budget_max', 'price'];
             for (const field of integerFields) {
               if (mappedData[field] !== undefined && typeof mappedData[field] === 'string') {
-                const match = mappedData[field].match(/\d+/);
-                if (match) {
-                  mappedData[field] = parseInt(match[0], 10);
+                if (['budget', 'budget_min', 'budget_max', 'price'].includes(field)) {
+                  // Special parsing for currency and budgets (e.g. "150.000€ - 200.000€", "Até 250.000")
+                  // Remove spaces and dots (used as thousand separators in PT)
+                  let cleanStr = mappedData[field].replace(/\s/g, '').replace(/\./g, '');
+                  // Remove comma and anything after it (cents like ",00")
+                  cleanStr = cleanStr.split(',')[0];
+                  
+                  const matches = cleanStr.match(/\d+/g);
+                  if (matches && matches.length > 0) {
+                    // Convert all found numbers and take the highest one (for ranges)
+                    const numbers = matches.map(m => parseInt(m, 10));
+                    mappedData[field] = Math.max(...numbers);
+                  } else {
+                    // If no numbers found, preserve original text in notes
+                    mappedData.notes = mappedData.notes 
+                      ? `${mappedData.notes}\n• ${field} (original): ${mappedData[field]}` 
+                      : `• ${field} (original): ${mappedData[field]}`;
+                    delete mappedData[field];
+                  }
                 } else {
-                  // If it's a string but has no numbers, move it to notes and remove from mappedData
-                  mappedData.notes = mappedData.notes 
-                    ? `${mappedData.notes}\n• ${field} (original): ${mappedData[field]}` 
-                    : `• ${field} (original): ${mappedData[field]}`;
-                  delete mappedData[field];
+                  // Regular parsing for bedrooms, bathrooms
+                  const match = mappedData[field].match(/\d+/);
+                  if (match) {
+                    mappedData[field] = parseInt(match[0], 10);
+                  } else {
+                    // If it's a string but has no numbers, move it to notes and remove from mappedData
+                    mappedData.notes = mappedData.notes 
+                      ? `${mappedData.notes}\n• ${field} (original): ${mappedData[field]}` 
+                      : `• ${field} (original): ${mappedData[field]}`;
+                    delete mappedData[field];
+                  }
                 }
               }
             }
