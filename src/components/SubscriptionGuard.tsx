@@ -48,7 +48,9 @@ export function SubscriptionGuard({
 
   const checkSubscriptionStatus = async () => {
     try {
-      setLoading(true);
+      if (!status) {
+        setLoading(true);
+      }
 
       // Get current user
       const {

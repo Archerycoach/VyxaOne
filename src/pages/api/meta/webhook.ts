@@ -178,6 +178,18 @@ export default async function handler(
               mappedData.notes = combinedNotes;
             }
 
+            // Sanitize boolean fields (Portuguese "sim"/"não" -> true/false)
+            for (const key of Object.keys(mappedData)) {
+              if (typeof mappedData[key] === 'string') {
+                const lowerVal = mappedData[key].toLowerCase().trim();
+                if (lowerVal === 'sim' || lowerVal === 'yes') {
+                  mappedData[key] = true;
+                } else if (lowerVal === 'não' || lowerVal === 'nao' || lowerVal === 'no') {
+                  mappedData[key] = false;
+                }
+              }
+            }
+
             // Sanitize integer fields (e.g., convert "T1" -> 1, "2 Casas" -> 2)
             const integerFields = ['bedrooms', 'bathrooms', 'score', 'probability', 'lead_score'];
             for (const field of integerFields) {

@@ -14,43 +14,24 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isAuthorized, setIsAuthorized] = useState(false);
 
+  const rolesString = allowedRoles?.join(',') || '';
+
   useEffect(() => {
     let isMounted = true;
-    let authCheckTimeout: NodeJS.Timeout;
 
     const checkAuth = async () => {
       try {
         if (!isMounted) return;
 
-        // Fast path: Check active session first without artificial delay
         const { data: { session }, error } = await supabase.auth.getSession();
         
         if (!isMounted) return;
 
-        // Handle auth errors
-        if (error) {
-          console.error('Session check error:', error);
-          
-          // Check if it's a refresh token error
-          if (error.message?.includes('refresh_token') || 
-              error.message?.includes('Refresh Token Not Found')) {
-            console.warn('🔴 Invalid refresh token - clearing session');
-            await handleInvalidSession();
-            return;
-          }
-          
+        if (error || !session) {
           handleUnauthorized();
           return;
         }
 
-        // No session found
-        if (!session) {
-          console.warn('⚠️ No active session found');
-          handleUnauthorized();
-          return;
-        }
-
-        // Fast path: Don't fetch user again unless we need roles
         const user = session.user;
 
         // Session exists and is valid, check roles if needed
@@ -64,14 +45,12 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
           if (!isMounted) return;
 
           if (profileError || !profile || !allowedRoles.includes(profile.role)) {
-            console.warn("User does not have required role");
             router.push("/dashboard");
             setLoading(false);
             return;
           }
         }
 
-        // Session exists, is valid, and is authorized
         if (isMounted) {
           setIsAuthenticated(true);
           setIsAuthorized(true);
@@ -80,7 +59,7 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
       } catch (error) {
         console.error("Unexpected auth error:", error);
         if (isMounted) {
-          await handleInvalidSession();
+          handleUnauthorized();
         }
       }
     };
@@ -94,56 +73,26 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
       }
     };
 
-    const handleInvalidSession = async () => {
-      if (isMounted) {
-        try {
-          // Clear local storage auth data
-          localStorage.removeItem('supabase.auth.token');
-          
-          // Sign out locally (don't wait for server response)
-          await supabase.auth.signOut({ scope: 'local' }).catch(() => {
-            // Ignore errors during cleanup
-          });
-        } catch (error) {
-          console.error('Error clearing invalid session:', error);
-        }
-        
-        setIsAuthenticated(false);
-        setIsAuthorized(false);
-        setLoading(false);
-        router.push("/login");
-      }
-    };
-
     checkAuth();
 
-    // Subscribe to auth changes with error handling
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         if (!isMounted) return;
-
-        console.log('Auth state changed:', event);
 
         if (event === 'SIGNED_OUT' || !session) {
           setIsAuthenticated(false);
           router.push("/login");
         } else if (event === 'SIGNED_IN' && session) {
           setIsAuthenticated(true);
-        } else if (event === 'TOKEN_REFRESHED') {
-          console.log('✅ Token refreshed successfully');
-        } else if (event === 'USER_UPDATED' && !session) {
-          console.warn('⚠️ User updated but no session - may need re-auth');
-          await handleInvalidSession();
         }
       }
     );
 
     return () => {
       isMounted = false;
-      clearTimeout(authCheckTimeout);
       subscription.unsubscribe();
     };
-  }, [router, allowedRoles]);
+  }, [router.pathname, rolesString]);
 
   if (loading) {
     return (
