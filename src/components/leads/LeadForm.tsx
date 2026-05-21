@@ -44,6 +44,7 @@ export function LeadForm({ initialData, onSuccess, onCancel }: LeadFormProps) {
     // Buyer specific fields
     property_type: "",
     bedrooms: "",
+    typology: "",
     min_area: "",
     needs_financing: false,
     has_property_to_sell: false,
@@ -68,6 +69,7 @@ export function LeadForm({ initialData, onSuccess, onCancel }: LeadFormProps) {
         source: initialData.source || "website",
         property_type: initialData.property_type || "",
         bedrooms: initialData.bedrooms ? initialData.bedrooms.toString() : "",
+        typology: (initialData as any).typology || "",
         min_area: initialData.min_area ? initialData.min_area.toString() : "",
         needs_financing: initialData.needs_financing || false,
         has_property_to_sell: initialData.has_property_to_sell || false,
@@ -106,6 +108,7 @@ export function LeadForm({ initialData, onSuccess, onCancel }: LeadFormProps) {
         source: formData.source,
         property_type: formData.property_type || "",
         bedrooms: parseInt(formData.bedrooms) || 0,
+        typology: formData.typology || null,
         bathrooms: parseInt(formData.bathrooms) || 0,
         min_area: parseFloat(formData.min_area) || 0,
         max_area: parseFloat(formData.property_area) || 0,
@@ -315,15 +318,26 @@ export function LeadForm({ initialData, onSuccess, onCancel }: LeadFormProps) {
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="bedrooms">Número de Quartos</Label>
-                  <Input
-                    id="bedrooms"
-                    type="number"
-                    min="0"
-                    value={formData.bedrooms}
-                    onChange={(e) => setFormData({ ...formData, bedrooms: e.target.value })}
-                    placeholder="Ex: 2"
-                  />
+                  <Label htmlFor="typology">Tipologia (Quartos)</Label>
+                  <Select
+                    value={formData.typology || (formData.bedrooms ? `T${formData.bedrooms}` : "")}
+                    onValueChange={(value) => {
+                      const num = value.replace(/\D/g, '');
+                      setFormData({ ...formData, typology: value, bedrooms: num });
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione (ex: T2)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="T0">T0</SelectItem>
+                      <SelectItem value="T1">T1</SelectItem>
+                      <SelectItem value="T2">T2</SelectItem>
+                      <SelectItem value="T3">T3</SelectItem>
+                      <SelectItem value="T4">T4</SelectItem>
+                      <SelectItem value="T5+">T5 ou mais</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
 
@@ -412,15 +426,26 @@ export function LeadForm({ initialData, onSuccess, onCancel }: LeadFormProps) {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="seller_bedrooms">Número de Quartos</Label>
-                  <Input
-                    id="seller_bedrooms"
-                    type="number"
-                    min="0"
-                    value={formData.bedrooms}
-                    onChange={(e) => setFormData({ ...formData, bedrooms: e.target.value })}
-                    placeholder="Ex: 3"
-                  />
+                  <Label htmlFor="seller_typology">Tipologia (Quartos)</Label>
+                  <Select
+                    value={formData.typology || (formData.bedrooms ? `T${formData.bedrooms}` : "")}
+                    onValueChange={(value) => {
+                      const num = value.replace(/\D/g, '');
+                      setFormData({ ...formData, typology: value, bedrooms: num });
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione (ex: T2)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="T0">T0</SelectItem>
+                      <SelectItem value="T1">T1</SelectItem>
+                      <SelectItem value="T2">T2</SelectItem>
+                      <SelectItem value="T3">T3</SelectItem>
+                      <SelectItem value="T4">T4</SelectItem>
+                      <SelectItem value="T5+">T5 ou mais</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
 

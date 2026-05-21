@@ -44,7 +44,7 @@ export function SubscriptionGuard({
 
   useEffect(() => {
     checkSubscriptionStatus();
-  }, [router.pathname]);
+  }, []); // Removed router.pathname to break infinite re-render loops!
 
   const checkSubscriptionStatus = async () => {
     try {

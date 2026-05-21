@@ -21,14 +21,17 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
 
     const checkAuth = async () => {
       try {
-        if (!isMounted) return;
-
         const { data: { session }, error } = await supabase.auth.getSession();
         
         if (!isMounted) return;
 
         if (error || !session) {
-          handleUnauthorized();
+          setIsAuthenticated(false);
+          setIsAuthorized(false);
+          setLoading(false);
+          if (router.pathname !== '/login') {
+            router.push("/login");
+          }
           return;
         }
 
@@ -36,7 +39,7 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
 
         // Session exists and is valid, check roles if needed
         if (allowedRoles && allowedRoles.length > 0) {
-          const { data: profile, error: profileError } = await supabase
+          const { data: profile } = await supabase
             .from("profiles")
             .select("role")
             .eq("id", user.id)
@@ -44,55 +47,38 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
 
           if (!isMounted) return;
 
-          if (profileError || !profile || !allowedRoles.includes(profile.role)) {
-            router.push("/dashboard");
+          if (!profile || !allowedRoles.includes(profile.role)) {
+            setIsAuthorized(false);
             setLoading(false);
+            if (router.pathname !== '/dashboard') {
+              router.push("/dashboard");
+            }
             return;
           }
         }
 
-        if (isMounted) {
-          setIsAuthenticated(true);
-          setIsAuthorized(true);
-          setLoading(false);
-        }
+        setIsAuthenticated(true);
+        setIsAuthorized(true);
+        setLoading(false);
       } catch (error) {
         console.error("Unexpected auth error:", error);
         if (isMounted) {
-          handleUnauthorized();
+          setIsAuthenticated(false);
+          setIsAuthorized(false);
+          setLoading(false);
+          if (router.pathname !== '/login') {
+            router.push("/login");
+          }
         }
-      }
-    };
-
-    const handleUnauthorized = () => {
-      if (isMounted) {
-        setIsAuthenticated(false);
-        setIsAuthorized(false);
-        setLoading(false);
-        router.push("/login");
       }
     };
 
     checkAuth();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (!isMounted) return;
-
-        if (event === 'SIGNED_OUT' || !session) {
-          setIsAuthenticated(false);
-          router.push("/login");
-        } else if (event === 'SIGNED_IN' && session) {
-          setIsAuthenticated(true);
-        }
-      }
-    );
-
     return () => {
       isMounted = false;
-      subscription.unsubscribe();
     };
-  }, [router.pathname, rolesString]);
+  }, [rolesString]); // Removed router.pathname and onAuthStateChange to break infinite loops
 
   if (loading) {
     return (

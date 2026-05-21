@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { createClient } from "@supabase/supabase-js";
+import nodemailer from "nodemailer";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -84,6 +85,11 @@ export default async function handler(
               continue;
             }
 
+            // Detect current app URL for email sending
+            const protocol = req.headers['x-forwarded-proto'] || 'https';
+            const host = req.headers.host;
+            const appUrl = host ? `${protocol}://${host}` : (process.env.NEXT_PUBLIC_APP_URL || "https://www.vyxa.pt");
+
             // Fetch lead details from Meta API
             const leadResponse = await fetch(
               `https://graph.facebook.com/v18.0/${leadgenId}?access_token=${integration.page_access_token}`
@@ -157,12 +163,21 @@ export default async function handler(
                   mappedData.email = value;
                 } else if (fieldName.includes("phone") || fieldName.includes("telefone")) {
                   mappedData.phone = value;
-                } else if (fieldName.includes("budget") || fieldName.includes("orcamento")) {
-                  mappedData.budget = value;
+                } else if (fieldName.includes("budget") || fieldName.includes("orcamento") || fieldName.includes("orçamento") || fieldName.includes("investir")) {
+                  mappedData.budget_max = value;
                 } else if (fieldName.includes("location") || fieldName.includes("bairro") || fieldName.includes("zona") || fieldName === "city") {
                   mappedData.location_preference = value;
-                } else if (fieldName.includes("property") || fieldName.includes("imovel") || fieldName.includes("tipo")) {
+                } else if (fieldName.includes("tipologia") || fieldName.includes("quartos") || fieldName.includes("assoalhadas")) {
+                  mappedData.typology = value; // Keep string like "T1", "T2"
+                  mappedData.bedrooms = value; // Will be parsed to integer (1, 2) below
+                } else if (fieldName.includes("property") || fieldName.includes("imovel") || fieldName === "tipo" || fieldName.includes("tipo de im")) {
                   mappedData.property_type = value;
+                } else if (fieldName.includes("crédito") || fieldName.includes("credito") || fieldName.includes("financiamento")) {
+                  mappedData.need_financing = value;
+                } else if (fieldName.includes("vender") || fieldName.includes("retoma") || fieldName.includes("venda")) {
+                  mappedData.has_property_to_sell = value;
+                } else if (fieldName.includes("objetivo") || fieldName.includes("objectivo") || fieldName.includes("procura")) {
+                  mappedData.buy_purpose = value;
                 } else {
                   extraFields.push(`• ${metaField}: ${value}`);
                 }
@@ -170,13 +185,15 @@ export default async function handler(
             }
 
             let combinedNotes = mappedData.notes || "";
-            if (extraFields.length > 0) {
-              const extraContent = extraFields.join("\n");
-              combinedNotes = combinedNotes ? `${combinedNotes}\n\n${extraContent}` : extraContent;
-            }
-            if (combinedNotes) {
-              mappedData.notes = combinedNotes;
-            }
+            const allOriginalAnswers = Object.entries(leadFields)
+              .map(([k, v]) => `• ${k}: ${v}`)
+              .join("\n");
+            
+            combinedNotes = combinedNotes 
+              ? `${combinedNotes}\n\nRespostas Originais do Formulário:\n${allOriginalAnswers}` 
+              : `Respostas Originais do Formulário:\n${allOriginalAnswers}`;
+            
+            mappedData.notes = combinedNotes;
 
             // Sanitize boolean fields (Portuguese "sim"/"não" -> true/false)
             for (const key of Object.keys(mappedData)) {
@@ -185,13 +202,25 @@ export default async function handler(
                 if (lowerVal === 'sim' || lowerVal === 'yes') {
                   mappedData[key] = true;
                 } else if (lowerVal === 'não' || lowerVal === 'nao' || lowerVal === 'no') {
-                  mappedData[key] = false;
+                  mappedData[key] = null;
+                } else if (key === 'buy_purpose') {
+                  // Normalize intent
+                  if (lowerVal.includes('habita')) mappedData[key] = 'housing';
+                  else if (lowerVal.includes('invest')) mappedData[key] = 'investment';
+                  else if (lowerVal.includes('secund')) mappedData[key] = 'secondary';
+                } else if (key === 'property_type') {
+                  // Normalize property type
+                  if (lowerVal.includes('apartamento')) mappedData[key] = 'apartment';
+                  else if (lowerVal.includes('moradia')) mappedData[key] = 'house';
+                  else if (lowerVal.includes('terreno')) mappedData[key] = 'land';
+                  else if (lowerVal.includes('comercial')) mappedData[key] = 'commercial';
+                  else if (lowerVal.includes('loja')) mappedData[key] = 'store';
                 }
               }
             }
 
             // Sanitize integer fields (e.g., convert "T1" -> 1, "2 Casas" -> 2)
-            const integerFields = ['bedrooms', 'bathrooms', 'score', 'probability', 'lead_score'];
+            const integerFields = ['bedrooms', 'bathrooms', 'score', 'probability', 'lead_score', 'budget', 'budget_min', 'budget_max', 'price'];
             for (const field of integerFields) {
               if (mappedData[field] !== undefined && typeof mappedData[field] === 'string') {
                 const match = mappedData[field].match(/\d+/);
@@ -254,7 +283,7 @@ export default async function handler(
               console.log("✅ Note added to existing lead:", existingLead.id);
               
               // Send notification email for existing lead
-              await sendLeadNotificationEmail(integration.user_id, existingLead, leadFields, true);
+              await sendLeadNotificationEmail(integration.user_id, existingLead, leadFields, true, appUrl);
               
               // Log successful webhook
               await logWebhook(pageId, leadgenId, formId, adId, body, "success", null);
@@ -274,12 +303,14 @@ export default async function handler(
               assigned_to: formConfig?.auto_assign_to || integration.user_id, // Ensure lead is assigned to the user
               email: finalEmail || null,
               phone: finalPhone || null,
-              source: `Meta Lead Ads - ${integration.page_name || 'Facebook'}`,
+              source: `Redes Sociais`, // Set generic source to social networks
+              lead_source: `Meta Lead Ads - ${integration.page_name || 'Facebook'}`, // Keep specific origin here
               status: safeStatus,
               meta_lead_id: leadgenId,
               meta_form_id: formId,
               meta_ad_id: adId,
               created_at: leadData.created_time || new Date().toISOString(),
+              lead_type: formConfig?.default_lead_type || "both", // Make visible in all pipelines by default
             };
 
             // Remove any undefined values
@@ -302,8 +333,18 @@ export default async function handler(
 
             console.log("✅ Lead created:", newLead.id);
 
+            // Create internal notification
+            await supabase.from("notifications").insert({
+              user_id: integration.user_id,
+              title: "🎯 Nova Lead da Meta",
+              content: `A lead ${newLead.name} acabou de entrar através do Facebook/Instagram.`,
+              type: "lead_assignment",
+              link_url: `/leads`,
+              is_read: false
+            });
+
             // Send notification email for new lead
-            await sendLeadNotificationEmail(integration.user_id, newLead, leadFields, false);
+            await sendLeadNotificationEmail(integration.user_id, newLead, leadFields, false, appUrl);
 
             // Log successful webhook
             await logWebhook(pageId, leadgenId, formId, adId, body, "success", null);
@@ -347,7 +388,7 @@ async function logWebhook(
   }
 }
 
-async function sendLeadNotificationEmail(userId: string, lead: any, leadFields: Record<string, string>, isExisting: boolean = false) {
+async function sendLeadNotificationEmail(userId: string, lead: any, leadFields: Record<string, string>, isExisting: boolean = false, appUrl: string) {
   try {
     // Get user email and SMTP settings
     const { data: profile } = await supabase
@@ -423,19 +464,31 @@ async function sendLeadNotificationEmail(userId: string, lead: any, leadFields: 
       </html>
     `;
 
-    // Send email via SMTP service
-    await fetch(`${process.env.NEXT_PUBLIC_APP_URL || "https://www.vyxa.pt"}/api/smtp/send`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        userId: userId,
-        to: profile.email,
-        subject: isExisting ? `🔄 Formulário Meta: ${lead.name} - Vyxa CRM` : "🎯 Nova Lead da Meta - Vyxa CRM",
-        html: emailHtml,
-      }),
+    // Send email DIRECTLY via nodemailer (bypassing /api/smtp/send which requires a logged-in user token)
+    const transporter = nodemailer.createTransport({
+      host: smtpSettings.smtp_host,
+      port: smtpSettings.smtp_port,
+      secure: smtpSettings.smtp_secure,
+      auth: {
+        user: smtpSettings.smtp_username,
+        pass: smtpSettings.smtp_password,
+      },
+      tls: {
+        rejectUnauthorized: smtpSettings.reject_unauthorized ?? true,
+      },
     });
 
-    console.log("✅ Notification email sent to:", profile.email);
+    const info = await transporter.sendMail({
+      from: smtpSettings.from_name
+        ? `"${smtpSettings.from_name}" <${smtpSettings.from_email}>`
+        : smtpSettings.from_email,
+      to: profile.email,
+      subject: isExisting ? `🔄 Formulário Meta: ${lead.name} - Vyxa CRM` : "🎯 Nova Lead da Meta - Vyxa CRM",
+      html: emailHtml,
+    });
+
+    console.log("✅ Notification email sent directly to:", profile.email, "MessageID:", info.messageId);
+    
   } catch (error) {
     console.error("Error sending notification email:", error);
   }

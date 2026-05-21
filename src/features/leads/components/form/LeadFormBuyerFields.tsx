@@ -14,6 +14,7 @@ interface LeadFormBuyerFieldsProps {
   formData: {
     property_type: string;
     bedrooms: string;
+    typology?: string;
     min_area: string;
     budget: string;
     location_preference: string;
@@ -76,6 +77,29 @@ export function LeadFormBuyerFields({ formData, onChange }: LeadFormBuyerFieldsP
 
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
+          <Label htmlFor="typology">Tipologia (Quartos)</Label>
+          <Select
+            value={formData.typology || (formData.bedrooms ? `T${formData.bedrooms}` : "")}
+            onValueChange={(value) => {
+              onChange("typology", value);
+              onChange("bedrooms", value.replace(/\D/g, ''));
+            }}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Selecione (ex: T2)" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="T0">T0</SelectItem>
+              <SelectItem value="T1">T1</SelectItem>
+              <SelectItem value="T2">T2</SelectItem>
+              <SelectItem value="T3">T3</SelectItem>
+              <SelectItem value="T4">T4</SelectItem>
+              <SelectItem value="T5+">T5 ou mais</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-2">
           <Label htmlFor="min_area">Área Mínima Pretendida (m²)</Label>
           <Input
             id="min_area"
@@ -86,7 +110,9 @@ export function LeadFormBuyerFields({ formData, onChange }: LeadFormBuyerFieldsP
             placeholder="Ex: 80"
           />
         </div>
+      </div>
 
+      <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label htmlFor="budget">Orçamento Máximo</Label>
           <CurrencyInput
@@ -96,9 +122,7 @@ export function LeadFormBuyerFields({ formData, onChange }: LeadFormBuyerFieldsP
             placeholder="Ex: 250.000"
           />
         </div>
-      </div>
 
-      <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label htmlFor="buyer_location_preference">Localização Preferida (para Compra)</Label>
           <Input
@@ -108,7 +132,9 @@ export function LeadFormBuyerFields({ formData, onChange }: LeadFormBuyerFieldsP
             placeholder="Ex: Lisboa, Cascais, Oeiras"
           />
         </div>
+      </div>
 
+      <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label htmlFor="needs_financing" className="flex items-center gap-2">
             <input
