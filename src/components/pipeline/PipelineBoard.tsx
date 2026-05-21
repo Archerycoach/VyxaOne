@@ -79,8 +79,20 @@ export function PipelineBoard({ leads, onLeadMove, onLeadClick, onLeadDelete, is
     onLeadMove(leadId, newStatus);
   };
 
-  const getLeadsByStage = (stage: string) => {
-    return leads.filter((lead) => lead.status === stage);
+  const getLeadsByStage = (stageId: string, isFirstStage: boolean) => {
+    return leads.filter((lead) => {
+      // Direct match
+      if (lead.status === stageId) return true;
+      
+      // Fallback: If this is the first column, and the lead's status doesn't match ANY column in the current pipeline, put it here
+      if (isFirstStage) {
+        const stagesList = pipelineView === "buyer" ? buyerStages : sellerStages;
+        const existsInPipeline = stagesList.some(s => s.id === lead.status);
+        if (!existsInPipeline) return true;
+      }
+      
+      return false;
+    });
   };
 
   const activeLead = activeId ? leads.find((lead) => lead.id === activeId) : null;
@@ -98,13 +110,13 @@ export function PipelineBoard({ leads, onLeadMove, onLeadClick, onLeadDelete, is
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div className="flex gap-4 pb-4 overflow-x-auto h-[calc(100vh-240px)]">
-        {stages.map((stage) => (
+        {stages.map((stage, index) => (
           <div key={stage.id} className="min-w-[320px] max-w-[320px] flex-shrink-0">
             <PipelineColumn
               id={stage.id}
               title={stage.name}
               color={stage.color}
-              leads={getLeadsByStage(stage.id)}
+              leads={getLeadsByStage(stage.id, index === 0)}
               isDragging={isDragging}
               onLeadClick={onLeadClick}
               onLeadDelete={onLeadDelete}

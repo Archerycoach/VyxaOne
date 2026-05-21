@@ -310,7 +310,7 @@ export default async function handler(
               meta_form_id: formId,
               meta_ad_id: adId,
               created_at: leadData.created_time || new Date().toISOString(),
-              lead_type: formConfig?.default_lead_type || "both", // Make visible in all pipelines by default
+              lead_type: formConfig?.default_lead_type || "buyer", // Strict mapping based on form config
             };
 
             // Remove any undefined values

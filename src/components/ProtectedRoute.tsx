@@ -17,14 +17,14 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
   const rolesString = allowedRoles?.join(',') || '';
 
   useEffect(() => {
-    let isMounted = true;
-
+    let mounted = true;
+    
     const checkAuth = async () => {
       try {
         const { data: { session }, error } = await supabase.auth.getSession();
         
-        if (!isMounted) return;
-
+        if (!mounted) return;
+        
         if (error || !session) {
           setIsAuthenticated(false);
           setIsAuthorized(false);
@@ -35,36 +35,34 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
           return;
         }
 
-        const user = session.user;
-
-        // Session exists and is valid, check roles if needed
+        // Check roles
         if (allowedRoles && allowedRoles.length > 0) {
-          const { data: profile } = await supabase
+          const { data: profile, error: profileError } = await supabase
             .from("profiles")
             .select("role")
-            .eq("id", user.id)
+            .eq("id", session.user.id)
             .single();
-
-          if (!isMounted) return;
-
-          if (!profile || !allowedRoles.includes(profile.role)) {
+            
+          if (!mounted) return;
+            
+          if (profileError || !profile || !allowedRoles.includes(profile.role)) {
             setIsAuthorized(false);
             setLoading(false);
             if (router.pathname !== '/dashboard') {
               router.push("/dashboard");
             }
-            return;
+          } else {
+            setIsAuthenticated(true);
+            setIsAuthorized(true);
+            setLoading(false);
           }
+        } else {
+          setIsAuthenticated(true);
+          setIsAuthorized(true);
+          setLoading(false);
         }
-
-        setIsAuthenticated(true);
-        setIsAuthorized(true);
-        setLoading(false);
-      } catch (error) {
-        console.error("Unexpected auth error:", error);
-        if (isMounted) {
-          setIsAuthenticated(false);
-          setIsAuthorized(false);
+      } catch (err) {
+        if (mounted) {
           setLoading(false);
           if (router.pathname !== '/login') {
             router.push("/login");
@@ -72,13 +70,13 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
         }
       }
     };
-
+    
     checkAuth();
 
     return () => {
-      isMounted = false;
+      mounted = false;
     };
-  }, [rolesString]); // Removed router.pathname and onAuthStateChange to break infinite loops
+  }, [rolesString]); // Keep dependency minimal to prevent loops
 
   if (loading) {
     return (
