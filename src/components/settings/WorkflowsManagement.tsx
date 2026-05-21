@@ -43,6 +43,7 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
+import { RichTextEditor } from "@/components/ui/RichTextEditor";
 
 type WorkflowTemplate = {
   id: string;
@@ -799,13 +800,21 @@ export function WorkflowsManagement() {
                   <Label htmlFor="email_body">
                     {formState.action_type === "send_email" ? "Corpo do Email *" : "Descrição *"}
                   </Label>
-                  <Textarea
-                    id="email_body"
-                    value={formState.email_body}
-                    onChange={(e) => setFormState({ ...formState, email_body: e.target.value })}
-                    placeholder="Introduza o texto ou descrição..."
-                    rows={8}
-                  />
+                  {formState.action_type === "send_email" ? (
+                    <RichTextEditor
+                      value={formState.email_body}
+                      onChange={(value) => setFormState({ ...formState, email_body: value })}
+                      placeholder="Introduza o texto e insira imagens..."
+                    />
+                  ) : (
+                    <Textarea
+                      id="email_body"
+                      value={formState.email_body}
+                      onChange={(e) => setFormState({ ...formState, email_body: e.target.value })}
+                      placeholder="Introduza a descrição..."
+                      rows={8}
+                    />
+                  )}
                 </div>
                 <div className="text-xs text-gray-600 space-y-1">
                   <p className="font-semibold">Variáveis disponíveis:</p>
