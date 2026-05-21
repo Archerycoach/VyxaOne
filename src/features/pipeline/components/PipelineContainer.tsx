@@ -21,7 +21,8 @@ export function PipelineContainer() {
   const fetchLeads = async () => {
     try {
       setIsLoading(true);
-      const data = await getLeads();
+      // Bypass cache (false) so that new leads from Webhook appear instantly
+      const data = await getLeads(false);
       setLeads(data);
     } catch (error) {
       console.error("Error fetching leads:", error);

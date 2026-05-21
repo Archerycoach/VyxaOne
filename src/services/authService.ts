@@ -47,17 +47,13 @@ export const getCurrentSession = getSession;
 
 export const getCurrentUser = async (): Promise<User | null> => {
   try {
-    // First check if we have a session
+    // Use getSession() instead of getUser() to avoid slow network calls to Auth API
     const session = await getSession();
-    if (!session) {
+    if (!session?.user) {
       return null;
     }
 
-    const { data: { user }, error } = await supabase.auth.getUser();
-    if (error) {
-      console.error("Error getting user:", error);
-      return null;
-    }
+    const user = session.user;
     
     // Fetch user profile to get the correct role
     if (user) {

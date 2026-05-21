@@ -197,13 +197,17 @@ export default function Leads() {
     await loadLeads();
   }, [loadLeads]);
 
-  if (!user) {
+  // Se ainda estiver a carregar o user ou as leads iniciais, mostra loading em vez de bloquear
+  if (!user && isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-muted-foreground">A verificar autenticação...</p>
+      <Layout title="Leads">
+        <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 flex items-center justify-center">
+          <div className="bg-white rounded-lg p-6 shadow-xl flex items-center gap-4">
+            <Loader2 className="h-8 w-8 animate-spin text-purple-600" />
+            <p className="text-gray-700 font-medium">A carregar leads...</p>
+          </div>
         </div>
-      </div>
+      </Layout>
     );
   }
 

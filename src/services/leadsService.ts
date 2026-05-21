@@ -34,13 +34,14 @@ export type LeadWithContacts = LeadWithDetails;
 
 // Get current user profile with role and team_lead_id
 const getCurrentUserProfile = async () => {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not authenticated");
+  // Use getSession to avoid slow network calls blocking the UI
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) throw new Error("Not authenticated");
 
   const { data: profile, error } = await supabase
     .from("profiles")
     .select("id, role, team_lead_id")
-    .eq("id", user.id)
+    .eq("id", session.user.id)
     .single();
 
   if (error) throw error;
