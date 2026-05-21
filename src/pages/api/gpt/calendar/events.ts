@@ -51,6 +51,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       const normalizedStartTime = parsedStartTime.toISOString();
       const normalizedEndTime = parsedEndTime.toISOString();
+      
+      const dateOnly = normalizedStartTime.split('T')[0];
+      const startOfDay = `${dateOnly}T00:00:00.000Z`;
+      const endOfDay = `${dateOnly}T23:59:59.999Z`;
 
       const { data: candidateMatches, error: duplicateError } = await (
         lead_id
@@ -59,15 +63,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
               .select("id, title, description, start_time, end_time, event_type, lead_id, location")
               .eq("user_id", userId)
               .eq("lead_id", lead_id)
-              .eq("start_time", normalizedStartTime)
-              .eq("end_time", normalizedEndTime)
+              .gte("start_time", startOfDay)
+              .lte("start_time", endOfDay)
           : supabaseAdmin
               .from("calendar_events")
               .select("id, title, description, start_time, end_time, event_type, lead_id, location")
               .eq("user_id", userId)
               .is("lead_id", null)
-              .eq("start_time", normalizedStartTime)
-              .eq("end_time", normalizedEndTime)
+              .gte("start_time", startOfDay)
+              .lte("start_time", endOfDay)
       );
 
       if (duplicateError) {

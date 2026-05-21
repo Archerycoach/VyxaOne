@@ -307,6 +307,14 @@ export default async function handler(
               // Send notification email for existing lead
               await sendLeadNotificationEmail(integration.user_id, existingLead, leadFields, true, appUrl);
               
+              // Execute auto-responder workflows for existing lead who filled a new form
+              await executeAutoResponderWorkflows(integration.user_id, { 
+                id: existingLead.id, 
+                name: existingLead.name, 
+                email: finalEmail, 
+                phone: finalPhone 
+              });
+              
               // Log successful webhook
               await logWebhook(pageId, leadgenId, formId, adId, body, "success", null);
               continue;
@@ -366,6 +374,9 @@ export default async function handler(
 
             // Send notification email for new lead
             await sendLeadNotificationEmail(integration.user_id, newLead, leadFields, false, appUrl);
+
+            // Execute auto-responder workflows for new lead
+            await executeAutoResponderWorkflows(integration.user_id, newLead);
 
             // Log successful webhook
             await logWebhook(pageId, leadgenId, formId, adId, body, "success", null);
@@ -512,5 +523,93 @@ async function sendLeadNotificationEmail(userId: string, lead: any, leadFields: 
     
   } catch (error) {
     console.error("Error sending notification email:", error);
+  }
+}
+
+async function executeAutoResponderWorkflows(userId: string, lead: any) {
+  try {
+    if (!lead.email) {
+      console.log("No email provided by lead, skipping auto-responder");
+      return; 
+    }
+
+    // Fetch active workflows for this trigger
+    const { data: workflows, error: wfError } = await supabase
+      .from("lead_workflow_rules")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("trigger_status", "meta_lead_created")
+      .eq("enabled", true)
+      .eq("action_type", "send_email");
+
+    if (wfError || !workflows || workflows.length === 0) return;
+
+    // Get SMTP settings
+    const { data: smtpSettings } = await supabase
+      .from("user_smtp_settings")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("is_active", true)
+      .single();
+
+    if (!smtpSettings) {
+      console.log("SMTP not configured for user, skipping auto-responder workflows");
+      return;
+    }
+
+    const transporter = nodemailer.createTransport({
+      host: smtpSettings.smtp_host,
+      port: smtpSettings.smtp_port,
+      secure: smtpSettings.smtp_secure,
+      auth: {
+        user: smtpSettings.smtp_username,
+        pass: smtpSettings.smtp_password,
+      },
+      tls: {
+        rejectUnauthorized: smtpSettings.reject_unauthorized ?? true,
+      },
+    });
+
+    for (const workflow of workflows) {
+      const config = workflow.action_config || {};
+      let subject = config.subject || "Obrigado pelo seu contacto";
+      let body = config.body || "Recebemos a sua mensagem.";
+
+      // Personalize content
+      subject = subject
+        .replace(/{nome}/g, lead.name || "")
+        .replace(/{email}/g, lead.email || "")
+        .replace(/{telefone}/g, lead.phone || "");
+        
+      body = body
+        .replace(/{nome}/g, lead.name || "")
+        .replace(/{email}/g, lead.email || "")
+        .replace(/{telefone}/g, lead.phone || "");
+
+      // Send to the LEAD
+      await transporter.sendMail({
+        from: smtpSettings.from_name
+          ? `"${smtpSettings.from_name}" <${smtpSettings.from_email}>`
+          : smtpSettings.from_email,
+        to: lead.email,
+        subject: subject,
+        html: body.replace(/\n/g, "<br>"),
+        text: body,
+      });
+      
+      console.log(`✅ Auto-responder sent to ${lead.email} for workflow ${workflow.name}`);
+      
+      // Log execution history
+      await supabase.from("workflow_executions").insert({
+        workflow_id: workflow.id,
+        lead_id: lead.id,
+        user_id: userId,
+        status: "completed",
+        executed_at: new Date().toISOString(),
+        completed_at: new Date().toISOString()
+      });
+    }
+  } catch (error) {
+    console.error("Error executing auto-responder workflows:", error);
   }
 }

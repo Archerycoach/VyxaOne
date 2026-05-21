@@ -31,23 +31,42 @@ function normalizeDateTime(value?: string | null): string | null {
   return parsedDate.toISOString();
 }
 
-export function buildCalendarEventSignature(
-  event: CalendarEventSignatureInput,
-): string | null {
-  const normalizedTitle = normalizeTitle(event.title);
-  const normalizedStartTime = normalizeDateTime(event.start_time);
-  const normalizedEndTime = normalizeDateTime(event.end_time);
-
-  if (!normalizedTitle || !normalizedStartTime || !normalizedEndTime) {
+function extractDateOnly(value?: string | null): string | null {
+  if (!value) {
     return null;
   }
 
-  return [
-    event.lead_id || "no-lead",
-    normalizedTitle,
-    normalizedStartTime,
-    normalizedEndTime,
-  ].join("::");
+  const parsedDate = new Date(value);
+
+  if (Number.isNaN(parsedDate.getTime())) {
+    return null;
+  }
+
+  // Extrai apenas o YYYY-MM-DD para bloquear duplicações da mesma lead no mesmo dia
+  return parsedDate.toISOString().split('T')[0];
+}
+
+export function buildCalendarEventSignature(
+  event: CalendarEventSignatureInput,
+): string | null {
+  const dateOnly = extractDateOnly(event.start_time);
+
+  if (!dateOnly) {
+    return null;
+  }
+
+  // Regra Forte: Um evento por Lead por Dia!
+  if (event.lead_id) {
+    return `${event.lead_id}::${dateOnly}`;
+  }
+
+  // Se for um evento sem Lead (ex: Tarefa pessoal), bloqueamos se tiver o mesmo título no mesmo dia
+  const normalizedTitle = (event.title || "").trim().replace(/\s+/g, " ").toLowerCase();
+  if (!normalizedTitle) {
+    return null;
+  }
+
+  return `no-lead::${normalizedTitle}::${dateOnly}`;
 }
 
 export function dedupeCalendarEventCandidates<T extends CalendarEventDedupCandidate>(
@@ -72,15 +91,9 @@ export function dedupeCalendarEventCandidates<T extends CalendarEventDedupCandid
   });
 
   candidateEvents.forEach((event) => {
-    const normalizedStartTime = normalizeDateTime(event.start_time);
-    const normalizedEndTime = normalizeDateTime(event.end_time);
-    const signature = buildCalendarEventSignature({
-      ...event,
-      start_time: normalizedStartTime,
-      end_time: normalizedEndTime,
-    });
+    const signature = buildCalendarEventSignature(event);
 
-    if (!signature || !normalizedStartTime || !normalizedEndTime) {
+    if (!signature || !event.start_time || !event.end_time) {
       skippedInvalid += 1;
       return;
     }
@@ -93,8 +106,8 @@ export function dedupeCalendarEventCandidates<T extends CalendarEventDedupCandid
     seenSignatures.add(signature);
     uniqueEvents.push({
       ...event,
-      start_time: normalizedStartTime,
-      end_time: normalizedEndTime,
+      start_time: event.start_time,
+      end_time: event.end_time,
     });
   });
 

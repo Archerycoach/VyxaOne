@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
-import { ArrowLeft, User, Lock, Building2, Bell, Save, Loader2, Mail, Facebook, Calendar, Bot, Activity } from "lucide-react";
+import { ArrowLeft, User, Lock, Building2, Bell, Save, Loader2, Mail, Facebook, Calendar, Bot, Activity, Zap } from "lucide-react";
 import { getUserProfile, updateUserProfile } from "@/services/profileService";
 import { updatePassword, getSession, signOut } from "@/services/authService";
 import { useToast } from "@/hooks/use-toast";
@@ -15,6 +15,7 @@ import { SMTPSettingsDialog } from "@/components/SMTPSettingsDialog";
 import { MetaAccountConnection } from "@/components/settings/MetaAccountConnection";
 import { MetaFormsManagement } from "@/components/settings/MetaFormsManagement";
 import { GptApiSettings } from "@/components/settings/GptApiSettings";
+import { WorkflowsManagement } from "@/components/settings/WorkflowsManagement";
 
 const REQUIRED_GOOGLE_SCOPES = [
   "openid",
@@ -276,7 +277,7 @@ export default function Settings() {
         </div>
 
         <Tabs defaultValue="profile" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-7">
+          <TabsList className="flex flex-wrap w-full justify-start h-auto gap-1 p-1">
             <TabsTrigger value="profile">
               <User className="h-4 w-4 mr-2" />
               Perfil
@@ -304,6 +305,10 @@ export default function Settings() {
             <TabsTrigger value="gpt-agent">
               <Bot className="h-4 w-4 mr-2" />
               GPT Agent
+            </TabsTrigger>
+            <TabsTrigger value="workflows">
+              <Zap className="h-4 w-4 mr-2" />
+              Automação
             </TabsTrigger>
           </TabsList>
 
@@ -732,6 +737,12 @@ export default function Settings() {
 
           <TabsContent value="gpt-agent" className="space-y-6">
             <GptApiSettings />
+          </TabsContent>
+
+          <TabsContent value="workflows" className="space-y-6">
+            <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+              <WorkflowsManagement />
+            </div>
           </TabsContent>
         </Tabs>
 
