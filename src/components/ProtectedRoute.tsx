@@ -20,26 +20,10 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
 
     const checkAuth = async () => {
       try {
-        // Add a small delay to ensure Supabase client is fully initialized
-        await new Promise(resolve => setTimeout(resolve, 100));
-
         if (!isMounted) return;
 
-        // Get session with error handling and timeout
-        const sessionPromise = supabase.auth.getSession();
-        const timeoutPromise = new Promise((_, reject) => {
-          authCheckTimeout = setTimeout(() => reject(new Error('Auth check timeout')), 5000);
-        });
-
-        const { data: { session }, error } = await Promise.race([
-          sessionPromise,
-          timeoutPromise,
-        ]).catch((err) => {
-          console.error('Auth check error or timeout:', err);
-          return { data: { session: null }, error: err };
-        }) as any;
-
-        clearTimeout(authCheckTimeout);
+        // Fast path: Check active session first without artificial delay
+        const { data: { session }, error } = await supabase.auth.getSession();
         
         if (!isMounted) return;
 
@@ -66,16 +50,8 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
           return;
         }
 
-        // Verify session is still valid by checking user
-        const { data: { user }, error: userError } = await supabase.auth.getUser();
-        
-        if (!isMounted) return;
-        
-        if (userError || !user) {
-          console.warn('⚠️ Session exists but user not found - session may be invalid');
-          await handleInvalidSession();
-          return;
-        }
+        // Fast path: Don't fetch user again unless we need roles
+        const user = session.user;
 
         // Session exists and is valid, check roles if needed
         if (allowedRoles && allowedRoles.length > 0) {

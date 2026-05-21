@@ -255,12 +255,42 @@ export function useDashboardData({ userRole, currentUserId, selectedAgentId, lea
       // 10. Calculate Metrics
       const totalLeads = leads.length;
       
+      // Identify which stages count as "Acquisition/Angariação"
+      // It counts if the stage name implies acquisition
+      const acquisitionStageIds = sellerStages
+        .filter(s => 
+          s.name.toLowerCase().includes("angaria")
+        )
+        .map(s => s.id);
+
+      const isAcquisition = (l: any) => {
+        const statusStr = (l.status || "").toLowerCase();
+        const isAtAcquisitionStage = acquisitionStageIds.includes(l.status) || statusStr.includes("angaria");
+        // Count as acquisition if it's in the stage and not explicitly a buyer
+        return isAtAcquisitionStage && l.lead_type !== "buyer";
+      };
+
       // Calculate won/lost/active leads
       const wonLeads = leads.filter(l => {
         const status = l.status || "";
+        const statusStr = status.toLowerCase();
+        
         if (status === "won") return true;
-        if (l.lead_type === "buyer" && status === lastBuyerStageId) return true;
-        if (l.lead_type === "seller" && status === lastSellerStageId) return true;
+        
+        // Buyers: Conversion is when they reach the last stage (Fechado/Vendido)
+        if (l.lead_type === "buyer" || l.lead_type === "both") {
+          if (status === lastBuyerStageId || statusStr.includes("fechado") || statusStr.includes("vendido") || statusStr.includes("sold")) {
+            return true;
+          }
+        }
+        
+        // Sellers: Conversion is when they reach Angariação OR any final closed stage
+        if (l.lead_type === "seller" || l.lead_type === "both" || !l.lead_type) {
+          if (isAcquisition(l) || status === lastSellerStageId || statusStr.includes("fechado") || statusStr.includes("vendido") || statusStr.includes("sold")) {
+            return true;
+          }
+        }
+        
         return false;
       }).length;
 
@@ -291,25 +321,7 @@ export function useDashboardData({ userRole, currentUserId, selectedAgentId, lea
       }).length;
       const leadsGrowth = leadsLastMonth > 0 ? ((leadsThisMonth - leadsLastMonth) / leadsLastMonth) * 100 : 0;
 
-      // Identify which stages count as "Acquisition/Angariação"
-      // It counts if it's the last stage, or if the stage name implies acquisition
-      const acquisitionStageIds = sellerStages
-        .filter(s => 
-          s.id === lastSellerStageId || 
-          s.name.toLowerCase().includes("angaria") || 
-          s.name.toLowerCase().includes("vendido") ||
-          s.name.toLowerCase().includes("sold")
-        )
-        .map(s => s.id);
-
-      const isAcquisition = (l: any) => {
-        const statusStr = (l.status || "").toLowerCase();
-        const isAtAcquisitionStage = acquisitionStageIds.includes(l.status) || statusStr.includes("angaria") || statusStr.includes("vendido");
-        // Count as acquisition if it's in the stage and not explicitly a buyer
-        return isAtAcquisitionStage && l.lead_type !== "buyer";
-      };
-
-      // Calculate actual acquisitions (seller leads at final stage or angariação)
+      // Calculate actual acquisitions (seller leads strictly at angariação)
       const acquisitionsCount = leads.filter(l => isAcquisition(l)).length;
 
       // Acquisitions for current year

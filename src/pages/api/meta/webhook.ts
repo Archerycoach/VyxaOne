@@ -178,6 +178,23 @@ export default async function handler(
               mappedData.notes = combinedNotes;
             }
 
+            // Sanitize integer fields (e.g., convert "T1" -> 1, "2 Casas" -> 2)
+            const integerFields = ['bedrooms', 'bathrooms', 'score', 'probability', 'lead_score'];
+            for (const field of integerFields) {
+              if (mappedData[field] !== undefined && typeof mappedData[field] === 'string') {
+                const match = mappedData[field].match(/\d+/);
+                if (match) {
+                  mappedData[field] = parseInt(match[0], 10);
+                } else {
+                  // If it's a string but has no numbers, move it to notes and remove from mappedData
+                  mappedData.notes = mappedData.notes 
+                    ? `${mappedData.notes}\n• ${field} (original): ${mappedData[field]}` 
+                    : `• ${field} (original): ${mappedData[field]}`;
+                  delete mappedData[field];
+                }
+              }
+            }
+
             const finalEmail = mappedData.email || emailValue;
             const finalPhone = mappedData.phone || phoneValue;
 
@@ -233,6 +250,12 @@ export default async function handler(
             }
 
             // Map Meta fields to CRM fields for NEW lead
+            // Sanitize status to avoid "t1" invalid integer syntax if pipeline uses UUIDs or specific strings
+            let safeStatus = formConfig?.default_status || "new";
+            if (safeStatus === "t1" || safeStatus === "t2" || safeStatus === "t3") {
+               safeStatus = "new"; // fallback to 'new' if it's a mock ID
+            }
+
             const leadRecord = {
               ...mappedData,
               user_id: integration.user_id,
@@ -240,7 +263,7 @@ export default async function handler(
               email: finalEmail || null,
               phone: finalPhone || null,
               source: `Meta Lead Ads - ${integration.page_name || 'Facebook'}`,
-              status: formConfig?.default_status || "new",
+              status: safeStatus,
               meta_lead_id: leadgenId,
               meta_form_id: formId,
               meta_ad_id: adId,
