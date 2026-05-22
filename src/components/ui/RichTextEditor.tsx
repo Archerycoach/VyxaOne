@@ -30,49 +30,6 @@ export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorP
   const quillRef = useRef<any>(null);
   const { toast } = useToast();
 
-  const imageHandler = () => {
-    const input = document.createElement('input');
-    input.setAttribute('type', 'file');
-    input.setAttribute('accept', 'image/*');
-    input.click();
-
-    input.onchange = async () => {
-      if (input.files && input.files[0]) {
-        const file = input.files[0];
-        
-        // Strict file size limit to prevent server bloating (Max 1MB)
-        const maxSizeBytes = 1 * 1024 * 1024; // 1MB
-        if (file.size > maxSizeBytes) {
-          toast({
-            title: "Imagem muito grande",
-            description: "Para poupar espaço no servidor e nos emails dos clientes, a imagem não pode ter mais de 1MB. Por favor, redimensione-a e tente novamente.",
-            variant: "destructive"
-          });
-          return;
-        }
-
-        const reader = new FileReader();
-        reader.onload = () => {
-          const base64String = reader.result as string;
-          const quill = quillRef.current?.getEditor();
-          if (quill) {
-            const range = quill.getSelection(true);
-            quill.insertEmbed(range.index, 'image', base64String);
-            quill.setSelection(range.index + 1);
-          }
-        };
-        reader.onerror = () => {
-          toast({
-            title: "Erro",
-            description: "Não foi possível ler a imagem.",
-            variant: "destructive"
-          });
-        };
-        reader.readAsDataURL(file);
-      }
-    };
-  };
-
   const modules = useMemo(() => ({
     toolbar: {
       container: [
@@ -84,7 +41,52 @@ export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorP
         ['clean']
       ],
       handlers: {
-        image: imageHandler
+        image: function(this: any) {
+          const quill = this.quill || quillRef.current?.getEditor();
+          if (!quill) return;
+
+          const input = document.createElement('input');
+          input.setAttribute('type', 'file');
+          input.setAttribute('accept', 'image/*');
+          input.click();
+
+          input.onchange = async () => {
+            if (input.files && input.files[0]) {
+              const file = input.files[0];
+              
+              // Strict file size limit to prevent server bloating (Max 1MB)
+              const maxSizeBytes = 1 * 1024 * 1024; // 1MB
+              if (file.size > maxSizeBytes) {
+                toast({
+                  title: "Imagem muito grande",
+                  description: "Para poupar espaço no servidor e nos emails dos clientes, a imagem não pode ter mais de 1MB. Por favor, redimensione-a e tente novamente.",
+                  variant: "destructive"
+                });
+                return;
+              }
+
+              const reader = new FileReader();
+              reader.onload = () => {
+                const base64String = reader.result as string;
+                
+                // Safely get index even if editor lost focus during file selection
+                const range = quill.getSelection(true);
+                const index = range ? range.index : quill.getLength();
+                
+                quill.insertEmbed(index, 'image', base64String);
+                quill.setSelection(index + 1);
+              };
+              reader.onerror = () => {
+                toast({
+                  title: "Erro",
+                  description: "Não foi possível ler a imagem.",
+                  variant: "destructive"
+                });
+              };
+              reader.readAsDataURL(file);
+            }
+          };
+        }
       }
     }
   }), []);

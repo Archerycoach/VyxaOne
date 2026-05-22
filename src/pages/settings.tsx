@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
-import { ArrowLeft, User, Lock, Building2, Bell, Save, Loader2, Mail, Facebook, Calendar, Bot, Activity, Zap } from "lucide-react";
+import { ArrowLeft, User, Lock, Building2, Bell, Save, Loader2, Mail, Facebook, Calendar, Bot, Activity, Zap, FileText } from "lucide-react";
 import { getUserProfile, updateUserProfile } from "@/services/profileService";
 import { updatePassword, getSession, signOut } from "@/services/authService";
 import { useToast } from "@/hooks/use-toast";
@@ -16,6 +16,7 @@ import { MetaAccountConnection } from "@/components/settings/MetaAccountConnecti
 import { MetaFormsManagement } from "@/components/settings/MetaFormsManagement";
 import { GptApiSettings } from "@/components/settings/GptApiSettings";
 import { WorkflowsManagement } from "@/components/settings/WorkflowsManagement";
+import { NotionAccountConnection } from "@/components/settings/NotionAccountConnection";
 
 const REQUIRED_GOOGLE_SCOPES = [
   "openid",
@@ -309,6 +310,10 @@ export default function Settings() {
             <TabsTrigger value="workflows">
               <Zap className="h-4 w-4 mr-2" />
               Automação
+            </TabsTrigger>
+            <TabsTrigger value="notion">
+              <FileText className="h-4 w-4 mr-2" />
+              Notion
             </TabsTrigger>
           </TabsList>
 
@@ -743,6 +748,10 @@ export default function Settings() {
             <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
               <WorkflowsManagement />
             </div>
+          </TabsContent>
+
+          <TabsContent value="notion" className="space-y-6">
+            <NotionAccountConnection />
           </TabsContent>
         </Tabs>
 

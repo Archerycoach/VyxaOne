@@ -188,6 +188,19 @@ export const createLead = async (lead: LeadInsert): Promise<Lead> => {
     // Don't throw - workflow errors shouldn't block lead creation
   }
 
+  // ✅ Trigger Notion Sync automatically
+  try {
+    // We use relative path as leadsService runs on the client side
+    fetch("/api/notion/sync-lead", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ leadId: data.id, userId: data.user_id || (await getCurrentUserProfile()).id })
+    }).catch(e => console.error("[leadsService] Async Notion sync failed:", e));
+    console.log("[leadsService] Triggered Notion sync for new lead");
+  } catch (syncError) {
+    console.error("[leadsService] Error triggering Notion sync:", syncError);
+  }
+
   return data as Lead;
 };
 
@@ -406,6 +419,21 @@ export const updateLeadStatus = async (id: string, status: string) => {
 
   // Invalidate cache
   CacheManager.invalidateLeadsRelated();
+
+  // ✅ Trigger Notion Pipeline Sync
+  try {
+    fetch("/api/notion/update-status", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ 
+        leadId: id, 
+        status: status, 
+        userId: data.user_id || (await getCurrentUserProfile()).id 
+      })
+    }).catch(e => console.error("[leadsService] Async Notion status sync failed:", e));
+  } catch (syncError) {
+    console.error("[leadsService] Error triggering Notion status sync:", syncError);
+  }
 
   return data;
 };

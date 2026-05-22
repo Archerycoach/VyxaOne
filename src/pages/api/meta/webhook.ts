@@ -378,6 +378,18 @@ export default async function handler(
             // Execute auto-responder workflows for new lead
             await executeAutoResponderWorkflows(integration.user_id, newLead);
 
+            // Trigger Notion Sync for new lead
+            try {
+              await fetch(`${appUrl}/api/notion/sync-lead`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ leadId: newLead.id, userId: integration.user_id })
+              });
+              console.log("🔄 Triggered Notion sync for new lead");
+            } catch (syncError) {
+              console.error("❌ Failed to trigger Notion sync:", syncError);
+            }
+
             // Log successful webhook
             await logWebhook(pageId, leadgenId, formId, adId, body, "success", null);
           }
