@@ -53,6 +53,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(404).json({ error: "Lead not found" });
     }
 
+    // 3.5 Dynamically fetch the Notion Database schema to find the exact name of the Title property
+    const dbRes = await fetch(`https://api.notion.com/v1/databases/${mapping.notion_database_id}`, {
+      headers: {
+        "Authorization": `Bearer ${integration.access_token}`,
+        "Notion-Version": "2022-06-28",
+      }
+    });
+    
+    if (!dbRes.ok) {
+      const err = await dbRes.text();
+      return res.status(400).json({ error: "Sem acesso à BD do Notion. Confirme as permissões.", details: err });
+    }
+    
+    const dbData = await dbRes.json();
+    const titleProperty = dbData.properties ? Object.values(dbData.properties).find((p: any) => p.type === "title") as any : null;
+    const titlePropertyName = titleProperty ? titleProperty.name : "Name";
+
     // 4. Create Page in Notion
     // We create a rich text page so we don't depend on exact property names in the user's Notion DB, 
     // except for the default "title" property.
@@ -60,9 +77,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const pageData = {
       parent: { database_id: mapping.notion_database_id },
       properties: {
-        // Notion databases always have one "title" property. The key name varies, but we can target it by type.
-        // A common workaround is to use the exact name if known, or for Title properties, "Name" or "title".
-        "Name": {
+        [titlePropertyName]: {
           title: [
             {
               text: {
@@ -183,7 +198,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!notionRes.ok) {
       const errorText = await notionRes.text();
       console.error("Notion API error (sync):", errorText);
-      return res.status(notionRes.status).json({ error: "Failed to sync to Notion" });
+      let friendlyError = "A API do Notion recusou o pedido.";
+      try {
+        const parsed = JSON.parse(errorText);
+        if (parsed.message) friendlyError = parsed.message;
+      } catch (e) {}
+      return res.status(notionRes.status).json({ error: friendlyError });
     }
 
     const notionData = await notionRes.json();

@@ -77,9 +77,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         access_token: tokenData.access_token,
         bot_id: tokenData.bot_id,
         workspace_name: tokenData.workspace_name,
-        workspace_icon: tokenData.workspace_icon,
         workspace_id: tokenData.workspace_id,
-        owner_id: tokenData.owner?.user?.id,
         updated_at: new Date().toISOString()
       }, {
         onConflict: 'user_id'

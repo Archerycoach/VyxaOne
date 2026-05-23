@@ -188,15 +188,40 @@ export const createLead = async (lead: LeadInsert): Promise<Lead> => {
     // Don't throw - workflow errors shouldn't block lead creation
   }
 
-  // ✅ Trigger Notion Sync automatically
+  // ✅ Trigger Notion Sync automatically and report back
   try {
-    // We use relative path as leadsService runs on the client side
-    fetch("/api/notion/sync-lead", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ leadId: data.id, userId: data.user_id || (await getCurrentUserProfile()).id })
-    }).catch(e => console.error("[leadsService] Async Notion sync failed:", e));
-    console.log("[leadsService] Triggered Notion sync for new lead");
+    const profile = await getCurrentUserProfile();
+    // We don't block the return of the lead, we let it run in the background but await it in an IIFE to show toast
+    (async () => {
+      try {
+        const syncRes = await fetch("/api/notion/sync-lead", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ leadId: data.id, userId: data.user_id || profile.id })
+        });
+        
+        const { toast } = await import("@/hooks/use-toast");
+        
+        if (syncRes.ok) {
+          const syncData = await syncRes.json();
+          if (syncData.status === "success") {
+            toast({
+              title: "Sincronizado com o Notion",
+              description: "A nova Lead foi enviada para o Notion com sucesso.",
+            });
+          }
+        } else {
+          const errorData = await syncRes.json();
+          toast({
+            title: "Erro ao Sincronizar com Notion",
+            description: errorData.error || "A base de dados do Notion recusou a gravação.",
+            variant: "destructive"
+          });
+        }
+      } catch (err) {
+        console.error("Notion sync failed:", err);
+      }
+    })();
   } catch (syncError) {
     console.error("[leadsService] Error triggering Notion sync:", syncError);
   }
