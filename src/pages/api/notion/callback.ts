@@ -30,8 +30,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(400).json({ error: "Invalid state parameter" });
     }
 
-    const clientId = process.env.NOTION_CLIENT_ID;
-    const clientSecret = process.env.NOTION_CLIENT_SECRET;
+    // Fetch Notion settings from the database
+    const { data: configData, error: settingsError } = await supabase
+      .from('integration_settings')
+      .select('*')
+      .eq('integration_name', 'notion')
+      .maybeSingle();
+
+    const settings = (configData?.settings as any) || {};
+
+    if (settingsError || !settings.client_id || !settings.client_secret) {
+      console.error("Missing Notion configuration in database");
+      return res.redirect(302, "/settings?error=notion_not_configured");
+    }
+
+    const clientId = settings.client_id;
+    const clientSecret = settings.client_secret;
     const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/notion/callback`;
 
     // Exchange code for token

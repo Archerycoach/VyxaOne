@@ -32,6 +32,14 @@ export default function Integrations() {
   });
   const [isGoogleConfigured, setIsGoogleConfigured] = useState(false);
 
+  // Notion Settings
+  const [notion, setNotion] = useState({
+    client_id: "",
+    client_secret: "",
+    enabled: false
+  });
+  const [isNotionConfigured, setIsNotionConfigured] = useState(false);
+
   useEffect(() => {
     loadIntegrationSettings();
   }, []);
@@ -49,13 +57,32 @@ export default function Integrations() {
       if (gcError) throw gcError;
 
       if (gcData) {
-        const data = gcData as any;
+        const settings = (gcData.settings as any) || {};
         setGoogleCalendar({
-          client_id: data.client_id || "",
-          client_secret: data.client_secret || "",
-          enabled: data.enabled || false
+          client_id: settings.client_id || "",
+          client_secret: settings.client_secret || "",
+          enabled: gcData.is_active || false
         });
-        setIsGoogleConfigured(!!(data.client_id && data.client_secret));
+        setIsGoogleConfigured(!!(settings.client_id && settings.client_secret));
+      }
+
+      // Load Notion settings
+      const { data: notionData, error: notionError } = await supabase
+        .from("integration_settings")
+        .select("*")
+        .eq("integration_name", "notion")
+        .maybeSingle();
+
+      if (notionError) throw notionError;
+
+      if (notionData) {
+        const settings = (notionData.settings as any) || {};
+        setNotion({
+          client_id: settings.client_id || "",
+          client_secret: settings.client_secret || "",
+          enabled: notionData.is_active || false
+        });
+        setIsNotionConfigured(!!(settings.client_id && settings.client_secret));
       }
 
     } catch (error: any) {
@@ -93,11 +120,13 @@ export default function Integrations() {
         .from("integration_settings")
         .upsert({
           integration_name: "google_calendar",
-          client_id: googleCalendar.client_id.trim(),
-          client_secret: googleCalendar.client_secret.trim(),
-          redirect_uri: `${window.location.origin}/api/google-calendar/callback`.trim(),
-          scopes: ["https://www.googleapis.com/auth/calendar"],
-          enabled: googleCalendar.enabled,
+          is_active: googleCalendar.enabled,
+          settings: {
+            client_id: googleCalendar.client_id.trim(),
+            client_secret: googleCalendar.client_secret.trim(),
+            redirect_uri: `${window.location.origin}/api/google-calendar/callback`.trim(),
+            scopes: ["https://www.googleapis.com/auth/calendar"]
+          },
           updated_at: new Date().toISOString()
         }, {
           onConflict: "integration_name"
@@ -117,6 +146,55 @@ export default function Integrations() {
       toast({
         title: "Erro",
         description: error.message || "Falha ao salvar configurações.",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSaveNotion = async () => {
+    try {
+      if (!notion.client_id || !notion.client_secret) {
+        toast({
+          title: "Campos obrigatórios",
+          description: "Por favor, preencha Client ID e Client Secret do Notion.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setSaving(true);
+
+      const { error } = await supabase
+        .from("integration_settings")
+        .upsert({
+          integration_name: "notion",
+          is_active: notion.enabled,
+          settings: {
+            client_id: notion.client_id.trim(),
+            client_secret: notion.client_secret.trim(),
+            redirect_uri: `${window.location.origin}/api/notion/callback`.trim()
+          },
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: "integration_name"
+        });
+
+      if (error) throw error;
+
+      setIsNotionConfigured(true);
+      toast({
+        title: "✅ Sucesso",
+        description: "Configurações do Notion salvas com sucesso!",
+      });
+
+      await loadIntegrationSettings();
+    } catch (error: any) {
+      console.error("Error saving Notion settings:", error);
+      toast({
+        title: "Erro",
+        description: error.message || "Falha ao salvar configurações do Notion.",
         variant: "destructive",
       });
     } finally {
@@ -159,7 +237,7 @@ export default function Integrations() {
       const { error } = await supabase
         .from("integration_settings")
         .update({ 
-          enabled: enabled,
+          is_active: enabled,
           updated_at: new Date().toISOString()
         })
         .eq("integration_name", "google_calendar");
@@ -178,6 +256,44 @@ export default function Integrations() {
       toast({
         title: "Erro",
         description: error.message || "Falha ao atualizar status.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleToggleNotionEnabled = async (enabled: boolean) => {
+    try {
+      if (!isNotionConfigured && enabled) {
+        toast({
+          title: "Configuração necessária",
+          description: "Por favor, configure o Client ID e Client Secret do Notion primeiro.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const { error } = await supabase
+        .from("integration_settings")
+        .update({ 
+          is_active: enabled,
+          updated_at: new Date().toISOString()
+        })
+        .eq("integration_name", "notion");
+
+      if (error) throw error;
+
+      setNotion(prev => ({ ...prev, enabled }));
+      toast({
+        title: enabled ? "✅ Notion Ativado" : "⚠️ Notion Desativado",
+        description: enabled 
+          ? "Utilizadores podem agora conectar suas contas Notion." 
+          : "Integração do Notion foi desativada.",
+      });
+    } catch (error: any) {
+      console.error("Error toggling Notion:", error);
+      toast({
+        title: "Erro",
+        description: error.message || "Falha ao atualizar status do Notion.",
         variant: "destructive",
       });
     }
@@ -212,6 +328,40 @@ export default function Integrations() {
       toast({
         title: "Erro",
         description: error.message || "Falha ao limpar configurações.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleClearNotionConfig = async () => {
+    if (!confirm("Tem certeza que deseja limpar as configurações do Notion? Esta ação não pode ser desfeita.")) {
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from("integration_settings")
+        .delete()
+        .eq("integration_name", "notion");
+
+      if (error) throw error;
+
+      setNotion({
+        client_id: "",
+        client_secret: "",
+        enabled: false
+      });
+      setIsNotionConfigured(false);
+
+      toast({
+        title: "✅ Configuração Limpa",
+        description: "Configurações do Notion foram removidas com sucesso.",
+      });
+    } catch (error: any) {
+      console.error("Error clearing Notion config:", error);
+      toast({
+        title: "Erro",
+        description: error.message || "Falha ao limpar configurações do Notion.",
         variant: "destructive",
       });
     }
@@ -346,6 +496,110 @@ export default function Integrations() {
                   >
                     <ExternalLink className="mr-2 h-4 w-4" />
                     Google Cloud Console
+                  </a>
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Notion Integration */}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+              <div className="flex items-center gap-2">
+                <Settings className="h-5 w-5" />
+                <CardTitle>Notion</CardTitle>
+              </div>
+              {isNotionConfigured && (
+                <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
+                  <CheckCircle2 className="h-4 w-4" />
+                  Configurado
+                </div>
+              )}
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <CardDescription>
+                Configure as credenciais do Notion Developers para permitir a sincronização de Leads e Imóveis
+              </CardDescription>
+
+              <Alert>
+                <InfoIcon className="h-4 w-4" />
+                <AlertDescription>
+                  <p className="font-semibold mb-2">Importante</p>
+                  <p className="mb-2">Adicione esta URL de callback nas definições OAuth da sua integração no Notion:</p>
+                  <code className="block bg-muted p-2 rounded text-sm">
+                    {typeof window !== 'undefined' && `${window.location.origin}/api/notion/callback`}
+                  </code>
+                </AlertDescription>
+              </Alert>
+
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="notion-client-id">OAuth Client ID</Label>
+                  <Input
+                    id="notion-client-id"
+                    type="text"
+                    placeholder="Cole o Client ID da sua integração Notion"
+                    value={notion.client_id}
+                    onChange={(e) => setNotion(prev => ({ ...prev, client_id: e.target.value }))}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="notion-client-secret">OAuth Client Secret</Label>
+                  <Input
+                    id="notion-client-secret"
+                    type="password"
+                    placeholder="Cole o Client Secret (ex: secret_...)"
+                    value={notion.client_secret}
+                    onChange={(e) => setNotion(prev => ({ ...prev, client_secret: e.target.value }))}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div className="space-y-1">
+                    <Label htmlFor="notion-enabled">Ativar Integração</Label>
+                    <p className="text-sm text-muted-foreground">
+                      Permitir que utilizadores conectem suas contas do Notion
+                    </p>
+                  </div>
+                  <Switch
+                    id="notion-enabled"
+                    checked={notion.enabled}
+                    onCheckedChange={handleToggleNotionEnabled}
+                    disabled={!isNotionConfigured}
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <Button
+                  onClick={handleSaveNotion}
+                  disabled={saving}
+                >
+                  <Settings className="mr-2 h-4 w-4" />
+                  {saving ? "Salvando..." : "Salvar Configurações"}
+                </Button>
+
+                {isNotionConfigured && (
+                  <Button
+                    variant="destructive"
+                    onClick={handleClearNotionConfig}
+                  >
+                    Limpar Configuração
+                  </Button>
+                )}
+
+                <Button
+                  variant="outline"
+                  asChild
+                >
+                  <a
+                    href="https://www.notion.so/my-integrations"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <ExternalLink className="mr-2 h-4 w-4" />
+                    Notion Developers
                   </a>
                 </Button>
               </div>
