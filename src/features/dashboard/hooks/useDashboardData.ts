@@ -324,20 +324,20 @@ export function useDashboardData({ userRole, currentUserId, selectedAgentId, lea
       // Calculate actual acquisitions (seller leads strictly at angariação)
       const acquisitionsCount = leads.filter(l => isAcquisition(l)).length;
 
-      // Acquisitions for current year
-      const annualAcquisitionsCount = leads.filter(l => {
-        const createdDate = new Date(l.created_at || "");
-        const isThisYear = createdDate.getFullYear() === currentYear;
-        return isAcquisition(l) && isThisYear;
+      // Acquisitions for current year (Contado pelo número de imóveis angariados)
+      const annualAcquisitionsCount = properties.filter(p => {
+        const dateString = (p as any).acquisition_date || p.created_at || "";
+        const createdDate = new Date(dateString);
+        return createdDate.getFullYear() === currentYear;
       }).length;
 
-      // Acquisitions for current semester
-      const semesterAcquisitionsCount = leads.filter(l => {
-        const createdDate = new Date(l.created_at || "");
+      // Acquisitions for current semester (Contado pelo número de imóveis angariados)
+      const semesterAcquisitionsCount = properties.filter(p => {
+        const dateString = (p as any).acquisition_date || p.created_at || "";
+        const createdDate = new Date(dateString);
         const month = createdDate.getMonth() + 1;
         const semester = month <= 6 ? 1 : 2;
-        const isThisSemester = createdDate.getFullYear() === currentYear && semester === currentSemester;
-        return isAcquisition(l) && isThisSemester;
+        return createdDate.getFullYear() === currentYear && semester === currentSemester;
       }).length;
 
       // Progress Metrics - Fixed with correct acquisitions count

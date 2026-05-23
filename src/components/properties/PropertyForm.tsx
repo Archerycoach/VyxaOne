@@ -76,7 +76,8 @@ export function PropertyForm({
     area: "",
     status: "available",
     lead_id: preselectedLeadId || "none",
-    contact_id: preselectedContactId || "none"
+    contact_id: preselectedContactId || "none",
+    acquisition_date: new Date().toISOString().split("T")[0]
   });
 
   const [generatingDesc, setGeneratingDesc] = useState(false);
@@ -162,7 +163,8 @@ export function PropertyForm({
         area: property.area ? property.area.toString() : "",
         status: property.status || "available",
         lead_id: property.lead_id || "none",
-        contact_id: property.contact_id || "none"
+        contact_id: property.contact_id || "none",
+        acquisition_date: (property as any).acquisition_date ? new Date((property as any).acquisition_date).toISOString().split("T")[0] : new Date(property.created_at).toISOString().split("T")[0]
       });
     } else {
       resetForm();
@@ -185,7 +187,8 @@ export function PropertyForm({
       area: "",
       status: "available",
       lead_id: preselectedLeadId || "none",
-      contact_id: preselectedContactId || "none"
+      contact_id: preselectedContactId || "none",
+      acquisition_date: new Date().toISOString().split("T")[0]
     });
   };
 
@@ -220,6 +223,7 @@ export function PropertyForm({
         status: formData.status as "available" | "reserved" | "sold" | "rented" | "off_market",
         lead_id: formData.lead_id && formData.lead_id !== "none" ? formData.lead_id : null,
         contact_id: formData.contact_id && formData.contact_id !== "none" ? formData.contact_id : null,
+        acquisition_date: formData.acquisition_date ? new Date(formData.acquisition_date).toISOString() : null,
         user_id: user.id
       };
 
@@ -357,7 +361,19 @@ export function PropertyForm({
                 </SelectContent>
               </Select>
             </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="acquisition_date">Data de Angariação</Label>
+              <Input
+                id="acquisition_date"
+                type="date"
+                value={formData.acquisition_date}
+                onChange={(e) => setFormData({ ...formData, acquisition_date: e.target.value })}
+              />
+            </div>
+          </div>
 
+          <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="contact_id">Contacto Associado (opcional)</Label>
               <Select

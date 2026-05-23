@@ -29,19 +29,22 @@ import {
   X,
   CheckSquare,
   Clock,
-  Bot
+  Bot,
+  Plus
 } from "lucide-react";
 import { getLeadById } from "@/services/leadsService";
 import { getInteractionsByLead } from "@/services/interactionsService";
 import { getNotesByLead } from "@/services/notesService";
 import { getEventsByLead } from "@/services/calendarService";
 import { getTasksByLead } from "@/services/tasksService";
+import { getPropertiesByLead } from "@/services/propertiesService";
 import type { LeadWithContacts } from "@/services/leadsService";
 import type { InteractionWithDetails } from "@/services/interactionsService";
 import type { LeadNote } from "@/services/notesService";
-import type { CalendarEvent, Task } from "@/types";
+import type { CalendarEvent, Task, Property } from "@/types";
 import { QuickContactDialog } from "./QuickContactDialog";
 import { ContactAlertRequestsPanel } from "@/features/contacts/components/ContactAlertRequestsPanel";
+import { PropertyForm } from "@/components/properties/PropertyForm";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
@@ -61,8 +64,11 @@ export function LeadDetailsDialog({
   const [notes, setNotes] = useState<LeadNote[]>([]);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [properties, setProperties] = useState<Property[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [quickContactOpen, setQuickContactOpen] = useState(false);
+  const [propertyFormOpen, setPropertyFormOpen] = useState(false);
+  const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
   const [drafting, setDrafting] = useState<string | null>(null);
   const [generatedDraft, setGeneratedDraft] = useState<{text: string, channel: 'whatsapp'|'email'} | null>(null);
   const { toast } = useToast();
@@ -88,12 +94,13 @@ export function LeadDetailsDialog({
         console.log("[LeadDetailsDialog] Fetching data for lead:", leadId);
         
         // Fetch all data in parallel
-        const [leadData, interactionsData, notesData, eventsData, tasksData] = await Promise.all([
+        const [leadData, interactionsData, notesData, eventsData, tasksData, propertiesData] = await Promise.all([
           getLeadById(leadId),
           getInteractionsByLead(leadId),
           getNotesByLead(leadId),
           getEventsByLead(leadId),
           getTasksByLead(leadId),
+          getPropertiesByLead(leadId),
         ]);
 
         console.log("[LeadDetailsDialog] Data fetched successfully:", { 
@@ -107,6 +114,7 @@ export function LeadDetailsDialog({
         setInteractions(interactionsData);
         setNotes(notesData);
         setEvents(eventsData);
+        setProperties(propertiesData);
         
         // Map database tasks to frontend Task type
         const mappedTasks = tasksData.map((t: any) => ({
@@ -131,6 +139,7 @@ export function LeadDetailsDialog({
         setLead(null);
         setInteractions([]);
         setNotes([]);
+        setProperties([]);
       } finally {
         setIsLoading(false);
         fetchingRef.current = false;
@@ -151,6 +160,7 @@ export function LeadDetailsDialog({
         setNotes([]);
         setEvents([]);
         setTasks([]);
+        setProperties([]);
         currentLeadIdRef.current = null;
       }, 150);
       
@@ -264,8 +274,11 @@ export function LeadDetailsDialog({
           </div>
         ) : lead ? (
           <Tabs defaultValue="info" className="w-full">
-            <TabsList className="grid w-full grid-cols-4">
+            <TabsList className="grid w-full grid-cols-5 h-auto">
               <TabsTrigger value="info">Informações</TabsTrigger>
+              {(lead.lead_type === "seller" || lead.lead_type === "both") && (
+                <TabsTrigger value="properties">Imóveis ({properties.length})</TabsTrigger>
+              )}
               <TabsTrigger value="interactions">
                 Interações ({interactions.length})
               </TabsTrigger>
@@ -462,6 +475,52 @@ export function LeadDetailsDialog({
               )}
             </TabsContent>
 
+            {(lead.lead_type === "seller" || lead.lead_type === "both") && (
+              <TabsContent value="properties" className="space-y-4 mt-4">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-medium">Carteira de Imóveis</h3>
+                  <Button size="sm" onClick={() => { setSelectedProperty(null); setPropertyFormOpen(true); }}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Adicionar Imóvel
+                  </Button>
+                </div>
+                
+                {properties.length === 0 ? (
+                  <div className="text-center py-12 text-gray-500 bg-gray-50 rounded-lg border border-dashed">
+                    <Home className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                    <p>Ainda não há imóveis associados a este proprietário</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {properties.map(prop => (
+                      <Card key={prop.id} className="cursor-pointer hover:border-indigo-300 transition-colors" onClick={() => { setSelectedProperty(prop); setPropertyFormOpen(true); }}>
+                        <CardContent className="p-4">
+                          <div className="flex justify-between items-start mb-2">
+                            <h4 className="font-semibold truncate pr-2">{prop.title}</h4>
+                            <Badge variant={prop.status === 'available' ? 'default' : 'secondary'}>
+                              {prop.status === 'available' ? 'Disponível' : 
+                               prop.status === 'sold' ? 'Vendido' : 
+                               prop.status === 'reserved' ? 'Reservado' : 
+                               prop.status === 'rented' ? 'Arrendado' : 'Fora do Mercado'}
+                            </Badge>
+                          </div>
+                          <p className="text-sm text-gray-500 mb-2 capitalize">{prop.city || 'Sem cidade'} • {
+                            prop.property_type === 'apartment' ? 'Apartamento' :
+                            prop.property_type === 'house' ? 'Moradia' :
+                            prop.property_type === 'land' ? 'Terreno' :
+                            prop.property_type === 'commercial' ? 'Comercial' : 'Outro'
+                          }</p>
+                          <p className="font-medium text-indigo-700">
+                            {prop.price ? formatCurrency(prop.price) : "Preço sob consulta"}
+                          </p>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </TabsContent>
+            )}
+
             <TabsContent value="interactions" className="space-y-4 mt-4">
               {interactions.length === 0 ? (
                 <div className="text-center py-12 text-gray-500">
@@ -622,6 +681,18 @@ export function LeadDetailsDialog({
                 getLeadById(leadId).then(setLead);
               }
             }}
+          />
+        )}
+
+        {propertyFormOpen && lead && (
+          <PropertyForm
+            property={selectedProperty}
+            open={propertyFormOpen}
+            onOpenChange={setPropertyFormOpen}
+            onSuccess={() => {
+              if (leadId) getPropertiesByLead(leadId).then(setProperties);
+            }}
+            preselectedLeadId={leadId}
           />
         )}
       </DialogContent>

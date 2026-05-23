@@ -24,7 +24,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     .eq('integration_name', 'notion')
     .maybeSingle();
 
-  const settings = (configData?.settings as any) || {};
+  const settings = (configData?.settings as Record<string, any>) || {};
 
   if (error || !settings.client_id || !settings.client_secret) {
     return res.status(500).json({ 

@@ -57,7 +57,7 @@ export default function Integrations() {
       if (gcError) throw gcError;
 
       if (gcData) {
-        const settings = (gcData.settings as any) || {};
+        const settings = (gcData.settings as Record<string, any>) || {};
         setGoogleCalendar({
           client_id: settings.client_id || "",
           client_secret: settings.client_secret || "",
@@ -76,7 +76,7 @@ export default function Integrations() {
       if (notionError) throw notionError;
 
       if (notionData) {
-        const settings = (notionData.settings as any) || {};
+        const settings = (notionData.settings as Record<string, any>) || {};
         setNotion({
           client_id: settings.client_id || "",
           client_secret: settings.client_secret || "",
@@ -110,23 +110,17 @@ export default function Integrations() {
 
       setSaving(true);
 
-      const settings: GoogleCalendarSettings = {
-        client_id: googleCalendar.client_id,
-        client_secret: googleCalendar.client_secret,
-        redirect_uri: `${window.location.origin}/api/google-calendar/callback`
-      };
-
       const { error } = await supabase
         .from("integration_settings")
         .upsert({
           integration_name: "google_calendar",
-          is_active: googleCalendar.enabled,
           settings: {
             client_id: googleCalendar.client_id.trim(),
             client_secret: googleCalendar.client_secret.trim(),
             redirect_uri: `${window.location.origin}/api/google-calendar/callback`.trim(),
             scopes: ["https://www.googleapis.com/auth/calendar"]
           },
+          is_active: googleCalendar.enabled,
           updated_at: new Date().toISOString()
         }, {
           onConflict: "integration_name"
@@ -170,12 +164,12 @@ export default function Integrations() {
         .from("integration_settings")
         .upsert({
           integration_name: "notion",
-          is_active: notion.enabled,
           settings: {
             client_id: notion.client_id.trim(),
             client_secret: notion.client_secret.trim(),
             redirect_uri: `${window.location.origin}/api/notion/callback`.trim()
           },
+          is_active: notion.enabled,
           updated_at: new Date().toISOString()
         }, {
           onConflict: "integration_name"
@@ -452,7 +446,6 @@ export default function Integrations() {
                     id="gc-enabled"
                     checked={googleCalendar.enabled}
                     onCheckedChange={handleToggleGoogleEnabled}
-                    disabled={!isGoogleConfigured}
                   />
                 </div>
               </div>
@@ -566,7 +559,6 @@ export default function Integrations() {
                     id="notion-enabled"
                     checked={notion.enabled}
                     onCheckedChange={handleToggleNotionEnabled}
-                    disabled={!isNotionConfigured}
                   />
                 </div>
               </div>
