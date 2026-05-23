@@ -30,12 +30,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(200).json({ status: "skipped", reason: "notion_not_connected" });
     }
 
-    // 2. Check if user has mapped the leads database
+    // 2. Fetch User's Notion Mapping for Leads
     const { data: mapping } = await supabaseAdmin
       .from("notion_mappings")
-      .select("notion_database_id, sync_enabled")
+      .select("*")
       .eq("user_id", userId)
-      .eq("vyxa_entity", "leads")
+      .eq("entity_type", "leads")
       .maybeSingle();
 
     if (!mapping?.notion_database_id || !mapping.sync_enabled) {

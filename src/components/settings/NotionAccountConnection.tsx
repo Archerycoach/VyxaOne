@@ -50,7 +50,7 @@ export function NotionAccountConnection() {
       if (error) throw error;
       
       if (data && data.length > 0) {
-        const leadsMapping = data.find((m: any) => m.vyxa_entity === 'leads');
+        const leadsMapping = data.find((m: any) => m.entity_type === 'leads');
         if (leadsMapping) {
           setLeadsDbId(leadsMapping.notion_database_id);
         }
@@ -179,7 +179,7 @@ export function NotionAccountConnection() {
         .from('notion_mappings')
         .select('id')
         .eq('user_id', session.user.id)
-        .eq('vyxa_entity', 'leads')
+        .eq('entity_type', 'leads')
         .maybeSingle();
 
       if (existing) {
@@ -195,7 +195,7 @@ export function NotionAccountConnection() {
           .from('notion_mappings')
           .insert({
             user_id: session.user.id,
-            vyxa_entity: 'leads',
+            entity_type: 'leads',
             notion_database_id: leadsDbId,
             sync_enabled: true
           });
