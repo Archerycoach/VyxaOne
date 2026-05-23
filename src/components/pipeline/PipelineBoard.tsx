@@ -7,6 +7,7 @@ import {
   PointerSensor,
   useSensor,
   useSensors,
+  closestCorners,
 } from "@dnd-kit/core";
 import { PipelineColumn } from "./PipelineColumn";
 import { LeadCard } from "./LeadCard";
@@ -108,7 +109,12 @@ export function PipelineBoard({ leads, onLeadMove, onLeadClick, onLeadDelete, is
   }
 
   return (
-    <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+    <DndContext 
+      sensors={sensors} 
+      collisionDetection={closestCorners}
+      onDragStart={handleDragStart} 
+      onDragEnd={handleDragEnd}
+    >
       <div className="flex gap-4 pb-4 overflow-x-auto h-[calc(100vh-240px)]">
         {stages.map((stage, index) => (
           <div key={stage.id} className="min-w-[320px] max-w-[320px] flex-shrink-0">

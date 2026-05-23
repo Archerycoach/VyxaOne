@@ -149,15 +149,11 @@ export function LeadCard({ lead, onClick, onDelete, onConvertSuccess }: LeadCard
     }
   };
 
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: lead.id,
   });
 
-  const style = transform
-    ? {
-        transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
-      }
-    : undefined;
+  const style = isDragging ? { opacity: 0.5 } : undefined;
 
   const handleMenuItemClick = (action: () => void) => {
     setDropdownOpen(false);
@@ -371,7 +367,7 @@ export function LeadCard({ lead, onClick, onDelete, onConvertSuccess }: LeadCard
         {...listeners}
         {...attributes}
         className={`relative p-6 hover:shadow-lg transition-shadow cursor-grab ${
-          isDragging ? "opacity-50" : ""
+          isDragging ? "opacity-50 ring-2 ring-blue-500" : ""
         }`}
       >
         {/* Header with Actions - Top Right */}

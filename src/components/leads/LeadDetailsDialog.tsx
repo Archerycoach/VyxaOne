@@ -667,36 +667,36 @@ export function LeadDetailsDialog({
             <p>Não foi possível carregar os detalhes do lead</p>
           </div>
         )}
-
-        {lead && (
-          <QuickContactDialog
-            leadId={lead.id}
-            leadName={lead.name}
-            open={quickContactOpen}
-            onOpenChange={setQuickContactOpen}
-            onSuccess={() => {
-              // Refresh interactions and lead info
-              if (leadId) {
-                getInteractionsByLead(leadId).then(setInteractions);
-                getLeadById(leadId).then(setLead);
-              }
-            }}
-          />
-        )}
-
-        {propertyFormOpen && lead && (
-          <PropertyForm
-            property={selectedProperty}
-            open={propertyFormOpen}
-            onOpenChange={setPropertyFormOpen}
-            onSuccess={() => {
-              if (leadId) getPropertiesByLead(leadId).then(setProperties);
-            }}
-            preselectedLeadId={leadId}
-          />
-        )}
       </DialogContent>
     </Dialog>
+
+    {lead && (
+      <QuickContactDialog
+        leadId={lead.id}
+        leadName={lead.name}
+        open={quickContactOpen}
+        onOpenChange={setQuickContactOpen}
+        onSuccess={() => {
+          // Refresh interactions and lead info
+          if (leadId) {
+            getInteractionsByLead(leadId).then(setInteractions);
+            getLeadById(leadId).then(setLead);
+          }
+        }}
+      />
+    )}
+
+    {propertyFormOpen && lead && (
+      <PropertyForm
+        property={selectedProperty}
+        open={propertyFormOpen}
+        onOpenChange={setPropertyFormOpen}
+        onSuccess={() => {
+          if (leadId) getPropertiesByLead(leadId).then(setProperties);
+        }}
+        preselectedLeadId={leadId}
+      />
+    )}
 
     {/* Modal de Revisão do Rascunho */}
     <Dialog open={!!generatedDraft} onOpenChange={(open) => !open && setGeneratedDraft(null)}>
