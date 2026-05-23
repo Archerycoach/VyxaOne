@@ -57,7 +57,7 @@ export default function Integrations() {
       if (gcError) throw gcError;
 
       if (gcData) {
-        const settings = (gcData.settings as Record<string, any>) || {};
+        const settings = (gcData.settings as any) || {};
         setGoogleCalendar({
           client_id: settings.client_id || "",
           client_secret: settings.client_secret || "",
@@ -76,7 +76,7 @@ export default function Integrations() {
       if (notionError) throw notionError;
 
       if (notionData) {
-        const settings = (notionData.settings as Record<string, any>) || {};
+        const settings = (notionData.settings as any) || {};
         setNotion({
           client_id: settings.client_id || "",
           client_secret: settings.client_secret || "",

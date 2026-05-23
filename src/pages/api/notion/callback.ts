@@ -37,7 +37,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       .eq('integration_name', 'notion')
       .maybeSingle();
 
-    const settings = (configData?.settings as Record<string, any>) || {};
+    const settings = (configData?.settings as any) || {};
 
     if (settingsError || !settings.client_id || !settings.client_secret) {
       console.error("Missing Notion configuration in database");
