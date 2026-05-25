@@ -24,6 +24,7 @@ import { getAllContacts, type Contact } from "@/services/contactsService";
 import { getCurrentUser } from "@/services/authService";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
+import { RichTextEditor } from "@/components/ui/RichTextEditor";
 
 export default function BulkMessages() {
   const router = useRouter();
@@ -285,6 +286,14 @@ export default function BulkMessages() {
               .replace(/\{email\}/g, recipient.email || "")
               .replace(/\{telefone\}/g, recipient.phone || "");
 
+            // Se for email, a mensagem já vem em formato HTML do RichTextEditor
+            const htmlContent = messageType === "email" ? personalizedMessage : personalizedMessage.replace(/\n/g, "<br>");
+            
+            // Para a versão texto, tentamos remover as tags HTML básicas se vier do editor
+            const textContent = messageType === "email" 
+              ? personalizedMessage.replace(/<[^>]*>?/gm, '') 
+              : personalizedMessage;
+
             const response = await fetch("/api/smtp/send", {
               method: "POST",
               headers: {
@@ -294,8 +303,8 @@ export default function BulkMessages() {
               body: JSON.stringify({
                 to: recipient.email,
                 subject: personalizedSubject,
-                html: personalizedMessage.replace(/\n/g, "<br>"),
-                text: personalizedMessage,
+                html: htmlContent,
+                text: textContent,
               }),
             });
 
@@ -533,16 +542,15 @@ export default function BulkMessages() {
 
                       <div className="space-y-2">
                         <Label htmlFor="email-message">Mensagem *</Label>
-                        <Textarea
-                          id="email-message"
-                          placeholder="Escreva a sua mensagem aqui..."
-                          value={message}
-                          onChange={(e) => setMessage(e.target.value)}
-                          rows={12}
-                          className="font-mono text-sm"
-                        />
-                        <p className="text-xs text-gray-500">
-                          Pode usar variáveis: {"{nome}"}, {"{email}"}, {"{telefone}"}
+                        <div className="border rounded-md overflow-hidden">
+                          <RichTextEditor
+                            value={message}
+                            onChange={setMessage}
+                            placeholder="Escreva a sua mensagem aqui..."
+                          />
+                        </div>
+                        <p className="text-xs text-gray-500 pt-1">
+                          Pode usar variáveis: {"{nome}"}, {"{email}"}, {"{telefone}"}. O editor suporta imagens até 1MB.
                         </p>
                       </div>
                     </TabsContent>
