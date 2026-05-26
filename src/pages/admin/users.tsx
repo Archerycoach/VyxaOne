@@ -25,7 +25,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { Search, UserPlus, Trash2, Edit, Mail, Phone } from "lucide-react";
+import { Search, UserPlus, Trash2, Edit, Mail, Phone, RefreshCw } from "lucide-react";
 import { getAllUsers, createUser, deleteUser, updateUserRole, getTeamLeads, assignAgentToTeamLead } from "@/services/adminService";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
@@ -52,6 +52,7 @@ export default function UsersManagement() {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<any>(null); // Changed to any to support joined fields
+  const [isProcessingRelogin, setIsProcessingRelogin] = useState(false);
   const { toast } = useToast();
 
   const [newUser, setNewUser] = useState({
@@ -273,6 +274,35 @@ export default function UsersManagement() {
     }
   };
 
+  const handleForceRelogin = async (userId?: string) => {
+    setIsProcessingRelogin(true);
+    try {
+      const response = await fetch("/api/admin/force-relogin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, all: !userId })
+      });
+      
+      if (!response.ok) throw new Error("Erro ao forçar re-login");
+      
+      toast({
+        title: "Sucesso",
+        description: userId 
+          ? "Pedido de re-login ativado para este utilizador." 
+          : "Pedido de re-login geral ativado com sucesso.",
+      });
+    } catch (error) {
+      console.error(error);
+      toast({
+        title: "Erro",
+        description: "Não foi possível processar o pedido.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsProcessingRelogin(false);
+    }
+  };
+
   const getRoleBadge = (role: string) => {
     const variants: Record<string, "default" | "secondary" | "destructive"> = {
       admin: "destructive",
@@ -305,10 +335,16 @@ export default function UsersManagement() {
                 Gerir utilizadores e permissões do sistema
               </p>
             </div>
-            <Button onClick={() => setIsCreateDialogOpen(true)}>
-              <UserPlus className="w-4 h-4 mr-2" />
-              Novo Utilizador
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => handleForceRelogin()} disabled={isProcessingRelogin}>
+                <RefreshCw className={`w-4 h-4 mr-2 ${isProcessingRelogin ? "animate-spin" : ""}`} />
+                Forçar Re-login Geral
+              </Button>
+              <Button onClick={() => setIsCreateDialogOpen(true)}>
+                <UserPlus className="w-4 h-4 mr-2" />
+                Novo Utilizador
+              </Button>
+            </div>
           </div>
 
           <div className="flex items-center space-x-2">
@@ -357,6 +393,15 @@ export default function UsersManagement() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Forçar Re-login"
+                          onClick={() => handleForceRelogin(user.id)}
+                          disabled={isProcessingRelogin}
+                        >
+                          <RefreshCw className="w-4 h-4 text-blue-500" />
+                        </Button>
                         <Button
                           variant="ghost"
                           size="sm"

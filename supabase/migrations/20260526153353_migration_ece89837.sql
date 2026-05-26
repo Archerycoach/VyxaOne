@@ -1,0 +1,1 @@
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS needs_relogin BOOLEAN DEFAULT false;
