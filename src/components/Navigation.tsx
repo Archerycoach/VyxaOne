@@ -31,6 +31,12 @@ import {
   ListTodo,
   ChevronDown,
   ChevronRight,
+  CalendarDays,
+  Contact2,
+  PieChart,
+  Home,
+  GitMerge,
+  BrainCircuit,
 } from "lucide-react";
 
 interface NavItem {
@@ -86,6 +92,7 @@ export function Navigation() {
     { icon: Building2, label: "Empreendimentos", path: "/developments" },
     { icon: Users, label: "Contactos", path: "/contacts" },
     { icon: Calendar, label: "Agenda", path: "/calendar" },
+    { icon: Sparkles, label: "Idealista", path: "/idealista" },
     
     // Performance Group
     { 

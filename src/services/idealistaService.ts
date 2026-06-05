@@ -1,14 +1,16 @@
 import { supabase } from "@/integrations/supabase/client";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 interface IdealistaSearchParams {
   propertyType?: string;
+  subType?: string;
   operation?: string;
   locationId?: string;
   minPrice?: number;
   maxPrice?: number;
   minSize?: number;
   maxSize?: number;
-  bedrooms?: number;
+  bedrooms?: string | number;
   center?: string;
   distance?: number;
   numPage?: number;
@@ -80,19 +82,48 @@ interface IdealistaSearchResponse {
  * Pesquisa imóveis no Idealista através da API do RapidAPI
  */
 export async function searchIdealistaProperties(
-  params: IdealistaSearchParams
+  params: IdealistaSearchParams,
+  explicitUserId?: string
 ): Promise<IdealistaProperty[]> {
   try {
-    // Obter a chave da API das configurações do utilizador
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error("Utilizador não autenticado");
+    let userId = explicitUserId;
+    
+    // Fallback to client session if no explicit ID provided
+    if (!userId) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Utilizador não autenticado");
+      userId = user.id;
+    }
 
-    const { data: apiKeyData } = await supabase
-      .from("user_settings" as any)
-      .select("value")
-      .eq("user_id", user.id)
-      .eq("key", "idealista_rapidapi_key")
-      .maybeSingle();
+    // Try normal client first
+    let apiKeyData;
+    let apiKeyError;
+    
+    // If we have an explicit ID (usually coming from API route), we might need admin client
+    // because server-side Supabase client without cookies loses auth context
+    if (explicitUserId) {
+      const { data, error } = await supabaseAdmin
+        .from("user_settings" as any)
+        .select("value")
+        .eq("user_id", userId)
+        .eq("key", "idealista_rapidapi_key")
+        .maybeSingle();
+      apiKeyData = data;
+      apiKeyError = error;
+    } else {
+      const { data, error } = await supabase
+        .from("user_settings" as any)
+        .select("value")
+        .eq("user_id", userId)
+        .eq("key", "idealista_rapidapi_key")
+        .maybeSingle();
+      apiKeyData = data;
+      apiKeyError = error;
+    }
+
+    if (apiKeyError) {
+      console.error("Error fetching API key:", apiKeyError);
+    }
 
     const apiKeySetting = apiKeyData as any;
 
@@ -105,6 +136,7 @@ export async function searchIdealistaProperties(
     // Construir a query string
     const queryParams = new URLSearchParams();
     if (params.propertyType) queryParams.append("propertyType", params.propertyType);
+    if (params.subType === 'chalet') queryParams.append("chalet", "true");
     if (params.operation) queryParams.append("operation", params.operation);
     if (params.locationId) queryParams.append("locationId", params.locationId);
     if (params.minPrice) queryParams.append("minPrice", params.minPrice.toString());

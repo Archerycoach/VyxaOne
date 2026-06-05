@@ -61,17 +61,12 @@ export default async function handler(
       return res.status(404).json({ error: "Lead não encontrada" });
     }
 
-    // Converter dados da lead em parâmetros de pesquisa
-    const searchParams = leadToIdealistaParams(lead);
-
-    // Pesquisar no Idealista
-    const properties = await searchIdealistaProperties(searchParams);
-
-    return res.status(200).json({ 
-      success: true, 
-      properties,
-      searchParams // Para debug
-    });
+    const searchParams = leadToIdealistaParams(lead as any);
+    
+    // Pass the userId explicitly so the service can use supabaseAdmin if needed
+    const properties = await searchIdealistaProperties(searchParams, user.id);
+    
+    return res.status(200).json({ properties });
 
   } catch (error: any) {
     console.error("[Idealista Search] Erro:", error);
