@@ -28,6 +28,7 @@ export default function IdealistaPage() {
     minPrice: "",
     maxPrice: "",
     bedrooms: "any",
+    agencyName: "",
   });
 
   const handleSearch = async (e: React.FormEvent) => {
@@ -56,7 +57,8 @@ export default function IdealistaPage() {
             minPrice: searchParams.minPrice ? Number(searchParams.minPrice) : undefined,
             maxPrice: searchParams.maxPrice ? Number(searchParams.maxPrice) : undefined,
             bedrooms: searchParams.bedrooms !== "any" ? searchParams.bedrooms : undefined,
-            maxItems: 20
+            maxItems: 20,
+            agencyName: searchParams.agencyName
           }
         })
       });
@@ -136,6 +138,14 @@ export default function IdealistaPage() {
                     placeholder="Ex: Benfica, Campanhã..." 
                     value={searchParams.freguesia}
                     onChange={(e) => setSearchParams({...searchParams, freguesia: e.target.value})}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Agência (Opcional)</Label>
+                  <Input 
+                    placeholder="Ex: Remax, Century 21..." 
+                    value={searchParams.agencyName}
+                    onChange={(e) => setSearchParams({...searchParams, agencyName: e.target.value})}
                   />
                 </div>
                 <div className="space-y-2">

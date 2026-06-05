@@ -15,6 +15,7 @@ interface IdealistaSearchParams {
   distance?: number;
   numPage?: number;
   maxItems?: number;
+  agencyName?: string;
 }
 
 export interface IdealistaProperty {
@@ -130,21 +131,64 @@ export async function searchIdealistaProperties(
 
     const rapidApiKey = apiKeySetting.value as string;
 
+    // 1. Resolver locationId a partir de texto (center) usando o endpoint auto-complete
+    let resolvedLocationId = params.locationId;
+
+    if (!resolvedLocationId && params.center && params.center.trim() !== "") {
+      try {
+        const autoResponse = await fetch(
+          `https://idealista2.p.rapidapi.com/auto-complete?prefix=${encodeURIComponent(params.center.trim())}`,
+          {
+            method: "GET",
+            headers: {
+              "X-RapidAPI-Key": rapidApiKey,
+              "X-RapidAPI-Host": "idealista2.p.rapidapi.com",
+            },
+          }
+        );
+
+        if (autoResponse.ok) {
+          const autoText = await autoResponse.text();
+          const autoData = JSON.parse(autoText);
+          
+          // O formato varia consoante a versão do RapidAPI, vamos cobrir os formatos mais comuns
+          const locations = autoData.locations || autoData.elementList || (Array.isArray(autoData) ? autoData : []);
+          
+          if (locations && locations.length > 0 && locations[0].locationId) {
+            resolvedLocationId = locations[0].locationId;
+          } else {
+            console.warn("Auto-complete não encontrou locationId para:", params.center);
+          }
+        }
+      } catch (autoErr) {
+        console.error("Erro no auto-complete:", autoErr);
+      }
+    }
+
     // Construir a query string
     const queryParams = new URLSearchParams();
+    
+    // Parâmetros obrigatórios e principais
+    if (params.operation) queryParams.append("operation", params.operation);
+    if (resolvedLocationId) {
+      queryParams.append("locationId", resolvedLocationId);
+    } else {
+      // Falha se não houver locationId, pois é obrigatório na API do Idealista
+      throw new Error(`Não foi possível encontrar a localização no Idealista para "${params.center || 'Localização vazia'}". Tente ser mais específico (ex: "Benfica, Lisboa").`);
+    }
+
+    // Parâmetros opcionais
     if (params.propertyType) queryParams.append("propertyType", params.propertyType);
     if (params.subType === 'chalet') queryParams.append("chalet", "true");
-    if (params.operation) queryParams.append("operation", params.operation);
-    if (params.locationId) queryParams.append("locationId", params.locationId);
     if (params.minPrice) queryParams.append("minPrice", params.minPrice.toString());
     if (params.maxPrice) queryParams.append("maxPrice", params.maxPrice.toString());
     if (params.minSize) queryParams.append("minSize", params.minSize.toString());
     if (params.maxSize) queryParams.append("maxSize", params.maxSize.toString());
-    if (params.bedrooms) queryParams.append("bedrooms", params.bedrooms.toString());
-    if (params.center) queryParams.append("center", params.center);
-    if (params.distance) queryParams.append("distance", params.distance.toString());
+    if (params.bedrooms && params.bedrooms !== "any") queryParams.append("bedrooms", params.bedrooms.toString());
+    
+    // Paginação
     queryParams.append("numPage", (params.numPage || 1).toString());
-    queryParams.append("maxItems", (params.maxItems || 3).toString());
+    queryParams.append("maxItems", (params.maxItems || 20).toString());
 
     const response = await fetch(
       `https://idealista2.p.rapidapi.com/properties/list?${queryParams.toString()}`,
@@ -169,7 +213,30 @@ export async function searchIdealistaProperties(
 
     try {
       const data: IdealistaSearchResponse = JSON.parse(responseText);
-      return data.elementList || [];
+      let results = data.elementList || [];
+      
+      // Aplicar filtro de agência localmente, visto que a API não o suporta nativamente
+      if (params.agencyName && params.agencyName.trim() !== "") {
+        const agencyLower = params.agencyName.toLowerCase().trim();
+        results = results.filter((p: any) => {
+          const desc = p.description?.toLowerCase() || '';
+          const title = p.suggestedTexts?.title?.toLowerCase() || '';
+          const subtitle = p.suggestedTexts?.subtitle?.toLowerCase() || '';
+          // Alguns endpoints do idealista expõem a agência nestes campos (se disponíveis na resposta nativa)
+          const clientName = p.clientName?.toLowerCase() || '';
+          const logoName = p.logoUrl?.toLowerCase() || '';
+          const externalRef = p.externalReference?.toLowerCase() || '';
+          
+          return desc.includes(agencyLower) || 
+                 title.includes(agencyLower) || 
+                 subtitle.includes(agencyLower) ||
+                 clientName.includes(agencyLower) ||
+                 logoName.includes(agencyLower) ||
+                 externalRef.includes(agencyLower);
+        });
+      }
+
+      return results;
     } catch (e) {
       console.error("Erro ao fazer parse do JSON do Idealista. Resposta bruta:", responseText);
       throw new Error("A API do Idealista devolveu uma resposta inválida ou vazia.");

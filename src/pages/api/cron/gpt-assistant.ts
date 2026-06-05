@@ -188,11 +188,23 @@ ${JSON.stringify(contextData, null, 2)}`;
           .eq("key", "idealista_auto_suggest_enabled")
           .maybeSingle();
 
+        const { data: agencyFilterCheck } = await supabase
+          .from("system_settings" as any)
+          .select("value")
+          .eq("key", "idealista_agency_filter")
+          .maybeSingle();
+
         if (apiKeyCheck?.value && autoSuggestCheck?.value === "true") {
           if (fullLeadsData && fullLeadsData.length > 0) {
             for (const lead of fullLeadsData) {
               try {
                 const searchParams = leadToIdealistaParams(lead);
+                
+                // Aplicar o filtro de exclusividade de agência global
+                if (agencyFilterCheck?.value && agencyFilterCheck.value.trim() !== "") {
+                  searchParams.agencyName = agencyFilterCheck.value.trim();
+                }
+
                 // Passar o user.id explicitamente porque no cron job não há sessão de cliente!
                 const properties = await searchIdealistaProperties(searchParams, user.id);
 

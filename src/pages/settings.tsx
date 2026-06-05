@@ -50,6 +50,7 @@ export default function Settings() {
   const [idealistaApiKeyInput, setIdealistaApiKeyInput] = useState("");
   const [idealistaKeyConfigured, setIdealistaKeyConfigured] = useState(false);
   const [idealistaAutoSuggest, setIdealistaAutoSuggest] = useState(false);
+  const [idealistaAgencyFilter, setIdealistaAgencyFilter] = useState("");
   const [isLoadingIdealistaKey, setIsLoadingIdealistaKey] = useState(true);
   const [loading, setLoading] = useState(false);
   const [notifications, setNotifications] = useState({
@@ -106,8 +107,17 @@ export default function Settings() {
         .eq("key", "idealista_auto_suggest_enabled")
         .maybeSingle();
 
+      const { data: agencyData } = await supabase
+        .from("system_settings" as any)
+        .select("value")
+        .eq("key", "idealista_agency_filter")
+        .maybeSingle();
+
       const autoSetting = autoData as any;
       setIdealistaAutoSuggest(autoSetting?.value === "true");
+      
+      const agencySetting = agencyData as any;
+      setIdealistaAgencyFilter(agencySetting?.value || "");
 
       const setting = data as any;
 
@@ -194,6 +204,30 @@ export default function Settings() {
       toast({
         title: "Erro",
         description: "Não foi possível guardar a preferência global.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleSaveAgencyFilter = async (agency: string) => {
+    try {
+      await supabase
+        .from("system_settings" as any)
+        .upsert({
+          key: "idealista_agency_filter",
+          value: agency.trim(),
+          updated_at: new Date().toISOString()
+        }, { onConflict: "key" });
+
+      toast({
+        title: "Filtro de Agência guardado",
+        description: "As sugestões automáticas vão agora filtrar por esta agência.",
+      });
+    } catch (error) {
+      console.error("Erro ao guardar filtro de agência:", error);
+      toast({
+        title: "Erro",
+        description: "Não foi possível guardar o filtro de agência.",
         variant: "destructive",
       });
     }
@@ -951,6 +985,29 @@ export default function Settings() {
                     </div>
                     {!idealistaKeyConfigured && (
                       <p className="text-xs text-amber-600 mt-1">Configure a chave da API abaixo primeiro para poder ativar esta funcionalidade.</p>
+                    )}
+
+                    {idealistaAutoSuggest && (
+                      <div className="mt-4 p-4 border border-purple-100 bg-white rounded-md space-y-2">
+                        <Label htmlFor="agencyFilter">Exclusividade de Agência (Opcional)</Label>
+                        <div className="flex gap-2">
+                          <Input 
+                            id="agencyFilter"
+                            placeholder="Ex: Remax, Century 21..." 
+                            value={idealistaAgencyFilter}
+                            onChange={(e) => setIdealistaAgencyFilter(e.target.value)}
+                          />
+                          <Button 
+                            variant="secondary"
+                            onClick={() => handleSaveAgencyFilter(idealistaAgencyFilter)}
+                          >
+                            Guardar
+                          </Button>
+                        </div>
+                        <p className="text-xs text-gray-500">
+                          Se preenchido, a IA apenas sugerirá às leads novos imóveis desta imobiliária.
+                        </p>
+                      </div>
                     )}
                   </div>
                 </div>
