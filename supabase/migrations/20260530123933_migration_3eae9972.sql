@@ -1,0 +1,1 @@
+ALTER TABLE public.gpt_api_keys ADD COLUMN IF NOT EXISTS property_matcher_enabled BOOLEAN DEFAULT false;

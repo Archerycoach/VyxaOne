@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import nodemailer from "nodemailer";
 import { createClient } from "@supabase/supabase-js";
 import { dedupeCalendarEventCandidates } from "@/lib/calendarEventDedup";
+import { searchIdealistaProperties, leadToIdealistaParams, formatPropertyForEmail, formatPropertyLinksNote } from "@/services/idealistaService";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -89,10 +90,18 @@ export default async function handler(
           .eq("user_id", user.id)
           .gte("start_time", new Date().toISOString());
 
+        // NOVO: Buscar detalhes completos das leads para matching de imóveis
+        const { data: fullLeadsData } = await supabase
+          .from("leads")
+          .select("id, name, lead_type, property_type, budget_min, budget_max, size_min, size_max, bedrooms, location, status")
+          .in("id", leadIds)
+          .eq("status", "new");
+
         const contextData = {
           leads,
           recent_notes: notes || [],
-          existing_upcoming_events: upcomingEvents || []
+          existing_upcoming_events: upcomingEvents || [],
+          new_leads_for_property_matching: fullLeadsData || []
         };
 
         const now = new Date();
@@ -162,6 +171,59 @@ ${JSON.stringify(contextData, null, 2)}`;
         
         let gptMessage = gptResponse.html_summary || "<p>Resumo processado.</p>";
         const newEvents = gptResponse.new_events || [];
+
+        // NOVIDADE: Sugestões automáticas de imóveis do Idealista para leads novas
+        let propertySuggestionsHtml = "";
+        if (fullLeadsData && fullLeadsData.length > 0) {
+          for (const lead of fullLeadsData) {
+            try {
+              // Verificar se há chave da API configurada
+              const { data: apiKeyCheck } = await supabase
+                .from("user_settings" as any)
+                .select("value")
+                .eq("user_id", user.id)
+                .eq("key", "idealista_rapidapi_key")
+                .maybeSingle();
+
+              if (!apiKeyCheck?.value) {
+                console.log(`[Idealista] Chave API não configurada para ${user.email}`);
+                break; // Sair do loop se não houver chave
+              }
+
+              const searchParams = leadToIdealistaParams(lead);
+              const properties = await searchIdealistaProperties(searchParams);
+
+              if (properties && properties.length > 0) {
+                propertySuggestionsHtml += `
+                  <div style="margin-top: 25px; padding: 20px; background-color: #fefce8; border-left: 4px solid #eab308; border-radius: 4px;">
+                    <strong style="color: #854d0e; font-size: 16px;">🏠 Sugestões de Imóveis para ${lead.name}</strong>
+                    <p style="color: #713f12; margin: 10px 0; font-size: 14px;">
+                      Encontrámos ${properties.length} imóvel(is) no Idealista que corresponde(m) ao perfil desta lead:
+                    </p>
+                    ${properties.map(p => formatPropertyForEmail(p)).join("")}
+                  </div>
+                `;
+
+                // Adicionar os links como nota privada na lead
+                const linksNote = formatPropertyLinksNote(properties);
+                await supabase.from("lead_notes").insert({
+                  lead_id: lead.id,
+                  note: linksNote,
+                  user_id: user.id,
+                  created_at: new Date().toISOString()
+                });
+              }
+            } catch (propertyError) {
+              console.error(`[Idealista] Erro ao pesquisar imóveis para lead ${lead.id}:`, propertyError);
+              // Continuar mesmo com erro, não bloquear o email
+            }
+          }
+        }
+
+        // Adicionar sugestões de imóveis ao email
+        if (propertySuggestionsHtml) {
+          gptMessage += propertySuggestionsHtml;
+        }
 
         // NOVIDADE: O GPT atualiza a "temperatura" da lead (hot, warm, cold) com base no seu contexto
         const leadTemperatures = gptResponse.lead_temperatures || [];

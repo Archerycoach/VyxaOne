@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import {
   Dialog,
   DialogContent,
@@ -40,6 +40,7 @@ export function QuickTaskDialog({
   onSuccess,
 }: QuickTaskDialogProps) {
   const [loading, setLoading] = useState(false);
+  const submittingRef = useRef(false);
   
   // Default to today at 9:00 AM
   const getDefaultDateTime = () => {
@@ -58,8 +59,16 @@ export function QuickTaskDialog({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    e.stopPropagation();
+    
+    // Prevent duplicate submissions
+    if (submittingRef.current || loading) {
+      console.log("[QuickTaskDialog] Submission blocked - already in progress");
+      return;
+    }
     
     try {
+      submittingRef.current = true;
       setLoading(true);
 
       const { data: { user } } = await supabase.auth.getUser();
@@ -106,6 +115,10 @@ export function QuickTaskDialog({
       });
     } finally {
       setLoading(false);
+      // Small delay before allowing next submission
+      setTimeout(() => {
+        submittingRef.current = false;
+      }, 1000);
     }
   };
 

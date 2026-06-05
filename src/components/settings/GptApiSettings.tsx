@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Bot, Copy, Key, Plus, Trash2, Check, Clock, Play, Loader2 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 
 interface GptApiKey {
   id: string;
@@ -13,6 +14,7 @@ interface GptApiKey {
   created_at: string;
   last_used_at: string | null;
   is_active: boolean;
+  property_matcher_enabled?: boolean;
 }
 
 const formatDate = (dateString: string) => {
@@ -31,6 +33,7 @@ export function GptApiSettings() {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [propertyMatcherEnabled, setPropertyMatcherEnabled] = useState(false);
 
   useEffect(() => {
     loadKeys();
@@ -46,6 +49,10 @@ export function GptApiSettings() {
 
       if (error) throw error;
       setKeys(data || []);
+      
+      if (data && data.length > 0) {
+        setPropertyMatcherEnabled(data[0].property_matcher_enabled || false);
+      }
     } catch (error) {
       console.error("Error loading API keys:", error);
       toast({
@@ -94,6 +101,34 @@ export function GptApiSettings() {
       });
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const togglePropertyMatcher = async (checked: boolean) => {
+    try {
+      setPropertyMatcherEnabled(checked); // Optimistic UI update
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { error } = await supabase
+        .from("gpt_api_keys" as any)
+        .update({ property_matcher_enabled: checked })
+        .eq("user_id", user.id);
+
+      if (error) throw error;
+
+      toast({
+        title: checked ? "Resposta Automática Ativada" : "Resposta Automática Desativada",
+        description: checked ? "O Agente irá responder automaticamente a novos compradores." : "O Agente não enviará emails automáticos.",
+      });
+    } catch (error) {
+      console.error("Error toggling property matcher:", error);
+      setPropertyMatcherEnabled(!checked); // Rollback
+      toast({
+        title: "Erro",
+        description: "Não foi possível alterar a configuração.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -178,6 +213,18 @@ export function GptApiSettings() {
           <Button variant="outline" onClick={() => window.location.href = "/ai-agent"}>
             Ir para Agente IA
           </Button>
+        </div>
+
+        <div className="bg-white border rounded-lg p-4 mb-6 flex items-center justify-between">
+          <div>
+            <h4 className="text-sm font-semibold text-gray-900">Resposta Automática a Compradores</h4>
+            <p className="text-sm text-gray-500 mt-1">O Agente IA pesquisa nos Portais e responde automaticamente a novas leads de compradores com 3 sugestões de imóveis.</p>
+          </div>
+          <Switch 
+            checked={propertyMatcherEnabled} 
+            onCheckedChange={togglePropertyMatcher} 
+            disabled={keys.length === 0}
+          />
         </div>
 
         <div className="space-y-4">

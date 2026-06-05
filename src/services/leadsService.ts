@@ -188,6 +188,21 @@ export const createLead = async (lead: LeadInsert): Promise<Lead> => {
     // Don't throw - workflow errors shouldn't block lead creation
   }
 
+  // ✅ Trigger AI Property Matcher automatically for buyers
+  if (data.lead_type === "buyer" || data.lead_type === "both") {
+    try {
+      const profile = await getCurrentUserProfile();
+      fetch("/api/gpt/agents/property-matcher", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ leadId: data.id, userId: data.user_id || profile.id })
+      }).catch(e => console.error("[leadsService] Async AI Property Matcher failed:", e));
+      console.log("[leadsService] Triggered AI Property Matcher for new lead");
+    } catch (aiError) {
+      console.error("[leadsService] Error triggering AI Property Matcher:", aiError);
+    }
+  }
+
   // ✅ Trigger Notion Sync automatically and report back
   try {
     const profile = await getCurrentUserProfile();

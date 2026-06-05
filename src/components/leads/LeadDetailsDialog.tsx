@@ -43,6 +43,7 @@ import type { InteractionWithDetails } from "@/services/interactionsService";
 import type { LeadNote } from "@/services/notesService";
 import type { CalendarEvent, Task, Property } from "@/types";
 import { QuickContactDialog } from "./QuickContactDialog";
+import { IdealistaSearchDialog } from "./IdealistaSearchDialog";
 import { ContactAlertRequestsPanel } from "@/features/contacts/components/ContactAlertRequestsPanel";
 import { PropertyForm } from "@/components/properties/PropertyForm";
 import { supabase } from "@/integrations/supabase/client";
@@ -67,6 +68,7 @@ export function LeadDetailsDialog({
   const [properties, setProperties] = useState<Property[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [quickContactOpen, setQuickContactOpen] = useState(false);
+  const [idealistaSearchOpen, setIdealistaSearchOpen] = useState(false);
   const [propertyFormOpen, setPropertyFormOpen] = useState(false);
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
   const [drafting, setDrafting] = useState<string | null>(null);
@@ -247,6 +249,12 @@ export function LeadDetailsDialog({
             <div className="flex items-center gap-2">
               {lead && (
                 <>
+                  {lead.lead_type === "buyer" && (
+                    <Button size="sm" variant="outline" onClick={() => setIdealistaSearchOpen(true)} className="text-purple-700 border-purple-200 hover:bg-purple-50">
+                      <Home className="h-4 w-4 mr-2" />
+                      Procurar Imóveis
+                    </Button>
+                  )}
                   <Button size="sm" variant="outline" onClick={() => handleGenerateDraft('whatsapp')} disabled={drafting === 'whatsapp'} className="text-green-700 border-green-200 hover:bg-green-50">
                     {drafting === 'whatsapp' ? <div className="animate-spin h-4 w-4 mr-2 border-2 border-green-700 border-t-transparent rounded-full" /> : <Bot className="h-4 w-4 mr-2" />}
                     WhatsApp IA
@@ -683,6 +691,15 @@ export function LeadDetailsDialog({
             getLeadById(leadId).then(setLead);
           }
         }}
+      />
+    )}
+
+    {lead && lead.lead_type === "buyer" && (
+      <IdealistaSearchDialog
+        leadId={lead.id}
+        leadName={lead.name}
+        open={idealistaSearchOpen}
+        onOpenChange={setIdealistaSearchOpen}
       />
     )}
 

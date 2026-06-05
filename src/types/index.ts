@@ -457,3 +457,33 @@ export interface PortalIntegration {
   leadsImported: number;
   propertiesPublished: number;
 }
+
+// External Search Portals (Inbound/MLS API Integrations)
+export interface ExternalPropertyPortal {
+  id: string;
+  user_id: string;
+  provider_name: string;
+  is_enabled: boolean;
+  api_key?: string | null;
+  api_secret?: string | null;
+  base_url?: string | null;
+  custom_settings?: Record<string, any>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ExternalProperty {
+  id: string;             // ID in the external portal
+  provider: string;       // e.g., 'casayes', 'idealista'
+  title: string;
+  description?: string;
+  price: number;
+  location: string;
+  typology?: string;
+  url: string;            // Direct link to the listing
+  main_image?: string;
+  features?: string[];
+  bedrooms?: number;
+  bathrooms?: number;
+  area?: number;
+}

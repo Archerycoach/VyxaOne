@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
-import { ArrowLeft, User, Lock, Building2, Bell, Save, Loader2, Mail, Facebook, Calendar, Bot, Activity, Zap, FileText } from "lucide-react";
+import { ArrowLeft, User, Lock, Building2, Bell, Save, Loader2, Mail, Facebook, Calendar, Bot, Activity, Zap, FileText, Globe, Sparkles, CheckCircle2, XCircle } from "lucide-react";
 import { getUserProfile, updateUserProfile } from "@/services/profileService";
 import { updatePassword, getSession, signOut } from "@/services/authService";
 import { useToast } from "@/hooks/use-toast";
@@ -17,6 +17,7 @@ import { MetaFormsManagement } from "@/components/settings/MetaFormsManagement";
 import { GptApiSettings } from "@/components/settings/GptApiSettings";
 import { WorkflowsManagement } from "@/components/settings/WorkflowsManagement";
 import { NotionAccountConnection } from "@/components/settings/NotionAccountConnection";
+import { ExternalPortalsSettings } from "@/components/settings/ExternalPortalsSettings";
 
 const REQUIRED_GOOGLE_SCOPES = [
   "openid",
@@ -40,8 +41,16 @@ function buildGoogleScopeString(scopes: unknown) {
 export default function Settings() {
   const router = useRouter();
   const { toast } = useToast();
-  const [loading, setLoading] = useState(false);
+  const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
+  const [settings, setSettings] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [idealistaApiKey, setIdealistaApiKey] = useState("");
+  const [idealistaApiKeyInput, setIdealistaApiKeyInput] = useState("");
+  const [idealistaKeyConfigured, setIdealistaKeyConfigured] = useState(false);
+  const [isLoadingIdealistaKey, setIsLoadingIdealistaKey] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [notifications, setNotifications] = useState({
     email: true,
     push: false,
@@ -76,9 +85,88 @@ export default function Settings() {
   const [isTestingGoogle, setIsTestingGoogle] = useState(false);
 
   useEffect(() => {
-    checkAuthentication();
-    checkGoogleStatus();
+    checkAuth();
+    loadIdealistaKey();
   }, []);
+
+  const loadIdealistaKey = async () => {
+    try {
+      setIsLoadingIdealistaKey(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data } = await supabase
+        .from("user_settings" as any)
+        .select("value")
+        .eq("user_id", user.id)
+        .eq("key", "idealista_rapidapi_key")
+        .maybeSingle();
+
+      const setting = data as any;
+
+      if (setting?.value) {
+        setIdealistaKeyConfigured(true);
+        // Mostrar parte da chave com asteriscos para confirmação
+        const key = setting.value as string;
+        setIdealistaApiKey(key.substring(0, 8) + "..." + key.substring(key.length - 4));
+        setIdealistaApiKeyInput(""); // Limpar o input
+      } else {
+        setIdealistaKeyConfigured(false);
+        setIdealistaApiKey("");
+        setIdealistaApiKeyInput("");
+      }
+    } catch (error) {
+      console.error("Erro ao carregar chave do Idealista:", error);
+    } finally {
+      setIsLoadingIdealistaKey(false);
+    }
+  };
+
+  const handleSaveIdealistaKey = async (newKey: string) => {
+    if (!newKey || newKey.trim() === "") {
+      toast({
+        title: "Erro",
+        description: "Por favor, insira uma chave válida.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setIsSaving(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error("Utilizador não autenticado");
+      }
+
+      await supabase
+        .from("user_settings" as any)
+        .upsert({
+          user_id: user.id,
+          key: "idealista_rapidapi_key",
+          value: newKey.trim(),
+          updated_at: new Date().toISOString()
+        }, { onConflict: "user_id,key" });
+
+      toast({
+        title: "Chave da API guardada",
+        description: "A integração do Idealista está agora ativa.",
+      });
+
+      setIdealistaApiKeyInput(""); // Limpar o input após guardar
+      // Recarregar o estado
+      await loadIdealistaKey();
+    } catch (error) {
+      console.error("Erro ao guardar chave:", error);
+      toast({
+        title: "Erro",
+        description: "Não foi possível guardar a chave da API.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   const checkGoogleStatus = async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -115,7 +203,7 @@ export default function Settings() {
     }
   };
 
-  const checkAuthentication = async () => {
+  const checkAuth = async () => {
     try {
       setAuthChecking(true);
       const session = await getSession();
@@ -311,9 +399,17 @@ export default function Settings() {
               <Zap className="h-4 w-4 mr-2" />
               Automação
             </TabsTrigger>
+            <TabsTrigger value="portals">
+              <Globe className="h-4 w-4 mr-2" />
+              Portais
+            </TabsTrigger>
             <TabsTrigger value="notion">
               <FileText className="h-4 w-4 mr-2" />
               Notion
+            </TabsTrigger>
+            <TabsTrigger value="idealista">
+              <Sparkles className="h-4 w-4 mr-2" />
+              Idealista
             </TabsTrigger>
           </TabsList>
 
@@ -750,8 +846,130 @@ export default function Settings() {
             </div>
           </TabsContent>
 
+          <TabsContent value="portals" className="space-y-6">
+            <ExternalPortalsSettings />
+          </TabsContent>
+
           <TabsContent value="notion" className="space-y-6">
             <NotionAccountConnection />
+          </TabsContent>
+
+          <TabsContent value="idealista" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="h-6 w-6 text-purple-600" />
+                    Integração Idealista (RapidAPI)
+                  </div>
+                </CardTitle>
+                <CardDescription>
+                  Configure a chave da API do Idealista (via RapidAPI) para o agente IA poder pesquisar e sugerir imóveis automaticamente às suas leads.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {/* Estado da Configuração */}
+                <div className={`flex items-center space-x-3 p-4 rounded-lg border ${
+                  isLoadingIdealistaKey ? "bg-gray-50 border-gray-200" :
+                  idealistaKeyConfigured ? "bg-green-50 border-green-200" : "bg-amber-50 border-amber-200"
+                }`}>
+                  {isLoadingIdealistaKey ? (
+                    <>
+                      <div className="animate-spin rounded-full h-5 w-5 border-2 border-purple-600 border-t-transparent" />
+                      <span className="text-sm text-gray-600">A verificar configuração...</span>
+                    </>
+                  ) : idealistaKeyConfigured ? (
+                    <>
+                      <CheckCircle2 className="h-5 w-5 text-green-600" />
+                      <div>
+                        <p className="text-sm font-medium text-green-900">API Configurada</p>
+                        <p className="text-xs text-green-700">A integração do Idealista está ativa</p>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <XCircle className="h-5 w-5 text-amber-600" />
+                      <div>
+                        <p className="text-sm font-medium text-amber-900">API Não Configurada</p>
+                        <p className="text-xs text-amber-700">Configure a chave abaixo para ativar</p>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                <div className="flex items-start space-x-4 rounded-lg border p-4 bg-purple-50 border-purple-200">
+                  <Sparkles className="h-6 w-6 text-purple-600 mt-1" />
+                  <div className="flex-1 space-y-1">
+                    <p className="text-sm font-medium leading-none text-purple-900">
+                      Sugestões Automáticas de Imóveis
+                    </p>
+                    <p className="text-sm text-purple-800">
+                      Quando uma lead entra no sistema, o agente IA pesquisa automaticamente até 3 imóveis no Idealista que correspondam ao perfil da lead e inclui-os na resposta automática (sem links visíveis). Os links são guardados como nota privada na lead.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="idealistaApiKey">
+                      Chave da API (RapidAPI)
+                      {idealistaKeyConfigured && (
+                        <span className="ml-2 text-xs text-green-600 font-normal">✓ Configurada</span>
+                      )}
+                    </Label>
+                    <div className="flex gap-2">
+                      <Input
+                        id="idealistaApiKey"
+                        type="text"
+                        placeholder={idealistaKeyConfigured 
+                          ? `Chave atual: ${idealistaApiKey} (insira nova para substituir)` 
+                          : "Insira a sua chave da API do RapidAPI"
+                        }
+                        value={idealistaApiKeyInput}
+                        onChange={(e) => setIdealistaApiKeyInput(e.target.value)}
+                        disabled={isLoadingIdealistaKey}
+                      />
+                      <Button 
+                        onClick={() => handleSaveIdealistaKey(idealistaApiKeyInput)}
+                        disabled={isSaving || isLoadingIdealistaKey || !idealistaApiKeyInput.trim()}
+                      >
+                        {isSaving ? (
+                          <>
+                            <div className="animate-spin rounded-full h-4 w-4 mr-2 border-2 border-white border-t-transparent" />
+                            A guardar...
+                          </>
+                        ) : (
+                          idealistaKeyConfigured ? "Atualizar" : "Guardar"
+                        )}
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Obtenha a sua chave em{" "}
+                      <a
+                        href="https://rapidapi.com/apidojo/api/idealista2"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-purple-600 hover:underline"
+                      >
+                        RapidAPI - Idealista2
+                      </a>
+                      {idealistaKeyConfigured && " • Chave atual parcialmente visível no placeholder por segurança"}
+                    </p>
+                  </div>
+
+                  <div className="space-y-2 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                    <h4 className="text-sm font-semibold text-blue-900">ℹ️ Como funciona:</h4>
+                    <ul className="text-xs text-blue-800 space-y-1 list-disc list-inside">
+                      <li>Quando uma lead entra, o agente IA analisa o perfil (tipologia, localização, orçamento)</li>
+                      <li>Pesquisa automaticamente até 3 imóveis no Idealista que correspondam</li>
+                      <li>Inclui os detalhes dos imóveis na resposta automática (sem links)</li>
+                      <li>Adiciona os links como nota privada na lead para consulta do agente</li>
+                      <li>Também pode pesquisar manualmente dentro de cada lead através do botão "Procurar Imóveis"</li>
+                    </ul>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           </TabsContent>
         </Tabs>
 

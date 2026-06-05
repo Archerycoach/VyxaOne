@@ -378,6 +378,20 @@ export default async function handler(
             // Execute auto-responder workflows for new lead
             await executeAutoResponderWorkflows(integration.user_id, newLead);
 
+            // Trigger AI Property Matcher (Auto-responder with 3 real properties)
+            if (newLead.lead_type === 'buyer' || newLead.lead_type === 'both') {
+              try {
+                fetch(`${appUrl}/api/gpt/agents/property-matcher`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ leadId: newLead.id, userId: integration.user_id })
+                }).catch(e => console.error("Async AI Property Matcher failed:", e));
+                console.log("🤖 Triggered AI Property Matcher for new lead");
+              } catch (aiError) {
+                console.error("❌ Failed to trigger AI Property Matcher:", aiError);
+              }
+            }
+
             // Trigger Notion Sync for new lead
             try {
               await fetch(`${appUrl}/api/notion/sync-lead`, {
