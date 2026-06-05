@@ -174,48 +174,52 @@ ${JSON.stringify(contextData, null, 2)}`;
 
         // NOVIDADE: Sugestões automáticas de imóveis do Idealista para leads novas
         let propertySuggestionsHtml = "";
-        if (fullLeadsData && fullLeadsData.length > 0) {
-          for (const lead of fullLeadsData) {
-            try {
-              // Verificar se há chave da API configurada
-              const { data: apiKeyCheck } = await supabase
-                .from("user_settings" as any)
-                .select("value")
-                .eq("user_id", user.id)
-                .eq("key", "idealista_rapidapi_key")
-                .maybeSingle();
+        
+        // Verificar se há chave da API configurada GLOBALMENTE e se a funcionalidade está ativa
+        const { data: apiKeyCheck } = await supabase
+          .from("system_settings" as any)
+          .select("value")
+          .eq("key", "idealista_rapidapi_key")
+          .maybeSingle();
 
-              if (!apiKeyCheck?.value) {
-                console.log(`[Idealista] Chave API não configurada para ${user.email}`);
-                break; // Sair do loop se não houver chave
+        const { data: autoSuggestCheck } = await supabase
+          .from("system_settings" as any)
+          .select("value")
+          .eq("key", "idealista_auto_suggest_enabled")
+          .maybeSingle();
+
+        if (apiKeyCheck?.value && autoSuggestCheck?.value === "true") {
+          if (fullLeadsData && fullLeadsData.length > 0) {
+            for (const lead of fullLeadsData) {
+              try {
+                const searchParams = leadToIdealistaParams(lead);
+                // Passar o user.id explicitamente porque no cron job não há sessão de cliente!
+                const properties = await searchIdealistaProperties(searchParams, user.id);
+
+                if (properties && properties.length > 0) {
+                  propertySuggestionsHtml += `
+                    <div style="margin-top: 25px; padding: 20px; background-color: #fefce8; border-left: 4px solid #eab308; border-radius: 4px;">
+                      <strong style="color: #854d0e; font-size: 16px;">🏠 Sugestões de Imóveis para ${lead.name}</strong>
+                      <p style="color: #713f12; margin: 10px 0; font-size: 14px;">
+                        Encontrámos ${properties.length} imóvel(is) no Idealista que corresponde(m) ao perfil desta lead:
+                      </p>
+                      ${properties.map(p => formatPropertyForEmail(p)).join("")}
+                    </div>
+                  `;
+
+                  // Adicionar os links como nota privada na lead
+                  const linksNote = formatPropertyLinksNote(properties);
+                  await supabase.from("lead_notes").insert({
+                    lead_id: lead.id,
+                    note: linksNote,
+                    user_id: user.id,
+                    created_at: new Date().toISOString()
+                  });
+                }
+              } catch (propertyError) {
+                console.error(`[Idealista] Erro ao pesquisar imóveis para lead ${lead.id}:`, propertyError);
+                // Continuar mesmo com erro, não bloquear o email
               }
-
-              const searchParams = leadToIdealistaParams(lead);
-              const properties = await searchIdealistaProperties(searchParams);
-
-              if (properties && properties.length > 0) {
-                propertySuggestionsHtml += `
-                  <div style="margin-top: 25px; padding: 20px; background-color: #fefce8; border-left: 4px solid #eab308; border-radius: 4px;">
-                    <strong style="color: #854d0e; font-size: 16px;">🏠 Sugestões de Imóveis para ${lead.name}</strong>
-                    <p style="color: #713f12; margin: 10px 0; font-size: 14px;">
-                      Encontrámos ${properties.length} imóvel(is) no Idealista que corresponde(m) ao perfil desta lead:
-                    </p>
-                    ${properties.map(p => formatPropertyForEmail(p)).join("")}
-                  </div>
-                `;
-
-                // Adicionar os links como nota privada na lead
-                const linksNote = formatPropertyLinksNote(properties);
-                await supabase.from("lead_notes").insert({
-                  lead_id: lead.id,
-                  note: linksNote,
-                  user_id: user.id,
-                  created_at: new Date().toISOString()
-                });
-              }
-            } catch (propertyError) {
-              console.error(`[Idealista] Erro ao pesquisar imóveis para lead ${lead.id}:`, propertyError);
-              // Continuar mesmo com erro, não bloquear o email
             }
           }
         }

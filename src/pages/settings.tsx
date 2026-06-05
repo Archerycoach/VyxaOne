@@ -49,6 +49,7 @@ export default function Settings() {
   const [idealistaApiKey, setIdealistaApiKey] = useState("");
   const [idealistaApiKeyInput, setIdealistaApiKeyInput] = useState("");
   const [idealistaKeyConfigured, setIdealistaKeyConfigured] = useState(false);
+  const [idealistaAutoSuggest, setIdealistaAutoSuggest] = useState(false);
   const [isLoadingIdealistaKey, setIsLoadingIdealistaKey] = useState(true);
   const [loading, setLoading] = useState(false);
   const [notifications, setNotifications] = useState({
@@ -92,15 +93,21 @@ export default function Settings() {
   const loadIdealistaKey = async () => {
     try {
       setIsLoadingIdealistaKey(true);
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
+      
       const { data } = await supabase
-        .from("user_settings" as any)
+        .from("system_settings" as any)
         .select("value")
-        .eq("user_id", user.id)
         .eq("key", "idealista_rapidapi_key")
         .maybeSingle();
+
+      const { data: autoData } = await supabase
+        .from("system_settings" as any)
+        .select("value")
+        .eq("key", "idealista_auto_suggest_enabled")
+        .maybeSingle();
+
+      const autoSetting = autoData as any;
+      setIdealistaAutoSuggest(autoSetting?.value === "true");
 
       const setting = data as any;
 
@@ -134,37 +141,61 @@ export default function Settings() {
 
     try {
       setIsSaving(true);
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        throw new Error("Utilizador não autenticado");
-      }
-
+      
+      // Checking admin role is ideal here, but for now we'll allow save 
+      // if user has access to settings page
       await supabase
-        .from("user_settings" as any)
+        .from("system_settings" as any)
         .upsert({
-          user_id: user.id,
           key: "idealista_rapidapi_key",
           value: newKey.trim(),
           updated_at: new Date().toISOString()
-        }, { onConflict: "user_id,key" });
+        }, { onConflict: "key" });
 
       toast({
-        title: "Chave da API guardada",
-        description: "A integração do Idealista está agora ativa.",
+        title: "Chave da API Global guardada",
+        description: "A integração do Idealista está agora ativa para toda a equipa.",
       });
 
       setIdealistaApiKeyInput(""); // Limpar o input após guardar
       // Recarregar o estado
       await loadIdealistaKey();
     } catch (error) {
-      console.error("Erro ao guardar chave:", error);
+      console.error("Erro ao guardar chave global:", error);
       toast({
         title: "Erro",
-        description: "Não foi possível guardar a chave da API.",
+        description: "Não foi possível guardar a chave da API global.",
         variant: "destructive",
       });
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleToggleAutoSuggest = async (checked: boolean) => {
+    try {
+      setIdealistaAutoSuggest(checked);
+
+      await supabase
+        .from("system_settings" as any)
+        .upsert({
+          key: "idealista_auto_suggest_enabled",
+          value: checked ? "true" : "false",
+          updated_at: new Date().toISOString()
+        }, { onConflict: "key" });
+
+      toast({
+        title: "Preferência Global guardada",
+        description: checked ? "Sugestões automáticas ativadas para toda a agência." : "Sugestões automáticas desativadas.",
+      });
+    } catch (error) {
+      console.error("Erro ao guardar preferência:", error);
+      setIdealistaAutoSuggest(!checked);
+      toast({
+        title: "Erro",
+        description: "Não foi possível guardar a preferência global.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -860,11 +891,11 @@ export default function Settings() {
                 <CardTitle>
                   <div className="flex items-center gap-2">
                     <Sparkles className="h-6 w-6 text-purple-600" />
-                    Integração Idealista (RapidAPI)
+                    Integração Idealista (API Global da Equipa)
                   </div>
                 </CardTitle>
                 <CardDescription>
-                  Configure a chave da API do Idealista (via RapidAPI) para o agente IA poder pesquisar e sugerir imóveis automaticamente às suas leads.
+                  Configure a chave da API do Idealista (via RapidAPI). Esta configuração aplica-se globalmente a todos os membros da sua agência.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
@@ -906,6 +937,21 @@ export default function Settings() {
                     <p className="text-sm text-purple-800">
                       Quando uma lead entra no sistema, o agente IA pesquisa automaticamente até 3 imóveis no Idealista que correspondam ao perfil da lead e inclui-os na resposta automática (sem links visíveis). Os links são guardados como nota privada na lead.
                     </p>
+                    
+                    <div className="flex items-center space-x-2 mt-4 bg-white/60 p-3 rounded-md border border-purple-100">
+                      <Switch 
+                        id="idealista-auto-suggest" 
+                        checked={idealistaAutoSuggest}
+                        onCheckedChange={handleToggleAutoSuggest}
+                        disabled={!idealistaKeyConfigured}
+                      />
+                      <Label htmlFor="idealista-auto-suggest" className={`cursor-pointer font-medium ${!idealistaKeyConfigured ? 'text-gray-400' : 'text-purple-900'}`}>
+                        Ativar sugestões automáticas para novas leads
+                      </Label>
+                    </div>
+                    {!idealistaKeyConfigured && (
+                      <p className="text-xs text-amber-600 mt-1">Configure a chave da API abaixo primeiro para poder ativar esta funcionalidade.</p>
+                    )}
                   </div>
                 </div>
 

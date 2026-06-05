@@ -95,26 +95,23 @@ export async function searchIdealistaProperties(
       userId = user.id;
     }
 
-    // Try normal client first
-    let apiKeyData;
-    let apiKeyError;
-    
-    // If we have an explicit ID (usually coming from API route), we might need admin client
-    // because server-side Supabase client without cookies loses auth context
-    if (explicitUserId) {
+    // A chave agora é GLOBAL (system_settings) em vez de por utilizador
+    // Read from system_settings using admin client to ensure we can read it regardless of RLS
+    // Try normal client first (might be blocked by RLS if not admin)
+    const { data: regularData, error: regularError } = await supabase
+      .from("system_settings" as any)
+      .select("value")
+      .eq("key", "idealista_rapidapi_key")
+      .maybeSingle();
+      
+    let apiKeyData = regularData;
+    let apiKeyError = regularError;
+
+    // If regular read fails (RLS), try with admin client
+    if (!apiKeyData && explicitUserId) {
       const { data, error } = await supabaseAdmin
-        .from("user_settings" as any)
+        .from("system_settings" as any)
         .select("value")
-        .eq("user_id", userId)
-        .eq("key", "idealista_rapidapi_key")
-        .maybeSingle();
-      apiKeyData = data;
-      apiKeyError = error;
-    } else {
-      const { data, error } = await supabase
-        .from("user_settings" as any)
-        .select("value")
-        .eq("user_id", userId)
         .eq("key", "idealista_rapidapi_key")
         .maybeSingle();
       apiKeyData = data;
@@ -122,13 +119,13 @@ export async function searchIdealistaProperties(
     }
 
     if (apiKeyError) {
-      console.error("Error fetching API key:", apiKeyError);
+      console.error("Error fetching Global API key:", apiKeyError);
     }
 
     const apiKeySetting = apiKeyData as any;
 
     if (!apiKeySetting?.value) {
-      throw new Error("Chave da API do Idealista não configurada");
+      throw new Error("Chave Global da API do Idealista não configurada");
     }
 
     const rapidApiKey = apiKeySetting.value as string;
@@ -160,12 +157,23 @@ export async function searchIdealistaProperties(
       }
     );
 
+    const responseText = await response.text();
+
     if (!response.ok) {
-      throw new Error(`Erro da API do Idealista: ${response.status} ${response.statusText}`);
+      throw new Error(`Erro da API do Idealista: ${response.status} ${response.statusText}. Resposta: ${responseText.substring(0, 150)}`);
     }
 
-    const data: IdealistaSearchResponse = await response.json();
-    return data.elementList || [];
+    if (!responseText) {
+      return [];
+    }
+
+    try {
+      const data: IdealistaSearchResponse = JSON.parse(responseText);
+      return data.elementList || [];
+    } catch (e) {
+      console.error("Erro ao fazer parse do JSON do Idealista. Resposta bruta:", responseText);
+      throw new Error("A API do Idealista devolveu uma resposta inválida ou vazia.");
+    }
   } catch (error) {
     console.error("Erro ao pesquisar no Idealista:", error);
     throw error;
