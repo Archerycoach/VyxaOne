@@ -68,7 +68,12 @@ export default function IdealistaPage() {
       try {
         data = text ? JSON.parse(text) : {};
       } catch (e) {
-        throw new Error("Erro na comunicação com o servidor.");
+        // Se falhar o parse, significa que o servidor retornou HTML (ex: 504 Gateway Timeout ou 500 Server Error)
+        console.error("Resposta não-JSON do servidor:", text);
+        if (text.includes("504") || text.includes("Timeout")) {
+          throw new Error("A pesquisa demorou demasiado tempo. Tente ser mais específico na localização (ex: adicione a Freguesia).");
+        }
+        throw new Error("Erro na comunicação com o servidor. O serviço pode estar temporariamente indisponível.");
       }
 
       if (!response.ok) {

@@ -51,6 +51,8 @@ export default function Settings() {
   const [idealistaKeyConfigured, setIdealistaKeyConfigured] = useState(false);
   const [idealistaAutoSuggest, setIdealistaAutoSuggest] = useState(false);
   const [idealistaAgencyFilter, setIdealistaAgencyFilter] = useState("");
+  const [idealistaApiHost, setIdealistaApiHost] = useState("idealista2.p.rapidapi.com");
+  const [idealistaListEndpoint, setIdealistaListEndpoint] = useState("/properties/list");
   const [isLoadingIdealistaKey, setIsLoadingIdealistaKey] = useState(true);
   const [loading, setLoading] = useState(false);
   const [notifications, setNotifications] = useState({
@@ -113,11 +115,29 @@ export default function Settings() {
         .eq("key", "idealista_agency_filter")
         .maybeSingle();
 
+      const { data: hostData } = await supabase
+        .from("system_settings" as any)
+        .select("value")
+        .eq("key", "idealista_rapidapi_host")
+        .maybeSingle();
+
+      const { data: listEndpointData } = await supabase
+        .from("system_settings" as any)
+        .select("value")
+        .eq("key", "idealista_rapidapi_list_endpoint")
+        .maybeSingle();
+
       const autoSetting = autoData as any;
       setIdealistaAutoSuggest(autoSetting?.value === "true");
       
       const agencySetting = agencyData as any;
       setIdealistaAgencyFilter(agencySetting?.value || "");
+
+      const hostSetting = hostData as any;
+      setIdealistaApiHost(hostSetting?.value || "idealista2.p.rapidapi.com");
+
+      const listSetting = listEndpointData as any;
+      setIdealistaListEndpoint(listSetting?.value || "/properties/list");
 
       const setting = data as any;
 
@@ -175,6 +195,55 @@ export default function Settings() {
       toast({
         title: "Erro",
         description: "Não foi possível guardar a chave da API global.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleSaveIdealistaConfig = async () => {
+    try {
+      setIsSaving(true);
+      
+      if (idealistaApiKeyInput.trim()) {
+        await supabase
+          .from("system_settings" as any)
+          .upsert({
+            key: "idealista_rapidapi_key",
+            value: idealistaApiKeyInput.trim(),
+            updated_at: new Date().toISOString()
+          }, { onConflict: "key" });
+      }
+
+      await supabase
+        .from("system_settings" as any)
+        .upsert({
+          key: "idealista_rapidapi_host",
+          value: idealistaApiHost.trim() || "idealista2.p.rapidapi.com",
+          updated_at: new Date().toISOString()
+        }, { onConflict: "key" });
+
+      await supabase
+        .from("system_settings" as any)
+        .upsert({
+          key: "idealista_rapidapi_list_endpoint",
+          value: idealistaListEndpoint.trim().startsWith('/') ? idealistaListEndpoint.trim() : `/${idealistaListEndpoint.trim()}`,
+          updated_at: new Date().toISOString()
+        }, { onConflict: "key" });
+
+      toast({
+        title: "Configurações guardadas",
+        description: "As definições da API do Idealista foram atualizadas para toda a equipa.",
+      });
+
+      setIdealistaApiKeyInput(""); 
+      await loadIdealistaKey();
+    } catch (error) {
+      console.error("Erro ao guardar definições:", error);
+      toast({
+        title: "Erro",
+        description: "Não foi possível guardar as configurações.",
         variant: "destructive",
       });
     } finally {
@@ -1020,33 +1089,63 @@ export default function Settings() {
                         <span className="ml-2 text-xs text-green-600 font-normal">✓ Configurada</span>
                       )}
                     </Label>
-                    <div className="flex gap-2">
-                      <Input
-                        id="idealistaApiKey"
-                        type="text"
-                        placeholder={idealistaKeyConfigured 
-                          ? `Chave atual: ${idealistaApiKey} (insira nova para substituir)` 
-                          : "Insira a sua chave da API do RapidAPI"
-                        }
-                        value={idealistaApiKeyInput}
-                        onChange={(e) => setIdealistaApiKeyInput(e.target.value)}
-                        disabled={isLoadingIdealistaKey}
-                      />
-                      <Button 
-                        onClick={() => handleSaveIdealistaKey(idealistaApiKeyInput)}
-                        disabled={isSaving || isLoadingIdealistaKey || !idealistaApiKeyInput.trim()}
-                      >
-                        {isSaving ? (
-                          <>
-                            <div className="animate-spin rounded-full h-4 w-4 mr-2 border-2 border-white border-t-transparent" />
-                            A guardar...
-                          </>
-                        ) : (
-                          idealistaKeyConfigured ? "Atualizar" : "Guardar"
-                        )}
-                      </Button>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
+                    <Input
+                      id="idealistaApiKey"
+                      type="text"
+                      placeholder={idealistaKeyConfigured 
+                        ? `Chave atual: ${idealistaApiKey} (insira nova para substituir)` 
+                        : "Insira a sua chave da API do RapidAPI"
+                      }
+                      value={idealistaApiKeyInput}
+                      onChange={(e) => setIdealistaApiKeyInput(e.target.value)}
+                      disabled={isLoadingIdealistaKey}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="idealistaApiHost">
+                      Host da API (Opcional - Ex: idealista2.p.rapidapi.com)
+                    </Label>
+                    <Input
+                      id="idealistaApiHost"
+                      type="text"
+                      placeholder="idealista2.p.rapidapi.com"
+                      value={idealistaApiHost}
+                      onChange={(e) => setIdealistaApiHost(e.target.value)}
+                      disabled={isLoadingIdealistaKey}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="idealistaListEndpoint">
+                      Caminho de Pesquisa (Endpoint - Ex: /properties/list)
+                    </Label>
+                    <Input
+                      id="idealistaListEndpoint"
+                      type="text"
+                      placeholder="/properties/list"
+                      value={idealistaListEndpoint}
+                      onChange={(e) => setIdealistaListEndpoint(e.target.value)}
+                      disabled={isLoadingIdealistaKey}
+                    />
+                  </div>
+
+                  <div className="pt-2">
+                    <Button 
+                      onClick={handleSaveIdealistaConfig}
+                      disabled={isSaving || isLoadingIdealistaKey || (!idealistaKeyConfigured && !idealistaApiKeyInput.trim())}
+                      className="w-full sm:w-auto"
+                    >
+                      {isSaving ? (
+                        <>
+                          <div className="animate-spin rounded-full h-4 w-4 mr-2 border-2 border-white border-t-transparent" />
+                          A guardar...
+                        </>
+                      ) : (
+                        "Guardar Configurações API"
+                      )}
+                    </Button>
+                    <p className="text-xs text-muted-foreground mt-2">
                       Obtenha a sua chave em{" "}
                       <a
                         href="https://rapidapi.com/apidojo/api/idealista2"
@@ -1056,11 +1155,10 @@ export default function Settings() {
                       >
                         RapidAPI - Idealista2
                       </a>
-                      {idealistaKeyConfigured && " • Chave atual parcialmente visível no placeholder por segurança"}
                     </p>
                   </div>
 
-                  <div className="space-y-2 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                  <div className="space-y-2 p-4 bg-blue-50 rounded-lg border border-blue-200 mt-6">
                     <h4 className="text-sm font-semibold text-blue-900">ℹ️ Como funciona:</h4>
                     <ul className="text-xs text-blue-800 space-y-1 list-disc list-inside">
                       <li>Quando uma lead entra, o agente IA analisa o perfil (tipologia, localização, orçamento)</li>
