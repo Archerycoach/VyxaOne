@@ -62,7 +62,7 @@ export default async function handler(
     // Buscar leads pendentes do utilizador (expandido para 30 leads para incluir inícios de funil)
     const { data: leads } = await supabase
       .from("leads")
-      .select("id, name, status, last_contact_date, next_follow_up, lead_type")
+      .select("id, name, phone, email, status, last_contact_date, next_follow_up, lead_type, property_type, location_preference, budget_min, budget_max, size_min, size_max, bedrooms, bathrooms, source")
       .eq("assigned_to", user.id)
       .is("archived_at", null)
       .in("status", ["new", "contacted", "qualified", "proposal", "negotiation"])
