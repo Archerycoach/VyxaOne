@@ -30,7 +30,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       .select("id, name, phone, email, status, lead_type, next_follow_up, property_type, location_preference, budget_min, budget_max, size_min, size_max, bedrooms, bathrooms, source")
       .eq("assigned_to", user.id)
       .in("status", ["new", "contacted", "qualified"])
-      .limit(15);
+      .limit(100);
       
     const { data: events } = await supabase
       .from("calendar_events")
@@ -51,6 +51,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       content: `És um assistente imobiliário virtual integrado no CRM Vyxa. Estás a falar com o agente imobiliário ${profile?.full_name || "Utilizador"}.
 Usa os seguintes dados contextuais (Leads Ativas e Próximos Eventos) para responder se o utilizador perguntar sobre o seu trabalho:
 ${contextStr}
+
+INSTRUÇÕES IMPORTANTES DE PESQUISA:
+- O utilizador pode pedir listagens com base em tipologia (ex: T1, T2, T3). Em Portugal, T0 = 0 quartos (estúdio), T1 = 1 quarto (bedrooms: 1), T2 = 2 quartos (bedrooms: 2), etc.
+- Ao pesquisares nas leads fornecidas por um "T1", deves procurar onde o campo 'property_type' contém "T1" OU onde o campo 'bedrooms' é igual a 1.
+- Inclui sempre a informação relevante nas respostas (telefone, email, orçamento, etc).
 
 Sê profissional, conciso, e muito útil. Usa formatação em Markdown sempre que fizer sentido (listas, negritos).`
     };
