@@ -29,7 +29,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       .from("leads")
       .select("id, name, phone, email, status, lead_type, next_follow_up, property_type, location_preference, budget_min, budget_max, size_min, size_max, bedrooms, bathrooms, source")
       .eq("assigned_to", user.id)
-      .in("status", ["new", "contacted", "qualified"])
+      .is("archived_at", null)
+      .neq("status", "lost")
+      .neq("status", "won")
       .limit(100);
       
     const { data: events } = await supabase
@@ -53,9 +55,11 @@ Usa os seguintes dados contextuais (Leads Ativas e Próximos Eventos) para respo
 ${contextStr}
 
 INSTRUÇÕES IMPORTANTES DE PESQUISA:
+- A tua lista de active_leads contém os dados REAIS em formato JSON. LÊ-OS ATENTAMENTE antes de responder!
 - O utilizador pode pedir listagens com base em tipologia (ex: T1, T2, T3). Em Portugal, T0 = 0 quartos (estúdio), T1 = 1 quarto (bedrooms: 1), T2 = 2 quartos (bedrooms: 2), etc.
-- Ao pesquisares nas leads fornecidas por um "T1", deves procurar onde o campo 'property_type' contém "T1" OU onde o campo 'bedrooms' é igual a 1.
-- Inclui sempre a informação relevante nas respostas (telefone, email, orçamento, etc).
+- Ao pesquisares nas leads fornecidas por um "T1", DEVES OBRIGATORIAMENTE filtrar a array 'active_leads' procurando onde o campo 'bedrooms' é 1 ou "1" OU onde o campo 'property_type' contém "T1".
+- NUNCA digas que não existem leads sem antes teres a certeza que cruzaste a tipologia com o campo 'bedrooms' de todas as leads fornecidas.
+- Inclui sempre a informação relevante nas respostas (nome, estado, telefone, email, orçamento, etc).
 
 Sê profissional, conciso, e muito útil. Usa formatação em Markdown sempre que fizer sentido (listas, negritos).`
     };
