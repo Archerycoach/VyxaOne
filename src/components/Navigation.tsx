@@ -82,7 +82,18 @@ export function Navigation() {
 
   const navItems: NavItem[] = [
     // Admin (apenas para admins)
-    ...(isAdmin ? [{ icon: Shield, label: "Admin", path: "/admin/dashboard" }] : []),
+    ...(isAdmin
+      ? [
+          {
+            icon: Shield,
+            label: "Admin",
+            subItems: [
+              { icon: LayoutDashboard, label: "Dashboard Admin", path: "/admin/dashboard" },
+              { icon: Settings, label: "Integrações & Portais", path: "/admin/integrations" },
+            ],
+          },
+        ]
+      : []),
     
     // Main items
     { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
@@ -157,7 +168,15 @@ export function Navigation() {
                 <div key={item.label} className="flex flex-col space-y-1 pt-1">
                   <Button
                     variant="ghost"
-                    className={`w-full justify-between font-medium ${isActiveSub ? "text-blue-600 bg-blue-50/50" : "text-gray-700"}`}
+                    className={`w-full justify-between font-medium ${
+                      item.label === "Admin"
+                        ? isActiveSub
+                          ? "text-red-600 bg-red-50/60"
+                          : "text-red-600 hover:text-red-700 hover:bg-red-50"
+                        : isActiveSub
+                          ? "text-blue-600 bg-blue-50/50"
+                          : "text-gray-700"
+                    }`}
                     onClick={() => toggleGroup(item.label)}
                   >
                     <div className="flex items-center">
@@ -174,7 +193,15 @@ export function Navigation() {
                           <Button
                             key={sub.path}
                             variant={isSubActive ? "secondary" : "ghost"}
-                            className={`w-full justify-start h-8 text-sm ${isSubActive ? "font-medium text-blue-700" : "text-gray-500 hover:text-gray-900"}`}
+                            className={`w-full justify-start h-8 text-sm ${
+                              isSubActive
+                                ? item.label === "Admin"
+                                  ? "font-medium text-red-700 bg-red-50"
+                                  : "font-medium text-blue-700"
+                                : item.label === "Admin"
+                                  ? "text-red-500 hover:text-red-700 hover:bg-red-50"
+                                  : "text-gray-500 hover:text-gray-900"
+                            }`}
                             onClick={() => router.push(sub.path)}
                           >
                             <sub.icon className="h-3.5 w-3.5 mr-2" />

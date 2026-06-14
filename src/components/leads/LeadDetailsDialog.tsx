@@ -43,7 +43,8 @@ import type { InteractionWithDetails } from "@/services/interactionsService";
 import type { LeadNote } from "@/services/notesService";
 import type { CalendarEvent, Task, Property } from "@/types";
 import { QuickContactDialog } from "./QuickContactDialog";
-import { IdealistaSearchDialog } from "./IdealistaSearchDialog";
+import { LeadIdealistaPanel } from "./LeadIdealistaPanel";
+import { LeadRemaxPanel } from "./LeadRemaxPanel";
 import { ContactAlertRequestsPanel } from "@/features/contacts/components/ContactAlertRequestsPanel";
 import { PropertyForm } from "@/components/properties/PropertyForm";
 import { supabase } from "@/integrations/supabase/client";
@@ -68,7 +69,6 @@ export function LeadDetailsDialog({
   const [properties, setProperties] = useState<Property[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [quickContactOpen, setQuickContactOpen] = useState(false);
-  const [idealistaSearchOpen, setIdealistaSearchOpen] = useState(false);
   const [propertyFormOpen, setPropertyFormOpen] = useState(false);
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
   const [drafting, setDrafting] = useState<string | null>(null);
@@ -249,14 +249,8 @@ export function LeadDetailsDialog({
             <div className="flex items-center gap-2">
               {lead && (
                 <>
-                  {lead.lead_type === "buyer" && (
-                    <Button size="sm" variant="outline" onClick={() => setIdealistaSearchOpen(true)} className="text-purple-700 border-purple-200 hover:bg-purple-50">
-                      <Home className="h-4 w-4 mr-2" />
-                      Procurar Imóveis
-                    </Button>
-                  )}
-                  <Button size="sm" variant="outline" onClick={() => handleGenerateDraft('whatsapp')} disabled={drafting === 'whatsapp'} className="text-green-700 border-green-200 hover:bg-green-50">
-                    {drafting === 'whatsapp' ? <div className="animate-spin h-4 w-4 mr-2 border-2 border-green-700 border-t-transparent rounded-full" /> : <Bot className="h-4 w-4 mr-2" />}
+                  <Button size="sm" variant="outline" onClick={() => handleGenerateDraft("whatsapp")} disabled={drafting === "whatsapp"} className="text-green-700 border-green-200 hover:bg-green-50">
+                    {drafting === "whatsapp" ? <div className="animate-spin h-4 w-4 mr-2 border-2 border-green-700 border-t-transparent rounded-full" /> : <Bot className="h-4 w-4 mr-2" />}
                     WhatsApp IA
                   </Button>
                   <Button size="sm" variant="outline" onClick={() => setQuickContactOpen(true)}>
@@ -380,66 +374,71 @@ export function LeadDetailsDialog({
                 </Card>
               )}
 
-              {lead.lead_type === "buyer" && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Home className="h-5 w-5" />
-                      Preferências (Comprador)
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="flex items-center gap-2">
-                      <MapPin className="h-4 w-4 text-gray-400" />
-                      <div>
-                        <p className="text-sm text-gray-500">Localização</p>
-                        <p className="font-medium">{lead.location_preference || "-"}</p>
+              {(lead.lead_type === "buyer" || lead.lead_type === "both") && (
+                <>
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <Home className="h-5 w-5" />
+                        Preferências (Comprador)
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="flex items-center gap-2">
+                        <MapPin className="h-4 w-4 text-gray-400" />
+                        <div>
+                          <p className="text-sm text-gray-500">Localização</p>
+                          <p className="font-medium">{lead.location_preference || "-"}</p>
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Home className="h-4 w-4 text-gray-400" />
-                      <div>
-                        <p className="text-sm text-gray-500">Tipo de Imóvel</p>
-                        <p className="font-medium">{lead.property_type || "-"}</p>
+                      <div className="flex items-center gap-2">
+                        <Home className="h-4 w-4 text-gray-400" />
+                        <div>
+                          <p className="text-sm text-gray-500">Tipo de Imóvel</p>
+                          <p className="font-medium">{lead.property_type || "-"}</p>
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Euro className="h-4 w-4 text-gray-400" />
-                      <div>
-                        <p className="text-sm text-gray-500">Orçamento</p>
-                        <p className="font-medium">
-                          {formatCurrency(lead.budget_min)} - {formatCurrency(lead.budget_max)}
-                        </p>
+                      <div className="flex items-center gap-2">
+                        <Euro className="h-4 w-4 text-gray-400" />
+                        <div>
+                          <p className="text-sm text-gray-500">Orçamento</p>
+                          <p className="font-medium">
+                            {formatCurrency(lead.budget_min)} - {formatCurrency(lead.budget_max)}
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Bed className="h-4 w-4 text-gray-400" />
-                      <div>
-                        <p className="text-sm text-gray-500">Quartos</p>
-                        <p className="font-medium">{lead.bedrooms || "-"}</p>
+                      <div className="flex items-center gap-2">
+                        <Bed className="h-4 w-4 text-gray-400" />
+                        <div>
+                          <p className="text-sm text-gray-500">Quartos</p>
+                          <p className="font-medium">{lead.bedrooms || "-"}</p>
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Bath className="h-4 w-4 text-gray-400" />
-                      <div>
-                        <p className="text-sm text-gray-500">Casas de Banho</p>
-                        <p className="font-medium">{lead.bathrooms || "-"}</p>
+                      <div className="flex items-center gap-2">
+                        <Bath className="h-4 w-4 text-gray-400" />
+                        <div>
+                          <p className="text-sm text-gray-500">Casas de Banho</p>
+                          <p className="font-medium">{lead.bathrooms || "-"}</p>
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Maximize className="h-4 w-4 text-gray-400" />
-                      <div>
-                        <p className="text-sm text-gray-500">Área Mínima</p>
-                        <p className="font-medium">
-                          {lead.min_area ? `${lead.min_area}m²` : "-"}
-                        </p>
+                      <div className="flex items-center gap-2">
+                        <Maximize className="h-4 w-4 text-gray-400" />
+                        <div>
+                          <p className="text-sm text-gray-500">Área Mínima</p>
+                          <p className="font-medium">
+                            {lead.min_area ? `${lead.min_area}m²` : "-"}
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                  </CardContent>
-                </Card>
+                    </CardContent>
+                  </Card>
+
+                  <LeadIdealistaPanel lead={lead} />
+                  <LeadRemaxPanel lead={lead} />
+                </>
               )}
 
-              {lead.lead_type === "seller" && (
+              {(lead.lead_type === "seller" || lead.lead_type === "both") && (
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
@@ -691,15 +690,6 @@ export function LeadDetailsDialog({
             getLeadById(leadId).then(setLead);
           }
         }}
-      />
-    )}
-
-    {lead && lead.lead_type === "buyer" && (
-      <IdealistaSearchDialog
-        leadId={lead.id}
-        leadName={lead.name}
-        open={idealistaSearchOpen}
-        onOpenChange={setIdealistaSearchOpen}
       />
     )}
 

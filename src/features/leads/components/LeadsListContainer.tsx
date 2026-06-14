@@ -5,12 +5,14 @@ import { LeadDialogs } from "./LeadDialogs";
 import { LeadNotesDialog } from "@/components/leads/LeadNotesDialog";
 import { LeadDetailsDialog } from "@/components/leads/LeadDetailsDialog";
 import { AssignLeadDialog } from "@/components/leads/AssignLeadDialog";
+import { QuickContactDialog } from "@/components/leads/QuickContactDialog";
 import { Button } from "@/components/ui/button";
-import { LayoutGrid, List, Edit, MoreVertical, Eye } from "lucide-react";
+import { LayoutGrid, List, Edit, MoreVertical, Eye, Mail, MessageSquare, MessageCircle, CalendarDays, StickyNote, UserCheck, Phone, Trash2, Users } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
@@ -155,6 +157,7 @@ export function LeadsListContainer({
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const [notesDialogOpen, setNotesDialogOpen] = useState(false);
   const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
+  const [quickContactOpen, setQuickContactOpen] = useState(false);
   const [selectedLead, setSelectedLead] = useState<LeadWithContacts | null>(null);
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
   const [selectedAgent, setSelectedAgent] = useState("");
@@ -217,6 +220,11 @@ export function LeadsListContainer({
 
   const handleWhatsApp = (lead: LeadWithContacts) => {
     sendWhatsApp(lead);
+  };
+
+  const handleQuickContact = (lead: LeadWithContacts) => {
+    setSelectedLead(lead);
+    setQuickContactOpen(true);
   };
 
   const handleViewDetails = (lead: LeadWithContacts) => {
@@ -721,36 +729,91 @@ export function LeadsListContainer({
                               </button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end" className="w-56">
+                              <div className="px-2 py-1.5 text-xs font-semibold text-gray-500 uppercase">
+                                Comunicação
+                              </div>
+                              <DropdownMenuItem onClick={() => handleQuickContact(lead)}>
+                                <Phone className="h-4 w-4 mr-2" />
+                                Registar Contacto Rápido
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleEmail(lead)}>
+                                <Mail className="h-4 w-4 mr-2" />
+                                Email
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleSMS(lead)}>
+                                <MessageSquare className="h-4 w-4 mr-2" />
+                                SMS
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleWhatsApp(lead)}>
+                                <MessageCircle className="h-4 w-4 mr-2" />
+                                WhatsApp
+                              </DropdownMenuItem>
+
+                              <DropdownMenuSeparator />
+
+                              <div className="px-2 py-1.5 text-xs font-semibold text-gray-500 uppercase">
+                                Calendário
+                              </div>
+                              <DropdownMenuItem onClick={() => handleTask(lead)}>
+                                <CalendarDays className="h-4 w-4 mr-2" />
+                                Criar Tarefa
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleEvent(lead)}>
+                                <CalendarDays className="h-4 w-4 mr-2" />
+                                Criar Evento
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleInteraction(lead)}>
+                                <MessageSquare className="h-4 w-4 mr-2" />
+                                Registar Interação
+                              </DropdownMenuItem>
+
+                              <DropdownMenuSeparator />
+
+                              <div className="px-2 py-1.5 text-xs font-semibold text-gray-500 uppercase">
+                                Gestão
+                              </div>
                               <DropdownMenuItem onClick={() => handleViewDetails(lead)}>
                                 <Eye className="h-4 w-4 mr-2" />
                                 Ver Detalhes
                               </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleTask(lead)}>
-                                Criar Tarefa
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleEvent(lead)}>
-                                Criar Evento
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleInteraction(lead)}>
-                                Registar Interação
-                              </DropdownMenuItem>
                               {!showArchived && (
                                 <DropdownMenuItem onClick={() => handleNotes(lead)}>
+                                  <StickyNote className="h-4 w-4 mr-2" />
                                   Ver Notas
+                                </DropdownMenuItem>
+                              )}
+                              {!showArchived && (
+                                <DropdownMenuItem onClick={() => handleConvert(lead)}>
+                                  <UserCheck className="h-4 w-4 mr-2" />
+                                  Converter em Contacto
                                 </DropdownMenuItem>
                               )}
                               {canAssignLeads && !showArchived && (
                                 <DropdownMenuItem onClick={() => handleAssign(lead)}>
+                                  <Users className="h-4 w-4 mr-2" />
                                   Atribuir Agente
                                 </DropdownMenuItem>
                               )}
                               {showArchived ? (
-                                <DropdownMenuItem
-                                  onClick={() => handleRestore(lead)}
-                                  className="text-green-600"
-                                >
-                                  Restaurar
-                                </DropdownMenuItem>
+                                <>
+                                  <DropdownMenuItem
+                                    onClick={() => handleRestore(lead)}
+                                    className="text-green-600"
+                                  >
+                                    Restaurar
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onClick={() => {
+                                      if (confirm(`⚠️ ATENÇÃO: Esta ação é irreversível!\n\nTem a certeza que deseja eliminar PERMANENTEMENTE "${lead.name}"?\n\nA lead será removida definitivamente do sistema e não poderá ser recuperada.`)) {
+                                        handlePermanentlyDelete(lead);
+                                      }
+                                    }}
+                                    className="text-red-600"
+                                  >
+                                    <Trash2 className="h-4 w-4 mr-2" />
+                                    Eliminar permanentemente
+                                  </DropdownMenuItem>
+                                </>
                               ) : (
                                 <DropdownMenuItem
                                   onClick={() => handleDelete(lead)}
@@ -822,6 +885,16 @@ export function LeadsListContainer({
         open={detailsDialogOpen}
         onOpenChange={setDetailsDialogOpen}
       />
+
+      {selectedLead && (
+        <QuickContactDialog
+          leadId={selectedLead.id}
+          leadName={selectedLead.name}
+          open={quickContactOpen}
+          onOpenChange={setQuickContactOpen}
+          onSuccess={() => {}}
+        />
+      )}
     </div>
   );
 }

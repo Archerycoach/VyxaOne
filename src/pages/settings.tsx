@@ -17,7 +17,6 @@ import { MetaFormsManagement } from "@/components/settings/MetaFormsManagement";
 import { GptApiSettings } from "@/components/settings/GptApiSettings";
 import { WorkflowsManagement } from "@/components/settings/WorkflowsManagement";
 import { NotionAccountConnection } from "@/components/settings/NotionAccountConnection";
-import { ExternalPortalsSettings } from "@/components/settings/ExternalPortalsSettings";
 
 const REQUIRED_GOOGLE_SCOPES = [
   "openid",
@@ -978,10 +977,6 @@ export default function Settings() {
             <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
               <WorkflowsManagement />
             </div>
-          </TabsContent>
-
-          <TabsContent value="portals" className="space-y-6">
-            <ExternalPortalsSettings />
           </TabsContent>
 
           <TabsContent value="notion" className="space-y-6">

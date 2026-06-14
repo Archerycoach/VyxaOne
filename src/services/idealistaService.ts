@@ -432,7 +432,7 @@ export function leadToIdealistaParams(lead: any): IdealistaSearchParams {
   };
 
   // Tipo de operação (compra/arrendamento)
-  if (lead.lead_type === "buyer") {
+  if (lead.lead_type === "buyer" || lead.lead_type === "both") {
     params.operation = "sale";
   } else if (lead.lead_type === "renter") {
     params.operation = "rent";
@@ -461,11 +461,11 @@ export function leadToIdealistaParams(lead: any): IdealistaSearchParams {
   }
 
   // Área
-  if (lead.size_min) {
-    params.minSize = lead.size_min;
+  if (lead.min_area) {
+    params.minSize = lead.min_area;
   }
-  if (lead.size_max) {
-    params.maxSize = lead.size_max;
+  if (lead.max_area) {
+    params.maxSize = lead.max_area;
   }
 
   // Quartos

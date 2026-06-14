@@ -10,6 +10,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { InfoIcon, ExternalLink, CheckCircle2, Settings, Activity } from "lucide-react";
 import { MetaAppSettings } from "@/components/admin/MetaAppSettings";
+import { ExternalPortalsSettings } from "@/components/settings/ExternalPortalsSettings";
 
 // Define interface for the settings JSON structure
 interface GoogleCalendarSettings {
@@ -597,6 +598,10 @@ export default function Integrations() {
               </div>
             </CardContent>
           </Card>
+
+          <div id="external-portals">
+            <ExternalPortalsSettings />
+          </div>
 
           {/* Meta Lead Ads Integration */}
           <MetaAppSettings />

@@ -241,7 +241,7 @@ export default function AiAgentPage() {
                       <Bot className="h-5 w-5 text-indigo-600" />
                       Chat Interativo
                     </CardTitle>
-                    <CardDescription>Converse com o Agente sobre as suas leads, o seu calendário, ou peça-lhe para escrever e-mails.</CardDescription>
+                    <CardDescription>Converse com o Agente sobre as suas leads, o seu calendário, peça listagens por tipologia ou pesquise imóveis do Idealista para uma lead específica.</CardDescription>
                   </CardHeader>
                   
                   {!hasGptConnection ? (
@@ -300,7 +300,7 @@ export default function AiAgentPage() {
                       <div className="p-4 border-t bg-white rounded-b-lg">
                         <form onSubmit={handleSendMessage} className="flex gap-2">
                           <Input 
-                            placeholder="Escreva a sua mensagem..." 
+                            placeholder="Ex: Encontra 5 imóveis no Idealista para a lead Maria Silva"
                             value={chatMessage}
                             onChange={(e) => setChatMessage(e.target.value)}
                             disabled={isChatting}
