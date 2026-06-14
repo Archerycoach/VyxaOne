@@ -11,6 +11,7 @@ interface IdealistaSearchParams {
   maxSize?: number;
   bedrooms?: string | number;
   center?: string;
+  searchCenters?: string[];
   distance?: number;
   numPage?: number;
   maxItems?: number;
@@ -123,26 +124,46 @@ export async function searchIdealistaProperties(
     // 1. Resolver locationId a partir de texto (center) usando o endpoint auto-complete
     let resolvedLocationId = params.locationId;
     let autoTextErrorSnippet = "";
+    const centerCandidates = Array.from(
+      new Set(
+        (params.searchCenters && params.searchCenters.length > 0 ? params.searchCenters : [params.center])
+          .map((center) => (typeof center === "string" ? center.trim() : ""))
+          .filter(Boolean),
+      ),
+    );
 
-    // Resolvemos a localização normalmente
-    if (!resolvedLocationId && params.center && params.center.trim() !== "") {
-      try {
-        const encodedCenter = encodeURIComponent(params.center.trim());
-        let autoResponse = await fetch(
-          `https://${rapidApiHost}/auto-complete?prefix=${encodedCenter}&country=pt`,
-          {
-            method: "GET",
-            headers: {
-              "X-RapidAPI-Key": rapidApiKey,
-              "X-RapidAPI-Host": rapidApiHost,
-            },
+    if (!resolvedLocationId && centerCandidates.length > 0) {
+      const extractLocations = (obj: any): any[] => {
+        let locs: any[] = [];
+        if (!obj || typeof obj !== "object") return locs;
+
+        const locId = obj.locationId || obj.placeId || (obj.id && obj.name ? obj.id : undefined);
+
+        if (locId) {
+          obj.locationId = locId;
+          locs.push(obj);
+        }
+
+        if (Array.isArray(obj)) {
+          for (const item of obj) {
+            locs = locs.concat(extractLocations(item));
           }
-        );
+        } else {
+          for (const key in obj) {
+            if (typeof obj[key] === "object") {
+              locs = locs.concat(extractLocations(obj[key]));
+            }
+          }
+        }
 
-        // Algumas APIs usam caminhos diferentes. Se falhar, tenta o caminho alternativo
-        if (!autoResponse.ok) {
-          const altResponse = await fetch(
-            `https://${rapidApiHost}/locations/auto-complete?prefix=${encodedCenter}&country=pt`,
+        return locs;
+      };
+
+      for (const centerCandidate of centerCandidates) {
+        try {
+          const encodedCenter = encodeURIComponent(centerCandidate);
+          let autoResponse = await fetch(
+            `https://${rapidApiHost}/auto-complete?prefix=${encodedCenter}&country=pt`,
             {
               method: "GET",
               headers: {
@@ -151,79 +172,68 @@ export async function searchIdealistaProperties(
               },
             }
           );
-          if (altResponse.ok) {
-            autoResponse = altResponse;
-          }
-        }
-        
-        // Se a API escolhida pelo utilizador não tiver o endpoint de auto-complete de todo (Erro 404),
-        // usamos a idealista2 como "tradutor de segurança" apenas para descobrir o ID da localização,
-        // porque as chaves costumam funcionar em vários fornecedores se o plano for básico.
-        if (autoResponse.status === 404 || autoResponse.status === 403) {
-          const safeFallbackResponse = await fetch(
-            `https://idealista2.p.rapidapi.com/auto-complete?prefix=${encodedCenter}&country=pt`,
-            {
-              method: "GET",
-              headers: {
-                "X-RapidAPI-Key": rapidApiKey,
-                "X-RapidAPI-Host": "idealista2.p.rapidapi.com",
-              },
-            }
-          );
-          if (safeFallbackResponse.ok) {
-            autoResponse = safeFallbackResponse;
-            console.log("Auto-complete fallback para idealista2 bem sucedido!");
-          }
-        }
 
-        if (autoResponse.ok) {
-          const autoText = await autoResponse.text();
-          autoTextErrorSnippet = autoText.substring(0, 150); // Guarda um excerto caso falhe
-          const autoData = JSON.parse(autoText);
-          
-          // Função auxiliar para procurar "locationId", "placeId" ou "id"
-          const extractLocations = (obj: any): any[] => {
-            let locs: any[] = [];
-            if (!obj || typeof obj !== 'object') return locs;
-            
-            const locId = obj.locationId || obj.placeId || (obj.id && obj.name ? obj.id : undefined);
-            
-            if (locId) {
-              obj.locationId = locId; // Normalizar para o resto do código
-              locs.push(obj);
-            }
-            
-            if (Array.isArray(obj)) {
-              for (const item of obj) {
-                locs = locs.concat(extractLocations(item));
+          if (!autoResponse.ok) {
+            const altResponse = await fetch(
+              `https://${rapidApiHost}/locations/auto-complete?prefix=${encodedCenter}&country=pt`,
+              {
+                method: "GET",
+                headers: {
+                  "X-RapidAPI-Key": rapidApiKey,
+                  "X-RapidAPI-Host": rapidApiHost,
+                },
               }
-            } else {
-              for (const key in obj) {
-                if (typeof obj[key] === 'object') {
-                  locs = locs.concat(extractLocations(obj[key]));
-                }
-              }
+            );
+            if (altResponse.ok) {
+              autoResponse = altResponse;
             }
-            return locs;
-          };
-          
-          const locations = extractLocations(autoData);
-          
-          if (locations && locations.length > 0) {
-            const bestLocation = locations.find((l: any) => 
-              ['parish', 'municipality', 'neighborhood', 'district'].includes(l.locationType?.toLowerCase() || l.type?.toLowerCase())
-            ) || locations[0];
-            
-            resolvedLocationId = bestLocation.locationId;
-          } else {
-            console.warn("Auto-complete não encontrou ID para:", params.center, "Resposta:", autoTextErrorSnippet);
           }
-        } else {
-          autoTextErrorSnippet = `Status HTTP: ${autoResponse.status}`;
+
+          if (autoResponse.status === 404 || autoResponse.status === 403) {
+            const safeFallbackResponse = await fetch(
+              `https://idealista2.p.rapidapi.com/auto-complete?prefix=${encodedCenter}&country=pt`,
+              {
+                method: "GET",
+                headers: {
+                  "X-RapidAPI-Key": rapidApiKey,
+                  "X-RapidAPI-Host": "idealista2.p.rapidapi.com",
+                },
+              }
+            );
+            if (safeFallbackResponse.ok) {
+              autoResponse = safeFallbackResponse;
+              console.log("Auto-complete fallback para idealista2 bem sucedido!");
+            }
+          }
+
+          if (!autoResponse.ok) {
+            autoTextErrorSnippet = `Status HTTP: ${autoResponse.status}`;
+            continue;
+          }
+
+          const autoText = await autoResponse.text();
+          autoTextErrorSnippet = autoText.substring(0, 150);
+          const autoData = JSON.parse(autoText);
+          const locations = extractLocations(autoData);
+
+          if (locations && locations.length > 0) {
+            const bestLocation =
+              locations.find((l: any) =>
+                ["parish", "municipality", "neighborhood", "district"].includes(
+                  l.locationType?.toLowerCase() || l.type?.toLowerCase(),
+                ),
+              ) || locations[0];
+
+            resolvedLocationId = bestLocation.locationId;
+            params.center = centerCandidate;
+            break;
+          }
+
+          console.warn("Auto-complete não encontrou ID para:", centerCandidate, "Resposta:", autoTextErrorSnippet);
+        } catch (autoErr: any) {
+          console.error("Erro no auto-complete:", autoErr);
+          autoTextErrorSnippet = autoErr.message;
         }
-      } catch (autoErr: any) {
-        console.error("Erro no auto-complete:", autoErr);
-        autoTextErrorSnippet = autoErr.message;
       }
     }
 
@@ -426,6 +436,96 @@ export async function searchIdealistaProperties(
 /**
  * Converte os dados de uma lead para parâmetros de pesquisa do Idealista
  */
+function normalizeSearchZoneValue(value: unknown): string | null {
+  return typeof value === "string" && value.trim() !== "" ? value.trim() : null;
+}
+
+function splitSearchZoneText(value: string): string[] {
+  return value
+    .split(/[,\n;|/]/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function extractTextFromLocationEntry(entry: unknown): string | null {
+  if (typeof entry === "string") {
+    return normalizeSearchZoneValue(entry);
+  }
+
+  if (entry && typeof entry === "object") {
+    const record = entry as Record<string, unknown>;
+    return (
+      normalizeSearchZoneValue(record.value) ||
+      normalizeSearchZoneValue(record.label) ||
+      normalizeSearchZoneValue(record.name)
+    );
+  }
+
+  return null;
+}
+
+function extractIdealistaSearchCenters(lead: any): string[] {
+  const values: string[] = [];
+  let requirements = lead.requirements;
+
+  if (typeof requirements === "string") {
+    try {
+      requirements = JSON.parse(requirements);
+    } catch {
+      requirements = null;
+    }
+  }
+
+  const pushValue = (value: unknown) => {
+    const normalizedValue = normalizeSearchZoneValue(value);
+    if (!normalizedValue) {
+      return;
+    }
+
+    splitSearchZoneText(normalizedValue).forEach((part) => values.push(part));
+  };
+
+  const pushArrayValues = (items: unknown) => {
+    if (!Array.isArray(items)) {
+      return;
+    }
+
+    items.forEach((item) => {
+      const textValue = extractTextFromLocationEntry(item);
+      if (textValue) {
+        splitSearchZoneText(textValue).forEach((part) => values.push(part));
+      }
+    });
+  };
+
+  if (requirements && typeof requirements === "object") {
+    pushValue(requirements.zone);
+    pushValue(requirements.location);
+    pushValue(requirements.city);
+    pushValue(requirements.district);
+    pushArrayValues(requirements.locations);
+    pushArrayValues(requirements.preferred_locations);
+  }
+
+  pushValue(lead.location_preference);
+  pushValue(lead.zone);
+  pushValue(lead.location);
+  pushValue(lead.city);
+  pushValue(lead.district);
+  pushArrayValues(lead.locations);
+  pushArrayValues(lead.preferred_locations);
+
+  const seen = new Set<string>();
+  return values.filter((value) => {
+    const key = value.toLowerCase();
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
 export function leadToIdealistaParams(lead: any): IdealistaSearchParams {
   const params: IdealistaSearchParams = {
     maxItems: 20, // Aumentado de 3 para 20
@@ -447,6 +547,8 @@ export function leadToIdealistaParams(lead: any): IdealistaSearchParams {
       land: "lands",
       commercial: "offices",
       office: "offices",
+      store: "offices",
+      warehouse: "offices",
       garage: "garages",
     };
     params.propertyType = typeMap[lead.property_type] || "homes";
@@ -500,11 +602,13 @@ export function leadToIdealistaParams(lead: any): IdealistaSearchParams {
       (Array.isArray(lead.preferred_locations) && lead.preferred_locations.length > 0 ? (typeof lead.preferred_locations[0] === 'object' ? lead.preferred_locations[0].label || lead.preferred_locations[0].value : lead.preferred_locations[0]) : null);
   }
 
-  if (locationText && typeof locationText === 'string') {
-    params.center = locationText;
-    params.distance = 5000; // 5km de raio
+  const searchCenters = extractIdealistaSearchCenters(lead);
+
+  if (searchCenters.length > 0) {
+    params.center = searchCenters[0];
+    params.searchCenters = searchCenters;
+    params.distance = 5000;
   } else {
-    // Definimos uma string vazia para o serviço lidar graciosamente
     params.center = "";
   }
 

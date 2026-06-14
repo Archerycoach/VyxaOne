@@ -5,12 +5,6 @@ import {
   searchIdealistaProperties,
   type IdealistaProperty,
 } from "@/services/idealistaService";
-import {
-  flattenRemaxUnits,
-  leadToRemaxParams,
-  searchRemaxForLead,
-  type RemaxDevelopment,
-} from "@/services/remaxService";
 
 interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -95,17 +89,6 @@ function isIdealistaRequest(message: string): boolean {
   return hasSearchIntent && mentionsIdealista && hasLeadReference;
 }
 
-function isRemaxRequest(message: string): boolean {
-  const normalizedMessage = normalizeText(message);
-  const hasSearchIntent = /(procura|procurar|pesquisa|pesquisar|encontra|encontrar|mostra|mostrar|sugere|sugerir)/.test(
-    normalizedMessage,
-  );
-  const mentionsRemax = /\bre\/?max\b|\bremax\b/.test(normalizedMessage);
-  const hasLeadReference = /(lead|cliente|comprador|arrendatario|interessado)/.test(normalizedMessage);
-
-  return hasSearchIntent && mentionsRemax && hasLeadReference;
-}
-
 function isGenericPortalSearchRequest(message: string): boolean {
   const normalizedMessage = normalizeText(message);
   const hasSearchIntent = /(procura|procurar|pesquisa|pesquisar|encontra|encontrar|mostra|mostrar|sugere|sugerir)/.test(
@@ -113,7 +96,7 @@ function isGenericPortalSearchRequest(message: string): boolean {
   );
   const hasPropertyIntent = /(imoveis|apartamentos?|moradias?|casas?|empreendimentos)/.test(normalizedMessage);
   const hasLeadReference = /(lead|cliente|comprador|arrendatario|interessado)/.test(normalizedMessage);
-  const mentionsProvider = /\bidealista\b|\bre\/?max\b|\bremax\b/.test(normalizedMessage);
+  const mentionsProvider = /\bidealista\b/.test(normalizedMessage);
 
   return hasSearchIntent && hasPropertyIntent && hasLeadReference && !mentionsProvider;
 }
@@ -227,40 +210,6 @@ function formatIdealistaReply(leadName: string, properties: IdealistaProperty[])
   return `Encontrei ${Math.min(properties.length, 5)} imóveis do Idealista para a lead **${leadName}**:\n\n${lines.join("\n\n")}`;
 }
 
-function formatRemaxReply(
-  leadName: string,
-  developments: RemaxDevelopment[],
-  fallbackWithoutCounty: boolean,
-): string {
-  const listings = flattenRemaxUnits(developments).slice(0, 5);
-
-  if (listings.length === 0) {
-    return `Não encontrei empreendimentos/unidades REMAX adaptados à lead **${leadName}** com os filtros atuais.`;
-  }
-
-  const lines = listings.map((listing, index) => {
-    const title = listing.developmentName || `Empreendimento ${index + 1}`;
-    const location = [listing.parish, listing.county, listing.region].filter(Boolean).join(", ");
-    const details = [
-      listing.price ? `preço: ${formatCurrency(listing.price)}` : null,
-      typeof listing.bedrooms === "number" ? `quartos: ${listing.bedrooms}` : null,
-      typeof listing.totalArea === "number" ? `área: ${listing.totalArea}m²` : null,
-      listing.listingType ? `tipo: ${listing.listingType}` : null,
-      location ? `zona: ${location}` : null,
-      listing.officeName ? `agência: ${listing.officeName}` : null,
-      listing.listingTitle ? `ref.: ${listing.listingTitle}` : null,
-    ].filter(Boolean);
-
-    return `${index + 1}. **${title}** — ${details.join(" · ")}`;
-  });
-
-  const fallbackNote = fallbackWithoutCounty
-    ? "\n\nNota: alarguei a pesquisa sem filtro de concelho porque não houve resultados com a localização inicial da lead."
-    : "";
-
-  return `Encontrei ${listings.length} resultados REMAX para a lead **${leadName}**:\n\n${lines.join("\n\n")}${fallbackNote}`;
-}
-
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") {
     return res.status(405).end();
@@ -307,63 +256,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const activeLeads = (leads || []) as LeadContext[];
 
-    if (isRemaxRequest(message)) {
-      const referencedLeads = findReferencedLeads(message, activeLeads);
-
-      if (referencedLeads.length === 0) {
-        return res.status(200).json({
-          reply:
-            "Consigo pesquisar empreendimentos REMAX, mas preciso que indiques o nome exato da lead. Exemplo: **Encontra empreendimentos REMAX para a lead Maria Silva**.",
-        });
-      }
-
-      if (referencedLeads.length > 1) {
-        const names = referencedLeads.slice(0, 5).map((lead) => `- ${lead.name}`).join("\n");
-        return res.status(200).json({
-          reply: `Encontrei várias leads que podem corresponder ao pedido. Indica o nome exato:\n\n${names}`,
-        });
-      }
-
-      const targetLead = referencedLeads[0];
-      const { data: fullLead, error: fullLeadError } = await supabase
-        .from("leads")
-        .select("*")
-        .eq("id", targetLead.id)
-        .or(`assigned_to.eq.${user.id},user_id.eq.${user.id}`)
-        .single();
-
-      if (fullLeadError || !fullLead) {
-        return res.status(200).json({
-          reply: `Não consegui carregar os dados completos da lead **${targetLead.name}** para pesquisar na REMAX.`,
-        });
-      }
-
-      const searchParams = leadToRemaxParams(fullLead as Record<string, unknown>);
-      const hasAnyFilter = Boolean(
-        searchParams.county ||
-          searchParams.bedrooms ||
-          searchParams.min_area ||
-          searchParams.max_area ||
-          searchParams.min_price ||
-          searchParams.max_price,
-      );
-
-      if (!hasAnyFilter) {
-        return res.status(200).json({
-          reply: `A lead **${targetLead.name}** ainda não tem critérios suficientes para eu pesquisar na REMAX. Preenche pelo menos localização, orçamento, quartos ou área.`,
-        });
-      }
-
-      const { response, fallbackWithoutCounty } = await searchRemaxForLead(fullLead as Record<string, unknown>, {
-        ...searchParams,
-        page_size: 5,
-      });
-
-      return res.status(200).json({
-        reply: formatRemaxReply(targetLead.name, response.results, fallbackWithoutCounty),
-      });
-    }
-
     if (isIdealistaRequest(message)) {
       const referencedLeads = findReferencedLeads(message, activeLeads);
 
@@ -409,7 +301,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (isGenericPortalSearchRequest(message)) {
       return res.status(200).json({
         reply:
-          "Posso pesquisar para uma lead específica, mas preciso que indiques o portal: **Idealista** ou **REMAX**. Exemplo: **Encontra imóveis no Idealista para a lead Maria Silva** ou **Encontra empreendimentos REMAX para a lead Maria Silva**.",
+          "Posso pesquisar para uma lead específica, mas neste momento só tenho o portal **Idealista** disponível. Exemplo: **Encontra imóveis no Idealista para a lead Maria Silva**.",
       });
     }
 

@@ -44,7 +44,6 @@ import type { LeadNote } from "@/services/notesService";
 import type { CalendarEvent, Task, Property } from "@/types";
 import { QuickContactDialog } from "./QuickContactDialog";
 import { LeadIdealistaPanel } from "./LeadIdealistaPanel";
-import { LeadRemaxPanel } from "./LeadRemaxPanel";
 import { ContactAlertRequestsPanel } from "@/features/contacts/components/ContactAlertRequestsPanel";
 import { PropertyForm } from "@/components/properties/PropertyForm";
 import { supabase } from "@/integrations/supabase/client";
@@ -434,7 +433,6 @@ export function LeadDetailsDialog({
                   </Card>
 
                   <LeadIdealistaPanel lead={lead} />
-                  <LeadRemaxPanel lead={lead} />
                 </>
               )}
 
