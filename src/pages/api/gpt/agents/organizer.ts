@@ -33,7 +33,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     const { data: neglectedLeads, error: neglectedError } = await (supabaseAdmin
       .from("leads" as any)
-      .select("name, phone, email, status, temperature, property_type, location_preference, budget_min, budget_max, size_min, size_max, bedrooms, bathrooms, source")
+      .select("name, phone, email, status, temperature, property_type, location_preference, budget_min, budget_max, min_area, max_area, bedrooms, bathrooms, source")
       .eq("user_id", user.id)
       .in("status", ["new", "contacted", "qualified"])
       .lt("last_activity_date", thirtyDaysAgo.toISOString())

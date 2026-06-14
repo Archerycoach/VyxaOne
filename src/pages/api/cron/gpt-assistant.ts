@@ -65,7 +65,7 @@ export default async function handler(
 
         const { data: leads } = await supabase
           .from("leads")
-          .select("id, name, phone, email, status, last_contact_date, next_follow_up, lead_type, property_type, location_preference, budget_min, budget_max, size_min, size_max, bedrooms, bathrooms, source")
+          .select("id, name, phone, email, status, last_contact_date, next_follow_up, lead_type, property_type, location_preference, budget_min, budget_max, min_area, max_area, bedrooms, bathrooms, source")
           .eq("assigned_to", user.id)
           .is("archived_at", null)
           .in("status", ["new", "contacted", "qualified", "proposal", "negotiation"])
@@ -93,7 +93,7 @@ export default async function handler(
         // NOVO: Buscar detalhes completos das leads para matching de imóveis
         const { data: fullLeadsData } = await supabase
           .from("leads")
-          .select("id, name, lead_type, property_type, budget_min, budget_max, size_min, size_max, bedrooms, location, status")
+          .select("id, name, lead_type, property_type, budget_min, budget_max, min_area, max_area, bedrooms, location, status")
           .in("id", leadIds)
           .eq("status", "new");
 

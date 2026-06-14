@@ -27,7 +27,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     
     const { data: leads } = await supabase
       .from("leads")
-      .select("id, name, phone, email, status, lead_type, next_follow_up, property_type, location_preference, budget_min, budget_max, size_min, size_max, bedrooms, bathrooms, source")
+      .select("id, name, phone, email, status, lead_type, next_follow_up, property_type, location_preference, budget_min, budget_max, min_area, max_area, bedrooms, bathrooms, source")
       .eq("assigned_to", user.id)
       .is("archived_at", null)
       .neq("status", "lost")
