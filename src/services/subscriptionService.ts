@@ -6,6 +6,12 @@ type Subscription = Database["public"]["Tables"]["subscriptions"]["Row"];
 export type SubscriptionPlan = Database["public"]["Tables"]["subscription_plans"]["Row"];
 type PaymentHistory = Database["public"]["Tables"]["payment_history"]["Row"];
 
+const getMonthsFromBillingInterval = (billingInterval: string | null | undefined): number => {
+  if (billingInterval === "yearly") return 12;
+  if (billingInterval === "semiannual") return 6;
+  return 1;
+};
+
 export interface SubscriptionWithPlan extends Omit<Subscription, 'plan_id'> {
   plan_id: string;
   subscription_plans: SubscriptionPlan | null;
@@ -65,20 +71,30 @@ export const createSubscription = async (
   stripeSubscriptionId?: string
 ): Promise<Subscription | null> => {
   try {
-    // Check if user already has an active subscription
     const existingSubscription = await getCurrentSubscription(userId);
     if (existingSubscription) {
       console.error("User already has an active subscription");
       throw new Error("User already has an active subscription");
     }
 
+    const { data: plan, error: planError } = await supabase
+      .from("subscription_plans")
+      .select("billing_interval")
+      .eq("id", planId)
+      .single();
+
+    if (planError || !plan) {
+      console.error("Error fetching subscription plan:", planError);
+      throw planError || new Error("Subscription plan not found");
+    }
+
     const startDate = new Date();
     const endDate = new Date();
-    
+
     if (trialDays > 0) {
       endDate.setDate(endDate.getDate() + trialDays);
     } else {
-      endDate.setMonth(endDate.getMonth() + 1); // Default 1 month
+      endDate.setMonth(endDate.getMonth() + getMonthsFromBillingInterval(plan.billing_interval));
     }
 
     const { data, error } = await supabase

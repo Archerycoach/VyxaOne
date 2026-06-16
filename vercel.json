@@ -34,12 +34,7 @@
       ]
     }
   ],
-  "rewrites": [
-    {
-      "source": "/(.*)",
-      "destination": "/"
-    }
-  ],
+  "rewrites": [],
   "cleanUrls": true,
   "trailingSlash": false
 }

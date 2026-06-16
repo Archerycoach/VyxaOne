@@ -59,6 +59,29 @@ import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 
 type StatusType = "trialing" | "active" | "cancelled" | "past_due" | "unpaid";
+type BillingInterval = "monthly" | "semiannual" | "yearly";
+
+const normalizeBillingInterval = (value: string | null | undefined): BillingInterval => {
+  if (value === "yearly") return "yearly";
+  if (value === "semiannual") return "semiannual";
+  return "monthly";
+};
+
+const getBillingIntervalLabel = (
+  value: string | null | undefined,
+  mode: "long" | "short" = "long",
+) => {
+  const interval = normalizeBillingInterval(value);
+  if (mode === "short") {
+    if (interval === "monthly") return "mês";
+    if (interval === "semiannual") return "semestre";
+    return "ano";
+  }
+
+  if (interval === "monthly") return "Mensal";
+  if (interval === "semiannual") return "Semestral";
+  return "Anual";
+};
 
 interface UserProfile {
   id: string;
@@ -110,7 +133,7 @@ export default function SubscriptionsManagement() {
     description: "",
     price: 0,
     currency: "EUR",
-    billing_interval: "monthly" as "monthly" | "semiannual" | "yearly",
+    billing_interval: "monthly" as BillingInterval,
     features: [] as string[],
     is_active: true,
   });
@@ -448,7 +471,7 @@ export default function SubscriptionsManagement() {
       description: plan.description || "",
       price: plan.price,
       currency: plan.currency,
-      billing_interval: plan.billing_interval as "monthly" | "yearly",
+      billing_interval: normalizeBillingInterval(plan.billing_interval),
       features: features,
       is_active: plan.is_active,
     });
@@ -673,7 +696,7 @@ export default function SubscriptionsManagement() {
                         <div className="text-3xl font-bold mb-4">
                           {plan.price}€
                           <span className="text-sm font-normal text-gray-500">
-                            /{plan.billing_interval === "monthly" ? "mês" : plan.billing_interval === "semiannual" ? "semestre" : "ano"}
+                            /{getBillingIntervalLabel(plan.billing_interval, "short")}
                           </span>
                         </div>
                         {Array.isArray(plan.features) && plan.features.length > 0 && (
@@ -834,7 +857,7 @@ export default function SubscriptionsManagement() {
                       <SelectContent>
                         {plans.filter(p => p.is_active).map((plan) => (
                           <SelectItem key={plan.id} value={plan.id}>
-                            {plan.name} - {plan.price}€/{plan.billing_interval === "monthly" ? "mês" : "ano"}
+                            {plan.name} - {plan.price}€/{getBillingIntervalLabel(plan.billing_interval, "short")}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -992,7 +1015,7 @@ export default function SubscriptionsManagement() {
                   <Label htmlFor="planInterval">Intervalo</Label>
                   <Select
                     value={planForm.billing_interval}
-                    onValueChange={(value: "monthly" | "semiannual" | "yearly") =>
+                    onValueChange={(value: BillingInterval) =>
                       setPlanForm({ ...planForm, billing_interval: value })
                     }
                   >
@@ -1069,7 +1092,7 @@ export default function SubscriptionsManagement() {
                     <Label htmlFor="editPlanInterval">Intervalo</Label>
                     <Select
                       value={planForm.billing_interval}
-                      onValueChange={(value: "monthly" | "semiannual" | "yearly") =>
+                      onValueChange={(value: BillingInterval) =>
                         setPlanForm({ ...planForm, billing_interval: value })
                       }
                     >
