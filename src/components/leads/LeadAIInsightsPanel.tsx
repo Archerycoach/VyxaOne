@@ -22,17 +22,37 @@ export function LeadAIInsightsPanel({ leadId }: { leadId: string }) {
     setLoading(true);
     setError(null);
     try {
+      if (!leadId) {
+        throw new Error("ID da lead ausente. Não é possível carregar a análise.");
+      }
+
       const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch(`/api/gpt/leads/${leadId}/insights`, {
         headers: { "Authorization": `Bearer ${session?.access_token}` }
       });
       
+      const responseText = await res.text();
+      
       if (!res.ok) {
-        const errData = await res.json();
-        throw new Error(errData.error || "Erro ao gerar insights");
+        let errorMsg = `Erro do servidor (Status ${res.status})`;
+        try {
+          const errData = JSON.parse(responseText);
+          errorMsg = errData.error || errorMsg;
+        } catch(e) {
+          // Se falhar o parse, significa que o servidor devolveu HTML (ex: página de erro 500)
+          console.error("Resposta não-JSON recebida:", responseText.substring(0, 200));
+        }
+        throw new Error(errorMsg);
       }
       
-      const data = await res.json();
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch (e) {
+        console.error("Erro ao ler JSON da resposta de sucesso:", responseText.substring(0, 200));
+        throw new Error("O servidor devolveu um formato inválido de análise.");
+      }
+
       setInsights(data);
     } catch (err: any) {
       setError(err.message);

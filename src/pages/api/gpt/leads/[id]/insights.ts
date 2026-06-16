@@ -13,6 +13,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     const leadId = req.query.id as string;
+    
+    if (!leadId || leadId === 'undefined') {
+      return res.status(400).json({ error: "ID da lead inválido ou em falta." });
+    }
 
     const { data: lead } = await (supabaseAdmin.from("leads" as any).select("*").eq("id", leadId).single() as any);
     const { data: notes } = await (supabaseAdmin.from("lead_notes" as any).select("note, created_at").eq("lead_id", leadId).order("created_at", { ascending: false }).limit(10) as any);
@@ -73,11 +77,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     const gptData = await openAiRes.json();
-    const insights = JSON.parse(gptData.choices[0].message.content);
+    
+    let insights;
+    try {
+      insights = JSON.parse(gptData.choices[0].message.content);
+    } catch (parseError) {
+      console.error("Failed to parse GPT response as JSON:", gptData.choices[0]?.message?.content);
+      throw new Error("A resposta da Inteligência Artificial não foi gerada num formato legível (JSON inválido).");
+    }
 
     return res.status(200).json(insights);
   } catch (error: any) {
     console.error("Insights API Error:", error);
-    return res.status(500).json({ error: error.message });
+    // Garantir que devolvemos sempre JSON mesmo em blocos de erro não previstos
+    return res.status(500).json({ error: error.message || "Erro interno ao gerar insights." });
   }
 }
