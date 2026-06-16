@@ -16,7 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { emailTemplateService, type EmailTemplate } from "@/services/emailTemplateService";
 import { supabase } from "@/integrations/supabase/client";
-import { Mail, Plus, Edit, Copy, Trash2, Info, X } from "lucide-react";
+import { Mail, Plus, Edit, Copy, Trash2, Info, X, Paperclip } from "lucide-react";
 
 export default function EmailTemplatesPage() {
   const router = useRouter();
@@ -36,6 +36,7 @@ export default function EmailTemplatesPage() {
     text_body: "",
     is_active: true,
     recipient_emails: [] as string[],
+    attachments: [] as Array<{name: string, url: string}>,
   });
 
   useEffect(() => {
@@ -70,6 +71,7 @@ export default function EmailTemplatesPage() {
       text_body: "",
       is_active: true,
       recipient_emails: [],
+      attachments: [],
     });
     setDialogOpen(true);
   };
@@ -85,6 +87,7 @@ export default function EmailTemplatesPage() {
       text_body: template.text_body || "",
       is_active: template.is_active,
       recipient_emails: template.recipient_emails || [],
+      attachments: (template as any).attachments || [],
     });
     setDialogOpen(true);
   };
@@ -460,7 +463,68 @@ export default function EmailTemplatesPage() {
                   </TabsContent>
                 </Tabs>
 
-                <div className="flex items-center space-x-2">
+                <div className="border-t pt-4 mt-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <Label>Anexos (PDFs, Documentos, Brochuras)</Label>
+                    <div>
+                      <input 
+                        type="file" 
+                        id="template-attachment" 
+                        className="hidden" 
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          
+                          try {
+                            toast({ title: "A anexar...", description: "A carregar documento para a nuvem." });
+                            const fileExt = file.name.split('.').pop();
+                            const fileName = `template_${Math.random().toString(36).substring(2)}.${fileExt}`;
+                            
+                            const { error } = await supabase.storage
+                              .from('email_attachments')
+                              .upload(fileName, file);
+                              
+                            if (error) throw error;
+                            
+                            const { data } = supabase.storage.from('email_attachments').getPublicUrl(fileName);
+                            
+                            setFormData({
+                              ...formData,
+                              attachments: [...formData.attachments, { name: file.name, url: data.publicUrl }]
+                            });
+                            toast({ title: "Anexado", description: "O documento foi adicionado ao template." });
+                          } catch (err: any) {
+                            toast({ title: "Erro ao anexar", description: err.message, variant: "destructive" });
+                          }
+                          e.target.value = ''; // reset
+                        }}
+                      />
+                      <Button type="button" variant="outline" size="sm" onClick={() => document.getElementById('template-attachment')?.click()}>
+                        <Paperclip className="h-4 w-4 mr-2" />
+                        Adicionar Anexo
+                      </Button>
+                    </div>
+                  </div>
+                  
+                  {formData.attachments.length > 0 ? (
+                    <div className="flex flex-wrap gap-2 p-3 bg-gray-50 rounded-md">
+                      {formData.attachments.map((att, i) => (
+                        <Badge key={i} variant="secondary" className="flex items-center gap-1 py-1 px-2">
+                          <Paperclip className="h-3 w-3" />
+                          {att.name}
+                          <X className="h-3 w-3 ml-1 cursor-pointer hover:text-red-500" onClick={() => setFormData({
+                            ...formData,
+                            attachments: formData.attachments.filter((_, index) => index !== i)
+                          })} />
+                        </Badge>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-gray-500">Nenhum anexo adicionado a este template. Pode incluir PDFs, imagens ou brochuras que serão enviados automaticamente.</p>
+                  )}
+                </div>
+
+                <div className="flex items-center space-x-2 border-t pt-4">
                   <Switch id="is_active" checked={formData.is_active} onCheckedChange={(checked) => setFormData({ ...formData, is_active: checked })} />
                   <Label htmlFor="is_active">Template ativo</Label>
                 </div>

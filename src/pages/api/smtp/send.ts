@@ -52,6 +52,23 @@ export default async function handler(
       });
     }
 
+    // Process attachments to ensure they are formatted correctly for nodemailer
+    // Nodemailer supports: { filename: 'text1.txt', content: 'aGVsbG8g...!', encoding: 'base64' }
+    // Or URL: { filename: 'file.pdf', path: 'https://...' }
+    let formattedAttachments = [];
+    if (attachments && Array.isArray(attachments)) {
+      formattedAttachments = attachments.map(att => {
+        // If it's a supabase storage URL, we can pass it directly to `path`
+        if (att.url || att.path) {
+          return {
+            filename: att.filename || att.name || 'Anexo',
+            path: att.url || att.path
+          };
+        }
+        return att;
+      });
+    }
+
     // Create transporter with user's SMTP settings
     const transporter = nodemailer.createTransport({
       host: smtpSettings.smtp_host,
@@ -77,7 +94,7 @@ export default async function handler(
       html,
       cc,
       bcc,
-      attachments,
+      attachments: formattedAttachments.length > 0 ? formattedAttachments : undefined,
     });
 
     return res.status(200).json({

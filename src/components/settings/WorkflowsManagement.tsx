@@ -44,6 +44,7 @@ import {
   TabsTrigger,
 } from "@/components/ui/tabs";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
+import { Paperclip, X } from "lucide-react";
 
 type WorkflowTemplate = {
   id: string;
@@ -213,7 +214,8 @@ export function WorkflowsManagement() {
     target_type: "lead" as "lead" | "contact",
     target_id: "",
     email_subject: "",
-    email_body: ""
+    email_body: "",
+    attachments: [] as Array<{name: string, url: string}>
   });
 
   const [executeFormState, setExecuteFormState] = useState({
@@ -412,7 +414,8 @@ export function WorkflowsManagement() {
       target_type: "lead",
       target_id: "",
       email_subject: defaultSubject,
-      email_body: defaultBody
+      email_body: defaultBody,
+      attachments: []
     });
     setIsNewWorkflowOpen(true);
   };
@@ -428,7 +431,8 @@ export function WorkflowsManagement() {
       target_type: "lead",
       target_id: "",
       email_subject: workflow.action_config?.subject || "",
-      email_body: workflow.action_config?.body || ""
+      email_body: workflow.action_config?.body || "",
+      attachments: workflow.action_config?.attachments || []
     });
     setEditingWorkflowId(workflow.id);
     setSelectedTemplate(null);
@@ -463,7 +467,8 @@ export function WorkflowsManagement() {
         action_type: formState.action_type,
         action_config: {
           subject: formState.email_subject,
-          body: formState.email_body
+          body: formState.email_body,
+          attachments: formState.attachments
         },
         delay_days: formState.delay_days,
         delay_hours: formState.delay_hours,
@@ -508,7 +513,8 @@ export function WorkflowsManagement() {
         target_type: "lead",
         target_id: "",
         email_subject: "",
-        email_body: ""
+        email_body: "",
+        attachments: []
       });
 
       await Promise.all([
@@ -691,7 +697,8 @@ export function WorkflowsManagement() {
                 target_type: "lead",
                 target_id: "",
                 email_subject: "",
-                email_body: ""
+                email_body: "",
+                attachments: []
               });
             }}>
               <Plus className="h-4 w-4 mr-2" />
@@ -816,7 +823,69 @@ export function WorkflowsManagement() {
                     />
                   )}
                 </div>
-                <div className="text-xs text-gray-600 space-y-1">
+
+                {formState.action_type === "send_email" && (
+                  <div className="space-y-2 pt-2 border-t border-blue-100 mt-4">
+                    <div className="flex items-center justify-between">
+                      <Label>Anexos (PDFs, Documentos, Brochuras)</Label>
+                      <div>
+                        <input
+                          type="file"
+                          id="workflow-attachment"
+                          className="hidden"
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            try {
+                              toast({ title: "A anexar...", description: "A carregar documento para a nuvem." });
+                              const fileExt = file.name.split('.').pop();
+                              const fileName = `workflow_${Math.random().toString(36).substring(2)}.${fileExt}`;
+      
+                              const { error } = await supabase.storage
+                                .from('email_attachments')
+                                .upload(fileName, file);
+      
+                              if (error) throw error;
+      
+                              const { data } = supabase.storage.from('email_attachments').getPublicUrl(fileName);
+      
+                              setFormState(prev => ({
+                                ...prev,
+                                attachments: [...prev.attachments, { name: file.name, url: data.publicUrl }]
+                              }));
+                              toast({ title: "Anexado", description: "O documento foi adicionado à automação." });
+                            } catch (err: any) {
+                              toast({ title: "Erro ao anexar", description: err.message, variant: "destructive" });
+                            }
+                            e.target.value = '';
+                          }}
+                        />
+                        <Button type="button" variant="outline" size="sm" onClick={() => document.getElementById('workflow-attachment')?.click()}>
+                          <Paperclip className="h-4 w-4 mr-2" />
+                          Adicionar Anexo
+                        </Button>
+                      </div>
+                    </div>
+                    {formState.attachments.length > 0 ? (
+                      <div className="flex flex-wrap gap-2 mt-2 p-2 bg-white rounded border border-blue-50">
+                        {formState.attachments.map((att, i) => (
+                          <Badge key={i} variant="secondary" className="flex items-center gap-1 py-1 px-2">
+                            <Paperclip className="h-3 w-3" />
+                            {att.name}
+                            <X className="h-3 w-3 ml-1 cursor-pointer hover:text-red-500" onClick={() => setFormState(prev => ({
+                              ...prev,
+                              attachments: prev.attachments.filter((_, index) => index !== i)
+                            }))} />
+                          </Badge>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-gray-500">Nenhum anexo definido nesta automação.</p>
+                    )}
+                  </div>
+                )}
+
+                <div className="text-xs text-gray-600 space-y-1 mt-4">
                   <p className="font-semibold">Variáveis disponíveis:</p>
                   <ul className="list-disc list-inside space-y-1">
                     <li><code className="bg-white px-1 rounded">{"{nome}"}</code> - Nome da lead/contacto</li>

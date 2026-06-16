@@ -259,6 +259,14 @@ export default async function handler(
         console.log(`   From: "${smtpSettings.from_name}" <${smtpSettings.from_email}>`);
         console.log(`   To: ${user.email}`);
 
+        let emailAttachments = undefined;
+        if (template?.attachments && Array.isArray(template.attachments)) {
+          emailAttachments = template.attachments.map((a: any) => ({
+            filename: a.name || 'Anexo',
+            path: a.url
+          }));
+        }
+
         // Enviar email
         const info = await transporter.sendMail({
           from: `"${smtpSettings.from_name}" <${smtpSettings.from_email}>`,
@@ -267,6 +275,7 @@ export default async function handler(
           subject: emailSubject,
           text: emailText,
           html: emailHtml,
+          attachments: emailAttachments && emailAttachments.length > 0 ? emailAttachments : undefined,
         });
 
         console.log(`✅ Email sent successfully to ${user.email}`);

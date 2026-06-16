@@ -479,6 +479,24 @@ async function sendSingleEmail(
     },
   });
 
+  const attachments = [];
+  if (config.attachments && Array.isArray(config.attachments)) {
+    for (const att of config.attachments) {
+      if (att.url) {
+        try {
+          const res = await fetch(att.url);
+          const arrayBuffer = await res.arrayBuffer();
+          attachments.push({
+            filename: att.name || "anexo",
+            content: new Uint8Array(arrayBuffer)
+          });
+        } catch(e) {
+          console.error(`Failed to download attachment ${att.name}:`, e);
+        }
+      }
+    }
+  }
+
   try {
     await client.send({
       from: smtpSettings.smtp_from_email || smtpSettings.smtp_user,
@@ -486,6 +504,7 @@ async function sendSingleEmail(
       subject: subject,
       content: body.replace(/\n/g, "<br>"),
       html: body.replace(/\n/g, "<br>"),
+      attachments: attachments.length > 0 ? attachments : undefined,
     });
 
     await client.close();

@@ -30,7 +30,10 @@ import {
   CheckSquare,
   Clock,
   Bot,
-  Plus
+  Plus,
+  Sparkles,
+  Paperclip,
+  Loader2
 } from "lucide-react";
 import { getLeadById } from "@/services/leadsService";
 import { getInteractionsByLead } from "@/services/interactionsService";
@@ -48,6 +51,7 @@ import { ContactAlertRequestsPanel } from "@/features/contacts/components/Contac
 import { PropertyForm } from "@/components/properties/PropertyForm";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { LeadAIInsightsPanel } from "./LeadAIInsightsPanel";
 
 interface LeadDetailsDialogProps {
   leadId: string | null;
@@ -72,6 +76,8 @@ export function LeadDetailsDialog({
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
   const [drafting, setDrafting] = useState<string | null>(null);
   const [generatedDraft, setGeneratedDraft] = useState<{text: string, channel: 'whatsapp'|'email'} | null>(null);
+  const [emailAttachments, setEmailAttachments] = useState<Array<{name: string, url: string}>>([]);
+  const [isSending, setIsSending] = useState(false);
   const { toast } = useToast();
   
   // Use ref to prevent multiple fetches
@@ -220,13 +226,25 @@ export function LeadDetailsDialog({
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${session?.access_token}` },
         body: JSON.stringify({ channel })
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      
+      const text = await res.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        console.error("A resposta do servidor não é um JSON válido:", text);
+        if (res.status === 504) {
+          throw new Error("O ChatGPT demorou demasiado tempo a responder (Timeout). Tente novamente.");
+        }
+        throw new Error(`Erro do servidor (${res.status}). Não foi possível processar a resposta.`);
+      }
+
+      if (!res.ok) throw new Error(data.error || `Erro HTTP ${res.status}`);
 
       setGeneratedDraft({ text: data.draft, channel });
       toast({ title: "Rascunho Gerado", description: "Pode rever a mensagem antes de a enviar." });
     } catch (err: any) {
-      toast({ title: "Erro", description: err.message, variant: "destructive" });
+      toast({ title: "Erro ao gerar rascunho", description: err.message, variant: "destructive" });
     } finally {
       setDrafting(null);
     }
@@ -248,6 +266,10 @@ export function LeadDetailsDialog({
             <div className="flex items-center gap-2">
               {lead && (
                 <>
+                  <Button size="sm" variant="outline" onClick={() => handleGenerateDraft("email")} disabled={drafting === "email"} className="text-blue-700 border-blue-200 hover:bg-blue-50">
+                    {drafting === "email" ? <div className="animate-spin h-4 w-4 mr-2 border-2 border-blue-700 border-t-transparent rounded-full" /> : <Mail className="h-4 w-4 mr-2" />}
+                    E-mail IA
+                  </Button>
                   <Button size="sm" variant="outline" onClick={() => handleGenerateDraft("whatsapp")} disabled={drafting === "whatsapp"} className="text-green-700 border-green-200 hover:bg-green-50">
                     {drafting === "whatsapp" ? <div className="animate-spin h-4 w-4 mr-2 border-2 border-green-700 border-t-transparent rounded-full" /> : <Bot className="h-4 w-4 mr-2" />}
                     WhatsApp IA
@@ -275,8 +297,12 @@ export function LeadDetailsDialog({
           </div>
         ) : lead ? (
           <Tabs defaultValue="info" className="w-full">
-            <TabsList className="grid w-full grid-cols-5 h-auto">
+            <TabsList className="grid w-full grid-cols-6 h-auto">
               <TabsTrigger value="info">Informações</TabsTrigger>
+              <TabsTrigger value="ai-assistant" className="text-indigo-700 bg-indigo-50/50 data-[state=active]:bg-indigo-100 data-[state=active]:text-indigo-900 border border-indigo-100/50">
+                <Sparkles className="h-3.5 w-3.5 mr-1.5" />
+                Assistente IA
+              </TabsTrigger>
               {(lead.lead_type === "seller" || lead.lead_type === "both") && (
                 <TabsTrigger value="properties">Imóveis ({properties.length})</TabsTrigger>
               )}
@@ -478,6 +504,10 @@ export function LeadDetailsDialog({
                   </CardContent>
                 </Card>
               )}
+            </TabsContent>
+
+            <TabsContent value="ai-assistant" className="mt-0">
+              <LeadAIInsightsPanel leadId={lead.id} />
             </TabsContent>
 
             {(lead.lead_type === "seller" || lead.lead_type === "both") && (
@@ -717,12 +747,67 @@ export function LeadDetailsDialog({
             className="resize-none"
           />
           <p className="text-xs text-gray-500">
-            Pode editar a mensagem à vontade. Quando clicar no botão abaixo, a aplicação irá abrir com este texto.
+            Pode editar a mensagem à vontade. Quando clicar no botão abaixo, a aplicação irá {generatedDraft?.channel === 'whatsapp' ? 'abrir no WhatsApp.' : 'enviar o e-mail diretamente a partir da plataforma.'}
           </p>
+
+          {generatedDraft?.channel === 'email' && (
+            <div className="space-y-2 mt-4 border-t pt-4">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">Anexos</span>
+                <div>
+                  <input 
+                    type="file" 
+                    id="email-attachment" 
+                    className="hidden" 
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      
+                      try {
+                        toast({ title: "A anexar...", description: "A carregar documento para a nuvem." });
+                        const fileExt = file.name.split('.').pop();
+                        const fileName = `${Math.random().toString(36).substring(2)}.${fileExt}`;
+                        const filePath = `${lead?.id || 'unknown'}/${fileName}`;
+                        
+                        const { error } = await supabase.storage
+                          .from('email_attachments')
+                          .upload(filePath, file);
+                          
+                        if (error) throw error;
+                        
+                        const { data } = supabase.storage.from('email_attachments').getPublicUrl(filePath);
+                        
+                        setEmailAttachments(prev => [...prev, { name: file.name, url: data.publicUrl }]);
+                        toast({ title: "Anexado", description: "Documento pronto para envio." });
+                      } catch (err: any) {
+                        toast({ title: "Erro ao anexar", description: err.message, variant: "destructive" });
+                      }
+                      e.target.value = ''; // reset input
+                    }}
+                  />
+                  <Button variant="outline" size="sm" onClick={() => document.getElementById('email-attachment')?.click()}>
+                    <Paperclip className="h-4 w-4 mr-2" />
+                    Adicionar Ficheiro
+                  </Button>
+                </div>
+              </div>
+              
+              {emailAttachments.length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {emailAttachments.map((att, i) => (
+                    <Badge key={i} variant="secondary" className="flex items-center gap-1 py-1">
+                      {att.name}
+                      <X className="h-3 w-3 cursor-pointer hover:text-red-500 ml-1" onClick={() => setEmailAttachments(prev => prev.filter((_, index) => index !== i))} />
+                    </Badge>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => setGeneratedDraft(null)}>Cancelar</Button>
-          <Button onClick={() => {
+          <Button variant="outline" disabled={isSending} onClick={() => { setGeneratedDraft(null); setEmailAttachments([]); }}>Cancelar</Button>
+          <Button disabled={isSending} onClick={async () => {
             if (!generatedDraft) return;
             if (generatedDraft.channel === 'whatsapp') {
               let phone = lead?.phone?.replace(/\D/g, '') || '';
@@ -732,16 +817,49 @@ export function LeadDetailsDialog({
               }
               const url = `https://wa.me/${phone}?text=${encodeURIComponent(generatedDraft.text)}`;
               window.open(url, "_blank");
+              setGeneratedDraft(null);
             } else {
-              const subjectMatch = generatedDraft.text.match(/^Assunto: (.*)/m);
-              const subject = subjectMatch ? subjectMatch[1] : "Follow-up";
-              const body = generatedDraft.text.replace(/^Assunto: .*\n?/, "").trim();
-              const url = `mailto:${lead?.email || ''}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-              window.open(url, "_blank");
+              if (!lead?.email) {
+                toast({ title: "Erro", description: "Esta lead não tem endereço de e-mail definido.", variant: "destructive" });
+                return;
+              }
+              
+              try {
+                setIsSending(true);
+                const subjectMatch = generatedDraft.text.match(/^Assunto: (.*)/m);
+                const subject = subjectMatch ? subjectMatch[1] : "Follow-up";
+                const body = generatedDraft.text.replace(/^Assunto: .*\n?/, "").trim();
+                
+                const { data: { session } } = await supabase.auth.getSession();
+                
+                const res = await fetch("/api/smtp/send", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json", "Authorization": `Bearer ${session?.access_token}` },
+                  body: JSON.stringify({
+                    to: lead.email,
+                    subject,
+                    html: body.replace(/\n/g, "<br>"),
+                    attachments: emailAttachments
+                  })
+                });
+                
+                if (!res.ok) {
+                  const data = await res.json();
+                  throw new Error(data.message || "Erro ao enviar e-mail");
+                }
+                
+                toast({ title: "E-mail Enviado!", description: "O seu e-mail e anexos foram enviados com sucesso." });
+                setGeneratedDraft(null);
+                setEmailAttachments([]);
+              } catch (err: any) {
+                toast({ title: "Erro de Envio", description: err.message, variant: "destructive" });
+              } finally {
+                setIsSending(false);
+              }
             }
-            setGeneratedDraft(null);
           }}>
-            {generatedDraft?.channel === 'whatsapp' ? 'Abrir no WhatsApp' : 'Abrir no E-mail'}
+            {isSending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+            {generatedDraft?.channel === 'whatsapp' ? 'Abrir no WhatsApp' : 'Enviar E-mail Agora'}
           </Button>
         </DialogFooter>
       </DialogContent>

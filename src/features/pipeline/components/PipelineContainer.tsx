@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Plus } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Plus, Search } from "lucide-react";
 import { PipelineBoard } from "@/components/pipeline/PipelineBoard";
 import { PipelineStats } from "@/components/pipeline/PipelineStats";
 import { LeadFormContainer } from "@/features/leads/components/form/LeadFormContainer";
@@ -15,6 +16,7 @@ export function PipelineContainer() {
   const [isLoading, setIsLoading] = useState(true);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [pipelineView, setPipelineView] = useState<LeadType>("buyer");
+  const [searchQuery, setSearchQuery] = useState("");
   const [editingLead, setEditingLead] = useState<LeadWithContacts | undefined>(undefined);
   const { toast } = useToast();
 
@@ -113,7 +115,11 @@ export function PipelineContainer() {
   };
 
   const filteredLeads = leads.filter(
-    (lead) => lead.lead_type === pipelineView || lead.lead_type === "both"
+    (lead) => {
+      const matchesView = lead.lead_type === pipelineView || lead.lead_type === "both";
+      const matchesSearch = (lead.name || "").toLowerCase().includes(searchQuery.toLowerCase());
+      return matchesView && matchesSearch;
+    }
   );
 
   // Debug logging
@@ -134,25 +140,35 @@ export function PipelineContainer() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Pipeline</h1>
           <p className="text-muted-foreground">
             Gerencie seus leads através das diferentes fases
           </p>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-col sm:flex-row items-center gap-3 w-full lg:w-auto">
+          <div className="relative w-full sm:w-64">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              type="text"
+              placeholder="Pesquisar por nome..."
+              className="pl-9 bg-white"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
           <Tabs
             value={pipelineView}
             onValueChange={(v) => setPipelineView(v as LeadType)}
-            className="w-[300px]"
+            className="w-full sm:w-[250px]"
           >
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="buyer">Compradores</TabsTrigger>
               <TabsTrigger value="seller">Vendedores</TabsTrigger>
             </TabsList>
           </Tabs>
-          <Button onClick={() => setIsFormOpen(true)}>
+          <Button onClick={() => setIsFormOpen(true)} className="w-full sm:w-auto shrink-0">
             <Plus className="mr-2 h-4 w-4" />
             Novo Lead
           </Button>
