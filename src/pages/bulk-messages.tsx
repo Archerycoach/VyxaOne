@@ -18,7 +18,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Send, Mail, MessageSquare, Loader2, Users, Filter } from "lucide-react";
+import { Send, Mail, MessageSquare, Loader2, Users, Filter, Paperclip, X } from "lucide-react";
 import { getAllLeads, type LeadWithContacts } from "@/services/leadsService";
 import { getAllContacts, type Contact } from "@/services/contactsService";
 import { getCurrentUser } from "@/services/authService";
@@ -44,6 +44,7 @@ export default function BulkMessages() {
   // Message
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
+  const [attachments, setAttachments] = useState<{name: string, size: number, base64: string}[]>([]);
   
   // UI State
   const [loading, setLoading] = useState(true);
@@ -222,6 +223,40 @@ export default function BulkMessages() {
     setSelectedRecipients(new Set());
   };
 
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    const maxSize = 5 * 1024 * 1024; // 5MB total per file
+
+    files.forEach((file) => {
+      if (file.size > maxSize) {
+        toast({
+          title: "Ficheiro demasiado grande",
+          description: `O ficheiro ${file.name} excede o limite de 5MB.`,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        const base64 = result.split(",")[1];
+        setAttachments((prev) => [
+          ...prev,
+          { name: file.name, size: file.size, base64 },
+        ]);
+      };
+      reader.readAsDataURL(file);
+    });
+    
+    // reset input
+    e.target.value = '';
+  };
+
+  const removeAttachment = (index: number) => {
+    setAttachments((prev) => prev.filter((_, i) => i !== index));
+  };
+
   const handleSend = async () => {
     if (selectedRecipients.size === 0) {
       toast({
@@ -294,6 +329,12 @@ export default function BulkMessages() {
               ? personalizedMessage.replace(/<[^>]*>?/gm, '') 
               : personalizedMessage;
 
+            const emailAttachments = attachments.map(att => ({
+              filename: att.name,
+              content: att.base64,
+              encoding: 'base64'
+            }));
+
             const response = await fetch("/api/smtp/send", {
               method: "POST",
               headers: {
@@ -305,10 +346,17 @@ export default function BulkMessages() {
                 subject: personalizedSubject,
                 html: htmlContent,
                 text: textContent,
+                attachments: emailAttachments.length > 0 ? emailAttachments : undefined,
               }),
             });
 
-            const result = await response.json();
+            const responseText = await response.text();
+            let result;
+            try {
+              result = JSON.parse(responseText);
+            } catch(e) {
+              throw new Error(`Falha de comunicação (Status ${response.status}). A sua configuração SMTP pode estar inválida.`);
+            }
 
             if (result.success) {
               successCount++;
@@ -354,6 +402,7 @@ export default function BulkMessages() {
       // Reset form
       setSubject("");
       setMessage("");
+      setAttachments([]);
       setSelectedRecipients(new Set());
     } catch (error) {
       console.error("Error sending messages:", error);
@@ -553,6 +602,44 @@ export default function BulkMessages() {
                           Pode usar variáveis: {"{nome}"}, {"{email}"}, {"{telefone}"}. O editor suporta imagens até 1MB.
                         </p>
                       </div>
+
+                      {/* Attachments Section */}
+                      <div className="space-y-2 pt-2">
+                        <div className="flex items-center justify-between">
+                          <Label>Anexos</Label>
+                          <Label htmlFor="file-upload" className="cursor-pointer text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1">
+                            <Paperclip className="h-4 w-4" />
+                            Adicionar Ficheiro
+                          </Label>
+                          <input 
+                            id="file-upload" 
+                            type="file" 
+                            multiple 
+                            className="hidden" 
+                            onChange={handleFileUpload} 
+                          />
+                        </div>
+                        
+                        {attachments.length > 0 && (
+                          <div className="flex flex-wrap gap-2 mt-2">
+                            {attachments.map((att, index) => (
+                              <Badge key={index} variant="secondary" className="flex items-center gap-1 py-1 px-2 font-normal">
+                                <Paperclip className="h-3 w-3 text-gray-500" />
+                                <span className="truncate max-w-[150px]">{att.name}</span>
+                                <span className="text-xs text-gray-500">
+                                  ({(att.size / 1024).toFixed(0)}KB)
+                                </span>
+                                <button 
+                                  onClick={() => removeAttachment(index)}
+                                  className="ml-1 text-gray-500 hover:text-red-500 rounded-full focus:outline-none"
+                                >
+                                  <X className="h-3 w-3" />
+                                </button>
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </TabsContent>
 
                     <TabsContent value="whatsapp" className="space-y-4 mt-4">
@@ -597,6 +684,7 @@ export default function BulkMessages() {
                       onClick={() => {
                         setSubject("");
                         setMessage("");
+                        setAttachments([]);
                         setSelectedRecipients(new Set());
                       }}
                       disabled={sending}

@@ -65,7 +65,7 @@
     "micro": "^10.0.1",
     "next": "15.5.9",
     "next-themes": "^0.4.4",
-    "nodemailer": "^7.0.12",
+    "nodemailer": "^7.0.13",
     "react": "^18.3.1",
     "react-day-picker": "^8.10.1",
     "react-dom": "^18.3.1",
@@ -88,7 +88,7 @@
   "devDependencies": {
     "@softgenai/element-tagger": "^0.0.2",
     "@types/node": "^22",
-    "@types/nodemailer": "^7.0.5",
+    "@types/nodemailer": "^7.0.12",
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "eslint": "^9.27.0",

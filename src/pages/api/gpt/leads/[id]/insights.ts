@@ -80,7 +80,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     
     let insights;
     try {
-      insights = JSON.parse(gptData.choices[0].message.content);
+      // Limpar potenciais blocos markdown que a OpenAI por vezes devolve
+      let content = gptData.choices[0].message.content;
+      content = content.replace(/```json/gi, "").replace(/```/g, "").trim();
+      
+      insights = JSON.parse(content);
     } catch (parseError) {
       console.error("Failed to parse GPT response as JSON:", gptData.choices[0]?.message?.content);
       throw new Error("A resposta da Inteligência Artificial não foi gerada num formato legível (JSON inválido).");

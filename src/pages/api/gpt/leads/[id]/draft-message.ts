@@ -112,8 +112,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       throw new Error(openAiErrorMessage);
     }
 
-    const gptData = await openAiRes.json();
-    const generatedText = gptData.choices[0].message.content.trim();
+    const responseText = await openAiRes.text();
+    let gptData;
+    try {
+      gptData = JSON.parse(responseText);
+    } catch (e) {
+      throw new Error(`A resposta da OpenAI não é válida: ${responseText.substring(0, 100)}...`);
+    }
+    
+    const generatedText = gptData.choices?.[0]?.message?.content?.trim() || "";
 
     return res.status(200).json({ success: true, draft: generatedText });
   } catch (error: any) {

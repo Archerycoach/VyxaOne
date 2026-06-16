@@ -76,7 +76,7 @@ export function LeadDetailsDialog({
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
   const [drafting, setDrafting] = useState<string | null>(null);
   const [generatedDraft, setGeneratedDraft] = useState<{text: string, channel: 'whatsapp'|'email'} | null>(null);
-  const [emailAttachments, setEmailAttachments] = useState<Array<{name: string, url: string}>>([]);
+  const [emailAttachments, setEmailAttachments] = useState<Array<{name: string, content: string, encoding: string}>>([]);
   const [isSending, setIsSending] = useState(false);
   const { toast } = useToast();
   
@@ -759,30 +759,23 @@ export function LeadDetailsDialog({
                     type="file" 
                     id="email-attachment" 
                     className="hidden" 
-                    onChange={async (e) => {
+                    onChange={(e) => {
                       const file = e.target.files?.[0];
                       if (!file) return;
                       
-                      try {
-                        toast({ title: "A anexar...", description: "A carregar documento para a nuvem." });
-                        const fileExt = file.name.split('.').pop();
-                        const fileName = `${Math.random().toString(36).substring(2)}.${fileExt}`;
-                        const filePath = `${lead?.id || 'unknown'}/${fileName}`;
-                        
-                        const { error } = await supabase.storage
-                          .from('email_attachments')
-                          .upload(filePath, file);
-                          
-                        if (error) throw error;
-                        
-                        const { data } = supabase.storage.from('email_attachments').getPublicUrl(filePath);
-                        
-                        setEmailAttachments(prev => [...prev, { name: file.name, url: data.publicUrl }]);
-                        toast({ title: "Anexado", description: "Documento pronto para envio." });
-                      } catch (err: any) {
-                        toast({ title: "Erro ao anexar", description: err.message, variant: "destructive" });
+                      if (file.size > 5 * 1024 * 1024) {
+                        toast({ title: "Ficheiro demasiado grande", description: "O limite é de 5MB por ficheiro.", variant: "destructive" });
+                        return;
                       }
-                      e.target.value = ''; // reset input
+                      
+                      const reader = new FileReader();
+                      reader.onload = () => {
+                        const result = reader.result as string;
+                        const base64 = result.split(",")[1];
+                        setEmailAttachments(prev => [...prev, { name: file.name, content: base64, encoding: 'base64' }]);
+                      };
+                      reader.readAsDataURL(file);
+                      e.target.value = '';
                     }}
                   />
                   <Button variant="outline" size="sm" onClick={() => document.getElementById('email-attachment')?.click()}>
@@ -839,13 +832,20 @@ export function LeadDetailsDialog({
                     to: lead.email,
                     subject,
                     html: body.replace(/\n/g, "<br>"),
-                    attachments: emailAttachments
+                    attachments: emailAttachments.map(att => ({ filename: att.name, content: att.content, encoding: att.encoding }))
                   })
                 });
                 
+                const responseText = await res.text();
+                let resultData;
+                try {
+                  resultData = JSON.parse(responseText);
+                } catch(e) {
+                  throw new Error(`Falha no servidor (Status ${res.status}). Verifique a sua configuração SMTP em Definições.`);
+                }
+                
                 if (!res.ok) {
-                  const data = await res.json();
-                  throw new Error(data.message || "Erro ao enviar e-mail");
+                  throw new Error(resultData.message || resultData.error || "Erro ao enviar e-mail");
                 }
                 
                 toast({ title: "E-mail Enviado!", description: "O seu e-mail e anexos foram enviados com sucesso." });
