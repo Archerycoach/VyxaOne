@@ -22,16 +22,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const { data: notes } = await (supabaseAdmin.from("lead_notes" as any).select("note, created_at").eq("lead_id", leadId).order("created_at", { ascending: false }).limit(10) as any);
     const { data: interactions } = await (supabaseAdmin.from("interactions" as any).select("interaction_type, content, interaction_date").eq("lead_id", leadId).order("interaction_date", { ascending: false }).limit(10) as any);
 
-    let openAIApiKey = process.env.OPENAI_API_KEY;
-    try {
-      const { data: keyData } = await (supabaseAdmin.from("gpt_api_keys" as any).select("api_key").eq("user_id", user.id).eq("is_active", true).maybeSingle() as any);
-      if (keyData?.api_key) openAIApiKey = keyData.api_key;
-    } catch (e) {
-      // Falha silenciosa caso a tabela não exista, usa o fallback de .env
-    }
-    
+    const openAIApiKey = process.env.OPENAI_API_KEY;
+
     if (!openAIApiKey) {
-      return res.status(400).json({ error: "OpenAI API Key não configurada. Configure em Definições > Agente GPT ou no .env.local" });
+      return res.status(500).json({
+        error: "OpenAI API Key não está configurada no servidor. Atualize a variável OPENAI_API_KEY no ambiente do projeto.",
+      });
     }
 
     const prompt = `És um assistente comercial imobiliário de elite (um verdadeiro "closer").
