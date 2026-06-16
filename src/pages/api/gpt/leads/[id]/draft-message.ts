@@ -2,15 +2,15 @@ import { NextApiRequest, NextApiResponse } from "next";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  // Tratamento de CORS Preflight que pode acontecer em ambientes de preview
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
   if (req.method === "OPTIONS") {
-    res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
     return res.status(200).end();
   }
 
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: `Método ${req.method} não permitido. Use POST.` });
+  if (req.method !== "POST" && req.method !== "GET") {
+    return res.status(405).json({ error: `Método ${req.method} não permitido. Use GET ou POST.` });
   }
 
   try {
@@ -21,8 +21,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const leadId = req.query.id as string;
-    const { channel } = req.body; // 'whatsapp' ou 'email'
+    const leadId = Array.isArray(req.query.id) ? req.query.id[0] : req.query.id;
+    const channelFromQuery = Array.isArray(req.query.channel) ? req.query.channel[0] : req.query.channel;
+    const channel = (typeof channelFromQuery === "string" ? channelFromQuery : req.body?.channel) as "whatsapp" | "email" | undefined;
+
+    if (!leadId) {
+      return res.status(400).json({ error: "ID da lead em falta." });
+    }
+
+    if (channel !== "whatsapp" && channel !== "email") {
+      return res.status(400).json({ error: "Canal inválido. Use 'whatsapp' ou 'email'." });
+    }
 
     // Buscar dados e notas da lead (usando maybeSingle para não "partir" se algo falhar)
     const { data: lead, error: leadError } = await (supabaseAdmin

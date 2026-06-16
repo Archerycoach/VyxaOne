@@ -221,11 +221,26 @@ export function LeadDetailsDialog({
     setDrafting(channel);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`/api/gpt/leads/${leadId}/draft-message`, {
+      const authToken = session?.access_token;
+
+      if (!authToken) {
+        throw new Error("Sessão expirada. Volte a iniciar sessão.");
+      }
+
+      const endpoint = `/api/gpt/leads/${leadId}/draft-message`;
+
+      let res = await fetch(endpoint, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${session?.access_token}` },
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${authToken}` },
         body: JSON.stringify({ channel })
       });
+
+      if (res.status === 405) {
+        res = await fetch(`${endpoint}?channel=${encodeURIComponent(channel)}`, {
+          method: "GET",
+          headers: { "Authorization": `Bearer ${authToken}` }
+        });
+      }
       
       const text = await res.text();
       let data;
