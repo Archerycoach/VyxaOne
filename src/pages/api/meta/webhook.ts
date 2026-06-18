@@ -552,6 +552,27 @@ async function sendLeadNotificationEmail(userId: string, lead: any, leadFields: 
   }
 }
 
+function formatWorkflowAttachments(attachments: unknown) {
+  if (!Array.isArray(attachments)) {
+    return undefined;
+  }
+
+  const normalizedAttachments = attachments
+    .filter((attachment) => attachment && typeof attachment === "object")
+    .map((attachment: any) => {
+      if (attachment.url || attachment.path) {
+        return {
+          filename: attachment.filename || attachment.name || "Anexo",
+          path: attachment.url || attachment.path,
+        };
+      }
+
+      return attachment;
+    });
+
+  return normalizedAttachments.length > 0 ? normalizedAttachments : undefined;
+}
+
 async function executeAutoResponderWorkflows(userId: string, lead: any) {
   try {
     if (!lead.email) {
@@ -600,6 +621,7 @@ async function executeAutoResponderWorkflows(userId: string, lead: any) {
       const config = workflow.action_config || {};
       let subject = config.subject || "Obrigado pelo seu contacto";
       let body = config.body || "Recebemos a sua mensagem.";
+      const attachments = formatWorkflowAttachments(config.attachments);
 
       // Personalize content
       subject = subject
@@ -621,6 +643,7 @@ async function executeAutoResponderWorkflows(userId: string, lead: any) {
         subject: subject,
         html: body.replace(/\n/g, "<br>"),
         text: body,
+        attachments,
       });
       
       console.log(`✅ Auto-responder sent to ${lead.email} for workflow ${workflow.name}`);

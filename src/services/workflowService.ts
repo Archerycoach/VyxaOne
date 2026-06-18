@@ -270,6 +270,11 @@ async function sendEmailAction(action: any, lead: any, content: string, userId: 
     const config = action.config || action;
     const subject = personalizeContent(config.subject || action.subject || "Mensagem automática", lead);
     const body = personalizeContent(config.body || action.body || content, lead);
+    const attachments = Array.isArray(config.attachments)
+      ? config.attachments
+      : Array.isArray(action.attachments)
+        ? action.attachments
+        : [];
 
     const response = await fetch("/api/smtp/send", {
       method: "POST",
@@ -282,6 +287,7 @@ async function sendEmailAction(action: any, lead: any, content: string, userId: 
         subject: subject,
         html: body.replace(/\n/g, "<br>"),
         text: body,
+        attachments,
       }),
     });
 
