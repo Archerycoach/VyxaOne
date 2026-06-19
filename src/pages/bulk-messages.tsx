@@ -26,6 +26,103 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
 
+function normalizeText(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function matchesLeadLocation(lead: LeadWithContacts, location: string): boolean {
+  if (!location) {
+    return true;
+  }
+
+  const requestedLocation = normalizeText(location);
+  const leadLocation = normalizeText(lead.location_preference || "");
+
+  if (!leadLocation) {
+    return false;
+  }
+
+  return leadLocation.includes(requestedLocation) || requestedLocation.includes(leadLocation);
+}
+
+function matchesLeadTypology(lead: LeadWithContacts, typology: string): boolean {
+  if (!typology || typology === "all") {
+    return true;
+  }
+
+  const requestedTypology = normalizeText(typology);
+  const propertyType = normalizeText(lead.property_type || "");
+  const requestedBedroomsMatch = requestedTypology.match(/t\s*([0-9])/);
+  const requestedBedrooms = requestedBedroomsMatch ? Number(requestedBedroomsMatch[1]) : null;
+
+  if (propertyType.includes(requestedTypology)) {
+    return true;
+  }
+
+  if (requestedBedrooms !== null && lead.bedrooms === requestedBedrooms) {
+    return true;
+  }
+
+  if (requestedBedrooms === 0) {
+    return propertyType.includes("estudio") || propertyType.includes("studio");
+  }
+
+  return false;
+}
+
+function matchesLeadBuyPurpose(lead: LeadWithContacts, buyPurpose: string): boolean {
+  if (!buyPurpose || buyPurpose === "all") {
+    return true;
+  }
+
+  return normalizeText(lead.buy_purpose || "") === normalizeText(buyPurpose);
+}
+
+function matchesLeadPropertyType(lead: LeadWithContacts, propertyType: string): boolean {
+  if (!propertyType || propertyType === "all") {
+    return true;
+  }
+
+  const normalizedPropertyType = normalizeText(lead.property_type || "");
+  const tokensByType: Record<string, string[]> = {
+    apartment: ["apartment", "apartamento"],
+    house: ["house", "moradia", "casa"],
+    land: ["land", "terreno"],
+    commercial: ["commercial", "comercial", "escritorio", "escritório", "loja", "store"],
+    store: ["store", "loja"],
+  };
+
+  return (tokensByType[propertyType] || [propertyType]).some((token) =>
+    normalizedPropertyType.includes(normalizeText(token))
+  );
+}
+
+function getQueryParamValue(value: string | string[] | undefined): string {
+  return Array.isArray(value) ? value[0] || "" : value || "";
+}
+
+function getMatchingLeadRecipientIds(
+  leads: LeadWithContacts[],
+  filters: {
+    location: string;
+    typology: string;
+    buyPurpose: string;
+    propertyType: string;
+  }
+): string[] {
+  return leads
+    .filter((lead) => Boolean(lead.email))
+    .filter((lead) => matchesLeadLocation(lead, filters.location))
+    .filter((lead) => matchesLeadTypology(lead, filters.typology))
+    .filter((lead) => matchesLeadBuyPurpose(lead, filters.buyPurpose))
+    .filter((lead) => matchesLeadPropertyType(lead, filters.propertyType))
+    .map((lead) => `lead-${lead.id}`);
+}
+
 export default function BulkMessages() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
@@ -40,6 +137,10 @@ export default function BulkMessages() {
   const [filterSource, setFilterSource] = useState<"all" | "leads" | "contacts">("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [filterLocation, setFilterLocation] = useState("");
+  const [filterTypology, setFilterTypology] = useState<string>("all");
+  const [filterBuyPurpose, setFilterBuyPurpose] = useState<string>("all");
+  const [filterPropertyType, setFilterPropertyType] = useState<string>("all");
   
   // Message
   const [subject, setSubject] = useState("");
@@ -49,6 +150,8 @@ export default function BulkMessages() {
   // UI State
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [aiDraftApplied, setAiDraftApplied] = useState(false);
+  const [aiDraftNotice, setAiDraftNotice] = useState<string | null>(null);
 
   useEffect(() => {
     checkAuth();
@@ -59,6 +162,53 @@ export default function BulkMessages() {
       loadData();
     }
   }, [user]);
+
+  useEffect(() => {
+    if (!router.isReady || loading || aiDraftApplied) {
+      return;
+    }
+
+    if (getQueryParamValue(router.query.aiDraft) !== "1") {
+      return;
+    }
+
+    const nextLocation = getQueryParamValue(router.query.location);
+    const nextTypology = getQueryParamValue(router.query.typology) || "all";
+    const nextBuyPurpose = getQueryParamValue(router.query.buyPurpose) || "all";
+    const nextPropertyType = getQueryParamValue(router.query.propertyType) || "all";
+    const nextSubject = getQueryParamValue(router.query.subject);
+    const nextMessage = getQueryParamValue(router.query.message);
+
+    setMessageType("email");
+    setFilterSource("leads");
+    setFilterStatus("all");
+    setSearchQuery("");
+    setFilterLocation(nextLocation);
+    setFilterTypology(nextTypology);
+    setFilterBuyPurpose(nextBuyPurpose);
+    setFilterPropertyType(nextPropertyType);
+
+    if (nextSubject) {
+      setSubject(nextSubject);
+    }
+
+    if (nextMessage) {
+      setMessage(nextMessage);
+    }
+
+    const matchingLeadIds = getMatchingLeadRecipientIds(leads, {
+      location: nextLocation,
+      typology: nextTypology,
+      buyPurpose: nextBuyPurpose,
+      propertyType: nextPropertyType,
+    });
+
+    setSelectedRecipients(new Set(matchingLeadIds));
+    setAiDraftNotice(
+      `Rascunho IA aplicado a ${matchingLeadIds.length} lead${matchingLeadIds.length === 1 ? "" : "s"} com email. O envio continua manual.`
+    );
+    setAiDraftApplied(true);
+  }, [router.isReady, router.query, loading, aiDraftApplied, leads]);
 
   const checkAuth = async () => {
     try {
@@ -158,6 +308,10 @@ export default function BulkMessages() {
       leads
         .filter((lead) => {
           if (filterStatus !== "all" && lead.status !== filterStatus) return false;
+          if (filterLocation && !matchesLeadLocation(lead, filterLocation)) return false;
+          if (filterTypology !== "all" && !matchesLeadTypology(lead, filterTypology)) return false;
+          if (filterBuyPurpose !== "all" && !matchesLeadBuyPurpose(lead, filterBuyPurpose)) return false;
+          if (filterPropertyType !== "all" && !matchesLeadPropertyType(lead, filterPropertyType)) return false;
           if (searchQuery) {
             const query = searchQuery.toLowerCase();
             return (
@@ -435,6 +589,12 @@ export default function BulkMessages() {
             <p className="text-gray-600 mt-1">Enviar emails ou WhatsApp para múltiplos contactos</p>
           </div>
 
+          {aiDraftNotice && (
+            <Alert className="mb-6 border-blue-200 bg-blue-50">
+              <AlertDescription>{aiDraftNotice}</AlertDescription>
+            </Alert>
+          )}
+
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Recipients Panel */}
             <div className="lg:col-span-1">
@@ -483,6 +643,57 @@ export default function BulkMessages() {
                           <SelectItem value="lost">Perdido</SelectItem>
                         </SelectContent>
                       </Select>
+                    )}
+
+                    {(filterSource === "all" || filterSource === "leads") && (
+                      <>
+                        <Input
+                          placeholder="Filtrar por zona preferida..."
+                          value={filterLocation}
+                          onChange={(e) => setFilterLocation(e.target.value)}
+                        />
+
+                        <Select value={filterTypology} onValueChange={setFilterTypology}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Tipologia" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">Todas as Tipologias</SelectItem>
+                            <SelectItem value="T0">T0</SelectItem>
+                            <SelectItem value="T1">T1</SelectItem>
+                            <SelectItem value="T2">T2</SelectItem>
+                            <SelectItem value="T3">T3</SelectItem>
+                            <SelectItem value="T4">T4</SelectItem>
+                            <SelectItem value="T5">T5</SelectItem>
+                          </SelectContent>
+                        </Select>
+
+                        <Select value={filterBuyPurpose} onValueChange={setFilterBuyPurpose}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Objetivo da procura" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">Todos os Objetivos</SelectItem>
+                            <SelectItem value="housing">Habitação Própria</SelectItem>
+                            <SelectItem value="investment">Investimento</SelectItem>
+                            <SelectItem value="secondary">Segunda Habitação</SelectItem>
+                          </SelectContent>
+                        </Select>
+
+                        <Select value={filterPropertyType} onValueChange={setFilterPropertyType}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Tipo de imóvel" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">Todos os Tipos</SelectItem>
+                            <SelectItem value="apartment">Apartamento</SelectItem>
+                            <SelectItem value="house">Moradia</SelectItem>
+                            <SelectItem value="land">Terreno</SelectItem>
+                            <SelectItem value="commercial">Comercial</SelectItem>
+                            <SelectItem value="store">Loja</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </>
                     )}
 
                     <Input

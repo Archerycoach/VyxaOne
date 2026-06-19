@@ -38,6 +38,10 @@ export interface MetaFormConfig {
   auto_email_notification: boolean;
   default_pipeline_stage: string | null;
   default_lead_source: string;
+  association_type: "none" | "property" | "development";
+  associated_property_id: string | null;
+  associated_development_id: string | null;
+  associated_development_name: string | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -176,6 +180,10 @@ export const getFormConfigs = async (integrationId?: string): Promise<MetaFormCo
     auto_email_notification: d.custom_settings?.auto_email_notification ?? true,
     default_pipeline_stage: d.custom_settings?.default_pipeline_stage || null,
     default_lead_source: d.custom_settings?.default_lead_source || "Meta",
+    association_type: d.custom_settings?.association_type || "none",
+    associated_property_id: d.custom_settings?.associated_property_id || null,
+    associated_development_id: d.custom_settings?.associated_development_id || null,
+    associated_development_name: d.custom_settings?.associated_development_name || null,
     is_active: d.is_active,
     created_at: d.created_at,
     updated_at: d.updated_at
@@ -203,7 +211,11 @@ export const createOrUpdateFormConfig = async (config: Partial<MetaFormConfig>) 
       auto_import: config.auto_import,
       auto_email_notification: config.auto_email_notification,
       default_pipeline_stage: config.default_pipeline_stage,
-      default_lead_source: config.default_lead_source
+      default_lead_source: config.default_lead_source,
+      association_type: config.association_type || "none",
+      associated_property_id: config.associated_property_id || null,
+      associated_development_id: config.associated_development_id || null,
+      associated_development_name: config.associated_development_name || null
     },
     updated_at: new Date().toISOString(),
   };

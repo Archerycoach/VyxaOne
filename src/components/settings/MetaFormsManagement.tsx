@@ -35,6 +35,8 @@ import {
   type MetaFieldMapping,
   type MetaSyncHistory
 } from "@/services/metaService";
+import { getAllProperties } from "@/services/propertiesService";
+import { getDevelopments } from "@/services/developmentsService";
 import { getBuyerStages, getSellerStages, type PipelineStage } from "@/services/pipelineSettingsService";
 
 interface MetaForm {
@@ -52,6 +54,18 @@ interface MetaFormsManagementProps {
   integrationName: string;
 }
 
+interface PropertyOption {
+  id: string;
+  title: string;
+  city?: string;
+}
+
+interface DevelopmentOption {
+  id: string;
+  name: string;
+  city?: string | null;
+}
+
 export function MetaFormsManagement({ integrationId, integrationName }: MetaFormsManagementProps) {
   const [forms, setForms] = useState<MetaForm[]>([]);
   const [loading, setLoading] = useState(true);
@@ -64,11 +78,14 @@ export function MetaFormsManagement({ integrationId, integrationName }: MetaForm
   const [showOnlyActive, setShowOnlyActive] = useState(true);
   const [buyerStages, setBuyerStages] = useState<PipelineStage[]>([]);
   const [sellerStages, setSellerStages] = useState<PipelineStage[]>([]);
+  const [properties, setProperties] = useState<PropertyOption[]>([]);
+  const [developments, setDevelopments] = useState<DevelopmentOption[]>([]);
   const { toast } = useToast();
 
   useEffect(() => {
     loadForms();
     loadPipelineStages();
+    loadAssociationOptions();
   }, [integrationId]);
 
   const loadPipelineStages = async () => {
@@ -81,6 +98,33 @@ export function MetaFormsManagement({ integrationId, integrationName }: MetaForm
       setSellerStages(sellers);
     } catch (err) {
       console.error("Error loading pipeline stages:", err);
+    }
+  };
+
+  const loadAssociationOptions = async () => {
+    try {
+      const [propertiesData, developmentsData] = await Promise.all([
+        getAllProperties(false),
+        getDevelopments(),
+      ]);
+
+      setProperties(
+        propertiesData.map((property) => ({
+          id: property.id,
+          title: property.title,
+          city: property.city,
+        }))
+      );
+
+      setDevelopments(
+        developmentsData.map((development) => ({
+          id: development.id,
+          name: development.name,
+          city: development.city ?? null,
+        }))
+      );
+    } catch (err) {
+      console.error("Error loading association options:", err);
     }
   };
 
@@ -137,6 +181,10 @@ export function MetaFormsManagement({ integrationId, integrationName }: MetaForm
           auto_import: true,
           auto_email_notification: true,
           default_lead_source: `Meta - ${integrationName}`,
+          association_type: "none",
+          associated_property_id: null,
+          associated_development_id: null,
+          associated_development_name: null,
           is_active: true,
         });
         setFieldMappings([
@@ -162,6 +210,27 @@ export function MetaFormsManagement({ integrationId, integrationName }: MetaForm
   const handleSaveConfig = async () => {
     try {
       if (!selectedForm) return;
+
+      if (formConfig.association_type === "property" && !formConfig.associated_property_id) {
+        toast({
+          title: "Imóvel em falta",
+          description: "Selecione o imóvel a associar a este formulário Meta.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (
+        formConfig.association_type === "development" &&
+        (!formConfig.associated_development_id || !formConfig.associated_development_name)
+      ) {
+        toast({
+          title: "Empreendimento em falta",
+          description: "Selecione o empreendimento a associar a este formulário Meta.",
+          variant: "destructive",
+        });
+        return;
+      }
 
       const savedConfig = await createOrUpdateFormConfig({
         ...formConfig,
@@ -489,6 +558,122 @@ export function MetaFormsManagement({ integrationId, integrationName }: MetaForm
                       </SelectGroup>
                     </SelectContent>
                   </Select>
+                </div>
+
+                <div className="space-y-4 rounded-lg border p-4">
+                  <div className="space-y-1">
+                    <Label>Associação automática</Label>
+                    <p className="text-sm text-gray-500">
+                      Defina se as leads deste formulário devem entrar já ligadas a um imóvel ou a um empreendimento.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Tipo de associação</Label>
+                    <Select
+                      value={formConfig.association_type || "none"}
+                      onValueChange={(value) => {
+                        if (value === "property") {
+                          setFormConfig({
+                            ...formConfig,
+                            association_type: "property",
+                            associated_development_id: null,
+                            associated_development_name: null,
+                          });
+                          return;
+                        }
+
+                        if (value === "development") {
+                          setFormConfig({
+                            ...formConfig,
+                            association_type: "development",
+                            associated_property_id: null,
+                          });
+                          return;
+                        }
+
+                        setFormConfig({
+                          ...formConfig,
+                          association_type: "none",
+                          associated_property_id: null,
+                          associated_development_id: null,
+                          associated_development_name: null,
+                        });
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Escolha o tipo de associação" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Sem associação automática</SelectItem>
+                        <SelectItem value="property">Associar a imóvel</SelectItem>
+                        <SelectItem value="development">Associar a empreendimento</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {formConfig.association_type === "property" && (
+                    <div className="space-y-2">
+                      <Label>Imóvel associado</Label>
+                      <Select
+                        value={formConfig.associated_property_id || "none"}
+                        onValueChange={(value) =>
+                          setFormConfig({
+                            ...formConfig,
+                            associated_property_id: value === "none" ? null : value,
+                          })
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Escolha um imóvel" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Sem imóvel associado</SelectItem>
+                          {properties.map((property) => (
+                            <SelectItem key={property.id} value={property.id}>
+                              {property.title}{property.city ? ` • ${property.city}` : ""}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  {formConfig.association_type === "development" && (
+                    <div className="space-y-2">
+                      <Label>Empreendimento associado</Label>
+                      <Select
+                        value={formConfig.associated_development_id || "none"}
+                        onValueChange={(value) => {
+                          const selectedDevelopment = developments.find(
+                            (development) => development.id === value
+                          );
+
+                          setFormConfig({
+                            ...formConfig,
+                            associated_development_id: value === "none" ? null : value,
+                            associated_development_name:
+                              value === "none" ? null : selectedDevelopment?.name || null,
+                          });
+                        }}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Escolha um empreendimento" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Sem empreendimento associado</SelectItem>
+                          {developments.map((development) => (
+                            <SelectItem key={development.id} value={development.id}>
+                              {development.name}{development.city ? ` • ${development.city}` : ""}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-gray-500">
+                        A lead ficará marcada com o empreendimento selecionado quando entrar por este formulário.
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
             </TabsContent>

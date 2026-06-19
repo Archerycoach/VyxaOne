@@ -137,6 +137,8 @@ export default async function handler(
               .eq("is_active", true)
               .single();
 
+            const formAssociation = getMetaFormAssociation(formConfig);
+
             let fieldMappings = [];
             if (formConfig) {
               const { data } = await supabase
@@ -267,7 +269,7 @@ export default async function handler(
             if (finalEmail) {
               const { data } = await supabase
                 .from("leads")
-                .select("id, name")
+                .select("id, name, custom_fields")
                 .eq("user_id", integration.user_id)
                 .eq("email", finalEmail)
                 .limit(1);
@@ -277,7 +279,7 @@ export default async function handler(
             if (!existingLead && finalPhone) {
               const { data } = await supabase
                 .from("leads")
-                .select("id, name")
+                .select("id, name, custom_fields")
                 .eq("user_id", integration.user_id)
                 .eq("phone", finalPhone)
                 .limit(1);
@@ -301,6 +303,8 @@ export default async function handler(
                 note: noteContent,
                 created_by: integration.user_id
               });
+
+              await applyMetaFormAssociation(existingLead.id, formAssociation, existingLead.custom_fields);
               
               console.log("✅ Note added to existing lead:", existingLead.id);
               
@@ -361,6 +365,8 @@ export default async function handler(
             }
 
             console.log("✅ Lead created:", newLead.id);
+
+            await applyMetaFormAssociation(newLead.id, formAssociation, newLead.custom_fields);
 
             // Create internal notification
             await supabase.from("notifications").insert({
@@ -443,6 +449,81 @@ async function logWebhook(
     
   if (error) {
     console.error("Failed to insert into meta_webhook_logs:", error);
+  }
+}
+
+function getMetaFormAssociation(formConfig: any): {
+  type: "none" | "property" | "development";
+  propertyId: string | null;
+  developmentId: string | null;
+  developmentName: string | null;
+} {
+  const settings =
+    formConfig?.custom_settings && typeof formConfig.custom_settings === "object"
+      ? formConfig.custom_settings
+      : {};
+
+  const associationType =
+    settings.association_type === "property" || settings.association_type === "development"
+      ? settings.association_type
+      : "none";
+
+  return {
+    type: associationType,
+    propertyId: typeof settings.associated_property_id === "string" ? settings.associated_property_id : null,
+    developmentId: typeof settings.associated_development_id === "string" ? settings.associated_development_id : null,
+    developmentName:
+      typeof settings.associated_development_name === "string"
+        ? settings.associated_development_name
+        : null,
+  };
+}
+
+async function applyMetaFormAssociation(
+  leadId: string,
+  association: ReturnType<typeof getMetaFormAssociation>,
+  currentCustomFields?: Record<string, unknown> | null
+) {
+  if (association.type === "property" && association.propertyId) {
+    const { error } = await supabase
+      .from("properties")
+      .update({
+        lead_id: leadId,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", association.propertyId);
+
+    if (error) {
+      throw error;
+    }
+
+    return;
+  }
+
+  if (association.type === "development" && (association.developmentId || association.developmentName)) {
+    const nextCustomFields =
+      currentCustomFields && typeof currentCustomFields === "object" && !Array.isArray(currentCustomFields)
+        ? { ...currentCustomFields }
+        : {};
+
+    const { error } = await supabase
+      .from("leads")
+      .update({
+        is_development: true,
+        development_name: association.developmentName,
+        custom_fields: {
+          ...nextCustomFields,
+          meta_association_type: "development",
+          meta_associated_development_id: association.developmentId,
+          meta_associated_development_name: association.developmentName,
+        },
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", leadId);
+
+    if (error) {
+      throw error;
+    }
   }
 }
 

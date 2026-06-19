@@ -14,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Bot, FileText, Play, Clock, Plus, Loader2, Calendar, Settings, Trash2, Send, Lock, User } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/router";
 
 interface Report {
   id: string;
@@ -30,8 +31,31 @@ interface AiTask {
   is_active: boolean;
 }
 
+interface EmailCampaignDraft {
+  criteria: {
+    location: string | null;
+    typology: string | null;
+    bedrooms: number | null;
+    buyPurpose: string | null;
+    propertyType: string | null;
+  };
+  filterSummary: string;
+  subject: string;
+  htmlBody: string;
+  textBody: string;
+  recipients: Array<{
+    id: string;
+    name: string;
+    email: string | null;
+    status: string | null;
+    location_preference: string | null;
+    typology: string | null;
+  }>;
+}
+
 export default function AiAgentPage() {
   const { toast } = useToast();
+  const router = useRouter();
   const [reports, setReports] = useState<Report[]>([]);
   const [tasks, setTasks] = useState<AiTask[]>([]);
   const [loading, setLoading] = useState(true);
@@ -43,6 +67,7 @@ export default function AiAgentPage() {
   const [chatHistory, setChatHistory] = useState<{role: string, content: string}[]>([]);
   const [chatMessage, setChatMessage] = useState("");
   const [isChatting, setIsChatting] = useState(false);
+  const [latestCampaignDraft, setLatestCampaignDraft] = useState<EmailCampaignDraft | null>(null);
   
   // Create task modal
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
@@ -157,6 +182,38 @@ export default function AiAgentPage() {
     }
   };
 
+  const openDraftInBulkMessages = () => {
+    if (!latestCampaignDraft) return;
+
+    const query: Record<string, string> = {
+      aiDraft: "1",
+      source: "leads",
+      subject: latestCampaignDraft.subject,
+      message: latestCampaignDraft.htmlBody,
+    };
+
+    if (latestCampaignDraft.criteria.location) {
+      query.location = latestCampaignDraft.criteria.location;
+    }
+
+    if (latestCampaignDraft.criteria.typology) {
+      query.typology = latestCampaignDraft.criteria.typology;
+    }
+
+    if (latestCampaignDraft.criteria.buyPurpose) {
+      query.buyPurpose = latestCampaignDraft.criteria.buyPurpose;
+    }
+
+    if (latestCampaignDraft.criteria.propertyType) {
+      query.propertyType = latestCampaignDraft.criteria.propertyType;
+    }
+
+    router.push({
+      pathname: "/bulk-messages",
+      query,
+    });
+  };
+
   const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!chatMessage.trim()) return;
@@ -182,6 +239,7 @@ export default function AiAgentPage() {
       
       const data = await res.json();
       if (data.reply) {
+        setLatestCampaignDraft(data.campaignDraft || null);
         setChatHistory([...newHistory, { role: "assistant", content: data.reply }]);
       } else {
         throw new Error("Sem resposta do agente.");
@@ -297,10 +355,62 @@ export default function AiAgentPage() {
                           </div>
                         )}
                       </ScrollArea>
+                      {latestCampaignDraft && (
+                        <div className="border-t bg-indigo-50/60 p-4 space-y-4">
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                            <div>
+                              <p className="text-sm font-semibold text-indigo-950">
+                                Rascunho preparado para {latestCampaignDraft.recipients.length} leads
+                              </p>
+                              <p className="text-sm text-indigo-800 mt-1">
+                                {latestCampaignDraft.filterSummary || "Segmento definido no pedido"}
+                              </p>
+                              <p className="text-xs text-indigo-700 mt-2">
+                                O email não é enviado automaticamente. Pode rever assunto, mensagem e destinatários antes de enviar.
+                              </p>
+                            </div>
+                            <Button onClick={openDraftInBulkMessages} className="bg-indigo-600 hover:bg-indigo-700">
+                              Abrir em Mensagens
+                            </Button>
+                          </div>
+
+                          <div className="grid gap-4 lg:grid-cols-[1.1fr,0.9fr]">
+                            <div className="rounded-xl border bg-white p-4">
+                              <p className="text-sm font-medium text-gray-900">Leads abrangidas</p>
+                              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                                {latestCampaignDraft.recipients.slice(0, 6).map((recipient) => (
+                                  <div key={recipient.id} className="rounded-lg border border-indigo-100 px-3 py-2">
+                                    <p className="text-sm font-medium text-gray-900">{recipient.name}</p>
+                                    <p className="text-xs text-gray-600 mt-1">
+                                      {recipient.location_preference || "Zona não definida"}
+                                      {recipient.typology ? ` • ${recipient.typology}` : ""}
+                                    </p>
+                                  </div>
+                                ))}
+                              </div>
+                              {latestCampaignDraft.recipients.length > 6 && (
+                                <p className="text-xs text-gray-500 mt-3">
+                                  +{latestCampaignDraft.recipients.length - 6} leads adicionais no segmento
+                                </p>
+                              )}
+                            </div>
+
+                            <div className="rounded-xl border bg-white p-4">
+                              <p className="text-sm font-medium text-gray-900">Assunto</p>
+                              <p className="text-sm text-gray-700 mt-1">{latestCampaignDraft.subject}</p>
+                              <p className="text-sm font-medium text-gray-900 mt-4">Mensagem</p>
+                              <div
+                                className="mt-2 text-sm text-gray-700 space-y-2 [&_p]:mb-3 [&_ul]:list-disc [&_ul]:pl-5"
+                                dangerouslySetInnerHTML={{ __html: latestCampaignDraft.htmlBody }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      )}
                       <div className="p-4 border-t bg-white rounded-b-lg">
                         <form onSubmit={handleSendMessage} className="flex gap-2">
                           <Input 
-                            placeholder="Ex: Encontra 5 imóveis no Idealista para a lead Maria Silva"
+                            placeholder="Ex: Prepara um email para todas as leads que procuram T2 em Matosinhos"
                             value={chatMessage}
                             onChange={(e) => setChatMessage(e.target.value)}
                             disabled={isChatting}

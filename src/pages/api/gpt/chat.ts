@@ -21,6 +21,8 @@ interface LeadContext {
   next_follow_up: string | null;
   property_type: string | null;
   location_preference: string | null;
+  typology: string | null;
+  buy_purpose: string | null;
   budget: number | null;
   budget_min: number | null;
   budget_max: number | null;
@@ -36,6 +38,30 @@ interface EventContext {
   title: string;
   start_time: string;
   event_type: string | null;
+}
+
+interface EmailCampaignCriteria {
+  location: string | null;
+  typology: string | null;
+  bedrooms: number | null;
+  buyPurpose: string | null;
+  propertyType: string | null;
+}
+
+interface EmailCampaignDraft {
+  criteria: EmailCampaignCriteria;
+  filterSummary: string;
+  subject: string;
+  htmlBody: string;
+  textBody: string;
+  recipients: Array<{
+    id: string;
+    name: string;
+    email: string | null;
+    status: string | null;
+    location_preference: string | null;
+    typology: string | null;
+  }>;
 }
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -68,6 +94,368 @@ function detectRequestedBedrooms(message: string): number | null {
   }
 
   return null;
+}
+
+function detectRequestedBuyPurpose(message: string): string | null {
+  const normalizedMessage = normalizeText(message);
+
+  if (/(investimento|investir|rentabilidade)/.test(normalizedMessage)) {
+    return "investment";
+  }
+
+  if (/(segunda habitacao|segunda habitação|ferias|férias)/.test(normalizedMessage)) {
+    return "secondary";
+  }
+
+  if (/(habitacao propria|habitação própria|primeira habitacao|primeira habitação|morar)/.test(normalizedMessage)) {
+    return "housing";
+  }
+
+  return null;
+}
+
+function detectRequestedPropertyType(message: string): string | null {
+  const normalizedMessage = normalizeText(message);
+
+  if (/\bapartamento/.test(normalizedMessage)) {
+    return "apartment";
+  }
+
+  if (/\bmoradia\b|\bcasa\b/.test(normalizedMessage)) {
+    return "house";
+  }
+
+  if (/\bterreno\b/.test(normalizedMessage)) {
+    return "land";
+  }
+
+  if (/\bloja\b/.test(normalizedMessage)) {
+    return "store";
+  }
+
+  if (/\bcomercial\b|\bescritorio\b|\bescritório\b/.test(normalizedMessage)) {
+    return "commercial";
+  }
+
+  return null;
+}
+
+function cleanLocationCandidate(value: string): string {
+  return value
+    .replace(/[.,!?]+$/g, "")
+    .split(/\s+(?:com|e|ou|para|que|do|da|dos|das)\b/i)[0]
+    .trim();
+}
+
+function extractLocationHint(message: string): string | null {
+  const patterns = [
+    /(?:zona|bairro|localidade|cidade)\s+(?:de\s+)?([A-Za-zÀ-ÿ0-9\s-]+)/i,
+    /(?:em|na|no)\s+([A-Za-zÀ-ÿ0-9\s-]+)/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = message.match(pattern);
+    const candidate = cleanLocationCandidate(match?.[1] || "");
+    if (candidate.length >= 3) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+function resolveRequestedLocation(message: string, leads: LeadContext[]): string | null {
+  const normalizedMessage = normalizeText(message);
+  const locationCandidates = Array.from(
+    new Set(
+      leads
+        .map((lead) => lead.location_preference)
+        .filter((location): location is string => Boolean(location))
+    )
+  ).sort((a, b) => b.length - a.length);
+
+  const directMatch = locationCandidates.find((candidate) =>
+    normalizedMessage.includes(normalizeText(candidate))
+  );
+
+  if (directMatch) {
+    return directMatch;
+  }
+
+  const extractedLocation = extractLocationHint(message);
+  if (!extractedLocation) {
+    return null;
+  }
+
+  const normalizedExtracted = normalizeText(extractedLocation);
+  const fuzzyMatch = locationCandidates.find((candidate) => {
+    const normalizedCandidate = normalizeText(candidate);
+    return (
+      normalizedCandidate.includes(normalizedExtracted) ||
+      normalizedExtracted.includes(normalizedCandidate)
+    );
+  });
+
+  return fuzzyMatch || extractedLocation;
+}
+
+function isEmailCampaignRequest(message: string): boolean {
+  const normalizedMessage = normalizeText(message);
+  const hasEmailIntent = /(email|e-mail|mail)/.test(normalizedMessage);
+  const hasDraftIntent = /(prepara|preparar|escreve|escrever|cria|criar|redige|redigir|rascunho)/.test(
+    normalizedMessage,
+  );
+  const hasAudienceIntent = /(lead|leads|clientes|contactos|contatos|todas as leads|grupo)/.test(
+    normalizedMessage,
+  );
+
+  return hasEmailIntent && hasDraftIntent && hasAudienceIntent;
+}
+
+function matchesRequestedBedrooms(lead: LeadContext, bedrooms: number | null): boolean {
+  if (bedrooms === null) {
+    return true;
+  }
+
+  if (lead.bedrooms === bedrooms) {
+    return true;
+  }
+
+  const leadTypology = normalizeText(lead.typology || "");
+  const propertyType = normalizeText(lead.property_type || "");
+
+  if (leadTypology.includes(`t${bedrooms}`) || propertyType.includes(`t${bedrooms}`)) {
+    return true;
+  }
+
+  if (bedrooms === 0) {
+    return leadTypology.includes("t0") || propertyType.includes("estudio") || propertyType.includes("studio");
+  }
+
+  return false;
+}
+
+function matchesRequestedLocation(lead: LeadContext, location: string | null): boolean {
+  if (!location) {
+    return true;
+  }
+
+  const requestedLocation = normalizeText(location);
+  const leadLocation = normalizeText(lead.location_preference || "");
+
+  if (!leadLocation) {
+    return false;
+  }
+
+  return leadLocation.includes(requestedLocation) || requestedLocation.includes(leadLocation);
+}
+
+function matchesRequestedBuyPurpose(lead: LeadContext, buyPurpose: string | null): boolean {
+  if (!buyPurpose) {
+    return true;
+  }
+
+  return normalizeText(lead.buy_purpose || "") === normalizeText(buyPurpose);
+}
+
+function matchesRequestedPropertyType(lead: LeadContext, propertyType: string | null): boolean {
+  if (!propertyType) {
+    return true;
+  }
+
+  const leadPropertyType = normalizeText(lead.property_type || "");
+  const tokensByType: Record<string, string[]> = {
+    apartment: ["apartment", "apartamento"],
+    house: ["house", "moradia", "casa"],
+    land: ["land", "terreno"],
+    commercial: ["commercial", "comercial", "escritorio", "escritório", "loja", "store"],
+    store: ["store", "loja"],
+  };
+
+  return (tokensByType[propertyType] || [propertyType]).some((token) =>
+    leadPropertyType.includes(normalizeText(token)),
+  );
+}
+
+function buildCampaignFilterSummary(criteria: EmailCampaignCriteria): string {
+  const parts: string[] = [];
+
+  if (criteria.location) {
+    parts.push(`zona ${criteria.location}`);
+  }
+
+  if (criteria.typology) {
+    parts.push(`tipologia ${criteria.typology}`);
+  }
+
+  if (criteria.buyPurpose === "housing") {
+    parts.push("objetivo habitação própria");
+  }
+
+  if (criteria.buyPurpose === "investment") {
+    parts.push("objetivo investimento");
+  }
+
+  if (criteria.buyPurpose === "secondary") {
+    parts.push("objetivo segunda habitação");
+  }
+
+  if (criteria.propertyType === "apartment") {
+    parts.push("tipo apartamento");
+  }
+
+  if (criteria.propertyType === "house") {
+    parts.push("tipo moradia");
+  }
+
+  if (criteria.propertyType === "land") {
+    parts.push("tipo terreno");
+  }
+
+  if (criteria.propertyType === "commercial") {
+    parts.push("tipo comercial");
+  }
+
+  if (criteria.propertyType === "store") {
+    parts.push("tipo loja");
+  }
+
+  return parts.join(" · ");
+}
+
+function buildFallbackDraft(criteria: EmailCampaignCriteria, agentName: string) {
+  const subject =
+    criteria.location
+      ? `Oportunidades na zona de ${criteria.location}`
+      : criteria.typology
+        ? `Novas oportunidades para procura ${criteria.typology}`
+        : "Novas oportunidades alinhadas com a sua procura";
+
+  const summary = buildCampaignFilterSummary(criteria);
+  const summaryText = summary ? ` (${summary})` : "";
+
+  return {
+    subject,
+    htmlBody: `<p>Olá {nome},</p><p>Identificámos novas oportunidades que podem encaixar na sua procura${summaryText}.</p><p>Se quiser, responda a este email para lhe enviarmos as opções mais relevantes e alinharmos os próximos passos.</p><p>Cumprimentos,<br/>${agentName}</p>`,
+    textBody: `Olá {nome},\n\nIdentificámos novas oportunidades que podem encaixar na sua procura${summaryText}.\n\nSe quiser, responda a este email para lhe enviarmos as opções mais relevantes e alinharmos os próximos passos.\n\nCumprimentos,\n${agentName}`,
+  };
+}
+
+function sanitizeJsonReply(content: string): string {
+  return content.replace(/^```json\s*/i, "").replace(/```$/i, "").trim();
+}
+
+async function generateEmailCampaignDraft(
+  message: string,
+  criteria: EmailCampaignCriteria,
+  leads: LeadContext[],
+  agentName: string,
+): Promise<EmailCampaignDraft> {
+  const filterSummary = buildCampaignFilterSummary(criteria);
+  const fallback = buildFallbackDraft(criteria, agentName);
+
+  if (!openAIApiKey) {
+    return {
+      criteria,
+      filterSummary,
+      ...fallback,
+      recipients: leads.map((lead) => ({
+        id: lead.id,
+        name: lead.name,
+        email: lead.email,
+        status: lead.status,
+        location_preference: lead.location_preference,
+        typology: lead.typology,
+      })),
+    };
+  }
+
+  try {
+    const draftResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${openAIApiKey}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        temperature: 0.7,
+        messages: [
+          {
+            role: "system",
+            content:
+              "És um copywriter imobiliário em português de Portugal. Cria emails curtos, humanos e comerciais, sem promessas falsas. Responde APENAS em JSON com as chaves subject, htmlBody e textBody. Usa o placeholder {nome} na saudação.",
+          },
+          {
+            role: "user",
+            content: JSON.stringify({
+              pedido: message,
+              agente: agentName,
+              segmento: filterSummary,
+              numero_de_leads: leads.length,
+              amostra_de_leads: leads.slice(0, 8).map((lead) => ({
+                nome: lead.name,
+                zona: lead.location_preference,
+                tipologia: lead.typology,
+                objetivo: lead.buy_purpose,
+                tipo_imovel: lead.property_type,
+                orcamento: formatBudget(lead),
+              })),
+            }),
+          },
+        ],
+      }),
+    });
+
+    if (!draftResponse.ok) {
+      throw new Error("Falha ao gerar rascunho IA");
+    }
+
+    const draftData = await draftResponse.json();
+    const rawContent = draftData.choices?.[0]?.message?.content || "";
+    const parsed = JSON.parse(sanitizeJsonReply(rawContent));
+
+    return {
+      criteria,
+      filterSummary,
+      subject: typeof parsed.subject === "string" && parsed.subject.trim() ? parsed.subject.trim() : fallback.subject,
+      htmlBody: typeof parsed.htmlBody === "string" && parsed.htmlBody.trim() ? parsed.htmlBody.trim() : fallback.htmlBody,
+      textBody: typeof parsed.textBody === "string" && parsed.textBody.trim() ? parsed.textBody.trim() : fallback.textBody,
+      recipients: leads.map((lead) => ({
+        id: lead.id,
+        name: lead.name,
+        email: lead.email,
+        status: lead.status,
+        location_preference: lead.location_preference,
+        typology: lead.typology,
+      })),
+    };
+  } catch (error) {
+    console.error("Erro ao gerar rascunho de campanha por IA:", error);
+
+    return {
+      criteria,
+      filterSummary,
+      ...fallback,
+      recipients: leads.map((lead) => ({
+        id: lead.id,
+        name: lead.name,
+        email: lead.email,
+        status: lead.status,
+        location_preference: lead.location_preference,
+        typology: lead.typology,
+      })),
+    };
+  }
+}
+
+function formatEmailCampaignReply(draft: EmailCampaignDraft): string {
+  const recipientPreview = draft.recipients
+    .slice(0, 5)
+    .map((lead) => `- ${lead.name}${lead.location_preference ? ` · ${lead.location_preference}` : ""}${lead.typology ? ` · ${lead.typology}` : ""}`)
+    .join("\n");
+
+  return `Preparei um rascunho de email para ${draft.recipients.length} leads com ${draft.filterSummary || "o perfil pedido"}.\n\nAssunto: ${draft.subject}\n\nPrimeiras leads abrangidas:\n${recipientPreview}\n\nO rascunho detalhado ficou disponível abaixo para revisão antes de enviar.`;
 }
 
 function isLeadLookupRequest(message: string): boolean {
@@ -241,7 +629,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const { data: leads, error: leadsError } = await supabase
       .from("leads")
       .select(
-        "id, name, phone, email, status, lead_type, next_follow_up, property_type, location_preference, budget, budget_min, budget_max, min_area, max_area, bedrooms, bathrooms, source",
+        "id, name, phone, email, status, lead_type, next_follow_up, property_type, location_preference, typology, buy_purpose, budget, budget_min, budget_max, min_area, max_area, bedrooms, bathrooms, source",
       )
       .or(`assigned_to.eq.${user.id},user_id.eq.${user.id}`)
       .is("archived_at", null)
@@ -255,6 +643,60 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     const activeLeads = (leads || []) as LeadContext[];
+
+    const requestedBedrooms = detectRequestedBedrooms(message);
+
+    if (isEmailCampaignRequest(message)) {
+      const criteria: EmailCampaignCriteria = {
+        location: resolveRequestedLocation(message, activeLeads),
+        typology: requestedBedrooms !== null ? `T${requestedBedrooms}` : null,
+        bedrooms: requestedBedrooms,
+        buyPurpose: detectRequestedBuyPurpose(message),
+        propertyType: detectRequestedPropertyType(message),
+      };
+
+      if (!criteria.location && criteria.bedrooms === null && !criteria.buyPurpose && !criteria.propertyType) {
+        return res.status(200).json({
+          reply:
+            "Consigo preparar esse email, mas preciso pelo menos de um critério de procura, como zona, tipologia, objetivo da compra ou tipo de imóvel.",
+        });
+      }
+
+      const matchedLeads = activeLeads.filter((lead) => {
+        return (
+          matchesRequestedBedrooms(lead, criteria.bedrooms) &&
+          matchesRequestedLocation(lead, criteria.location) &&
+          matchesRequestedBuyPurpose(lead, criteria.buyPurpose) &&
+          matchesRequestedPropertyType(lead, criteria.propertyType)
+        );
+      });
+
+      const emailableLeads = matchedLeads.filter((lead) => Boolean(lead.email));
+
+      if (matchedLeads.length === 0) {
+        return res.status(200).json({
+          reply: `Não encontrei leads com ${buildCampaignFilterSummary(criteria) || "esses critérios"} na tua carteira ativa.`,
+        });
+      }
+
+      if (emailableLeads.length === 0) {
+        return res.status(200).json({
+          reply: `Encontrei ${matchedLeads.length} leads com ${buildCampaignFilterSummary(criteria) || "esses critérios"}, mas nenhuma tem email registado.`,
+        });
+      }
+
+      const campaignDraft = await generateEmailCampaignDraft(
+        message,
+        criteria,
+        emailableLeads,
+        profile?.full_name || "Agente",
+      );
+
+      return res.status(200).json({
+        reply: formatEmailCampaignReply(campaignDraft),
+        campaignDraft,
+      });
+    }
 
     if (isIdealistaRequest(message)) {
       const referencedLeads = findReferencedLeads(message, activeLeads);
@@ -305,7 +747,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
     }
 
-    const requestedBedrooms = detectRequestedBedrooms(message);
     const leadLookupRequest = isLeadLookupRequest(message);
 
     if (requestedBedrooms !== null && leadLookupRequest) {
