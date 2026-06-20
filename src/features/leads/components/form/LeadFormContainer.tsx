@@ -43,6 +43,53 @@ const validatePhoneNumber = (phone: string): boolean => {
   return phoneRegex.test(cleaned);
 };
 
+const normalizeLeadStatus = (status: string, leadType: string): string => {
+  const normalizedStatus = (status || "").toLowerCase().trim();
+  const canonicalStatuses = new Set([
+    "new",
+    "contacted",
+    "qualified",
+    "proposal",
+    "negotiation",
+    "won",
+    "lost",
+  ]);
+
+  if (canonicalStatuses.has(normalizedStatus)) {
+    return normalizedStatus;
+  }
+
+  if (normalizedStatus.includes("sold") || normalizedStatus.includes("closed") || normalizedStatus.includes("won")) {
+    return "won";
+  }
+
+  if (normalizedStatus.includes("lost")) {
+    return "lost";
+  }
+
+  if (normalizedStatus.includes("negoti")) {
+    return "negotiation";
+  }
+
+  if (normalizedStatus.includes("proposal") || normalizedStatus.includes("document")) {
+    return "proposal";
+  }
+
+  if (
+    normalizedStatus.includes("qualif") ||
+    normalizedStatus.includes("evalu") ||
+    normalizedStatus.includes("visit")
+  ) {
+    return "qualified";
+  }
+
+  if (normalizedStatus.includes("contact") || normalizedStatus.includes("marketing")) {
+    return "contacted";
+  }
+
+  return leadType === "seller" ? "new" : "new";
+};
+
 export function LeadFormContainer({ initialData, onSuccess, onCancel }: LeadFormContainerProps) {
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
@@ -138,6 +185,7 @@ export function LeadFormContainer({ initialData, onSuccess, onCancel }: LeadForm
       const parsedMinArea = parseFloat(formData.min_area) || 0;
       const parsedPropertyArea = parseFloat(formData.property_area) || 0;
       const parsedDesiredPrice = parseFloat(formData.desired_price) || 0;
+      const normalizedStatus = normalizeLeadStatus(formData.status, formData.lead_type);
 
       // Clean phone number one final time before sending
       const cleanedPhone = formData.phone ? cleanPhoneNumber(formData.phone) : null;
@@ -146,7 +194,7 @@ export function LeadFormContainer({ initialData, onSuccess, onCancel }: LeadForm
         name: formData.name,
         email: formData.email || null,
         phone: cleanedPhone,
-        status: formData.status,
+        status: normalizedStatus,
         lead_type: formData.lead_type,
         notes: formData.notes || null,
         source: formData.source,

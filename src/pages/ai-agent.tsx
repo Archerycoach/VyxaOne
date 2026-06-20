@@ -285,6 +285,22 @@ export default function AiAgentPage() {
               </div>
             </div>
 
+            <Card className="border-indigo-200 bg-indigo-50/70">
+              <CardContent className="flex flex-col gap-4 p-5 md:flex-row md:items-center md:justify-between">
+                <div className="space-y-1">
+                  <p className="text-sm font-semibold text-indigo-950">Novo: Emails por Procura</p>
+                  <p className="text-sm text-indigo-900">
+                    Defina zona, tipologia, objetivo e tipo de imóvel para a IA preparar o email e pré-selecionar as leads certas antes do envio.
+                  </p>
+                </div>
+                <Link href="/ai-email-campaigns">
+                  <Button className="bg-indigo-600 hover:bg-indigo-700">
+                    Abrir fluxo dedicado
+                  </Button>
+                </Link>
+              </CardContent>
+            </Card>
+
             <Tabs defaultValue="reports" className="w-full">
               <TabsList className="grid w-full sm:w-[600px] grid-cols-3">
                 <TabsTrigger value="chat">Conversa em Tempo Real</TabsTrigger>

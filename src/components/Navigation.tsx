@@ -134,6 +134,7 @@ export function Navigation() {
       label: "Inteligência Artificial",
       subItems: [
         { icon: Bot, label: "Agente IA", path: "/ai-agent" },
+        { icon: BrainCircuit, label: "Emails por Procura", path: "/ai-email-campaigns" },
         { icon: ListTodo, label: "Organizador Pessoal", path: "/ai-organizer" },
         { icon: Brain, label: "Coach de Performance", path: "/ai-performance-coach" },
       ]
