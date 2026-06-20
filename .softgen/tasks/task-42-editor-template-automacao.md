@@ -9,12 +9,14 @@ created_at: 2026-06-20T13:27:03Z
 position: 42
 ---
 ## Notes
-O utilizador deixou de conseguir escrever o corpo do email no template da automação de resposta às leads. A evidência visual mostra a secção "Corpo do Email" sem área editável visível, embora o resto da configuração do email continue a renderizar. A investigação concentrou-se no editor rico partilhado e na integração concreta dentro da gestão de workflows, evitando regressões no envio manual de mensagens. A análise mostrou dois pontos frágeis: o editor estava a ser reutilizado dentro do diálogo sem uma remontagem estável ao trocar templates/edição, e o `RichTextEditor` só garantia altura visível no `.ql-editor`, deixando margem para colapso visual do container dentro do modal.
+O utilizador deixou de conseguir escrever o corpo do email no template da automação de resposta às leads. A evidência visual inicial mostrava a secção "Corpo do Email" sem área editável visível, e essa parte já foi corrigida. No entanto, o utilizador reporta agora uma segunda regressão: o editor aparece, mas continua sem permitir escrita. A investigação confirmou uma causa concreta no fluxo das automações: `handleUseTemplate` e `handleEditWorkflow` estavam a passar texto simples com quebras de linha para o `RichTextEditor`, enquanto o editor rico controlado espera HTML para funcionar de forma estável. A correção normaliza esses corpos para HTML antes de os enviar ao editor, cobrindo tanto templates novos como workflows antigos já guardados.
 
 ## Checklist
 - [x] Inspecionar a integração do editor no formulário de automações
 - [x] Confirmar se a regressão vem do RichTextEditor ou das classes/estrutura do container
 - [x] Corrigir a renderização/edição do campo "Corpo do Email"
+- [x] Investigar porque o editor visível não aceita escrita
+- [x] Corrigir o bloqueio de input no corpo do email
 - [x] Validar que o editor continua funcional nas automações e não quebra outros usos
 
 ## Acceptance

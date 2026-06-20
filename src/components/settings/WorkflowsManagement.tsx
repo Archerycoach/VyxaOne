@@ -189,6 +189,31 @@ async function createWorkflowInDB(workflowData: {
   return result;
 }
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function normalizeEmailBodyForEditor(value: string): string {
+  const trimmedValue = value.trim();
+
+  if (!trimmedValue) {
+    return "";
+  }
+
+  if (/<\/?[a-z][\s\S]*>/i.test(value)) {
+    return value;
+  }
+
+  return trimmedValue
+    .split(/\n{2,}/)
+    .map((paragraph) => `<p>${escapeHtml(paragraph).replace(/\n/g, "<br />")}</p>`)
+    .join("");
+}
+
 export function WorkflowsManagement() {
   const router = useRouter();
   const { toast } = useToast();
@@ -414,7 +439,7 @@ export function WorkflowsManagement() {
       target_type: "lead",
       target_id: "",
       email_subject: defaultSubject,
-      email_body: defaultBody,
+      email_body: normalizeEmailBodyForEditor(defaultBody),
       attachments: []
     });
     setIsNewWorkflowOpen(true);
@@ -431,7 +456,7 @@ export function WorkflowsManagement() {
       target_type: "lead",
       target_id: "",
       email_subject: workflow.action_config?.subject || "",
-      email_body: workflow.action_config?.body || "",
+      email_body: normalizeEmailBodyForEditor(workflow.action_config?.body || ""),
       attachments: workflow.action_config?.attachments || []
     });
     setEditingWorkflowId(workflow.id);
