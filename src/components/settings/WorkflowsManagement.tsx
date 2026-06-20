@@ -701,7 +701,7 @@ export function WorkflowsManagement() {
             <p className="text-gray-500 mt-1">Configure automações para economizar tempo</p>
           </div>
         </div>
-        <Dialog open={isNewWorkflowOpen} onOpenChange={(open) => {
+        <Dialog modal={false} open={isNewWorkflowOpen} onOpenChange={(open) => {
           setIsNewWorkflowOpen(open);
           if (!open) {
             setEditingWorkflowId(null);
@@ -730,7 +730,22 @@ export function WorkflowsManagement() {
               Novo Workflow
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+          <DialogContent
+            className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto"
+            onOpenAutoFocus={(event) => event.preventDefault()}
+            onInteractOutside={(event) => {
+              const target = event.target as HTMLElement;
+              if (target?.closest(".ql-editor") || target?.closest(".rich-text-editor-container")) {
+                event.preventDefault();
+              }
+            }}
+            onPointerDownOutside={(event) => {
+              const target = event.target as HTMLElement;
+              if (target?.closest(".ql-editor") || target?.closest(".rich-text-editor-container")) {
+                event.preventDefault();
+              }
+            }}
+          >
             <DialogHeader>
               <DialogTitle>
                 {editingWorkflowId ? "Editar Workflow" : (selectedTemplate ? `Usar Template: ${selectedTemplate.name}` : "Criar Novo Workflow")}
@@ -839,6 +854,7 @@ export function WorkflowsManagement() {
                         value={formState.email_body}
                         onChange={(value) => setFormState({ ...formState, email_body: value })}
                         placeholder="Introduza o texto e insira imagens..."
+                        autoFocus
                       />
                     </div>
                   ) : (

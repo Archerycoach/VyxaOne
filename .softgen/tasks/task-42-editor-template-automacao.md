@@ -9,14 +9,15 @@ created_at: 2026-06-20T13:27:03Z
 position: 42
 ---
 ## Notes
-O utilizador deixou de conseguir escrever o corpo do email no template da automação de resposta às leads. A evidência visual inicial mostrava a secção "Corpo do Email" sem área editável visível, e essa parte já foi corrigida. No entanto, o utilizador reporta agora uma segunda regressão: o editor aparece, mas continua sem permitir escrita. A investigação confirmou uma causa concreta no fluxo das automações: `handleUseTemplate` e `handleEditWorkflow` estavam a passar texto simples com quebras de linha para o `RichTextEditor`, enquanto o editor rico controlado espera HTML para funcionar de forma estável. A correção normaliza esses corpos para HTML antes de os enviar ao editor, cobrindo tanto templates novos como workflows antigos já guardados.
+O utilizador deixou de conseguir escrever o corpo do email no template da automação de resposta às leads. A evidência visual inicial mostrava a secção "Corpo do Email" sem área editável visível, e essa parte já foi corrigida. No entanto, o utilizador reporta agora que o editor continua visível mas sem aceitar escrita, pelo que a correção anterior não resolveu a causa real. A comparação com o uso funcional do editor mostrou que o bloqueio persiste apenas nesta integração modal. A evidência de código atual é que a modal de automações já desativa o autofocus padrão, mas o `RichTextEditor` não aplicava qualquer `focus()` programático ao Quill. Esta iteração adiciona autofocus opcional ao editor e ativa-o apenas no corpo do email da automação.
 
 ## Checklist
 - [x] Inspecionar a integração do editor no formulário de automações
 - [x] Confirmar se a regressão vem do RichTextEditor ou das classes/estrutura do container
 - [x] Corrigir a renderização/edição do campo "Corpo do Email"
 - [x] Investigar porque o editor visível não aceita escrita
-- [x] Corrigir o bloqueio de input no corpo do email
+- [x] Comparar esta integração com um uso funcional do editor
+- [x] Corrigir o bloqueio real de input no corpo do email
 - [x] Validar que o editor continua funcional nas automações e não quebra outros usos
 
 ## Acceptance

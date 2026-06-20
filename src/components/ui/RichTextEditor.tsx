@@ -29,6 +29,7 @@ interface RichTextEditorProps {
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
+  autoFocus?: boolean;
 }
 
 const IMAGE_WIDTH_PRESETS = [160, 220, 280, 360];
@@ -52,12 +53,19 @@ function clampImageWidth(value: number): number {
   return Math.min(1200, Math.max(40, Math.round(value)));
 }
 
-export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorProps) {
+export function RichTextEditor({ value, onChange, placeholder, autoFocus = false }: RichTextEditorProps) {
   const quillRef = useRef<ReactQuillType | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const { toast } = useToast();
   const [selectedImage, setSelectedImage] = useState<HTMLImageElement | null>(null);
   const [imageWidthInput, setImageWidthInput] = useState("");
+
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+
+  const handleEditorChange = useCallback((content: string) => {
+    onChangeRef.current(content);
+  }, []);
 
   const clearSelectedImage = useCallback(() => {
     setSelectedImage(null);
@@ -75,14 +83,33 @@ export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorP
     return () => document.removeEventListener("mousedown", handlePointerDown);
   }, [clearSelectedImage]);
 
-  const syncEditorHtml = useCallback(() => {
-    const quill = quillRef.current?.getEditor();
-    if (!quill) {
+  useEffect(() => {
+    if (!autoFocus) {
       return;
     }
 
-    onChange(quill.root.innerHTML);
-  }, [onChange]);
+    const focusTimer = window.setTimeout(() => {
+      if (quillRef.current && typeof quillRef.current.getEditor === "function") {
+        const quill = quillRef.current.getEditor();
+        if (quill) {
+          quill.focus();
+          const selectionIndex = Math.max(0, quill.getLength() - 1);
+          quill.setSelection(selectionIndex, 0);
+        }
+      }
+    }, 150);
+
+    return () => window.clearTimeout(focusTimer);
+  }, [autoFocus]);
+
+  const syncEditorHtml = useCallback(() => {
+    if (quillRef.current && typeof quillRef.current.getEditor === "function") {
+      const quill = quillRef.current.getEditor();
+      if (quill) {
+        onChangeRef.current(quill.root.innerHTML);
+      }
+    }
+  }, []);
 
   const focusSelectedImage = useCallback(
     (image: HTMLImageElement | null) => {
@@ -154,7 +181,7 @@ export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorP
         ],
         handlers: {
           image: function (this: any) {
-            const quill = this.quill || quillRef.current?.getEditor();
+            const quill = this.quill || (quillRef.current && typeof quillRef.current.getEditor === "function" ? quillRef.current.getEditor() : null);
             if (!quill) {
               return;
             }
@@ -294,7 +321,7 @@ export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorP
         ref={quillRef as any}
         theme="snow"
         value={value}
-        onChange={onChange}
+        onChange={handleEditorChange}
         modules={modules}
         placeholder={placeholder || "Escreva aqui..."}
         className="min-h-[260px] rounded-md bg-white"
