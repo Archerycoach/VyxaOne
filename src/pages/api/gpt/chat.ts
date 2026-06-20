@@ -345,6 +345,31 @@ function sanitizeJsonReply(content: string): string {
   return content.replace(/^```json\s*/i, "").replace(/```$/i, "").trim();
 }
 
+function resolveLeadTypology(
+  lead: Pick<LeadContext, "typology" | "bedrooms" | "property_type">,
+): string | null {
+  if (typeof lead.typology === "string" && lead.typology.trim()) {
+    return lead.typology.trim();
+  }
+
+  if (typeof lead.bedrooms === "number") {
+    return `T${lead.bedrooms}`;
+  }
+
+  const normalizedPropertyType = normalizeText(lead.property_type || "");
+  const typologyMatch = normalizedPropertyType.match(/\bt\s*([0-9])\b/);
+
+  if (typologyMatch) {
+    return `T${typologyMatch[1]}`;
+  }
+
+  if (normalizedPropertyType.includes("estudio") || normalizedPropertyType.includes("studio")) {
+    return "T0";
+  }
+
+  return null;
+}
+
 async function generateEmailCampaignDraft(
   message: string,
   criteria: EmailCampaignCriteria,
@@ -365,7 +390,7 @@ async function generateEmailCampaignDraft(
         email: lead.email,
         status: lead.status,
         location_preference: lead.location_preference,
-        typology: lead.typology,
+        typology: resolveLeadTypology(lead),
       })),
     };
   }
@@ -396,7 +421,7 @@ async function generateEmailCampaignDraft(
               amostra_de_leads: leads.slice(0, 8).map((lead) => ({
                 nome: lead.name,
                 zona: lead.location_preference,
-                tipologia: lead.typology,
+                tipologia: resolveLeadTypology(lead),
                 objetivo: lead.buy_purpose,
                 tipo_imovel: lead.property_type,
                 orcamento: formatBudget(lead),
@@ -427,7 +452,7 @@ async function generateEmailCampaignDraft(
         email: lead.email,
         status: lead.status,
         location_preference: lead.location_preference,
-        typology: lead.typology,
+        typology: resolveLeadTypology(lead),
       })),
     };
   } catch (error) {
@@ -443,7 +468,7 @@ async function generateEmailCampaignDraft(
         email: lead.email,
         status: lead.status,
         location_preference: lead.location_preference,
-        typology: lead.typology,
+        typology: resolveLeadTypology(lead),
       })),
     };
   }
@@ -452,7 +477,10 @@ async function generateEmailCampaignDraft(
 function formatEmailCampaignReply(draft: EmailCampaignDraft): string {
   const recipientPreview = draft.recipients
     .slice(0, 5)
-    .map((lead) => `- ${lead.name}${lead.location_preference ? ` · ${lead.location_preference}` : ""}${lead.typology ? ` · ${lead.typology}` : ""}`)
+    .map((lead) => {
+      const typology = lead.typology;
+      return `- ${lead.name}${lead.location_preference ? ` · ${lead.location_preference}` : ""}${typology ? ` · ${typology}` : ""}`;
+    })
     .join("\n");
 
   return `Preparei um rascunho de email para ${draft.recipients.length} leads com ${draft.filterSummary || "o perfil pedido"}.\n\nAssunto: ${draft.subject}\n\nPrimeiras leads abrangidas:\n${recipientPreview}\n\nO rascunho detalhado ficou disponível abaixo para revisão antes de enviar.`;
@@ -629,7 +657,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const { data: leads, error: leadsError } = await supabase
       .from("leads")
       .select(
-        "id, name, phone, email, status, lead_type, next_follow_up, property_type, location_preference, typology, buy_purpose, budget, budget_min, budget_max, min_area, max_area, bedrooms, bathrooms, source",
+        "id, name, phone, email, status, lead_type, next_follow_up, property_type, location_preference, buy_purpose, budget, budget_min, budget_max, min_area, max_area, bedrooms, bathrooms, source",
       )
       .or(`assigned_to.eq.${user.id},user_id.eq.${user.id}`)
       .is("archived_at", null)
