@@ -133,11 +133,14 @@ export function RichTextEditor({ value, onChange, placeholder, autoFocus = false
 
       if (valueToApply === null) {
         selectedImage.removeAttribute("width");
+        selectedImage.removeAttribute("height");
         selectedImage.style.removeProperty("width");
+        selectedImage.style.removeProperty("height");
         setImageWidthInput("");
       } else {
         const nextWidth = clampImageWidth(valueToApply);
         selectedImage.setAttribute("width", String(nextWidth));
+        selectedImage.removeAttribute("height");
         selectedImage.style.width = `${nextWidth}px`;
         setImageWidthInput(String(nextWidth));
       }
