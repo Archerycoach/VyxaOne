@@ -808,11 +808,14 @@ export function WorkflowsManagement() {
                     {formState.action_type === "send_email" ? "Corpo do Email *" : "Descrição *"}
                   </Label>
                   {formState.action_type === "send_email" ? (
-                    <RichTextEditor
-                      value={formState.email_body}
-                      onChange={(value) => setFormState({ ...formState, email_body: value })}
-                      placeholder="Introduza o texto e insira imagens..."
-                    />
+                    <div className="overflow-hidden rounded-md border border-slate-200 bg-white shadow-sm">
+                      <RichTextEditor
+                        key={`${editingWorkflowId ?? selectedTemplate?.id ?? "new"}-${formState.trigger}-${isNewWorkflowOpen ? "open" : "closed"}`}
+                        value={formState.email_body}
+                        onChange={(value) => setFormState({ ...formState, email_body: value })}
+                        placeholder="Introduza o texto e insira imagens..."
+                      />
+                    </div>
                   ) : (
                     <Textarea
                       id="email_body"

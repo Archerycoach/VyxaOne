@@ -297,12 +297,16 @@ export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorP
         onChange={onChange}
         modules={modules}
         placeholder={placeholder || "Escreva aqui..."}
-        className="rounded-md bg-white"
+        className="min-h-[260px] rounded-md bg-white"
       />
 
       <style jsx global>{`
+        .rich-text-editor-container {
+          width: 100%;
+        }
         .rich-text-editor-container .ql-editor {
           min-height: 200px;
+          flex: 1;
           font-family: inherit;
           font-size: 1rem;
         }
@@ -313,9 +317,13 @@ export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorP
           background-color: #f8fafc;
         }
         .rich-text-editor-container .ql-container {
+          display: flex;
+          min-height: 220px;
+          flex-direction: column;
           border-bottom-left-radius: 0.375rem;
           border-bottom-right-radius: 0.375rem;
           border-color: #e2e8f0;
+          background-color: #ffffff;
         }
         .rich-text-editor-container .ql-editor img {
           max-width: 100%;
