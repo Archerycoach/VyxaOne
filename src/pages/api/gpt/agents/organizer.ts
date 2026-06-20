@@ -1,6 +1,99 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
+interface NeglectedLeadRecord {
+  id: string;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  status: string | null;
+  temperature: string | null;
+  property_type: string | null;
+  location_preference: string | null;
+  budget_min: number | null;
+  budget_max: number | null;
+  min_area: number | null;
+  max_area: number | null;
+  bedrooms: number | null;
+  bathrooms: number | null;
+  source: string | null;
+  last_activity_date: string | null;
+  last_contact_date: string | null;
+  next_follow_up: string | null;
+}
+
+interface OrganizerLeadNoteRecord {
+  lead_id: string;
+  note: string;
+  created_at: string | null;
+}
+
+interface OrganizerLeadInteractionRecord {
+  lead_id: string | null;
+  interaction_type: string;
+  subject: string | null;
+  content: string | null;
+  outcome: string | null;
+  interaction_date: string | null;
+  created_at: string | null;
+}
+
+interface NeglectedLeadContextRecord extends NeglectedLeadRecord {
+  notes_history: OrganizerLeadNoteRecord[];
+  interactions_history: OrganizerLeadInteractionRecord[];
+  historical_summary: {
+    notes_count: number;
+    interactions_count: number;
+    last_note_at: string | null;
+    last_interaction_at: string | null;
+  };
+}
+
+function buildNeglectedLeadContexts(
+  leads: NeglectedLeadRecord[],
+  notes: OrganizerLeadNoteRecord[],
+  interactions: OrganizerLeadInteractionRecord[],
+): NeglectedLeadContextRecord[] {
+  const notesByLead = notes.reduce<Record<string, OrganizerLeadNoteRecord[]>>((acc, note) => {
+    if (!acc[note.lead_id]) {
+      acc[note.lead_id] = [];
+    }
+
+    acc[note.lead_id].push(note);
+    return acc;
+  }, {});
+
+  const interactionsByLead = interactions.reduce<Record<string, OrganizerLeadInteractionRecord[]>>((acc, interaction) => {
+    if (!interaction.lead_id) {
+      return acc;
+    }
+
+    if (!acc[interaction.lead_id]) {
+      acc[interaction.lead_id] = [];
+    }
+
+    acc[interaction.lead_id].push(interaction);
+    return acc;
+  }, {});
+
+  return leads.map((lead) => {
+    const leadNotes = notesByLead[lead.id] || [];
+    const leadInteractions = interactionsByLead[lead.id] || [];
+
+    return {
+      ...lead,
+      notes_history: leadNotes,
+      interactions_history: leadInteractions,
+      historical_summary: {
+        notes_count: leadNotes.length,
+        interactions_count: leadInteractions.length,
+        last_note_at: leadNotes[0]?.created_at || null,
+        last_interaction_at: leadInteractions[0]?.interaction_date || leadInteractions[0]?.created_at || null,
+      },
+    };
+  });
+}
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   console.log("-> [ORGANIZER API] Iniciou o pedido POST");
   if (req.method !== "POST") return res.status(405).end();
@@ -33,13 +126,43 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     const { data: neglectedLeads, error: neglectedError } = await (supabaseAdmin
       .from("leads" as any)
-      .select("name, phone, email, status, temperature, property_type, location_preference, budget_min, budget_max, min_area, max_area, bedrooms, bathrooms, source")
+      .select("id, name, phone, email, status, temperature, property_type, location_preference, budget_min, budget_max, min_area, max_area, bedrooms, bathrooms, source, last_activity_date, last_contact_date, next_follow_up")
       .eq("user_id", user.id)
       .in("status", ["new", "contacted", "qualified"])
       .lt("last_activity_date", thirtyDaysAgo.toISOString())
       .limit(5) as any);
       
     if (neglectedError) console.error("Erro neglected leads:", neglectedError);
+
+    const neglectedLeadIds = ((neglectedLeads || []) as NeglectedLeadRecord[]).map((lead) => lead.id);
+    let neglectedLeadNotes: OrganizerLeadNoteRecord[] = [];
+    let neglectedLeadInteractions: OrganizerLeadInteractionRecord[] = [];
+
+    if (neglectedLeadIds.length > 0) {
+      const { data: notes, error: notesError } = await (supabaseAdmin
+        .from("lead_notes" as any)
+        .select("lead_id, note, created_at")
+        .in("lead_id", neglectedLeadIds)
+        .order("created_at", { ascending: false }) as any);
+
+      if (notesError) console.error("Erro lead notes:", notesError);
+      neglectedLeadNotes = (notes || []) as OrganizerLeadNoteRecord[];
+
+      const { data: interactions, error: interactionsError } = await (supabaseAdmin
+        .from("interactions" as any)
+        .select("lead_id, interaction_type, subject, content, outcome, interaction_date, created_at")
+        .in("lead_id", neglectedLeadIds)
+        .order("interaction_date", { ascending: false }) as any);
+
+      if (interactionsError) console.error("Erro lead interactions:", interactionsError);
+      neglectedLeadInteractions = (interactions || []) as OrganizerLeadInteractionRecord[];
+    }
+
+    const enrichedNeglectedLeads = buildNeglectedLeadContexts(
+      (neglectedLeads || []) as NeglectedLeadRecord[],
+      neglectedLeadNotes,
+      neglectedLeadInteractions,
+    );
 
     // 3. Recolher contexto: Eventos de Hoje
     console.log("-> [ORGANIZER API] A recolher Eventos...");
@@ -74,16 +197,17 @@ Analisa os dados fornecidos e cria um plano de ação curto, direto e altamente 
 Regras:
 1. Começa com uma saudação encorajadora.
 2. Destaca o evento ou tarefa mais crítica do dia.
-3. Se houver leads esquecidos, aconselha um toque rápido (follow-up).
-4. Usa formatação limpa (listas) e uma linguagem muito objetiva, sem conversa de "robô".
-5. Não inventes dados que não estejam abaixo.`;
+3. Se houver leads esquecidos, lê SEMPRE as notas e o histórico completo de interações antes de aconselhar o próximo follow-up.
+4. Usa o histórico para sugerir o canal certo, a urgência e a melhor próxima interação.
+5. Usa formatação limpa (listas) e uma linguagem muito objetiva, sem conversa de "robô".
+6. Não inventes dados que não estejam abaixo.`;
 
     const userPrompt = `Aqui estão os meus dados atuais:
 Tarefas pendentes: ${JSON.stringify(tasks || [])}
-Leads a arrefecer (sem atividade >30 dias): ${JSON.stringify(neglectedLeads || [])}
+Leads a arrefecer (sem atividade >30 dias, com notas e histórico completo): ${JSON.stringify(enrichedNeglectedLeads || [])}
 Eventos para hoje: ${JSON.stringify(events || [])}
 
-Diz-me exatamente o que devo fazer primeiro e como estruturar o meu dia.`;
+Diz-me exatamente o que devo fazer primeiro e como estruturar o meu dia. Quando sugerires um follow-up a uma lead, justifica-o com base no histórico real dessa lead.`;
 
     // 6. Chamar OpenAI
     console.log("-> [ORGANIZER API] A chamar OpenAI...");

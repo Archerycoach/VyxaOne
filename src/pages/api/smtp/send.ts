@@ -5,6 +5,14 @@ import { createClient } from "@supabase/supabase-js";
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
+function normalizeRecipientList(value: string | string[] | undefined): string[] {
+  if (Array.isArray(value)) {
+    return value.filter(Boolean);
+  }
+
+  return value ? [value] : [];
+}
+
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
@@ -43,7 +51,7 @@ export default async function handler(
       });
     }
 
-    const { to, subject, html, text, cc, bcc, attachments } = req.body;
+    const { to, subject, html, text, cc, bcc, attachments, sendCopyToSender } = req.body;
 
     if (!to || !subject || (!html && !text)) {
       return res.status(400).json({
@@ -69,6 +77,13 @@ export default async function handler(
       });
     }
 
+    const normalizedCc = normalizeRecipientList(cc);
+    const normalizedBcc = normalizeRecipientList(bcc);
+    const copyRecipient = user.email || smtpSettings.from_email;
+    const finalBcc = sendCopyToSender && copyRecipient
+      ? Array.from(new Set([...normalizedBcc, copyRecipient]))
+      : normalizedBcc;
+
     // Create transporter with user's SMTP settings
     const transporter = nodemailer.createTransport({
       host: smtpSettings.smtp_host,
@@ -92,8 +107,8 @@ export default async function handler(
       subject,
       text,
       html,
-      cc,
-      bcc,
+      cc: normalizedCc.length > 0 ? normalizedCc : undefined,
+      bcc: finalBcc.length > 0 ? finalBcc : undefined,
       attachments: formattedAttachments.length > 0 ? formattedAttachments : undefined,
     });
 

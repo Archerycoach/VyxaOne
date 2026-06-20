@@ -8,6 +8,112 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const openAIApiKey = process.env.OPENAI_API_KEY;
 
+interface PlanningLeadRecord {
+  id: string;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  status: string | null;
+  last_contact_date: string | null;
+  next_follow_up: string | null;
+  lead_type: string | null;
+  property_type: string | null;
+  location_preference: string | null;
+  budget_min: number | null;
+  budget_max: number | null;
+  min_area: number | null;
+  max_area: number | null;
+  bedrooms: number | null;
+  bathrooms: number | null;
+  source: string | null;
+}
+
+interface LeadNoteRecord {
+  lead_id: string;
+  note: string;
+  created_at: string | null;
+}
+
+interface LeadInteractionRecord {
+  lead_id: string | null;
+  interaction_type: string;
+  subject: string | null;
+  content: string | null;
+  outcome: string | null;
+  interaction_date: string | null;
+  created_at: string | null;
+}
+
+interface LeadContextRecord extends PlanningLeadRecord {
+  notes_history: LeadNoteRecord[];
+  interactions_history: LeadInteractionRecord[];
+  historical_summary: {
+    notes_count: number;
+    interactions_count: number;
+    last_note_at: string | null;
+    last_interaction_at: string | null;
+  };
+}
+
+function buildLeadContexts(
+  leads: PlanningLeadRecord[],
+  notes: LeadNoteRecord[],
+  interactions: LeadInteractionRecord[],
+): LeadContextRecord[] {
+  const notesByLead = notes.reduce<Record<string, LeadNoteRecord[]>>((acc, note) => {
+    if (!acc[note.lead_id]) {
+      acc[note.lead_id] = [];
+    }
+
+    acc[note.lead_id].push(note);
+    return acc;
+  }, {});
+
+  const interactionsByLead = interactions.reduce<Record<string, LeadInteractionRecord[]>>((acc, interaction) => {
+    if (!interaction.lead_id) {
+      return acc;
+    }
+
+    if (!acc[interaction.lead_id]) {
+      acc[interaction.lead_id] = [];
+    }
+
+    acc[interaction.lead_id].push(interaction);
+    return acc;
+  }, {});
+
+  return leads.map((lead) => {
+    const leadNotes = notesByLead[lead.id] || [];
+    const leadInteractions = interactionsByLead[lead.id] || [];
+
+    return {
+      ...lead,
+      notes_history: leadNotes,
+      interactions_history: leadInteractions,
+      historical_summary: {
+        notes_count: leadNotes.length,
+        interactions_count: leadInteractions.length,
+        last_note_at: leadNotes[0]?.created_at || null,
+        last_interaction_at: leadInteractions[0]?.interaction_date || leadInteractions[0]?.created_at || null,
+      },
+    };
+  });
+}
+
+function normalizeCalendarEventType(eventType: string): "call" | "meeting" | "viewing" | "task" {
+  const normalized = eventType.toLowerCase().trim();
+
+  if (normalized === "visit" || normalized === "viewing") {
+    return "viewing";
+  }
+
+  if (normalized === "call" || normalized === "meeting" || normalized === "task") {
+    return normalized as "call" | "meeting" | "task";
+  }
+
+  return "task";
+}
+
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
@@ -84,6 +190,12 @@ export default async function handler(
           .in("lead_id", leadIds)
           .order("created_at", { ascending: false });
 
+        const { data: interactions } = await supabase
+          .from("interactions")
+          .select("lead_id, interaction_type, subject, content, outcome, interaction_date, created_at")
+          .in("lead_id", leadIds)
+          .order("interaction_date", { ascending: false });
+
         const { data: upcomingEvents } = await supabase
           .from("calendar_events")
           .select("id, title, lead_id, start_time, end_time")
@@ -93,39 +205,50 @@ export default async function handler(
         // NOVO: Buscar detalhes completos das leads para matching de imóveis
         const { data: fullLeadsData } = await supabase
           .from("leads")
-          .select("id, name, lead_type, property_type, budget_min, budget_max, min_area, max_area, bedrooms, location, status")
+          .select("id, name, lead_type, property_type, budget_min, budget_max, min_area, max_area, bedrooms, location_preference, status")
           .in("id", leadIds)
           .eq("status", "new");
 
+        const leadContexts = buildLeadContexts(
+          (leads || []) as PlanningLeadRecord[],
+          (notes || []) as LeadNoteRecord[],
+          (interactions || []) as LeadInteractionRecord[],
+        );
+
         const contextData = {
-          leads,
-          recent_notes: notes || [],
+          lead_contexts: leadContexts,
           existing_upcoming_events: upcomingEvents || [],
-          new_leads_for_property_matching: fullLeadsData || []
+          new_leads_for_property_matching: fullLeadsData || [],
+          analysis_scope: {
+            total_leads: leadContexts.length,
+            total_notes: (notes || []).length,
+            total_interactions: (interactions || []).length,
+          },
         };
 
         const now = new Date();
 
         const prompt = `És um assistente de vendas de elite de uma agência imobiliária. 
 Analisa as leads pendentes do consultor/agente ${user.full_name || 'Utilizador'}.
-Vais receber os dados das leads, as notas reais recentes escritas sobre cada uma, e os eventos de calendário já marcados.
+Vais receber o contexto completo de cada lead, incluindo dados da lead, notas reais, histórico completo de interações e eventos de calendário já marcados.
 
 Data e hora atual: ${now.toISOString()}
 
 O teu objetivo é:
-1. Ler as notas para entender o contexto da negociação.
-2. Agendar EVENTOS DE CALENDÁRIO (hora de início e fim) baseados nessas notas.
-3. Evitar sobrepor horários (verifica 'existing_upcoming_events').
-4. Formatar um resumo motivador para o e-mail matinal.
-5. NOVO: Avaliar a "temperatura" (hot, warm, cold) de cada lead baseada nas notas e sugerir a atualização. Se falar em dinheiro, visitas ou forte interesse é "hot". Se não atende é "cold".
+1. Ler SEMPRE as notas e o histórico completo de interações de cada lead antes de sugerires qualquer próximo passo.
+2. Entender o contexto real da negociação, incluindo assuntos anteriores, outcomes, sinais de interesse e follow-ups pendentes.
+3. Agendar EVENTOS DE CALENDÁRIO (hora de início e fim) baseados nesse histórico completo.
+4. Evitar sobrepor horários (verifica 'existing_upcoming_events').
+5. Formatar um resumo motivador para o e-mail matinal.
+6. Avaliar a "temperatura" (hot, warm, cold) de cada lead baseada no histórico completo. Se falar em dinheiro, visitas/viewings, forte interesse ou urgência é "hot". Se houver silêncio prolongado, rejeição ou falta de resposta recorrente é "cold".
 
 A tua resposta DEVE ser OBRIGATORIAMENTE um objeto JSON com esta estrutura:
 {
-  "html_summary": "E-mail em HTML (<h3>, <p>, <ul>, <li>). Foca-te no contexto lido nas notas.",
+  "html_summary": "E-mail em HTML (<h3>, <p>, <ul>, <li>). Foca-te no contexto lido nas notas e no histórico completo.",
   "new_events": [
     {
       "title": "Ligar à Ana para confirmar visita",
-      "description": "Justificação baseada na nota...",
+      "description": "Justificação baseada nas notas e no histórico...",
       "lead_id": "INSERIR_AQUI_O_ID_REAL_DA_LEAD",
       "event_type": "call",
       "start_time": "2026-06-15T10:00:00Z",
@@ -140,10 +263,11 @@ A tua resposta DEVE ser OBRIGATORIAMENTE um objeto JSON com esta estrutura:
   ]
 }
 
-Tipos de evento aceites: 'call', 'meeting', 'visit', 'task'.
-REGRA DE DATAS CRÍTICA: LÊ BEM AS NOTAS. Se a nota pedir para contactar numa data futura específica (ex: "em Junho", "próxima semana", "daqui a 3 meses"), tens OBRIGATORIAMENTE de marcar o \`start_time\` para essa data futura. NUNCA agendes para hoje o que foi pedido para depois! Se não houver data, agenda para um dos próximos dias úteis.
+Tipos de evento aceites: 'call', 'meeting', 'viewing', 'task'.
+REGRA CRÍTICA DE CONTEXTO: antes de sugerires uma interação para uma lead, tens de ler os campos 'notes_history' e 'interactions_history' dessa lead em 'lead_contexts'. Não te bases apenas no status atual.
+REGRA DE DATAS CRÍTICA: LÊ BEM AS NOTAS E O HISTÓRICO. Se o histórico ou uma nota pedir para contactar numa data futura específica (ex: "em Junho", "próxima semana", "daqui a 3 meses"), tens OBRIGATORIAMENTE de marcar o \`start_time\` para essa data futura. NUNCA agendes para hoje o que foi pedido para depois. Se não houver data, agenda para um dos próximos dias úteis.
 Marca os eventos com duração de 30 a 60 mins dentro do horário de trabalho.
-O campo "lead_id" é OBRIGATÓRIO e tem de ser o ID real (UUID) da lead presente nos dados!
+O campo "lead_id" é OBRIGATÓRIO e tem de ser o ID real (UUID) da lead presente nos dados.
 
 Dados para analisar:
 ${JSON.stringify(contextData, null, 2)}`;
@@ -224,7 +348,7 @@ ${JSON.stringify(contextData, null, 2)}`;
                   await supabase.from("lead_notes").insert({
                     lead_id: lead.id,
                     note: linksNote,
-                    user_id: user.id,
+                    created_by: user.id,
                     created_at: new Date().toISOString()
                   });
                 }
@@ -266,7 +390,7 @@ ${JSON.stringify(contextData, null, 2)}`;
               user_id: user.id,
               title: e.title || "Follow-up AI",
               description: e.description || "Agendado pelo Vyxa AI",
-              event_type: ["call", "meeting", "visit", "task"].includes(e.event_type) ? e.event_type : "task",
+              event_type: normalizeCalendarEventType(e.event_type || ""),
               start_time: e.start_time || new Date().toISOString(),
               end_time: e.end_time || new Date(Date.now() + 30 * 60000).toISOString(),
               lead_id: isValidLead ? e.lead_id : null
@@ -357,7 +481,7 @@ ${JSON.stringify(contextData, null, 2)}`;
             <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 650px; margin: 0 auto; padding: 20px; color: #1e293b;">
               <div style="border-bottom: 2px solid #e2e8f0; padding-bottom: 15px; margin-bottom: 20px;">
                 <h2 style="color: #4f46e5; margin: 0; font-size: 24px;">Análise Diária de Contexto</h2>
-                <p style="color: #64748b; margin-top: 5px; font-size: 14px;">Planeamento automático baseado nas suas notas recentes</p>
+                <p style="color: #64748b; margin-top: 5px; font-size: 14px;">Planeamento automático baseado no histórico completo das suas leads</p>
               </div>
               <div style="background-color: #f8fafc; padding: 20px; border-radius: 8px; border-left: 4px solid #4f46e5; font-size: 15px; line-height: 1.6;">
                 ${gptMessage}

@@ -21,6 +21,7 @@ export interface EmailData {
   text?: string;
   cc?: string[];
   bcc?: string[];
+  sendCopyToSender?: boolean;
   attachments?: Array<{
     filename: string;
     content: string;

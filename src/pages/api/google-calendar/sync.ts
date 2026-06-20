@@ -19,6 +19,40 @@ interface GoogleCalendarEvent {
   status?: string;
 }
 
+interface LocalCalendarEventCandidate {
+  id: string;
+  title: string;
+  start_time: string;
+  end_time: string;
+  google_event_id: string | null;
+}
+
+interface LocalTaskCandidate {
+  id: string;
+  title: string;
+  due_date: string | null;
+  google_event_id: string | null;
+}
+
+function normalizeDateTime(value?: string | null): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const parsedDate = new Date(value);
+
+  if (Number.isNaN(parsedDate.getTime())) {
+    return null;
+  }
+
+  parsedDate.setSeconds(0, 0);
+  return parsedDate.toISOString();
+}
+
+function stripTaskPrefix(title: string): string {
+  return title.replace(/^\[Tarefa\]\s*/i, "").trim();
+}
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
@@ -474,8 +508,28 @@ async function syncEventsFromGoogle(
       .eq("user_id", userId)
       .not("google_event_id", "is", null);
 
+    const { data: localCalendarCandidates } = await supabaseAdmin
+      .from("calendar_events")
+      .select("id, title, start_time, end_time, google_event_id")
+      .eq("user_id", userId)
+      .is("google_event_id", null);
+
+    const { data: localTasks } = await supabaseAdmin
+      .from("tasks")
+      .select("id, title, due_date, google_event_id")
+      .eq("user_id", userId)
+      .not("due_date", "is", null);
+
     const localGoogleEventIds = new Set(
       (localSyncedEvents || []).map((e: any) => e.google_event_id)
+    );
+
+    const calendarCandidates = (localCalendarCandidates || []) as LocalCalendarEventCandidate[];
+    const taskCandidates = (localTasks || []) as LocalTaskCandidate[];
+    const taskGoogleEventIds = new Set(
+      taskCandidates
+        .map((task) => task.google_event_id)
+        .filter((googleEventId): googleEventId is string => Boolean(googleEventId))
     );
 
     console.log("[syncEventsFromGoogle] Found", localGoogleEventIds.size, "local synced events");
@@ -549,11 +603,85 @@ async function syncEventsFromGoogle(
 
         console.log("[syncEventsFromGoogle] Creating event:", googleEvent.summary);
 
+        const normalizedStartTime = normalizeDateTime(finalStartTime);
+        const normalizedEndTime = normalizeDateTime(finalEndTime);
+        const googleSummary = googleEvent.summary || "Sem título";
+
+        if (googleSummary.startsWith("[Tarefa]")) {
+          const matchingTask = taskCandidates.find((task) => {
+            return (
+              stripTaskPrefix(task.title) === stripTaskPrefix(googleSummary) &&
+              normalizeDateTime(task.due_date) === normalizedStartTime
+            );
+          });
+
+          if (matchingTask) {
+            if (!matchingTask.google_event_id) {
+              const { error: taskLinkError } = await supabaseAdmin
+                .from("tasks")
+                .update({
+                  google_event_id: googleEvent.id,
+                  is_synced: true,
+                })
+                .eq("id", matchingTask.id)
+                .eq("user_id", userId);
+
+              if (taskLinkError) {
+                console.error("[syncEventsFromGoogle] ❌ Error linking Google task event:", taskLinkError);
+              } else {
+                matchingTask.google_event_id = googleEvent.id || null;
+                if (googleEvent.id) {
+                  taskGoogleEventIds.add(googleEvent.id);
+                }
+                console.log("[syncEventsFromGoogle] 🔗 Linked Google task event to local task:", matchingTask.id);
+              }
+            } else if (matchingTask.google_event_id !== googleEvent.id) {
+              console.log("[syncEventsFromGoogle] ⏭️ Skipping duplicate Google task event:", googleEvent.id);
+            }
+
+            continue;
+          }
+        }
+
+        if (googleEvent.id && taskGoogleEventIds.has(googleEvent.id)) {
+          console.log("[syncEventsFromGoogle] ⏭️ Skipping Google event already linked to a task:", googleEvent.id);
+          continue;
+        }
+
+        const matchingLocalEvent = calendarCandidates.find((event) => {
+          return (
+            event.title === googleSummary &&
+            normalizeDateTime(event.start_time) === normalizedStartTime &&
+            normalizeDateTime(event.end_time) === normalizedEndTime
+          );
+        });
+
+        if (matchingLocalEvent) {
+          const { error: eventLinkError } = await supabaseAdmin
+            .from("calendar_events")
+            .update({
+              google_event_id: googleEvent.id,
+              is_synced: true,
+            })
+            .eq("id", matchingLocalEvent.id)
+            .eq("user_id", userId);
+
+          if (eventLinkError) {
+            console.error("[syncEventsFromGoogle] ❌ Error linking local event to Google event:", eventLinkError);
+          } else {
+            matchingLocalEvent.google_event_id = googleEvent.id || null;
+            console.log("[syncEventsFromGoogle] 🔗 Linked Google event to existing local event:", matchingLocalEvent.id);
+            syncedCount++;
+          }
+
+          continue;
+        }
+
         const { error: createError } = await supabaseAdmin
           .from("calendar_events")
           .insert({
             user_id: userId,
-            title: googleEvent.summary || "Sem título",
+            title: googleSummary,
             description: googleEvent.description || "",
             start_time: finalStartTime,
             end_time: finalEndTime,

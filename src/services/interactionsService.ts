@@ -1,6 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
 import { deleteGoogleCalendarEvent } from "@/lib/googleCalendar";
+import { CacheManager } from "@/lib/cacheInvalidation";
 
 export type Interaction = Database["public"]["Tables"]["interactions"]["Row"];
 export type InteractionInsert = Database["public"]["Tables"]["interactions"]["Insert"];
@@ -177,6 +178,31 @@ export async function createInteraction(
   if (error) {
     console.error("Error creating interaction:", error);
     throw new Error("Failed to create interaction");
+  }
+
+  if (interaction.lead_id) {
+    const interactionTimestamp = data.interaction_date || new Date().toISOString();
+    const leadUpdate: {
+      last_contact_date: string;
+      last_contact_outcome?: string | null;
+    } = {
+      last_contact_date: interactionTimestamp,
+    };
+
+    if (interaction.outcome !== undefined) {
+      leadUpdate.last_contact_outcome = interaction.outcome;
+    }
+
+    const { error: leadUpdateError } = await supabase
+      .from("leads")
+      .update(leadUpdate)
+      .eq("id", interaction.lead_id);
+
+    if (leadUpdateError) {
+      console.error("Error updating lead last contact date:", leadUpdateError);
+    } else {
+      CacheManager.invalidateLeadsRelated();
+    }
   }
 
   return data;

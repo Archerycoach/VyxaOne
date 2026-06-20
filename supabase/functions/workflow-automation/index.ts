@@ -9,12 +9,18 @@ const corsHeaders = {
 
 interface WorkflowRule {
   id: string;
-  trigger_type: string;
+  trigger_type?: string | null;
+  trigger_status?: string | null;
   trigger_config: any;
-  action_type: string;
+  action_type?: string | null;
   action_config: any;
-  is_active: boolean;
+  is_active?: boolean | null;
+  enabled?: boolean | null;
   user_id: string;
+  actions?: Array<{
+    type?: string | null;
+    config?: any;
+  }>;
 }
 
 interface Lead {
@@ -35,6 +41,30 @@ interface UserProfile {
   full_name: string;
 }
 
+function getRuleTriggerType(rule: WorkflowRule): string {
+  return String(rule.trigger_status || rule.trigger_type || "");
+}
+
+function isRuleEnabled(rule: WorkflowRule): boolean {
+  return rule.enabled === true || rule.is_active === true;
+}
+
+function getNormalizedRuleAction(rule: WorkflowRule): { type: string; config: any } {
+  const actions = Array.isArray(rule.actions) ? rule.actions : [];
+
+  if (actions.length > 0) {
+    return {
+      type: String(actions[0]?.type || ""),
+      config: actions[0]?.config || {},
+    };
+  }
+
+  return {
+    type: String(rule.action_type || ""),
+    config: rule.action_config || {},
+  };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -48,14 +78,15 @@ serve(async (req) => {
     console.log("🤖 Starting workflow automation check...");
 
     // Get all active workflow rules
-    const { data: rules, error: rulesError } = await supabase
+    const { data: rawRules, error: rulesError } = await supabase
       .from("lead_workflow_rules")
-      .select("*")
-      .eq("is_active", true);
+      .select("*");
 
     if (rulesError) throw rulesError;
 
-    console.log(`📋 Found ${rules?.length || 0} active workflow rules`);
+    const rules = ((rawRules || []) as WorkflowRule[]).filter((rule) => isRuleEnabled(rule));
+
+    console.log(`📋 Found ${rules.length} active workflow rules`);
 
     let totalExecutions = 0;
     const executionResults: any[] = [];
@@ -63,9 +94,10 @@ serve(async (req) => {
     // Process each rule
     for (const rule of rules || []) {
       try {
+        const triggerType = getRuleTriggerType(rule);
         const leadsToProcess = await getLeadsForTrigger(supabase, rule);
         
-        console.log(`🎯 Rule "${rule.trigger_type}" (User: ${rule.user_id}): Found ${leadsToProcess.length} leads to process`);
+        console.log(`🎯 Rule "${triggerType}" (User: ${rule.user_id}): Found ${leadsToProcess.length} leads to process`);
 
         for (const lead of leadsToProcess) {
           try {
@@ -101,7 +133,7 @@ serve(async (req) => {
               workflow_id: rule.id,
               lead_id: lead.id,
               lead_name: lead.name,
-              trigger: rule.trigger_type,
+              trigger: triggerType,
               status: "success"
             });
 
@@ -123,7 +155,7 @@ serve(async (req) => {
               workflow_id: rule.id,
               lead_id: lead.id,
               lead_name: lead.name,
-              trigger: rule.trigger_type,
+              trigger: triggerType,
               status: "failed",
               error: leadError instanceof Error ? leadError.message : String(leadError)
             });
@@ -139,8 +171,8 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        message: `Processed ${rules?.length || 0} rules, executed ${totalExecutions} workflows`,
-        totalRules: rules?.length || 0,
+        message: `Processed ${rules.length} rules, executed ${totalExecutions} workflows`,
+        totalRules: rules.length || 0,
         totalExecutions,
         executionResults,
       }),
@@ -156,7 +188,9 @@ serve(async (req) => {
 });
 
 async function getLeadsForTrigger(supabase: any, rule: WorkflowRule): Promise<Lead[]> {
-  const { trigger_type, trigger_config, user_id } = rule;
+  const triggerType = getRuleTriggerType(rule);
+  const triggerConfig = rule.trigger_config || {};
+  const { user_id } = rule;
   const now = new Date();
   const today = now.toISOString().split("T")[0];
 
@@ -167,10 +201,10 @@ async function getLeadsForTrigger(supabase: any, rule: WorkflowRule): Promise<Le
     .eq("assigned_to", user_id)
     .is("archived_at", null); // Only active leads
 
-  switch (trigger_type) {
+  switch (triggerType) {
     case "birthday": {
       // Check birthdays in next N days
-      const daysAhead = trigger_config?.days_before || 7;
+      const daysAhead = triggerConfig?.days_before || 7;
       const targetDate = new Date(now);
       targetDate.setDate(targetDate.getDate() + daysAhead);
       
@@ -188,7 +222,7 @@ async function getLeadsForTrigger(supabase: any, rule: WorkflowRule): Promise<Le
 
     case "custom_date": {
       // Check important dates in next N days
-      const daysAhead = trigger_config?.days_before || 7;
+      const daysAhead = triggerConfig?.days_before || 7;
       const targetDate = new Date(now);
       targetDate.setDate(targetDate.getDate() + daysAhead);
       const targetDateStr = targetDate.toISOString().split("T")[0];
@@ -283,16 +317,23 @@ async function getLeadsForTrigger(supabase: any, rule: WorkflowRule): Promise<Le
 }
 
 async function executeWorkflowAction(supabase: any, rule: WorkflowRule, lead: Lead) {
-  if (rule.action_type === "send_email") {
-    await sendEmailAction(supabase, rule, lead);
-  } else if (rule.action_type === "create_task") {
-    await createTaskAction(supabase, rule, lead);
-  } else if (rule.action_type === "create_calendar_event") {
-    await createCalendarEventAction(supabase, rule, lead);
-  } else if (rule.action_type === "send_notification") {
-    await sendNotificationAction(supabase, rule, lead);
+  const normalizedAction = getNormalizedRuleAction(rule);
+  const normalizedRule = {
+    ...rule,
+    action_type: normalizedAction.type,
+    action_config: normalizedAction.config,
+  };
+
+  if (normalizedAction.type === "send_email") {
+    await sendEmailAction(supabase, normalizedRule, lead);
+  } else if (normalizedAction.type === "create_task") {
+    await createTaskAction(supabase, normalizedRule, lead);
+  } else if (normalizedAction.type === "create_calendar_event") {
+    await createCalendarEventAction(supabase, normalizedRule, lead);
+  } else if (normalizedAction.type === "send_notification") {
+    await sendNotificationAction(supabase, normalizedRule, lead);
   } else {
-    console.warn(`Action type ${rule.action_type} not supported in cron automation`);
+    console.warn(`Action type ${normalizedAction.type} not supported in cron automation`);
   }
 }
 
@@ -360,6 +401,7 @@ async function sendNotificationAction(supabase: any, rule: WorkflowRule, lead: L
 
 async function sendEmailAction(supabase: any, rule: WorkflowRule, lead: Lead) {
   try {
+    const triggerType = getRuleTriggerType(rule);
     // Get user profile
     const { data: userProfile, error: profileError } = await supabase
       .from("profiles")
@@ -387,7 +429,7 @@ async function sendEmailAction(supabase: any, rule: WorkflowRule, lead: Lead) {
     let recipientEmail = "";
     let recipientName = "";
     
-    switch (rule.trigger_type) {
+    switch (triggerType) {
       case "lead_created":
       case "birthday":
       case "custom_date":
@@ -429,7 +471,9 @@ async function sendEmailAction(supabase: any, rule: WorkflowRule, lead: Lead) {
         };
         break;
         
+      case "no_contact_3_days":
       case "no_contact_5_days":
+      case "no_activity_7_days":
         // Send to user only
         recipientEmail = userProfile.email;
         recipientName = userProfile.full_name;
@@ -446,7 +490,7 @@ async function sendEmailAction(supabase: any, rule: WorkflowRule, lead: Lead) {
 
     await sendSingleEmail(smtpSettings, recipientEmail, recipientName, rule, lead);
 
-    console.log(`✅ Email sent to ${recipientEmail} for workflow: ${rule.trigger_type}`);
+    console.log(`✅ Email sent to ${recipientEmail} for workflow: ${triggerType}`);
   } catch (error) {
     console.error("❌ Failed to send email:", error);
     throw error;

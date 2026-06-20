@@ -146,12 +146,14 @@ export default function BulkMessages() {
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
   const [attachments, setAttachments] = useState<{name: string, size: number, base64: string}[]>([]);
+  const [sendCopyToSelf, setSendCopyToSelf] = useState(false);
   
   // UI State
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [aiDraftApplied, setAiDraftApplied] = useState(false);
   const [aiDraftNotice, setAiDraftNotice] = useState<string | null>(null);
+  const copyEmail = user?.email || "";
 
   useEffect(() => {
     checkAuth();
@@ -501,6 +503,7 @@ export default function BulkMessages() {
                 html: htmlContent,
                 text: textContent,
                 attachments: emailAttachments.length > 0 ? emailAttachments : undefined,
+                sendCopyToSender: sendCopyToSelf && Boolean(copyEmail),
               }),
             });
 
@@ -812,6 +815,25 @@ export default function BulkMessages() {
                         <p className="text-xs text-gray-500 pt-1">
                           Pode usar variáveis: {"{nome}"}, {"{email}"}, {"{telefone}"}. O editor suporta imagens até 1MB e pode clicar numa imagem para ajustar a largura da assinatura.
                         </p>
+                      </div>
+
+                      <div className="flex items-start gap-3 rounded-md border border-slate-200 bg-slate-50 p-3">
+                        <Checkbox
+                          id="send-copy-to-self"
+                          checked={sendCopyToSelf}
+                          onCheckedChange={(checked) => setSendCopyToSelf(checked === true)}
+                          disabled={!copyEmail}
+                        />
+                        <div className="space-y-1">
+                          <Label htmlFor="send-copy-to-self" className="cursor-pointer">
+                            Receber uma cópia do email enviado
+                          </Label>
+                          <p className="text-xs text-gray-500">
+                            {copyEmail
+                              ? `Será enviada uma cópia para ${copyEmail}.`
+                              : "A sua conta não tem um email disponível para receber a cópia."}
+                          </p>
+                        </div>
                       </div>
 
                       {/* Attachments Section */}

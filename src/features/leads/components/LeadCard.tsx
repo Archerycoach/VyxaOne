@@ -28,6 +28,7 @@ import {
 import type { LeadWithContacts } from "@/services/leadsService";
 import { supabase } from "@/integrations/supabase/client";
 import { QuickContactDialog } from "@/components/leads/QuickContactDialog";
+import { getLeadRecentInteractionState } from "@/lib/leadInteractionHighlight";
 
 interface Lead {
   id: string;
@@ -142,6 +143,8 @@ export function LeadCard({
     setTimeout(action, 100);
   };
 
+  const recentInteractionState = getLeadRecentInteractionState(lead.last_contact_date);
+
   const formatCurrency = (value: number | null | undefined) => {
     if (!value) return "N/A";
     return new Intl.NumberFormat("pt-PT", {
@@ -206,7 +209,7 @@ export function LeadCard({
   // Grid view - Compact card
   if (viewMode === "grid") {
     return (
-      <Card className="p-4 hover:shadow-lg transition-shadow">
+      <Card className={`p-4 transition-all hover:shadow-lg ${recentInteractionState.isHighlighted ? "border-emerald-200 bg-emerald-50/80 shadow-emerald-100" : ""}`}>
         <div className="flex items-start justify-between mb-3">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
@@ -343,6 +346,11 @@ export function LeadCard({
             {getStatusLabel(lead.status)}
           </Badge>
           <Badge variant="outline" className="text-xs">{getLeadTypeLabel(lead.lead_type)}</Badge>
+          {recentInteractionState.isHighlighted && recentInteractionState.badgeLabel && (
+            <Badge variant="outline" className="border-emerald-200 bg-emerald-100 text-emerald-700 text-xs hover:bg-emerald-100">
+              {recentInteractionState.badgeLabel}
+            </Badge>
+          )}
           {lead.last_contact_outcome && (
             <Badge variant="outline" className="text-xs bg-gray-50 border-gray-200">
               📞 {lead.last_contact_outcome}
@@ -425,7 +433,7 @@ export function LeadCard({
 
   // List view - Full details card
   return (
-    <Card className="p-6 hover:shadow-lg transition-shadow">
+    <Card className={`p-6 transition-all hover:shadow-lg ${recentInteractionState.isHighlighted ? "border-emerald-200 bg-emerald-50/80 shadow-emerald-100" : ""}`}>
       <div className="flex items-start justify-between mb-4">
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-1">
@@ -562,6 +570,11 @@ export function LeadCard({
           {getStatusLabel(lead.status)}
         </Badge>
         <Badge variant="outline">{getLeadTypeLabel(lead.lead_type)}</Badge>
+        {recentInteractionState.isHighlighted && recentInteractionState.badgeLabel && (
+          <Badge variant="outline" className="border-emerald-200 bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
+            {recentInteractionState.badgeLabel}
+          </Badge>
+        )}
         {lead.last_contact_outcome && (
           <Badge variant="outline" className="bg-gray-50 border-gray-200">
             📞 {lead.last_contact_outcome}

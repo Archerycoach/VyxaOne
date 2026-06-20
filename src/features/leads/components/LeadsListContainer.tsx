@@ -26,6 +26,7 @@ import {
 import { getLeadColumnsConfig, type LeadColumnConfig } from "@/services/leadColumnsService";
 import type { LeadWithContacts } from "@/services/leadsService";
 import { supabase } from "@/integrations/supabase/client";
+import { getLeadRecentInteractionState } from "@/lib/leadInteractionHighlight";
 
 // Default columns configuration for fallback
 const DEFAULT_COLUMNS: LeadColumnConfig[] = [
@@ -705,12 +706,26 @@ export function LeadsListContainer({
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {filteredLeads.map((lead, index) => {
-                  const bgClass = index % 2 === 0 ? "bg-white" : "bg-gray-50";
+                  const recentInteractionState = getLeadRecentInteractionState(lead.last_contact_date);
+                  const bgClass = recentInteractionState.isHighlighted
+                    ? "bg-emerald-50/80 hover:bg-emerald-100"
+                    : index % 2 === 0
+                      ? "bg-white"
+                      : "bg-gray-50";
                   return (
                     <tr key={lead.id} className={`${bgClass} hover:bg-blue-50 transition-colors`}>
-                      {columnsConfig.map((column) => (
+                      {columnsConfig.map((column, columnIndex) => (
                         <td key={column.column_key} className="px-4 py-3 text-sm text-gray-700">
-                          {getCellValue(lead, column.column_key)}
+                          {columnIndex === 0 && recentInteractionState.isHighlighted && recentInteractionState.badgeLabel ? (
+                            <div className="space-y-1">
+                              <div>{getCellValue(lead, column.column_key)}</div>
+                              <Badge variant="outline" className="w-fit border-emerald-200 bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
+                                {recentInteractionState.badgeLabel}
+                              </Badge>
+                            </div>
+                          ) : (
+                            getCellValue(lead, column.column_key)
+                          )}
                         </td>
                       ))}
                       <td className="px-4 py-3">

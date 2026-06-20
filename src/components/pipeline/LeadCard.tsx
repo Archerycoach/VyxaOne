@@ -64,6 +64,7 @@ import { AssignLeadDialog } from "@/components/leads/AssignLeadDialog";
 import { LeadDetailsDialog } from "@/components/leads/LeadDetailsDialog";
 import { getUserProfile } from "@/services/profileService";
 import { supabase } from "@/integrations/supabase/client";
+import { getLeadRecentInteractionState } from "@/lib/leadInteractionHighlight";
 
 interface LeadCardProps {
   lead: LeadWithContacts;
@@ -359,6 +360,8 @@ export function LeadCard({ lead, onClick, onDelete, onConvertSuccess }: LeadCard
     }).format(budget);
   };
 
+  const recentInteractionState = getLeadRecentInteractionState(lead.last_contact_date);
+
   return (
     <>
       <Card
@@ -366,7 +369,9 @@ export function LeadCard({ lead, onClick, onDelete, onConvertSuccess }: LeadCard
         style={style}
         {...listeners}
         {...attributes}
-        className={`relative p-6 hover:shadow-lg transition-shadow cursor-grab ${
+        className={`relative cursor-grab p-6 transition-all hover:shadow-lg ${
+          recentInteractionState.isHighlighted ? "border-emerald-200 bg-emerald-50/80 shadow-emerald-100" : ""
+        } ${
           isDragging ? "opacity-50 ring-2 ring-blue-500" : ""
         }`}
       >
@@ -466,6 +471,14 @@ export function LeadCard({ lead, onClick, onDelete, onConvertSuccess }: LeadCard
         <h3 className="text-lg font-semibold text-gray-900 mb-3 pr-20 truncate">
           {lead.name}
         </h3>
+
+        {recentInteractionState.isHighlighted && recentInteractionState.badgeLabel && (
+          <div className="mb-3">
+            <Badge variant="outline" className="border-emerald-200 bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
+              {recentInteractionState.badgeLabel}
+            </Badge>
+          </div>
+        )}
 
         {/* Contact Information */}
         <div className="mb-4 space-y-1">
