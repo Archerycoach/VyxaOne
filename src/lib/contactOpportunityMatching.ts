@@ -85,7 +85,7 @@ export function isRecentOpportunity(
   const referenceDate = primaryDate ?? fallbackDate;
   if (!referenceDate) return false;
   const difference = Date.now() - new Date(referenceDate).getTime();
-  return difference >= 0 && difference <= THIRTY_DAYS_IN_MS;
+  return difference >= -86400000 && difference <= THIRTY_DAYS_IN_MS;
 }
 
 export function scorePropertyAgainstRequest(
@@ -108,11 +108,11 @@ export function scorePropertyAgainstRequest(
     return { isMatch: false, score: 0, reasons: [] };
   }
 
-  if (!matchesText(property.property_type, request.property_types)) {
+  if (property.property_type && !matchesText(property.property_type, request.property_types)) {
     return { isMatch: false, score: 0, reasons: [] };
   }
 
-  if (!matchesText(property.typology, request.typologies)) {
+  if (property.typology && !matchesText(property.typology, request.typologies)) {
     return { isMatch: false, score: 0, reasons: [] };
   }
 
@@ -184,7 +184,8 @@ export function scoreDevelopmentAgainstRequest(
     return { isMatch: false, score: 0, reasons: [] };
   }
 
-  if (!matchesAnyText(development.typologies ?? [], request.typologies)) {
+  const devTypologies = development.typologies ?? [];
+  if (devTypologies.length > 0 && !matchesAnyText(devTypologies, request.typologies)) {
     return { isMatch: false, score: 0, reasons: [] };
   }
 

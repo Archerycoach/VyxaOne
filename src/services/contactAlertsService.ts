@@ -90,7 +90,7 @@ async function getRecentProperties(): Promise<PropertyCandidate[]> {
   const { data, error } = await supabase
     .from("properties")
     .select("id, title, city, district, address, property_type, typology, price, bedrooms, created_at, listed_at")
-    .eq("status", "available")
+    .in("status", ["available", "reserved", "draft"])
     .order("created_at", { ascending: false });
 
   if (error) throw error;
@@ -104,7 +104,7 @@ async function getRecentDevelopments(): Promise<Development[]> {
   const { data, error } = await (supabase
     .from("developments" as any)
     .select("id, name, city, district, address, typologies, price_from, price_to, available_units, created_at, published_at")
-    .eq("status", "published")
+    .in("status", ["published", "draft", "active", "available"])
     .order("created_at", { ascending: false }) as any);
 
   if (error) throw error;

@@ -265,7 +265,7 @@ export default function AiAgentPage() {
                   <Bot className="h-8 w-8 text-indigo-600" />
                   Agente IA
                 </h1>
-                <p className="text-gray-500 mt-1">O seu assistente virtual para análise de leads e gestão de calendário.</p>
+                <p className="text-gray-500 mt-1">O seu parceiro de negócio, com visão global sobre as suas leads, imóveis, calendário e interações.</p>
               </div>
               <div className="flex items-center gap-3">
                 <Link href="/settings?tab=gpt">
@@ -315,7 +315,7 @@ export default function AiAgentPage() {
                       <Bot className="h-5 w-5 text-indigo-600" />
                       Chat Interativo
                     </CardTitle>
-                    <CardDescription>Converse com o Agente sobre as suas leads, o seu calendário, peça listagens por tipologia ou pesquise imóveis do Idealista para uma lead específica.</CardDescription>
+                    <CardDescription>Converse com o Agente sobre qualquer aspeto do seu negócio: cruze pedidos das leads com imóveis em carteira, analise o histórico recente ou organize as suas tarefas pendentes.</CardDescription>
                   </CardHeader>
                   
                   {!hasGptConnection ? (
@@ -339,7 +339,7 @@ export default function AiAgentPage() {
                         {chatHistory.length === 0 ? (
                           <div className="h-full flex flex-col items-center justify-center text-center text-gray-500 space-y-4 py-12">
                             <Bot className="h-12 w-12 text-indigo-200" />
-                            <p>Olá! Sou o seu Agente IA. Conheço as suas leads e a sua agenda.<br/>Como o posso ajudar hoje?</p>
+                            <p>Olá! Sou o seu Agente IA e Conselheiro de Negócio.<br/>Estou ligado a toda a sua plataforma: leads, tarefas, calendário, imóveis e histórico.<br/><br/>Pode pedir para eu procurar leads para um T2 específico, ver o que disse ao cliente X ontem, ou sugerir em quem focar hoje.</p>
                           </div>
                         ) : (
                           <div className="space-y-4">

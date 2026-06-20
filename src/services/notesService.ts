@@ -70,6 +70,14 @@ export async function createNote(note: Omit<LeadNoteInsert, "created_by">): Prom
     throw new Error("Failed to create note");
   }
 
+  // Update lead's last_contact_date to trigger the recent interaction UI highlight
+  if (note.lead_id) {
+    await supabase
+      .from("leads")
+      .update({ last_contact_date: new Date().toISOString() })
+      .eq("id", note.lead_id);
+  }
+
   return data as unknown as LeadNote;
 }
 

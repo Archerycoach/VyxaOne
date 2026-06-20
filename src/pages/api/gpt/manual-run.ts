@@ -67,6 +67,23 @@ export default async function handler(
       .is("archived_at", null)
       .in("status", ["new", "contacted", "qualified", "proposal", "negotiation"])
       .limit(30);
+      
+    // Buscar histórico geral (leads ganhas/perdidas recentes)
+    const { data: recentLeads } = await supabase
+      .from("leads")
+      .select("name, status, lead_type, property_type")
+      .eq("assigned_to", user.id)
+      .in("status", ["won", "lost"])
+      .order("updated_at", { ascending: false })
+      .limit(10);
+
+    // Buscar interações recentes 
+    const { data: recentInteractions } = await supabase
+      .from("lead_interactions")
+      .select("type, content, created_at, lead_id")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(20);
 
     if ((!leads || leads.length === 0) && (!contactMatches || contactMatches.length === 0)) {
       return res.status(200).json({ 
@@ -95,6 +112,8 @@ export default async function handler(
 
     const contextData = {
       leads: leads || [],
+      recently_closed_leads: recentLeads || [],
+      recent_interactions: recentInteractions || [],
       recent_notes: notes || [],
       existing_upcoming_events: upcomingEvents || [],
       contact_opportunity_matches: contactMatches || []
@@ -129,15 +148,17 @@ export default async function handler(
     `És um assistente de vendas de elite de uma agência imobiliária. 
 Analisa as leads pendentes do consultor/agente ${profile?.full_name || 'Utilizador'}.
 Vais receber os dados das leads, as notas reais recentes escritas sobre cada uma, os eventos de calendário já marcados e os matches pendentes entre contactos e novas oportunidades (imóveis ou empreendimentos).
+Para além disso, tens acesso às últimas interações/emails registados e ao histórico de leads fechadas (ganhas/perdidas) recentemente.
 
 Data e hora atual: ${now.toISOString()}
 
 O teu objetivo é:
 1. Ler as notas para entender o contexto da negociação.
 2. Priorizar também os matches pendentes dos contactos com novas oportunidades publicadas.
-3. Agendar EVENTOS DE CALENDÁRIO (hora de início e fim) apenas quando fizer sentido operacional.
-4. Evitar sobrepor horários (verifica 'existing_upcoming_events').
-5. Formatar um resumo motivador.
+3. Analisar o que aconteceu recentemente nas interações para dar contexto às sugestões de follow-up.
+4. Agendar EVENTOS DE CALENDÁRIO (hora de início e fim) apenas quando fizer sentido operacional.
+5. Evitar sobrepor horários (verifica 'existing_upcoming_events').
+6. Formatar um resumo motivador.
 
 A tua resposta DEVE ser OBRIGATORIAMENTE um objeto JSON com esta estrutura:
 {

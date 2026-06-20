@@ -160,12 +160,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       (supabase
         .from("properties")
         .select("id, user_id, title, city, district, address, property_type, typology, price, bedrooms, created_at, listed_at")
-        .eq("status", "available")
+        .in("status", ["available", "reserved", "draft"])
         .order("created_at", { ascending: false }) as any),
       (supabase
         .from("developments" as any)
         .select("id, user_id, name, city, district, address, typologies, price_from, price_to, available_units, created_at, published_at")
-        .eq("status", "published")
+        .in("status", ["published", "draft", "active", "available"])
         .order("created_at", { ascending: false }) as any),
       (supabase
         .from("contact_opportunity_matches" as any)

@@ -40,6 +40,34 @@ interface EventContext {
   event_type: string | null;
 }
 
+interface TaskContext {
+  id: string;
+  title: string;
+  description: string | null;
+  due_date: string | null;
+  status: string;
+  priority: string | null;
+  lead_id: string | null;
+}
+
+interface PropertyContext {
+  id: string;
+  title: string;
+  status: string;
+  price: number | null;
+  typology: string | null;
+  location: string | null;
+  area: number | null;
+}
+
+interface InteractionContext {
+  id: string;
+  type: string;
+  content: string | null;
+  created_at: string;
+  lead_id: string | null;
+}
+
 interface EmailCampaignCriteria {
   location: string | null;
   typology: string | null;
@@ -654,6 +682,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const { data: profile } = await supabase.from("profiles").select("*").eq("id", user.id).single();
 
+    // Fetch a broad array of data to give the AI complete business context
     const { data: leads, error: leadsError } = await supabase
       .from("leads")
       .select(
@@ -661,9 +690,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       )
       .or(`assigned_to.eq.${user.id},user_id.eq.${user.id}`)
       .is("archived_at", null)
-      .neq("status", "lost")
-      .neq("status", "won")
-      .order("created_at", { ascending: false })
+      .order("updated_at", { ascending: false })
       .limit(200);
 
     if (leadsError) {
@@ -800,30 +827,40 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       throw eventsError;
     }
 
+    const [
+      { data: tasks },
+      { data: properties },
+      { data: interactions }
+    ] = await Promise.all([
+      supabase.from("tasks").select("id, title, description, due_date, status, priority, lead_id").eq("user_id", user.id).eq("status", "pending").order("due_date", { ascending: true, nullsFirst: false }).limit(30),
+      supabase.from("properties").select("id, title, status, price, typology, location, area").eq("user_id", user.id).in("status", ["available", "reserved"]).limit(30),
+      supabase.from("lead_interactions").select("id, type, content, created_at, lead_id").eq("user_id", user.id).order("created_at", { ascending: false }).limit(40)
+    ]);
+
     const contextStr = JSON.stringify({
       agent_name: profile?.full_name || "Agente",
       current_time: new Date().toISOString(),
-      active_leads_count: activeLeads.length,
-      active_leads: activeLeads,
-      upcoming_events: (events || []) as EventContext[],
+      leads: activeLeads,
+      upcoming_events: events || [],
+      pending_tasks: tasks || [],
+      portfolio_properties: properties || [],
+      recent_history_interactions: interactions || [],
       requested_typology_bedrooms: requestedBedrooms,
     });
 
     const systemMessage: ChatMessage = {
       role: "system",
-      content: `És um assistente imobiliário virtual integrado no CRM Vyxa. Estás a falar com o agente imobiliário ${profile?.full_name || "Utilizador"}.
-Usa os seguintes dados contextuais (Leads Ativas e Próximos Eventos) para responder se o utilizador perguntar sobre o seu trabalho:
+      content: `És um assistente imobiliário virtual e conselheiro de negócio integrado no CRM Vyxa. Estás a falar com o agente imobiliário ${profile?.full_name || "Utilizador"}.
+Tens acesso global e em tempo real a toda a plataforma do agente. Usa os seguintes dados de contexto para responder, cruzar informação e aconselhar sobre QUALQUER tópico do negócio:
 ${contextStr}
 
 INSTRUÇÕES IMPORTANTES:
-- A lista active_leads contém dados REAIS da base de dados.
-- Quando o utilizador pedir T0, T1, T2, T3, etc., interpreta isso como tipologia portuguesa.
-- Equivalências: T0 = 0 quartos, T1 = 1 quarto, T2 = 2 quartos, T3 = 3 quartos.
-- Ao procurares tipologias, cruza SEMPRE os campos bedrooms e property_type.
-- Não inventes ausência de resultados. Se existirem leads compatíveis na lista, enumera-as com nome, estado, telefone, email e restantes detalhes relevantes.
-- Se o utilizador pedir uma análise, usa apenas os dados reais fornecidos.
-
-Sê profissional, conciso e muito útil. Usa formatação em Markdown quando fizer sentido.`,
+- Os dados fornecidos representam a carteira real do agente (Leads globais, Tarefas Pendentes, Eventos, Imóveis disponíveis e Histórico Recente de Interações/Emails).
+- Podes e deves cruzar estas informações para dar conselhos estratégicos (ex: "Tens a lead X à procura de T2 e tens o imóvel Y na carteira que serve perfeitamente", ou "Tens 5 tarefas atrasadas hoje, foca-te em contactar o cliente Z").
+- Podes analisar o histórico de interações para resumir o que foi falado recentemente com as leads.
+- Quando o utilizador pedir T0, T1, T2, etc., interpreta como tipologia. Cruza 'bedrooms' e 'property_type'.
+- Não inventes dados. Se não encontrares na lista fornecida, diz que não tens essa informação no momento.
+- Sê proativo, analítico e atua como um verdadeiro parceiro de negócio. Usa formatação em Markdown sempre que ajudar à leitura.`,
     };
 
     const messages: ChatMessage[] = [systemMessage, ...((history || []) as ChatMessage[]), { role: "user", content: message }];
