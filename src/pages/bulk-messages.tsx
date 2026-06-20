@@ -810,7 +810,7 @@ export default function BulkMessages() {
                           />
                         </div>
                         <p className="text-xs text-gray-500 pt-1">
-                          Pode usar variáveis: {"{nome}"}, {"{email}"}, {"{telefone}"}. O editor suporta imagens até 1MB.
+                          Pode usar variáveis: {"{nome}"}, {"{email}"}, {"{telefone}"}. O editor suporta imagens até 1MB e pode clicar numa imagem para ajustar a largura da assinatura.
                         </p>
                       </div>
 

@@ -822,6 +822,11 @@ export function WorkflowsManagement() {
                       rows={8}
                     />
                   )}
+                  {formState.action_type === "send_email" && (
+                    <p className="text-xs text-gray-500">
+                      Clique numa imagem para ajustar a largura da assinatura antes de guardar a automação.
+                    </p>
+                  )}
                 </div>
 
                 {formState.action_type === "send_email" && (
