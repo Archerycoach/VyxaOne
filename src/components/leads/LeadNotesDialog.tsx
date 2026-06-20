@@ -32,9 +32,10 @@ interface LeadNotesDialogProps {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   trigger?: React.ReactNode;
+  onSuccess?: () => void;
 }
 
-export function LeadNotesDialog({ leadId, leadName, open: controlledOpen, onOpenChange: setControlledOpen, trigger }: LeadNotesDialogProps) {
+export function LeadNotesDialog({ leadId, leadName, open: controlledOpen, onOpenChange: setControlledOpen, trigger, onSuccess }: LeadNotesDialogProps) {
   const [internalOpen, setInternalOpen] = useState(false);
   const [notes, setNotes] = useState<LeadNote[]>([]);
   const [isAdding, setIsAdding] = useState(false);
@@ -107,6 +108,7 @@ export function LeadNotesDialog({ leadId, leadName, open: controlledOpen, onOpen
       setNoteText("");
       setIsAdding(false);
       await loadNotes();
+      if (onSuccess) onSuccess();
     } catch (error) {
       console.error("Error adding note:", error);
       toast({
@@ -141,6 +143,7 @@ export function LeadNotesDialog({ leadId, leadName, open: controlledOpen, onOpen
       setNoteText("");
       setEditingNoteId(null);
       await loadNotes();
+      if (onSuccess) onSuccess();
     } catch (error) {
       console.error("Error updating note:", error);
       toast({
@@ -164,6 +167,7 @@ export function LeadNotesDialog({ leadId, leadName, open: controlledOpen, onOpen
         description: "Nota eliminada com sucesso",
       });
       await loadNotes();
+      if (onSuccess) onSuccess();
     } catch (error) {
       console.error("Error deleting note:", error);
       toast({

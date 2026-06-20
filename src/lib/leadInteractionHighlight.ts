@@ -26,7 +26,8 @@ export function getLeadRecentInteractionState(
 
   const interactionAge = Date.now() - lastContactTimestamp;
 
-  if (interactionAge < 0 || interactionAge > FIVE_DAYS_IN_MS) {
+  // Allow up to 24 hours in the future to account for client/server clock skew
+  if (interactionAge < -86400000 || interactionAge > FIVE_DAYS_IN_MS) {
     return {
       isHighlighted: false,
       badgeLabel: null,

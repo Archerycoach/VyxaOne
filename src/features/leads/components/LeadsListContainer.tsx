@@ -881,6 +881,7 @@ export function LeadsListContainer({
           leadName={selectedLead.name}
           open={notesDialogOpen}
           onOpenChange={setNotesDialogOpen}
+          onSuccess={debouncedRefetch}
         />
       )}
 

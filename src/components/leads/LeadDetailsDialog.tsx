@@ -36,8 +36,8 @@ import {
   Loader2
 } from "lucide-react";
 import { getLeadById } from "@/services/leadsService";
-import { getInteractionsByLead } from "@/services/interactionsService";
-import { getNotesByLead } from "@/services/notesService";
+import { getInteractionsByLead, createInteraction } from "@/services/interactionsService";
+import { getNotesByLead, createNote } from "@/services/notesService";
 import { getEventsByLead } from "@/services/calendarService";
 import { getTasksByLead } from "@/services/tasksService";
 import { getPropertiesByLead } from "@/services/propertiesService";
@@ -52,6 +52,7 @@ import { PropertyForm } from "@/components/properties/PropertyForm";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { LeadAIInsightsPanel } from "./LeadAIInsightsPanel";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface LeadDetailsDialogProps {
   leadId: string | null;
@@ -78,6 +79,11 @@ export function LeadDetailsDialog({
   const [generatedDraft, setGeneratedDraft] = useState<{text: string, channel: 'whatsapp'|'email'} | null>(null);
   const [emailAttachments, setEmailAttachments] = useState<Array<{name: string, content: string, encoding: string}>>([]);
   const [isSending, setIsSending] = useState(false);
+  const [newNoteText, setNewNoteText] = useState("");
+  const [isSubmittingNote, setIsSubmittingNote] = useState(false);
+  const [newInteractionType, setNewInteractionType] = useState("call");
+  const [newInteractionText, setNewInteractionText] = useState("");
+  const [isSubmittingInteraction, setIsSubmittingInteraction] = useState(false);
   const { toast } = useToast();
   
   // Use ref to prevent multiple fetches
@@ -262,6 +268,46 @@ export function LeadDetailsDialog({
       toast({ title: "Erro ao gerar rascunho", description: err.message, variant: "destructive" });
     } finally {
       setDrafting(null);
+    }
+  };
+
+  const handleAddNote = async () => {
+    if (!newNoteText.trim() || !leadId) return;
+    setIsSubmittingNote(true);
+    try {
+      await createNote({
+        lead_id: leadId,
+        note: newNoteText.trim(),
+      });
+      toast({ title: "Nota adicionada com sucesso" });
+      setNewNoteText("");
+      const notesData = await getNotesByLead(leadId);
+      setNotes(notesData);
+    } catch (e: any) {
+      toast({ title: "Erro ao adicionar nota", description: e.message, variant: "destructive" });
+    } finally {
+      setIsSubmittingNote(false);
+    }
+  };
+
+  const handleAddInteraction = async () => {
+    if (!newInteractionText.trim() || !leadId) return;
+    setIsSubmittingInteraction(true);
+    try {
+      await createInteraction({
+        lead_id: leadId,
+        interaction_type: newInteractionType,
+        content: newInteractionText.trim(),
+        interaction_date: new Date().toISOString(),
+      });
+      toast({ title: "Interação adicionada com sucesso" });
+      setNewInteractionText("");
+      const interData = await getInteractionsByLead(leadId);
+      setInteractions(interData);
+    } catch (e: any) {
+      toast({ title: "Erro ao registar interação", description: e.message, variant: "destructive" });
+    } finally {
+      setIsSubmittingInteraction(false);
     }
   };
 
@@ -572,6 +618,36 @@ export function LeadDetailsDialog({
             )}
 
             <TabsContent value="interactions" className="space-y-4 mt-4">
+              <Card className="bg-slate-50 border-dashed">
+                <CardContent className="p-4 space-y-3">
+                  <div className="flex gap-3">
+                    <Select value={newInteractionType} onValueChange={setNewInteractionType}>
+                      <SelectTrigger className="w-[180px] bg-white">
+                        <SelectValue placeholder="Tipo" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="call">Chamada</SelectItem>
+                        <SelectItem value="email">E-mail</SelectItem>
+                        <SelectItem value="whatsapp">WhatsApp</SelectItem>
+                        <SelectItem value="meeting">Reunião</SelectItem>
+                        <SelectItem value="sms">SMS</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Textarea 
+                    placeholder="Detalhes da interação..." 
+                    value={newInteractionText}
+                    onChange={(e) => setNewInteractionText(e.target.value)}
+                    className="min-h-[80px] bg-white"
+                  />
+                  <div className="flex justify-end">
+                    <Button onClick={handleAddInteraction} disabled={isSubmittingInteraction || !newInteractionText.trim()}>
+                      {isSubmittingInteraction && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                      Registar Interação
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
               {interactions.length === 0 ? (
                 <div className="text-center py-12 text-gray-500">
                   <MessageSquare className="h-12 w-12 mx-auto mb-4 text-gray-300" />
@@ -601,6 +677,22 @@ export function LeadDetailsDialog({
             </TabsContent>
 
             <TabsContent value="notes" className="space-y-4 mt-4">
+              <Card className="bg-slate-50 border-dashed">
+                <CardContent className="p-4 space-y-3">
+                  <Textarea 
+                    placeholder="Escreva uma nota interna..." 
+                    value={newNoteText}
+                    onChange={(e) => setNewNoteText(e.target.value)}
+                    className="min-h-[80px] bg-white"
+                  />
+                  <div className="flex justify-end">
+                    <Button onClick={handleAddNote} disabled={isSubmittingNote || !newNoteText.trim()}>
+                      {isSubmittingNote && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                      Adicionar Nota
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
               {notes.length === 0 ? (
                 <div className="text-center py-12 text-gray-500">
                   <FileText className="h-12 w-12 mx-auto mb-4 text-gray-300" />

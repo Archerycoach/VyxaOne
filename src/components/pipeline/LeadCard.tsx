@@ -814,6 +814,7 @@ export function LeadCard({ lead, onClick, onDelete, onConvertSuccess }: LeadCard
         leadName={lead.name} 
         open={notesDialogOpen}
         onOpenChange={setNotesDialogOpen}
+        onSuccess={onConvertSuccess}
         trigger={<></>}
       />
 

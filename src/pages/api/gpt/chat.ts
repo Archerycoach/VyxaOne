@@ -833,7 +833,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       { data: interactions }
     ] = await Promise.all([
       supabase.from("tasks").select("id, title, description, due_date, status, priority, lead_id").eq("user_id", user.id).eq("status", "pending").order("due_date", { ascending: true, nullsFirst: false }).limit(30),
-      supabase.from("properties").select("id, title, status, price, typology, location, area").eq("user_id", user.id).in("status", ["available", "reserved"]).limit(30),
+      supabase.from("properties").select("id, title, status, price, typology, location, area").eq("user_id", user.id).limit(100),
       supabase.from("lead_interactions").select("id, type, content, created_at, lead_id").eq("user_id", user.id).order("created_at", { ascending: false }).limit(40)
     ]);
 
@@ -855,11 +855,12 @@ Tens acesso global e em tempo real a toda a plataforma do agente. Usa os seguint
 ${contextStr}
 
 INSTRUÇÕES IMPORTANTES:
-- Os dados fornecidos representam a carteira real do agente (Leads globais, Tarefas Pendentes, Eventos, Imóveis disponíveis e Histórico Recente de Interações/Emails).
-- Podes e deves cruzar estas informações para dar conselhos estratégicos (ex: "Tens a lead X à procura de T2 e tens o imóvel Y na carteira que serve perfeitamente", ou "Tens 5 tarefas atrasadas hoje, foca-te em contactar o cliente Z").
+- Os dados fornecidos representam a carteira real do agente (Leads globais, Tarefas Pendentes, Eventos, A TUA CARTEIRA DE IMÓVEIS no array portfolio_properties e Histórico Recente de Interações/Emails).
+- TENS ACESSO DIRETO AOS IMÓVEIS do agente em portfolio_properties. Usa sempre estes imóveis quando o agente te pedir para cruzar leads ou sugerir imóveis.
+- Podes e deves cruzar estas informações para dar conselhos estratégicos (ex: "A lead X procura um T2 e tens o imóvel Y na tua carteira portfolio_properties que encaixa perfeitamente no perfil").
 - Podes analisar o histórico de interações para resumir o que foi falado recentemente com as leads.
-- Quando o utilizador pedir T0, T1, T2, etc., interpreta como tipologia. Cruza 'bedrooms' e 'property_type'.
-- Não inventes dados. Se não encontrares na lista fornecida, diz que não tens essa informação no momento.
+- Quando o utilizador pedir T0, T1, T2, etc., interpreta como tipologia. Cruza 'bedrooms', 'property_type' e 'typology'.
+- Não inventes dados de imóveis. Se não encontrares correspondência no array portfolio_properties, diz que o agente não tem imóveis com aquele perfil.
 - Sê proativo, analítico e atua como um verdadeiro parceiro de negócio. Usa formatação em Markdown sempre que ajudar à leitura.`,
     };
 

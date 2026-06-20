@@ -231,7 +231,7 @@ export function LeadCard({
                   <MoreVertical className="h-4 w-4" />
                 </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuContent align="end" className="w-56 max-h-[350px] overflow-y-auto">
                 <div className="px-2 py-1.5 text-xs font-semibold text-gray-500 uppercase">
                   Comunicação
                 </div>
@@ -455,7 +455,7 @@ export function LeadCard({
                 <MoreVertical className="h-4 w-4" />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuContent align="end" className="w-56 max-h-[350px] overflow-y-auto">
               <div className="px-2 py-1.5 text-xs font-semibold text-gray-500 uppercase">
                 Comunicação
               </div>

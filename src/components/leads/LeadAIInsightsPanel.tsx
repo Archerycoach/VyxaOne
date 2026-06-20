@@ -2,7 +2,8 @@ import React, { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Bot, Sparkles, AlertCircle, TrendingUp, Target, ListChecks } from "lucide-react";
+import { Bot, Sparkles, AlertCircle, TrendingUp, Target, ListChecks, Send, Loader2, User, MessageCircle } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 
 interface AIInsights {
@@ -17,6 +18,10 @@ export function LeadAIInsightsPanel({ leadId }: { leadId: string }) {
   const [insights, setInsights] = useState<AIInsights | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [chatMessage, setChatMessage] = useState("");
+  const [isChatting, setIsChatting] = useState(false);
+  const [chatHistory, setChatHistory] = useState<Array<{role: 'user' | 'assistant', content: string}>>([]);
 
   const fetchInsights = async () => {
     setLoading(true);
@@ -109,6 +114,43 @@ export function LeadAIInsightsPanel({ leadId }: { leadId: string }) {
     return 'bg-gray-50 text-gray-700 border-gray-200';
   };
 
+  const handleSendMessage = async () => {
+    if (!chatMessage.trim() || !leadId) return;
+    
+    const newMessage = chatMessage;
+    setChatMessage("");
+    const updatedHistory = [...chatHistory, { role: "user" as const, content: newMessage }];
+    setChatHistory(updatedHistory);
+    setIsChatting(true);
+    
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`/api/gpt/leads/${leadId}/chat`, {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session?.access_token}` 
+        },
+        body: JSON.stringify({
+          message: newMessage,
+          history: chatHistory
+        })
+      });
+      
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Erro ao comunicar com o assistente");
+      }
+      
+      const data = await res.json();
+      setChatHistory([...updatedHistory, { role: "assistant", content: data.reply }]);
+    } catch (err: any) {
+      setChatHistory([...updatedHistory, { role: "assistant", content: `❌ Erro: ${err.message}` }]);
+    } finally {
+      setIsChatting(false);
+    }
+  };
+
   return (
     <div className="space-y-4 mt-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <Card className="border-indigo-100 shadow-sm overflow-hidden">
@@ -177,6 +219,62 @@ export function LeadAIInsightsPanel({ leadId }: { leadId: string }) {
                 </p>
               </div>
             </div>
+          </div>
+        </CardContent>
+      </Card>
+      
+      <Card className="border-indigo-100 shadow-sm flex flex-col">
+        <div className="bg-slate-50 px-4 py-3 border-b border-indigo-100 flex items-center gap-2">
+          <MessageCircle className="h-4 w-4 text-indigo-600" />
+          <h3 className="font-semibold text-sm text-indigo-900">Conversar sobre esta Lead</h3>
+        </div>
+        <CardContent className="p-0 flex flex-col max-h-[400px]">
+          <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-[200px]">
+            {chatHistory.length === 0 ? (
+              <div className="text-center text-gray-500 text-sm py-8 flex flex-col items-center gap-2">
+                <Bot className="h-8 w-8 text-indigo-200" />
+                <p>Faça perguntas específicas sobre esta lead.<br/>Ex: "Escreve um email a sugerir um T2", ou "O que devo abordar na próxima chamada?"</p>
+              </div>
+            ) : (
+              chatHistory.map((msg, i) => (
+                <div key={i} className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${msg.role === 'user' ? 'bg-indigo-600' : 'bg-indigo-100'}`}>
+                    {msg.role === 'user' ? <User className="h-4 w-4 text-white" /> : <Bot className="h-4 w-4 text-indigo-700" />}
+                  </div>
+                  <div className={`px-4 py-2 rounded-2xl max-w-[85%] text-sm ${msg.role === 'user' ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-slate-100 text-slate-800 rounded-tl-none whitespace-pre-wrap'}`}>
+                    {msg.content}
+                  </div>
+                </div>
+              ))
+            )}
+            {isChatting && (
+              <div className="flex gap-3">
+                <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center shrink-0">
+                  <Bot className="h-4 w-4 text-indigo-700" />
+                </div>
+                <div className="px-4 py-3 rounded-2xl bg-slate-100 rounded-tl-none flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin text-indigo-400" />
+                  <span className="text-sm text-indigo-400">A processar...</span>
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="p-3 border-t bg-white flex gap-2">
+            <Textarea 
+              placeholder="Peça um e-mail de follow-up, conselhos ou análise..." 
+              value={chatMessage}
+              onChange={(e) => setChatMessage(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSendMessage();
+                }
+              }}
+              className="min-h-[60px] resize-none focus-visible:ring-indigo-500"
+            />
+            <Button size="icon" className="h-[60px] w-[60px] shrink-0 bg-indigo-600 hover:bg-indigo-700" onClick={handleSendMessage} disabled={!chatMessage.trim() || isChatting}>
+              <Send className="h-5 w-5" />
+            </Button>
           </div>
         </CardContent>
       </Card>
