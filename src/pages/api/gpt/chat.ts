@@ -1223,162 +1223,192 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const requestedBedrooms = detectRequestedBedrooms(message);
 
     if (isEmailCampaignRequest(message) || campaignContext?.mode === "email_campaign") {
-      addDebugNote(debugRequested ? debugNotes : undefined, "email_campaign_start", "Início da geração de campanha por email.", {
-        activeLeads: activeLeads.length,
-        requestedBedrooms,
-        previousRecipientLeadIds: campaignContext?.recipientLeadIds?.length || 0,
-      });
-
-      const baseCriteria = campaignContext?.criteria || null;
-      const criteria: EmailCampaignCriteria = {
-        location: resolveRequestedLocation(message, activeLeads) ?? baseCriteria?.location ?? null,
-        typology:
-          requestedBedrooms !== null
-            ? `T${requestedBedrooms}`
-            : baseCriteria?.typology ?? null,
-        bedrooms: requestedBedrooms ?? baseCriteria?.bedrooms ?? null,
-        buyPurpose: detectRequestedBuyPurpose(message) ?? baseCriteria?.buyPurpose ?? null,
-        propertyType: detectRequestedPropertyType(message) ?? baseCriteria?.propertyType ?? null,
-      };
-
-      const [propertiesResult, developmentsResult] = await Promise.all([
-        userScopedSupabase
-          .from("properties")
-          .select("id, title, status, price, typology, address, city, district, area")
-          .order("created_at", { ascending: false })
-          .limit(100),
-        userScopedSupabase
-          .from("developments")
-          .select("id, name, status, address, city, district, typologies, price_from, price_to, available_units")
-          .order("created_at", { ascending: false })
-          .limit(50),
-      ]);
-
-      if (propertiesResult.error) {
-        throw propertiesResult.error;
-      }
-
-      if (developmentsResult.error) {
-        throw developmentsResult.error;
-      }
-
-      const properties: PropertyContext[] = (propertiesResult.data || []).map((property: any) => ({
-        id: property.id,
-        title: property.title,
-        status: property.status,
-        price: property.price,
-        typology: property.typology,
-        location: [property.city, property.district].filter(Boolean).join(", ") || property.address || null,
-        area: property.area,
-      }));
-
-      const developments: DevelopmentContext[] = (developmentsResult.data || []).map((development: any) => ({
-        id: development.id,
-        name: development.name,
-        status: development.status,
-        location: [development.city, development.district].filter(Boolean).join(", ") || development.address || null,
-        typologies: development.typologies || [],
-        price_from: development.price_from,
-        price_to: development.price_to,
-        available_units: development.available_units,
-      }));
-
-      addDebugNote(debugRequested ? debugNotes : undefined, "email_campaign_context_loaded", "Contexto carregado para a campanha.", {
-        properties: properties.length,
-        developments: developments.length,
-      });
-
-      const audienceSelection = await selectEmailCampaignAudience({
-        message,
-        criteria,
-        leads: activeLeads,
-        history: history || [],
-        previousRecipientLeadIds: campaignContext?.recipientLeadIds || [],
-        properties,
-        developments,
-        debugNotes: debugRequested ? debugNotes : undefined,
-      });
-      const matchedLeadIdSet = new Set(audienceSelection.selectedLeadIds);
-      const matchedLeads = activeLeads.filter((lead) => matchedLeadIdSet.has(lead.id));
-
-      const emailableLeads = matchedLeads.filter((lead) => Boolean(lead.email));
-
-      addDebugNote(debugRequested ? debugNotes : undefined, "email_campaign_audience_selected", "Audiência resolvida para a campanha.", {
-        matchedLeads: matchedLeads.length,
-        emailableLeads: emailableLeads.length,
-        filterSummary: audienceSelection.filterSummary,
-      });
-
-      if (matchedLeads.length === 0) {
-        return res.status(200).json({
-          reply: `Não encontrei leads com ${audienceSelection.filterSummary || "o perfil pedido"} na tua carteira ativa.`,
-          debug: debugRequested
-            ? buildDebugPayload("email_campaign_no_matches", {
-                criteria,
-                counts: {
-                  activeLeads: activeLeads.length,
-                  matchedLeads: matchedLeads.length,
-                  emailableLeads: emailableLeads.length,
-                },
-              })
-            : undefined,
+      try {
+        addDebugNote(debugRequested ? debugNotes : undefined, "email_campaign_start", "Início da geração de campanha por email.", {
+          activeLeads: activeLeads.length,
+          requestedBedrooms,
+          previousRecipientLeadIds: campaignContext?.recipientLeadIds?.length || 0,
         });
-      }
 
-      if (emailableLeads.length === 0) {
-        return res.status(200).json({
-          reply: `Encontrei ${matchedLeads.length} leads com ${audienceSelection.filterSummary || "o perfil pedido"}, mas nenhuma tem email registado.`,
-          debug: debugRequested
-            ? buildDebugPayload("email_campaign_no_emailable_leads", {
-                criteria,
-                counts: {
-                  activeLeads: activeLeads.length,
-                  matchedLeads: matchedLeads.length,
-                  emailableLeads: emailableLeads.length,
-                },
-              })
-            : undefined,
+        const baseCriteria = campaignContext?.criteria || null;
+        const criteria: EmailCampaignCriteria = {
+          location: resolveRequestedLocation(message, activeLeads) ?? baseCriteria?.location ?? null,
+          typology:
+            requestedBedrooms !== null
+              ? `T${requestedBedrooms}`
+              : baseCriteria?.typology ?? null,
+          bedrooms: requestedBedrooms ?? baseCriteria?.bedrooms ?? null,
+          buyPurpose: detectRequestedBuyPurpose(message) ?? baseCriteria?.buyPurpose ?? null,
+          propertyType: detectRequestedPropertyType(message) ?? baseCriteria?.propertyType ?? null,
+        };
+
+        const [propertiesResult, developmentsResult] = await Promise.all([
+          userScopedSupabase
+            .from("properties")
+            .select("id, title, status, price, typology, address, city, district, area")
+            .order("created_at", { ascending: false })
+            .limit(100),
+          userScopedSupabase
+            .from("developments")
+            .select("id, name, status, address, city, district, typologies, price_from, price_to, available_units")
+            .order("created_at", { ascending: false })
+            .limit(50),
+        ]);
+
+        if (propertiesResult.error) {
+          throw propertiesResult.error;
+        }
+
+        if (developmentsResult.error) {
+          throw developmentsResult.error;
+        }
+
+        const properties: PropertyContext[] = (propertiesResult.data || []).map((property: any) => ({
+          id: property.id,
+          title: property.title,
+          status: property.status,
+          price: property.price,
+          typology: property.typology,
+          location: [property.city, property.district].filter(Boolean).join(", ") || property.address || null,
+          area: property.area,
+        }));
+
+        const developments: DevelopmentContext[] = (developmentsResult.data || []).map((development: any) => ({
+          id: development.id,
+          name: development.name,
+          status: development.status,
+          location: [development.city, development.district].filter(Boolean).join(", ") || development.address || null,
+          typologies: development.typologies || [],
+          price_from: development.price_from,
+          price_to: development.price_to,
+          available_units: development.available_units,
+        }));
+
+        addDebugNote(debugRequested ? debugNotes : undefined, "email_campaign_context_loaded", "Contexto carregado para a campanha.", {
+          properties: properties.length,
+          developments: developments.length,
         });
-      }
 
-      const baseCampaignDraft = await generateEmailCampaignDraft(
-        message,
-        criteria,
-        emailableLeads,
-        profile?.full_name || "Agente",
-        {
+        const audienceSelection = await selectEmailCampaignAudience({
+          message,
+          criteria,
+          leads: activeLeads,
           history: history || [],
-          previousDraft: campaignContext?.previousDraft || null,
+          previousRecipientLeadIds: campaignContext?.recipientLeadIds || [],
           properties,
           developments,
-          filterSummaryOverride: audienceSelection.filterSummary,
           debugNotes: debugRequested ? debugNotes : undefined,
-        },
-      );
+        });
+        const matchedLeadIdSet = new Set(audienceSelection.selectedLeadIds);
+        const matchedLeads = activeLeads.filter((lead) => matchedLeadIdSet.has(lead.id));
 
-      const campaignDraft: EmailCampaignDraft = {
-        ...baseCampaignDraft,
-        matchedLeadCount: matchedLeads.length,
-        missingEmailCount: matchedLeads.length - emailableLeads.length,
-        recipientLeadIds: emailableLeads.map((lead) => lead.id),
-      };
+        const emailableLeads = matchedLeads.filter((lead) => Boolean(lead.email));
 
-      return res.status(200).json({
-        reply: formatEmailCampaignReply(campaignDraft),
-        campaignDraft,
-        debug: debugRequested
-          ? buildDebugPayload("email_campaign_success", {
-              criteria,
-              counts: {
-                activeLeads: activeLeads.length,
-                matchedLeads: matchedLeads.length,
-                emailableLeads: emailableLeads.length,
-                properties: properties.length,
-                developments: developments.length,
-              },
-            })
-          : undefined,
-      });
+        addDebugNote(debugRequested ? debugNotes : undefined, "email_campaign_audience_selected", "Audiência resolvida para a campanha.", {
+          matchedLeads: matchedLeads.length,
+          emailableLeads: emailableLeads.length,
+          filterSummary: audienceSelection.filterSummary,
+        });
+
+        if (matchedLeads.length === 0) {
+          return res.status(200).json({
+            reply: `Não encontrei leads com ${audienceSelection.filterSummary || "o perfil pedido"} na tua carteira ativa.`,
+            debug: debugRequested
+              ? buildDebugPayload("email_campaign_no_matches", {
+                  criteria,
+                  counts: {
+                    activeLeads: activeLeads.length,
+                    matchedLeads: matchedLeads.length,
+                    emailableLeads: emailableLeads.length,
+                  },
+                })
+              : undefined,
+          });
+        }
+
+        if (emailableLeads.length === 0) {
+          return res.status(200).json({
+            reply: `Encontrei ${matchedLeads.length} leads com ${audienceSelection.filterSummary || "o perfil pedido"}, mas nenhuma tem email registado.`,
+            debug: debugRequested
+              ? buildDebugPayload("email_campaign_no_emailable_leads", {
+                  criteria,
+                  counts: {
+                    activeLeads: activeLeads.length,
+                    matchedLeads: matchedLeads.length,
+                    emailableLeads: emailableLeads.length,
+                  },
+                })
+              : undefined,
+          });
+        }
+
+        const baseCampaignDraft = await generateEmailCampaignDraft(
+          message,
+          criteria,
+          emailableLeads,
+          profile?.full_name || "Agente",
+          {
+            history: history || [],
+            previousDraft: campaignContext?.previousDraft || null,
+            properties,
+            developments,
+            filterSummaryOverride: audienceSelection.filterSummary,
+            debugNotes: debugRequested ? debugNotes : undefined,
+          },
+        );
+
+        const campaignDraft: EmailCampaignDraft = {
+          ...baseCampaignDraft,
+          matchedLeadCount: matchedLeads.length,
+          missingEmailCount: matchedLeads.length - emailableLeads.length,
+          recipientLeadIds: emailableLeads.map((lead) => lead.id),
+        };
+
+        return res.status(200).json({
+          reply: formatEmailCampaignReply(campaignDraft),
+          campaignDraft,
+          debug: debugRequested
+            ? buildDebugPayload("email_campaign_success", {
+                criteria,
+                counts: {
+                  activeLeads: activeLeads.length,
+                  matchedLeads: matchedLeads.length,
+                  emailableLeads: emailableLeads.length,
+                  properties: properties.length,
+                  developments: developments.length,
+                },
+              })
+            : undefined,
+        });
+      } catch (campaignError: unknown) {
+        let campaignErrorMessage = "Erro ao gerar campanha de email";
+        
+        if (campaignError instanceof Error) {
+          campaignErrorMessage = campaignError.message;
+          console.error("Email campaign generation error:", {
+            message: campaignError.message,
+            name: campaignError.name,
+            stack: campaignError.stack,
+          });
+        } else {
+          console.error("Email campaign unknown error:", campaignError);
+        }
+        
+        addDebugNote(debugRequested ? debugNotes : undefined, "email_campaign_error", campaignErrorMessage, {
+          errorType: typeof campaignError,
+          isErrorInstance: campaignError instanceof Error,
+        });
+        
+        return res.status(500).json({
+          error: campaignErrorMessage,
+          debug: debugRequested
+            ? buildDebugPayload("email_campaign_error", {
+                errorMessage: campaignErrorMessage,
+                errorType: typeof campaignError,
+              })
+            : undefined,
+        });
+      }
     }
 
     if (isIdealistaRequest(message)) {
@@ -1692,11 +1722,40 @@ ${developments.length > 0
 
     return res.status(200).json({ reply });
   } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    console.error("Chat error:", error);
+    let errorMessage = "Unknown error";
+    let errorDetails: Record<string, unknown> = {};
+    
+    if (error instanceof Error) {
+      errorMessage = error.message;
+      errorDetails = {
+        name: error.name,
+        stack: error.stack?.split('\n').slice(0, 5).join('\n'),
+      };
+    } else if (typeof error === 'string') {
+      errorMessage = error;
+    } else if (error && typeof error === 'object') {
+      errorMessage = JSON.stringify(error);
+      errorDetails = { rawError: error };
+    }
+    
+    console.error("Chat error details:", {
+      message: errorMessage,
+      type: typeof error,
+      isError: error instanceof Error,
+      details: errorDetails,
+      fullError: error,
+    });
+    
     return res.status(500).json({
       error: errorMessage,
-      debug: debugRequested ? buildDebugPayload("handler_exception", { errorMessage }) : undefined,
+      debug: debugRequested 
+        ? buildDebugPayload("handler_exception", { 
+            errorMessage, 
+            errorType: typeof error,
+            isErrorInstance: error instanceof Error,
+            ...errorDetails 
+          }) 
+        : undefined,
     });
   }
 }

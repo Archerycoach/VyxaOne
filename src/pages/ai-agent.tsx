@@ -226,26 +226,82 @@ export default function AiAgentPage() {
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
+      if (!session) {
+        toast({ 
+          title: "Sessão Expirada", 
+          description: "Por favor, faça login novamente.", 
+          variant: "destructive" 
+        });
+        setChatHistory(chatHistory);
+        setIsChatting(false);
+        return;
+      }
 
+      console.log("Sending message to AI agent:", userMsg.content);
+      
       const res = await fetch("/api/gpt/chat", {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${session.access_token}`,
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({ message: userMsg.content, history: chatHistory })
+        body: JSON.stringify({ 
+          message: userMsg.content, 
+          history: chatHistory,
+          debug: true  // Enable debug mode for better error diagnostics
+        })
       });
       
+      console.log("AI agent response status:", res.status);
+      
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ error: "Erro desconhecido do servidor" }));
+        console.error("AI agent error response:", errorData);
+        
+        let errorMessage = "Falha ao comunicar com o agente IA.";
+        
+        if (res.status === 401) {
+          errorMessage = "Sessão expirada. Por favor, faça login novamente.";
+        } else if (res.status === 500) {
+          errorMessage = errorData.error || "Erro interno do servidor. Verifique se a sua Chave OpenAI está configurada corretamente nas Definições.";
+        } else if (res.status === 400) {
+          errorMessage = errorData.error || "Pedido inválido. Tente reformular a sua mensagem.";
+        } else if (errorData.error) {
+          errorMessage = errorData.error;
+        }
+        
+        throw new Error(errorMessage);
+      }
+      
       const data = await res.json();
+      console.log("AI agent response data:", data);
+      
       if (data.reply) {
         setLatestCampaignDraft(data.campaignDraft || null);
         setChatHistory([...newHistory, { role: "assistant", content: data.reply }]);
+      } else if (data.error) {
+        throw new Error(data.error);
       } else {
-        throw new Error("Sem resposta do agente.");
+        throw new Error("Sem resposta do agente. Tente novamente.");
       }
-    } catch (error) {
-      toast({ title: "Erro", description: "Falha ao comunicar com o agente AI.", variant: "destructive" });
+    } catch (error: any) {
+      console.error("Error communicating with AI agent:", error);
+      
+      let errorDescription = "Falha ao comunicar com o agente IA.";
+      
+      if (error.message) {
+        errorDescription = error.message;
+      } else if (error.name === "TypeError" && error.message?.includes("fetch")) {
+        errorDescription = "Erro de rede. Verifique a sua ligação à internet.";
+      }
+      
+      toast({ 
+        title: "Erro no Chat IA", 
+        description: errorDescription, 
+        variant: "destructive",
+        duration: 5000
+      });
+      
       // Remover a mensagem do histórico em caso de erro para poder tentar de novo
       setChatHistory(chatHistory);
     } finally {
