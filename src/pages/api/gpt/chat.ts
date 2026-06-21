@@ -545,6 +545,144 @@ function isGenericPortalSearchRequest(message: string): boolean {
   return hasSearchIntent && hasPropertyIntent && hasLeadReference && !mentionsProvider;
 }
 
+function isLeadUpdateRequest(message: string): boolean {
+  const normalizedMessage = normalizeText(message);
+  const hasUpdateIntent = /(atualiza|atualizar|altera|alterar|muda|mudar|associa|associar|define|definir|marca|marcar)/.test(
+    normalizedMessage,
+  );
+  const hasLeadReference = /(lead|leads|todas as leads|todos os leads)/.test(normalizedMessage);
+  
+  return hasUpdateIntent && hasLeadReference;
+}
+
+async function executeBulkLeadUpdate(
+  message: string,
+  leads: LeadContext[],
+  userId: string,
+  supabase: any
+): Promise<string> {
+  const normalizedMessage = normalizeText(message);
+  
+  // Detect which leads to update based on criteria
+  let targetLeads: LeadContext[] = [];
+  const updates: Record<string, any> = {};
+  
+  // Detect source/form filter
+  const sourceMatch = message.match(/formulário\s+([A-Za-zÀ-ÿ0-9\s-]+?)(?:\s+e\s|\s+para\s|$)/i);
+  if (sourceMatch) {
+    const sourceName = sourceMatch[1].trim();
+    targetLeads = leads.filter(lead => {
+      const leadSource = normalizeText(lead.source || "");
+      return leadSource.includes(normalizeText(sourceName));
+    });
+  }
+  
+  // Detect development association
+  const devMatch = message.match(/(?:empreendimento|desenvolvimento)\s+([A-Za-zÀ-ÿ0-9\s-]+?)(?:\s+e\s|$)/i);
+  if (devMatch) {
+    const devName = devMatch[1].trim();
+    
+    // Find the development
+    const { data: developments } = await supabase
+      .from("developments")
+      .select("id, name")
+      .eq("user_id", userId)
+      .ilike("name", `%${devName}%`)
+      .limit(1);
+    
+    if (developments && developments.length > 0) {
+      updates.is_development = true;
+      updates.development_name = developments[0].name;
+    } else {
+      return `Não encontrei o empreendimento "${devName}" na tua carteira.`;
+    }
+  }
+  
+  // Detect temperature update
+  if (/(temperatura|quente|morna|fria)/i.test(message)) {
+    if (/\bquente\b/i.test(message)) {
+      updates.temperature = "hot";
+    } else if (/\bmorna\b/i.test(message)) {
+      updates.temperature = "warm";
+    } else if (/\bfria\b/i.test(message)) {
+      updates.temperature = "cold";
+    }
+  }
+  
+  // Detect status update
+  const statusMapping: Record<string, string> = {
+    "novo": "new",
+    "nova": "new",
+    "contacto": "contacted",
+    "contactada": "contacted",
+    "qualificada": "qualified",
+    "qualificado": "qualified",
+    "proposta": "proposal",
+    "negociacao": "negotiation",
+    "negociação": "negotiation",
+    "ganha": "won",
+    "ganho": "won",
+    "perdida": "lost",
+    "perdido": "lost",
+  };
+  
+  for (const [keyword, status] of Object.entries(statusMapping)) {
+    if (new RegExp(`\\b${keyword}\\b`, "i").test(message)) {
+      updates.status = status;
+      break;
+    }
+  }
+  
+  // If no specific leads targeted, check for "all leads" or broader criteria
+  if (targetLeads.length === 0 && /\b(todas|todos)\b/.test(normalizedMessage)) {
+    // For safety, require at least one filter criteria
+    if (Object.keys(updates).length === 0) {
+      return "Por segurança, preciso de pelo menos um critério de filtragem (formulário, zona, estado, etc.) para atualizar leads em massa.";
+    }
+    targetLeads = leads; // Use all leads
+  }
+  
+  if (targetLeads.length === 0) {
+    return "Não encontrei leads que correspondam aos critérios especificados.";
+  }
+  
+  if (Object.keys(updates).length === 0) {
+    return "Não identifiquei que alteração devo fazer. Especifica o que deve ser atualizado (ex: associar ao empreendimento X, marcar como quente, etc.).";
+  }
+  
+  // Execute the update
+  const leadIds = targetLeads.map(l => l.id);
+  const { error } = await supabase
+    .from("leads")
+    .update(updates)
+    .in("id", leadIds);
+  
+  if (error) {
+    console.error("Bulk update error:", error);
+    return `Erro ao atualizar leads: ${error.message}`;
+  }
+  
+  // Build success message
+  const updatedFields = Object.entries(updates).map(([key, value]) => {
+    if (key === "is_development" || key === "development_name") {
+      return `associadas ao empreendimento "${value}"`;
+    }
+    if (key === "temperature") {
+      const tempLabel = value === "hot" ? "Quente" : value === "warm" ? "Morna" : "Fria";
+      return `temperatura definida como ${tempLabel}`;
+    }
+    if (key === "status") {
+      return `estado alterado`;
+    }
+    return `${key} atualizado`;
+  }).join(", ");
+  
+  const leadNames = targetLeads.slice(0, 5).map(l => l.name).join(", ");
+  const moreCount = targetLeads.length > 5 ? ` e mais ${targetLeads.length - 5}` : "";
+  
+  return `✅ Atualizei ${targetLeads.length} leads com ${updatedFields}.\n\nLeads atualizadas: ${leadNames}${moreCount}.`;
+}
+
 function matchesBedrooms(lead: LeadContext, requestedBedrooms: number): boolean {
   if (lead.bedrooms === requestedBedrooms) {
     return true;
@@ -793,6 +931,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       const properties = await searchIdealistaProperties({ ...searchParams, maxItems: 5 }, user.id);
       return res.status(200).json({ reply: formatIdealistaReply(targetLead.name, properties) });
+    }
+
+    if (isLeadUpdateRequest(message)) {
+      const updateResult = await executeBulkLeadUpdate(message, activeLeads, user.id, supabase);
+      return res.status(200).json({ reply: updateResult });
     }
 
     if (isGenericPortalSearchRequest(message)) {
