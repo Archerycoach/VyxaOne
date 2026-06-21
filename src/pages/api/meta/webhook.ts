@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { createClient } from "@supabase/supabase-js";
 import nodemailer from "nodemailer";
+import { logEmailInteractionServer } from "@/lib/emailInteractionLogger";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -180,6 +181,8 @@ export default async function handler(
                   mappedData.has_property_to_sell = value;
                 } else if (fieldName.includes("objetivo") || fieldName.includes("objectivo") || fieldName.includes("procura")) {
                   mappedData.buy_purpose = value;
+                } else if (fieldName.includes("prazo") || fieldName.includes("quando") || fieldName.includes("timing") || fieldName.includes("compra")) {
+                  mappedData.purchase_timeline = value;
                 } else {
                   extraFields.push(`• ${metaField}: ${value}`);
                 }
@@ -236,7 +239,16 @@ export default async function handler(
                   if (matches && matches.length > 0) {
                     // Convert all found numbers and take the highest one (for ranges)
                     const numbers = matches.map(m => parseInt(m, 10));
-                    mappedData[field] = Math.max(...numbers);
+                    let finalValue = Math.max(...numbers);
+                    
+                    // INTELLIGENT BUDGET PARSING: Values under 1000 are assumed to be in thousands
+                    // E.g., "300" -> 300000€ (300 mil), "150" -> 150000€
+                    // This handles the common Portuguese real estate convention where people say "300" meaning "300 mil"
+                    if (finalValue < 1000) {
+                      finalValue = finalValue * 1000;
+                    }
+                    
+                    mappedData[field] = finalValue;
                   } else {
                     // If no numbers found, preserve original text in notes
                     mappedData.notes = mappedData.notes 
@@ -727,7 +739,16 @@ async function executeAutoResponderWorkflows(userId: string, lead: any) {
         attachments,
       });
       
-      console.log(`✅ Auto-responder sent to ${lead.email} for workflow ${workflow.name}`);
+      // Log the autoresponder email as an interaction
+      await logEmailInteractionServer(supabase, {
+        leadId: lead.id,
+        userId: userId,
+        subject: subject,
+        body: body.replace(/\n/g, ""),
+        outcome: "Email automático enviado",
+      });
+
+      console.log(`✅ Autoresponder sent to ${lead.email}`);
       
       // Log execution history
       await supabase.from("workflow_executions").insert({

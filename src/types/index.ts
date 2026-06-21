@@ -122,6 +122,8 @@ export interface Lead {
   development_name?: string;
   has_property_to_sell?: boolean;
   buy_purpose?: string;
+  purchase_timeline?: string | null;
+  temperature?: LeadTemperature | null;
 }
 
 // Property Types

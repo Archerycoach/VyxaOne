@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import nodemailer from "nodemailer";
 import { createClient } from "@supabase/supabase-js";
+import { logEmailInteractionServer } from "@/lib/emailInteractionLogger";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -52,6 +53,7 @@ export default async function handler(
     }
 
     const { to, subject, html, text, cc, bcc, attachments, sendCopyToSender } = req.body;
+    const { leadId, contactId } = req.body;
 
     if (!to || !subject || (!html && !text)) {
       return res.status(400).json({
@@ -110,6 +112,21 @@ export default async function handler(
       cc: normalizedCc.length > 0 ? normalizedCc : undefined,
       bcc: finalBcc.length > 0 ? finalBcc : undefined,
       attachments: formattedAttachments.length > 0 ? formattedAttachments : undefined,
+    });
+
+    // Log the email as an interaction
+    const supabaseAdmin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
+
+    await logEmailInteractionServer(supabaseAdmin, {
+      leadId: leadId || undefined,
+      contactId: contactId || undefined,
+      userId: user.id,
+      subject,
+      body: html,
+      outcome: "Email enviado",
     });
 
     return res.status(200).json({

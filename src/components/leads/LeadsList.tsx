@@ -37,6 +37,7 @@ import { assignLead, getArchivedLeads } from "@/services/leadsService";
 import { convertLeadToContact } from "@/services/contactsService";
 import { createInteraction, getInteractionsByLead } from "@/services/interactionsService";
 import type { InteractionWithDetails } from "@/services/interactionsService";
+import { getLeadRecentInteractionState } from "@/lib/leadInteractionHighlight";
 import { useToast } from "@/hooks/use-toast";
 import { getUserProfile, getUsersForAssignment } from "@/services/profileService";
 import { QuickTaskDialog } from "@/components/QuickTaskDialog";
@@ -630,8 +631,10 @@ export function LeadsList({ leads, onEdit, onDelete, isLoading, onRefresh, onVie
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {currentLeads.map((lead) => (
-              <Card key={lead.id} className="relative p-6 hover:shadow-lg transition-shadow">
+            {currentLeads.map((lead) => {
+              const recentState = getLeadRecentInteractionState(lead.last_contact_date, lead.last_contact_outcome);
+              return (
+              <Card key={lead.id} className={`relative p-6 hover:shadow-lg transition-shadow ${recentState.isHighlighted ? "bg-blue-50 border-blue-200 shadow-blue-100" : ""}`}>
                 <div className="absolute top-4 right-4 flex gap-2">
                   {!showArchived ? (
                     <>
@@ -672,8 +675,13 @@ export function LeadsList({ leads, onEdit, onDelete, isLoading, onRefresh, onVie
                   )}
                 </div>
 
-                <h3 className="text-lg font-semibold text-gray-900 mb-3 pr-16">
-                  {lead.name}
+                <h3 className="text-lg font-semibold text-gray-900 mb-3 pr-16 flex items-center flex-wrap gap-2">
+                  <span>{lead.name}</span>
+                  {recentState.isHighlighted && (
+                    <Badge variant="secondary" className="bg-blue-100 text-blue-800 border-blue-200 hover:bg-blue-200 text-[10px] uppercase font-bold py-0 h-5">
+                      {recentState.badgeLabel}
+                    </Badge>
+                  )}
                 </h3>
 
                 <div className="flex gap-2 mb-4">
@@ -913,7 +921,7 @@ export function LeadsList({ leads, onEdit, onDelete, isLoading, onRefresh, onVie
                   </div>
                 </div>
               </Card>
-            ))}
+            )})}
           </div>
         )}
       </div>

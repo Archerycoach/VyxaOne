@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
+import { logEmailInteraction } from "@/lib/emailInteractionLogger";
 
 type WorkflowRule = Database["public"]["Tables"]["lead_workflow_rules"]["Row"];
 type WorkflowRuleInsert = Database["public"]["Tables"]["lead_workflow_rules"]["Insert"];
@@ -296,6 +297,15 @@ async function sendEmailAction(action: any, lead: any, content: string, userId: 
     if (!result.success) {
       throw new Error(result.error || "Falha ao enviar email");
     }
+
+    // Log the email as an interaction
+    await logEmailInteraction({
+      leadId: lead.id,
+      userId: userId,
+      subject: subject,
+      body: body,
+      outcome: "Email automático enviado (workflow)",
+    });
 
     console.log("✅ Email sent to:", lead.email);
   } catch (error) {

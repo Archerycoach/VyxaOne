@@ -53,6 +53,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { LeadAIInsightsPanel } from "./LeadAIInsightsPanel";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { updateLead } from "@/services/leadsService";
 
 interface LeadDetailsDialogProps {
   leadId: string | null;
@@ -84,6 +85,7 @@ export function LeadDetailsDialog({
   const [newInteractionType, setNewInteractionType] = useState("call");
   const [newInteractionText, setNewInteractionText] = useState("");
   const [isSubmittingInteraction, setIsSubmittingInteraction] = useState(false);
+  const [isUpdatingTemperature, setIsUpdatingTemperature] = useState(false);
   const { toast } = useToast();
   
   // Use ref to prevent multiple fetches
@@ -311,6 +313,22 @@ export function LeadDetailsDialog({
     }
   };
 
+  const handleTemperatureChange = async (temperature: "hot" | "warm" | "cold") => {
+    if (!leadId) return;
+    setIsUpdatingTemperature(true);
+    try {
+      await updateLead(leadId, { temperature: temperature });
+      toast({ title: "Temperatura atualizada com sucesso" });
+      // Refresh lead data
+      const updatedLead = await getLeadById(leadId);
+      setLead(updatedLead);
+    } catch (e: any) {
+      toast({ title: "Erro ao atualizar temperatura", description: e.message, variant: "destructive" });
+    } finally {
+      setIsUpdatingTemperature(false);
+    }
+  };
+
   const linkedContactId = (lead as any)?.contact_id ?? null;
   const linkedContactName = (lead as any)?.contact?.name ?? lead?.name ?? "Contacto associado";
 
@@ -371,6 +389,8 @@ export function LeadDetailsDialog({
                 Interações ({interactions.length})
               </TabsTrigger>
               <TabsTrigger value="notes">Notas ({notes.length})</TabsTrigger>
+              <TabsTrigger value="events">Eventos ({events.length})</TabsTrigger>
+              <TabsTrigger value="tasks">Tarefas ({tasks.length})</TabsTrigger>
               <TabsTrigger value="timeline">Cronologia</TabsTrigger>
             </TabsList>
 
@@ -416,6 +436,38 @@ export function LeadDetailsDialog({
                     <div>
                       <p className="text-sm text-gray-500">Tipo</p>
                       <p className="font-medium">{getLeadTypeLabel(lead.lead_type)}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <TrendingUp className="h-4 w-4 text-gray-400" />
+                    <div className="flex-1">
+                      <p className="text-sm text-gray-500 mb-1">Temperatura</p>
+                      <Select 
+                        value={lead.temperature || "warm"} 
+                        onValueChange={handleTemperatureChange}
+                        disabled={isUpdatingTemperature}
+                      >
+                        <SelectTrigger className="w-[180px]">
+                          <SelectValue placeholder="Selecionar temperatura" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="hot">
+                            <span className="flex items-center gap-2">
+                              🔥 <span>Quente</span>
+                            </span>
+                          </SelectItem>
+                          <SelectItem value="warm">
+                            <span className="flex items-center gap-2">
+                              ☀️ <span>Morna</span>
+                            </span>
+                          </SelectItem>
+                          <SelectItem value="cold">
+                            <span className="flex items-center gap-2">
+                              ❄️ <span>Fria</span>
+                            </span>
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -714,6 +766,105 @@ export function LeadDetailsDialog({
                             <p className="text-sm text-gray-700 whitespace-pre-wrap">
                               {note.note}
                             </p>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="events" className="space-y-4 mt-4">
+              {events.length === 0 ? (
+                <div className="text-center py-12 text-gray-500">
+                  <Calendar className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                  <p>Sem eventos agendados</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {events.map((event) => (
+                    <Card key={event.id}>
+                      <CardContent className="pt-4">
+                        <div className="flex items-start gap-3">
+                          <Calendar className="h-5 w-5 text-purple-500 mt-0.5" />
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-2">
+                              <span className="font-medium">{event.title}</span>
+                              <Badge className="bg-purple-100 text-purple-800 hover:bg-purple-200 border-purple-200">
+                                Evento
+                              </Badge>
+                            </div>
+                            <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
+                              <Clock className="h-3.5 w-3.5" />
+                              <span>
+                                {new Date(event.startTime).toLocaleString("pt-PT", { 
+                                  day: "2-digit", 
+                                  month: "2-digit", 
+                                  year: "numeric", 
+                                  hour: "2-digit", 
+                                  minute: "2-digit" 
+                                })}
+                              </span>
+                            </div>
+                            {event.description && (
+                              <p className="text-sm text-gray-700 mt-2">{event.description}</p>
+                            )}
+                            {event.location && (
+                              <div className="flex items-center gap-1 text-sm text-gray-500 mt-2">
+                                <MapPin className="h-3.5 w-3.5" />
+                                <span>{event.location}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="tasks" className="space-y-4 mt-4">
+              {tasks.length === 0 ? (
+                <div className="text-center py-12 text-gray-500">
+                  <CheckSquare className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                  <p>Sem tarefas atribuídas</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {tasks.map((task) => (
+                    <Card key={task.id} className={task.status === 'completed' ? 'bg-gray-50' : ''}>
+                      <CardContent className="pt-4">
+                        <div className="flex items-start gap-3">
+                          <CheckSquare className={`h-5 w-5 mt-0.5 ${task.status === 'completed' ? 'text-green-500' : 'text-blue-500'}`} />
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-2">
+                              <span className={`font-medium ${task.status === 'completed' ? 'line-through text-gray-500' : ''}`}>
+                                {task.title}
+                              </span>
+                              <Badge variant={task.status === 'completed' ? 'secondary' : 'default'}>
+                                {task.status === 'completed' ? 'Concluída' : 
+                                 task.status === 'in_progress' ? 'Em Progresso' : 'Pendente'}
+                              </Badge>
+                              <Badge variant="outline" className={
+                                task.priority === 'high' ? 'border-red-300 text-red-700 bg-red-50' :
+                                task.priority === 'medium' ? 'border-orange-300 text-orange-700 bg-orange-50' :
+                                'border-gray-300 text-gray-700 bg-gray-50'
+                              }>
+                                {task.priority === 'high' ? 'Alta' : 
+                                 task.priority === 'medium' ? 'Média' : 'Baixa'}
+                              </Badge>
+                            </div>
+                            {task.dueDate && (
+                              <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
+                                <Clock className="h-3.5 w-3.5" />
+                                <span>Prazo: {new Date(task.dueDate).toLocaleDateString("pt-PT")}</span>
+                              </div>
+                            )}
+                            {task.description && (
+                              <p className="text-sm text-gray-700 mt-2">{task.description}</p>
+                            )}
                           </div>
                         </div>
                       </CardContent>

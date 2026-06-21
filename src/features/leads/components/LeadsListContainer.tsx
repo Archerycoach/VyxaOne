@@ -706,9 +706,9 @@ export function LeadsListContainer({
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {filteredLeads.map((lead, index) => {
-                  const recentInteractionState = getLeadRecentInteractionState(lead.last_contact_date);
+                  const recentInteractionState = getLeadRecentInteractionState(lead.last_contact_date, lead.last_contact_outcome);
                   const bgClass = recentInteractionState.isHighlighted
-                    ? "bg-emerald-50/80 hover:bg-emerald-100"
+                    ? "bg-blue-50 hover:bg-blue-100"
                     : index % 2 === 0
                       ? "bg-white"
                       : "bg-gray-50";
@@ -719,7 +719,7 @@ export function LeadsListContainer({
                           {columnIndex === 0 && recentInteractionState.isHighlighted && recentInteractionState.badgeLabel ? (
                             <div className="space-y-1">
                               <div>{getCellValue(lead, column.column_key)}</div>
-                              <Badge variant="outline" className="w-fit border-emerald-200 bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
+                              <Badge variant="default" className="w-fit bg-blue-600 text-white">
                                 {recentInteractionState.badgeLabel}
                               </Badge>
                             </div>

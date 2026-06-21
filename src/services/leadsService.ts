@@ -9,7 +9,7 @@ const CACHE_TTL = 5 * 60 * 1000; // 5 minutos
 
 // Use standard types from Database
 type BaseLead = Database["public"]["Tables"]["leads"]["Row"];
-type Lead = BaseLead & { last_contact_outcome?: string | null };
+type Lead = BaseLead & { last_contact_outcome?: string | null; purchase_timeline?: string | null };
 type BaseLeadInsert = Database["public"]["Tables"]["leads"]["Insert"];
 type LeadInsert = BaseLeadInsert & { last_contact_outcome?: string | null };
 type BaseLeadUpdate = Database["public"]["Tables"]["leads"]["Update"];

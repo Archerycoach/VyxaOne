@@ -360,7 +360,7 @@ export function LeadCard({ lead, onClick, onDelete, onConvertSuccess }: LeadCard
     }).format(budget);
   };
 
-  const recentInteractionState = getLeadRecentInteractionState(lead.last_contact_date);
+  const recentInteractionState = getLeadRecentInteractionState(lead.last_contact_date, lead.last_contact_outcome);
 
   return (
     <>

@@ -553,6 +553,46 @@ async function sendSingleEmail(
 
     await client.close();
     console.log(`📧 Email sent successfully to: ${recipientEmail}`);
+
+    // Log the email as an interaction (only for leads, not user reminders)
+    if (recipientEmail === lead.email) {
+      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+      const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+      const supabase = createClient(supabaseUrl, supabaseServiceKey);
+      
+      const now = new Date().toISOString();
+      
+      // 1. Create interaction record
+      const { error: interactionError } = await supabase
+        .from("interactions")
+        .insert({
+          lead_id: lead.id,
+          user_id: rule.user_id,
+          interaction_type: "email",
+          content: `Assunto: ${subject}\n\n${body}`,
+          interaction_date: now,
+          outcome: "Email automático enviado",
+        });
+      
+      if (interactionError) {
+        console.error("Failed to create interaction:", interactionError);
+      }
+      
+      // 2. Update lead's last_contact tracking
+      const { error: leadError } = await supabase
+        .from("leads")
+        .update({
+          last_contact_date: now,
+          last_contact_outcome: "Email automático enviado",
+        })
+        .eq("id", lead.id);
+      
+      if (leadError) {
+        console.error("Failed to update lead last_contact:", leadError);
+      }
+      
+      console.log(`✅ Interaction logged for lead: ${lead.name}`);
+    }
   } catch (error) {
     await client.close();
     throw error;

@@ -143,7 +143,7 @@ export function LeadCard({
     setTimeout(action, 100);
   };
 
-  const recentInteractionState = getLeadRecentInteractionState(lead.last_contact_date);
+  const recentInteractionState = getLeadRecentInteractionState(lead.last_contact_date, lead.last_contact_outcome);
 
   const formatCurrency = (value: number | null | undefined) => {
     if (!value) return "N/A";
@@ -209,7 +209,7 @@ export function LeadCard({
   // Grid view - Compact card
   if (viewMode === "grid") {
     return (
-      <Card className={`p-4 transition-all hover:shadow-lg ${recentInteractionState.isHighlighted ? "border-emerald-200 bg-emerald-50/80 shadow-emerald-100" : ""}`}>
+      <Card className={`p-4 transition-all hover:shadow-lg ${recentInteractionState.isHighlighted ? "border-blue-300 bg-blue-50 shadow-blue-200" : ""}`}>
         <div className="flex items-start justify-between mb-3">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
@@ -220,6 +220,16 @@ export function LeadCard({
                 </Badge>
               )}
             </div>
+            {recentInteractionState.isHighlighted && recentInteractionState.badgeLabel && (
+              <Badge variant="default" className="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 h-auto mb-1 w-fit">
+                {recentInteractionState.badgeLabel}
+              </Badge>
+            )}
+            {!recentInteractionState.isHighlighted && lead.last_contact_date && lead.last_contact_outcome && (
+              <div className="bg-orange-50 border border-orange-200 rounded px-2 py-1 mb-1 text-[10px] text-orange-800 flex items-center gap-1 w-fit">
+                <span className="font-medium">📞 {lead.last_contact_outcome}</span>
+              </div>
+            )}
             {lead.email && (
               <p className="text-xs text-gray-600 truncate">{lead.email}</p>
             )}
@@ -231,7 +241,13 @@ export function LeadCard({
                   <MoreVertical className="h-4 w-4" />
                 </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56 max-h-[350px] overflow-y-auto">
+              <DropdownMenuContent 
+                align="end" 
+                side="bottom"
+                sideOffset={5}
+                collisionPadding={20}
+                className="w-56 max-h-[500px] overflow-y-auto"
+              >
                 <div className="px-2 py-1.5 text-xs font-semibold text-gray-500 uppercase">
                   Comunicação
                 </div>
@@ -346,14 +362,17 @@ export function LeadCard({
             {getStatusLabel(lead.status)}
           </Badge>
           <Badge variant="outline" className="text-xs">{getLeadTypeLabel(lead.lead_type)}</Badge>
-          {recentInteractionState.isHighlighted && recentInteractionState.badgeLabel && (
-            <Badge variant="outline" className="border-emerald-200 bg-emerald-100 text-emerald-700 text-xs hover:bg-emerald-100">
-              {recentInteractionState.badgeLabel}
-            </Badge>
-          )}
-          {lead.last_contact_outcome && (
-            <Badge variant="outline" className="text-xs bg-gray-50 border-gray-200">
-              📞 {lead.last_contact_outcome}
+          {lead.temperature && (
+            <Badge 
+              className={`text-xs ${
+                lead.temperature === 'hot' ? 'bg-red-100 text-red-700 border-red-300' :
+                lead.temperature === 'warm' ? 'bg-orange-100 text-orange-700 border-orange-300' :
+                'bg-blue-100 text-blue-700 border-blue-300'
+              }`}
+            >
+              {lead.temperature === 'hot' ? '🔥 Quente' :
+               lead.temperature === 'warm' ? '☀️ Morna' :
+               '❄️ Fria'}
             </Badge>
           )}
         </div>
@@ -398,6 +417,9 @@ export function LeadCard({
                   💰 {formatCurrency(lead.budget_min)} - {formatCurrency(lead.budget_max)}
                 </div>
               )}
+              {lead.purchase_timeline && (
+                <div className="truncate">⏱️ {lead.purchase_timeline}</div>
+              )}
             </div>
           )}
 
@@ -415,7 +437,14 @@ export function LeadCard({
         </div>
 
         <div className="text-xs text-gray-500 mt-3 pt-2 border-t">
-          📅 {formatDate(lead.created_at)}
+          {lead.last_contact_date ? (
+            <>
+              <div className="font-medium text-blue-700">📞 Último contacto: {formatDate(lead.last_contact_date)}</div>
+              <div className="mt-1 text-gray-400">📅 Criado: {formatDate(lead.created_at)}</div>
+            </>
+          ) : (
+            <>📅 {formatDate(lead.created_at)}</>
+          )}
         </div>
 
         <QuickContactDialog
@@ -433,7 +462,7 @@ export function LeadCard({
 
   // List view - Full details card
   return (
-    <Card className={`p-6 transition-all hover:shadow-lg ${recentInteractionState.isHighlighted ? "border-emerald-200 bg-emerald-50/80 shadow-emerald-100" : ""}`}>
+    <Card className={`p-6 transition-all hover:shadow-lg ${recentInteractionState.isHighlighted ? "border-blue-300 bg-blue-50 shadow-blue-200" : ""}`}>
       <div className="flex items-start justify-between mb-4">
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-1">
@@ -444,6 +473,16 @@ export function LeadCard({
               </Badge>
             )}
           </div>
+          {recentInteractionState.isHighlighted && recentInteractionState.badgeLabel && (
+            <Badge variant="default" className="bg-blue-600 text-white text-xs mb-1 w-fit">
+              {recentInteractionState.badgeLabel}
+            </Badge>
+          )}
+          {!recentInteractionState.isHighlighted && lead.last_contact_date && lead.last_contact_outcome && (
+            <div className="bg-orange-50 border border-orange-200 rounded px-2.5 py-1 mb-2 text-xs text-orange-800 flex items-center gap-2 w-fit">
+              <span className="font-medium">📞 {lead.last_contact_outcome}</span>
+            </div>
+          )}
           {lead.email && (
             <p className="text-sm text-gray-600">{lead.email}</p>
           )}
@@ -455,7 +494,13 @@ export function LeadCard({
                 <MoreVertical className="h-4 w-4" />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56 max-h-[350px] overflow-y-auto">
+            <DropdownMenuContent 
+              align="end" 
+              side="bottom"
+              sideOffset={5}
+              collisionPadding={20}
+              className="w-56 max-h-[500px] overflow-y-auto"
+            >
               <div className="px-2 py-1.5 text-xs font-semibold text-gray-500 uppercase">
                 Comunicação
               </div>
@@ -570,14 +615,17 @@ export function LeadCard({
           {getStatusLabel(lead.status)}
         </Badge>
         <Badge variant="outline">{getLeadTypeLabel(lead.lead_type)}</Badge>
-        {recentInteractionState.isHighlighted && recentInteractionState.badgeLabel && (
-          <Badge variant="outline" className="border-emerald-200 bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
-            {recentInteractionState.badgeLabel}
-          </Badge>
-        )}
-        {lead.last_contact_outcome && (
-          <Badge variant="outline" className="bg-gray-50 border-gray-200">
-            📞 {lead.last_contact_outcome}
+        {lead.temperature && (
+          <Badge 
+            className={`${
+              lead.temperature === 'hot' ? 'bg-red-100 text-red-700 border-red-300 hover:bg-red-200' :
+              lead.temperature === 'warm' ? 'bg-orange-100 text-orange-700 border-orange-300 hover:bg-orange-200' :
+              'bg-blue-100 text-blue-700 border-blue-300 hover:bg-blue-200'
+            }`}
+          >
+            {lead.temperature === 'hot' ? '🔥 Quente' :
+             lead.temperature === 'warm' ? '☀️ Morna' :
+             '❄️ Fria'}
           </Badge>
         )}
       </div>
@@ -629,6 +677,7 @@ export function LeadCard({
               💰 {formatCurrency(lead.budget_min)} - {formatCurrency(lead.budget_max)}
             </div>
           )}
+          {lead.purchase_timeline && <div>⏱️ Prazo: {lead.purchase_timeline}</div>}
           {lead.needs_financing && <div>💳 Recorre a Crédito</div>}
           {lead.has_property_to_sell && <div>🔑 Tem imóvel p/ vender</div>}
         </div>
@@ -651,7 +700,14 @@ export function LeadCard({
       )}
 
       <div className="text-xs text-gray-500">
-        📅 Criado a {formatDate(lead.created_at)}
+        {lead.last_contact_date ? (
+          <>
+            <div className="font-medium text-blue-700 mb-1">📞 Último contacto: {formatDate(lead.last_contact_date)}</div>
+            <div className="text-gray-400">📅 Criado: {formatDate(lead.created_at)}</div>
+          </>
+        ) : (
+          <>📅 Criado a {formatDate(lead.created_at)}</>
+        )}
       </div>
 
       <QuickContactDialog
