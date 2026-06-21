@@ -31,6 +31,7 @@ interface LeadContext {
   bedrooms: number | null;
   bathrooms: number | null;
   source: string | null;
+  meta_form_id: string | null;
 }
 
 interface EventContext {
@@ -573,14 +574,43 @@ async function executeBulkLeadUpdate(
   if (sourceMatch) {
     sourceFilterAttempted = true;
     const sourceName = sourceMatch[1].trim();
-    targetLeads = leads.filter(lead => {
-      const leadSource = normalizeText(lead.source || "");
-      return leadSource.includes(normalizeText(sourceName));
-    });
+    
+    // Try to find Meta form by name first
+    const { data: metaForms } = await supabase
+      .from("meta_form_configs")
+      .select("form_id, form_name")
+      .eq("user_id", userId)
+      .eq("is_active", true);
+    
+    const matchedForm = (metaForms || []).find((form: any) => 
+      normalizeText(form.form_name || "").includes(normalizeText(sourceName)) ||
+      normalizeText(sourceName).includes(normalizeText(form.form_name || ""))
+    );
+    
+    if (matchedForm) {
+      // Filter by meta_form_id
+      targetLeads = leads.filter(lead => lead.meta_form_id === matchedForm.form_id);
+      
+      if (targetLeads.length === 0) {
+        return `Encontrei o formulário "${matchedForm.form_name}", mas não há leads desse formulário na tua carteira.`;
+      }
+    } else {
+      // Fallback: search in source field
+      targetLeads = leads.filter(lead => {
+        const leadSource = normalizeText(lead.source || "");
+        return leadSource.includes(normalizeText(sourceName));
+      });
+    }
     
     // If source filter was specified but found nothing, return clear error
     if (targetLeads.length === 0) {
-      return `Não encontrei leads que vieram do formulário "${sourceName}". Verifica o nome exato do formulário ou a fonte das leads.`;
+      // List available forms to help the user
+      if (metaForms && metaForms.length > 0) {
+        const formNames = metaForms.map((f: any) => `- ${f.form_name}`).join("\n");
+        return `Não encontrei leads do formulário "${sourceName}".\n\nFormulários Meta disponíveis:\n${formNames}`;
+      } else {
+        return `Não encontrei leads do formulário "${sourceName}". Verifica o nome exato do formulário ou fonte das leads.`;
+      }
     }
   }
   
@@ -836,7 +866,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const { data: leads, error: leadsError } = await supabase
       .from("leads")
       .select(
-        "id, name, phone, email, status, lead_type, next_follow_up, property_type, location_preference, buy_purpose, budget, budget_min, budget_max, min_area, max_area, bedrooms, bathrooms, source",
+        "id, name, phone, email, status, lead_type, next_follow_up, property_type, location_preference, buy_purpose, budget, budget_min, budget_max, min_area, max_area, bedrooms, bathrooms, source, meta_form_id",
       )
       .or(`assigned_to.eq.${user.id},user_id.eq.${user.id}`)
       .is("archived_at", null)
