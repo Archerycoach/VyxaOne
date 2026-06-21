@@ -566,15 +566,22 @@ async function executeBulkLeadUpdate(
   // Detect which leads to update based on criteria
   let targetLeads: LeadContext[] = [];
   const updates: Record<string, any> = {};
+  let sourceFilterAttempted = false;
   
   // Detect source/form filter
   const sourceMatch = message.match(/formulário\s+([A-Za-zÀ-ÿ0-9\s-]+?)(?:\s+e\s|\s+para\s|$)/i);
   if (sourceMatch) {
+    sourceFilterAttempted = true;
     const sourceName = sourceMatch[1].trim();
     targetLeads = leads.filter(lead => {
       const leadSource = normalizeText(lead.source || "");
       return leadSource.includes(normalizeText(sourceName));
     });
+    
+    // If source filter was specified but found nothing, return clear error
+    if (targetLeads.length === 0) {
+      return `Não encontrei leads que vieram do formulário "${sourceName}". Verifica o nome exato do formulário ou a fonte das leads.`;
+    }
   }
   
   // Detect development association
@@ -634,7 +641,12 @@ async function executeBulkLeadUpdate(
   }
   
   // If no specific leads targeted, check for "all leads" or broader criteria
+  // BUT: if a source filter was attempted and failed, don't fallback to all leads
   if (targetLeads.length === 0 && /\b(todas|todos)\b/.test(normalizedMessage)) {
+    if (sourceFilterAttempted) {
+      return "O filtro de formulário especificado não encontrou leads. Verifica o nome do formulário.";
+    }
+    
     // For safety, require at least one filter criteria
     if (Object.keys(updates).length === 0) {
       return "Por segurança, preciso de pelo menos um critério de filtragem (formulário, zona, estado, etc.) para atualizar leads em massa.";
