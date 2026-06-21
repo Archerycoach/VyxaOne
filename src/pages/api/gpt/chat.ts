@@ -1158,19 +1158,40 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     ...extras,
   });
 
+  // Log environment variables status
+  console.log("[AI Chat Debug] Environment check:", {
+    hasOpenAIKey: !!openAIApiKey,
+    hasSupabaseUrl: !!supabaseUrl,
+    hasSupabaseServiceKey: !!supabaseServiceKey,
+    hasSupabaseAnonKey: !!supabaseAnonKey,
+  });
+
   try {
     const token = req.headers.authorization?.split(" ")[1];
+    console.log("[AI Chat Debug] Auth token present:", !!token);
+    
     if (!token) {
-      return res.status(401).json({ error: "Unauthorized" });
+      console.error("[AI Chat Debug] Missing authorization token");
+      return res.status(401).json({ error: "Token de autorização não encontrado. Por favor, faça login novamente." });
     }
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
     const {
       data: { user },
+      error: authError,
     } = await supabase.auth.getUser(token);
 
+    console.log("[AI Chat Debug] Auth result:", {
+      hasUser: !!user,
+      userId: user?.id,
+      authError: authError?.message,
+    });
+
     if (!user) {
-      return res.status(401).json({ error: "Unauthorized" });
+      console.error("[AI Chat Debug] User authentication failed:", authError);
+      return res.status(401).json({ 
+        error: authError?.message || "Sessão inválida. Por favor, faça login novamente." 
+      });
     }
 
     const userScopedSupabase = createClient(supabaseUrl, supabaseAnonKey, {
@@ -1207,7 +1228,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const { data: leads, error: leadsError } = await userScopedSupabase
       .from("leads")
       .select(
-        "id, name, phone, email, status, lead_type, next_follow_up, property_type, location_preference, typology, buy_purpose, budget, budget_min, budget_max, min_area, max_area, bedrooms, bathrooms, source, meta_form_id",
+        "id, name, phone, email, status, lead_type, next_follow_up, property_type, location_preference, buy_purpose, budget, budget_min, budget_max, min_area, max_area, bedrooms, bathrooms, source, meta_form_id",
       )
       .or(`assigned_to.eq.${user.id},user_id.eq.${user.id}`)
       .is("archived_at", null)
@@ -1475,8 +1496,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     if (!openAIApiKey) {
-      return res.status(500).json({ error: "OPENAI_API_KEY missing in environment" });
+      console.error("[AI Chat Debug] OpenAI API key is missing");
+      return res.status(500).json({ 
+        error: "A Chave OpenAI não está configurada no servidor. Por favor, adicione a sua chave OpenAI nas Definições da plataforma ou contacte o administrador do sistema." 
+      });
     }
+
+    console.log("[AI Chat Debug] About to call OpenAI API");
 
     const { data: events, error: eventsError } = await userScopedSupabase
       .from("calendar_events")
@@ -1694,6 +1720,12 @@ ${developments.length > 0
 
     const messages: ChatMessage[] = [systemMessage, ...((history || []) as ChatMessage[]), { role: "user", content: message }];
 
+    console.log("[AI Chat Debug] Calling OpenAI with:", {
+      model: "gpt-4o-mini",
+      messageCount: messages.length,
+      contextLength: contextStr.length,
+    });
+
     const openAiRes = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -1707,10 +1739,27 @@ ${developments.length > 0
       }),
     });
 
+    console.log("[AI Chat Debug] OpenAI response status:", openAiRes.status);
+
     if (!openAiRes.ok) {
       const errorText = await openAiRes.text();
-      console.error("OpenAI erro:", errorText);
-      throw new Error("Failed to communicate with OpenAI");
+      console.error("[AI Chat Debug] OpenAI error response:", {
+        status: openAiRes.status,
+        statusText: openAiRes.statusText,
+        body: errorText.slice(0, 500),
+      });
+      
+      let errorMessage = "Falha ao comunicar com o OpenAI";
+      
+      if (openAiRes.status === 401) {
+        errorMessage = "Chave OpenAI inválida. Verifique a sua chave nas Definições.";
+      } else if (openAiRes.status === 429) {
+        errorMessage = "Limite de quota do OpenAI atingido. Verifique o seu plano OpenAI.";
+      } else if (openAiRes.status === 500) {
+        errorMessage = "Erro interno do OpenAI. Tente novamente mais tarde.";
+      }
+      
+      throw new Error(errorMessage);
     }
 
     const gptData = await openAiRes.json();
