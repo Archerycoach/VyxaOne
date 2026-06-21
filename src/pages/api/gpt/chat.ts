@@ -1060,16 +1060,72 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       requested_typology_bedrooms: requestedBedrooms,
     });
 
+    // Debug logging to verify data
+    console.log("[AI Chat Debug] Context summary:", {
+      leads_count: activeLeads.length,
+      events_count: (events || []).length,
+      tasks_count: (tasks || []).length,
+      properties_count: (properties || []).length,
+      developments_count: (developments || []).length,
+      interactions_count: (interactions || []).length,
+    });
+
+    // Check if user is asking about properties/developments when arrays are empty
+    const asksAboutProperties = /(im[oó]veis?|propriedades?|apartamentos?|moradias?|portfolio|carteira de im[oó]veis)/i.test(message);
+    const asksAboutDevelopments = /(empreendimentos?|desenvolvimentos?|projetos?)/i.test(message);
+    
+    if (asksAboutProperties && (!properties || properties.length === 0)) {
+      return res.status(200).json({
+        reply: `Ainda não tens imóveis criados na tua carteira.\n\nPara eu conseguir analisar e cruzar imóveis com leads, vai a **Imóveis** no menu e cria pelo menos 1 imóvel.\n\nDepois posso:\n- Analisar preços e características\n- Sugerir matches com leads\n- Fazer análises de mercado\n- Comparar imóveis entre si`
+      });
+    }
+    
+    if (asksAboutDevelopments && (!developments || developments.length === 0)) {
+      return res.status(200).json({
+        reply: `Ainda não tens empreendimentos criados na tua carteira.\n\nPara eu conseguir analisar e cruzar empreendimentos com leads, vai a **Empreendimentos** no menu e cria pelo menos 1 empreendimento.\n\nDepois posso:\n- Analisar tipologias e disponibilidades\n- Sugerir leads adequadas para cada projeto\n- Comparar preços e características\n- Acompanhar o progresso de vendas`
+      });
+    }
+
     const systemMessage: ChatMessage = {
       role: "system",
       content: `És um assistente imobiliário virtual e conselheiro de negócio integrado no CRM Vyxa. Estás a falar com o agente imobiliário ${profile?.full_name || "Utilizador"}.
-Tens acesso global e em tempo real a toda a plataforma do agente. Usa os seguintes dados de contexto para responder, cruzar informação e aconselhar sobre QUALQUER tópico do negócio:
+
+📊 DADOS DISPONÍVEIS EM TEMPO REAL:
+- "leads": array com ${activeLeads.length} leads ativas
+- "portfolio_properties": array com ${(properties || []).length} imóveis na carteira do agente
+- "portfolio_developments": array com ${(developments || []).length} empreendimentos na carteira do agente
+- "upcoming_events": array com ${(events || []).length} eventos futuros
+- "pending_tasks": array com ${(tasks || []).length} tarefas pendentes
+- "recent_history_interactions": array com ${(interactions || []).length} interações recentes
+ 
+📋 CONTEXTO COMPLETO (JSON):
 ${contextStr}
 
 INSTRUÇÕES IMPORTANTES:
 - Os dados fornecidos representam a carteira real do agente (Leads globais, Tarefas Pendentes, Eventos, A TUA CARTEIRA DE IMÓVEIS no array portfolio_properties e Histórico Recente de Interações/Emails).
-- TENS ACESSO DIRETO AOS IMÓVEIS do agente em portfolio_properties. Usa sempre estes imóveis quando o agente te pedir para cruzar leads ou sugerir imóveis.
-- TENS ACESSO DIRETO AOS EMPREENDIMENTOS do agente em portfolio_developments. Usa este array quando o agente perguntar sobre empreendimentos ou leads associadas a projetos.
+- **IMPORTANTE**: TENS ACESSO DIRETO E COMPLETO a ${(properties || []).length} imóveis no array "portfolio_properties" com TODOS os detalhes (preço, localização, quartos, área, características, etc.). USA SEMPRE ESTES DADOS quando o agente perguntar sobre os seus imóveis.
+- **IMPORTANTE**: TENS ACESSO DIRETO E COMPLETO a ${(developments || []).length} empreendimentos no array "portfolio_developments" com TODOS os detalhes (localização, tipologias, unidades, preços, características, datas, etc.). USA SEMPRE ESTES DADOS quando o agente perguntar sobre os seus empreendimentos.
+- Se portfolio_properties ou portfolio_developments estiverem vazios (length = 0), significa que o agente ainda não criou imóveis/empreendimentos na plataforma. DEVES INFORMAR O AGENTE DISSO CLARAMENTE.
+- NUNCA DIGAS que não tens acesso aos dados - TU TENS ACESSO COMPLETO através do JSON fornecido acima. Analisa o JSON e responde com base nesses dados.
+
+🎯 SOBRE IMÓVEIS E EMPREENDIMENTOS:
+${(properties || []).length > 0 
+  ? `✅ TENS ${(properties || []).length} IMÓVEIS DISPONÍVEIS no array "portfolio_properties". Cada imóvel tem: título, descrição, preço, localização, quartos, casas de banho, área, ano de construção, condição, características completas, etc. ANALISA ESSES DADOS quando o agente perguntar sobre imóveis.`
+  : `⚠️ O array "portfolio_properties" está VAZIO (length = 0). O agente ainda NÃO criou imóveis na plataforma.`
+}
+
+${(developments || []).length > 0
+  ? `✅ TENS ${(developments || []).length} EMPREENDIMENTOS DISPONÍVEIS no array "portfolio_developments". Cada empreendimento tem: nome, descrição, localização, tipologias, unidades totais/disponíveis, preços min/max, características, data de entrega, etc. ANALISA ESSES DADOS quando o agente perguntar sobre empreendimentos.`
+  : `⚠️ O array "portfolio_developments" está VAZIO (length = 0). O agente ainda NÃO criou empreendimentos na plataforma.`
+}
+
+🚫 REGRAS ABSOLUTAS:
+- NUNCA digas "não tenho acesso" — TU TENS ACESSO COMPLETO ao JSON de contexto fornecido acima
+- Se um array estiver vazio (length = 0), diz CLARAMENTE: "Ainda não tens [imóveis/empreendimentos] criados na plataforma"
+- SEMPRE analisa o JSON de contexto antes de responder
+- Quando o agente perguntar sobre imóveis/empreendimentos e os arrays tiverem dados (length > 0), USA ESSES DADOS para responder
+
+💡 CAPACIDADES:
 - Podes e deves cruzar estas informações para dar conselhos estratégicos (ex: "A lead X procura um T2 e tens o imóvel Y na tua carteira portfolio_properties que encaixa perfeitamente no perfil").
 - QUANDO PEDIDO PARA ANALISAR PROPRIEDADES: examina todos os campos disponíveis (preço, localização, quartos, área, características, condição, ano de construção, etc.) e fornece análises detalhadas e insights úteis.
 - QUANDO PEDIDO PARA ANALISAR EMPREENDIMENTOS: examina todos os dados (localização, tipologias disponíveis, unidades totais/disponíveis, range de preços, características, data de entrega, construtor) e cruza com leads que procuram imóveis novos ou investimentos.
@@ -1080,6 +1136,8 @@ INSTRUÇÕES IMPORTANTES:
 - Quando o utilizador pedir T0, T1, T2, etc., interpreta como tipologia. Cruza 'bedrooms', 'property_type' e 'typology'.
 - Não inventes dados de imóveis. Se não encontrares correspondência no array portfolio_properties, diz que o agente não tem imóveis com aquele perfil.
 - Não inventes dados de empreendimentos. Se não encontrares correspondência no array portfolio_developments, diz que o agente não tem empreendimentos com aquele perfil.
+- NUNCA inventes dados. Se o array portfolio_properties estiver vazio (length = 0), diz claramente que o agente ainda não criou imóveis na plataforma.
+- NUNCA inventes dados. Se o array portfolio_developments estiver vazio (length = 0), diz claramente que o agente ainda não criou empreendimentos na plataforma.
 - Sê proativo, analítico e atua como um verdadeiro parceiro de negócio. Usa formatação em Markdown sempre que ajudar à leitura.`,
     };
 
