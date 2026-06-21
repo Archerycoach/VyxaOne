@@ -279,7 +279,7 @@ export default function BulkMessages() {
   const handleTemplateSelect = (templateId: string) => {
     setSelectedTemplate(templateId);
     
-    if (!templateId) {
+    if (!templateId || templateId === "none") {
       // Clear fields if "none" selected
       return;
     }
@@ -876,7 +876,7 @@ export default function BulkMessages() {
                               <SelectValue placeholder="Selecionar template..." />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="">Nenhum template</SelectItem>
+                              <SelectItem value="none">Nenhum template</SelectItem>
                               {emailTemplates.map((template: any) => (
                                 <SelectItem key={template.id} value={template.id}>
                                   {template.name || "Template sem nome"}

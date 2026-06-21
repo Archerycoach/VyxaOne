@@ -1042,7 +1042,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       { data: interactions }
     ] = await Promise.all([
       supabase.from("tasks").select("id, title, description, due_date, status, priority, lead_id").eq("user_id", user.id).eq("status", "pending").order("due_date", { ascending: true, nullsFirst: false }).limit(30),
-      supabase.from("properties").select("id, title, status, price, typology, location, area").eq("user_id", user.id).limit(100),
+      supabase.from("properties").select("id, title, description, status, price, property_type, typology, location, bedrooms, bathrooms, area, year_built, condition, parking_spots, features, condominium_fee, energy_certificate, floor, total_floors, balcony, terrace, garden, pool, garage, elevator").eq("user_id", user.id).limit(100),
       supabase.from("lead_interactions").select("id, type, content, created_at, lead_id").eq("user_id", user.id).order("created_at", { ascending: false }).limit(40)
     ]);
 
@@ -1067,6 +1067,9 @@ INSTRUÇÕES IMPORTANTES:
 - Os dados fornecidos representam a carteira real do agente (Leads globais, Tarefas Pendentes, Eventos, A TUA CARTEIRA DE IMÓVEIS no array portfolio_properties e Histórico Recente de Interações/Emails).
 - TENS ACESSO DIRETO AOS IMÓVEIS do agente em portfolio_properties. Usa sempre estes imóveis quando o agente te pedir para cruzar leads ou sugerir imóveis.
 - Podes e deves cruzar estas informações para dar conselhos estratégicos (ex: "A lead X procura um T2 e tens o imóvel Y na tua carteira portfolio_properties que encaixa perfeitamente no perfil").
+- QUANDO PEDIDO PARA ANALISAR PROPRIEDADES: examina todos os campos disponíveis (preço, localização, quartos, área, características, condição, ano de construção, etc.) e fornece análises detalhadas e insights úteis.
+- PODES E DEVES FAZER ANÁLISES DE MERCADO: comparar preços por m², identificar imóveis sobrevalorizados/subvalorizados, sugerir ajustes de preço, apontar características que valorizam/desvalorizam.
+- CRUZA PROPRIEDADES COM LEADS: quando o agente perguntar sobre propriedades, sugere ativamente quais leads da carteira podem ter interesse em cada imóvel baseado no perfil de procura.
 - Podes analisar o histórico de interações para resumir o que foi falado recentemente com as leads.
 - Quando o utilizador pedir T0, T1, T2, etc., interpreta como tipologia. Cruza 'bedrooms', 'property_type' e 'typology'.
 - Não inventes dados de imóveis. Se não encontrares correspondência no array portfolio_properties, diz que o agente não tem imóveis com aquele perfil.
