@@ -61,6 +61,17 @@ interface PropertyContext {
   area: number | null;
 }
 
+interface DevelopmentContext {
+  id: string;
+  name: string;
+  status: string | null;
+  location: string | null;
+  typologies: string[];
+  price_from: number | null;
+  price_to: number | null;
+  available_units: number | null;
+}
+
 interface InteractionContext {
   id: string;
   type: string;
@@ -83,6 +94,7 @@ interface EmailCampaignDraft {
   subject: string;
   htmlBody: string;
   textBody: string;
+  recipientLeadIds?: string[];
   recipients: Array<{
     id: string;
     name: string;
@@ -91,10 +103,18 @@ interface EmailCampaignDraft {
     location_preference: string | null;
     typology: string | null;
   }>;
+  matchedLeadCount?: number;
+  missingEmailCount?: number;
+}
+
+interface EmailCampaignAudienceResult {
+  selectedLeadIds: string[];
+  filterSummary: string;
 }
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const openAIApiKey = process.env.OPENAI_API_KEY;
 
 function normalizeText(value: string): string {
@@ -246,19 +266,34 @@ function matchesRequestedBedrooms(lead: LeadContext, bedrooms: number | null): b
     return true;
   }
 
+  const leadTypology = normalizeText(lead.typology || "");
+  const propertyType = normalizeText(lead.property_type || "");
+  const leadTypologyMatch = leadTypology.match(/\bt\s*([0-9])\b/);
+  const propertyTypeMatch = propertyType.match(/\bt\s*([0-9])\b/);
+
   if (lead.bedrooms === bedrooms) {
     return true;
   }
 
-  const leadTypology = normalizeText(lead.typology || "");
-  const propertyType = normalizeText(lead.property_type || "");
+  if (leadTypologyMatch && Number(leadTypologyMatch[1]) === bedrooms) {
+    return true;
+  }
+
+  if (propertyTypeMatch && Number(propertyTypeMatch[1]) === bedrooms) {
+    return true;
+  }
 
   if (leadTypology.includes(`t${bedrooms}`) || propertyType.includes(`t${bedrooms}`)) {
     return true;
   }
 
   if (bedrooms === 0) {
-    return leadTypology.includes("t0") || propertyType.includes("estudio") || propertyType.includes("studio");
+    return (
+      leadTypology.includes("t0") ||
+      propertyType.includes("t0") ||
+      propertyType.includes("estudio") ||
+      propertyType.includes("studio")
+    );
   }
 
   return false;
@@ -352,6 +387,48 @@ function buildCampaignFilterSummary(criteria: EmailCampaignCriteria): string {
   return parts.join(" · ");
 }
 
+function hasStructuredCampaignCriteria(criteria: EmailCampaignCriteria): boolean {
+  return Boolean(
+    criteria.location ||
+      criteria.typology ||
+      criteria.buyPurpose ||
+      criteria.propertyType ||
+      criteria.bedrooms !== null,
+  );
+}
+
+function getFallbackAudienceLeadIds(
+  leads: LeadContext[],
+  criteria: EmailCampaignCriteria,
+  previousRecipientLeadIds: string[] = [],
+): string[] {
+  const previousLeadIdSet = new Set(previousRecipientLeadIds);
+  const previousMatches = leads
+    .filter((lead) => previousLeadIdSet.has(lead.id))
+    .map((lead) => lead.id);
+
+  if (previousMatches.length > 0) {
+    return previousMatches;
+  }
+
+  const structuredMatches = leads
+    .filter((lead) => {
+      return (
+        matchesRequestedBedrooms(lead, criteria.bedrooms) &&
+        matchesRequestedLocation(lead, criteria.location) &&
+        matchesRequestedBuyPurpose(lead, criteria.buyPurpose) &&
+        matchesRequestedPropertyType(lead, criteria.propertyType)
+      );
+    })
+    .map((lead) => lead.id);
+
+  if (structuredMatches.length > 0 && hasStructuredCampaignCriteria(criteria)) {
+    return structuredMatches;
+  }
+
+  return leads.map((lead) => lead.id);
+}
+
 function buildFallbackDraft(criteria: EmailCampaignCriteria, agentName: string) {
   const subject =
     criteria.location
@@ -404,8 +481,15 @@ async function generateEmailCampaignDraft(
   criteria: EmailCampaignCriteria,
   leads: LeadContext[],
   agentName: string,
+  context: {
+    history?: ChatMessage[];
+    previousDraft?: Pick<EmailCampaignDraft, "subject" | "htmlBody" | "textBody"> | null;
+    properties?: PropertyContext[];
+    developments?: DevelopmentContext[];
+    filterSummaryOverride?: string | null;
+  } = {},
 ): Promise<EmailCampaignDraft> {
-  const filterSummary = buildCampaignFilterSummary(criteria);
+  const filterSummary = context.filterSummaryOverride?.trim() || buildCampaignFilterSummary(criteria);
   const fallback = buildFallbackDraft(criteria, agentName);
 
   if (!openAIApiKey) {
@@ -413,6 +497,7 @@ async function generateEmailCampaignDraft(
       criteria,
       filterSummary,
       ...fallback,
+      recipientLeadIds: leads.map((lead) => lead.id),
       recipients: leads.map((lead) => ({
         id: lead.id,
         name: lead.name,
@@ -447,6 +532,8 @@ async function generateEmailCampaignDraft(
               agente: agentName,
               segmento: filterSummary,
               numero_de_leads: leads.length,
+              historico_recente: (context.history || []).slice(-6),
+              rascunho_anterior: context.previousDraft || null,
               amostra_de_leads: leads.slice(0, 8).map((lead) => ({
                 nome: lead.name,
                 zona: lead.location_preference,
@@ -454,6 +541,23 @@ async function generateEmailCampaignDraft(
                 objetivo: lead.buy_purpose,
                 tipo_imovel: lead.property_type,
                 orcamento: formatBudget(lead),
+              })),
+              carteira_imoveis: (context.properties || []).slice(0, 10).map((property) => ({
+                titulo: property.title,
+                estado: property.status,
+                preco: property.price,
+                tipologia: property.typology,
+                localizacao: property.location,
+                area: property.area,
+              })),
+              carteira_empreendimentos: (context.developments || []).slice(0, 8).map((development) => ({
+                nome: development.name,
+                estado: development.status,
+                localizacao: development.location,
+                tipologias: development.typologies,
+                preco_desde: development.price_from,
+                preco_ate: development.price_to,
+                unidades_disponiveis: development.available_units,
               })),
             }),
           },
@@ -475,6 +579,7 @@ async function generateEmailCampaignDraft(
       subject: typeof parsed.subject === "string" && parsed.subject.trim() ? parsed.subject.trim() : fallback.subject,
       htmlBody: typeof parsed.htmlBody === "string" && parsed.htmlBody.trim() ? parsed.htmlBody.trim() : fallback.htmlBody,
       textBody: typeof parsed.textBody === "string" && parsed.textBody.trim() ? parsed.textBody.trim() : fallback.textBody,
+      recipientLeadIds: leads.map((lead) => lead.id),
       recipients: leads.map((lead) => ({
         id: lead.id,
         name: lead.name,
@@ -491,6 +596,7 @@ async function generateEmailCampaignDraft(
       criteria,
       filterSummary,
       ...fallback,
+      recipientLeadIds: leads.map((lead) => lead.id),
       recipients: leads.map((lead) => ({
         id: lead.id,
         name: lead.name,
@@ -499,6 +605,115 @@ async function generateEmailCampaignDraft(
         location_preference: lead.location_preference,
         typology: resolveLeadTypology(lead),
       })),
+    };
+  }
+}
+
+async function selectEmailCampaignAudience(params: {
+  message: string;
+  criteria: EmailCampaignCriteria;
+  leads: LeadContext[];
+  history?: ChatMessage[];
+  previousRecipientLeadIds?: string[];
+  properties?: PropertyContext[];
+  developments?: DevelopmentContext[];
+}): Promise<EmailCampaignAudienceResult> {
+  const fallbackLeadIds = getFallbackAudienceLeadIds(
+    params.leads,
+    params.criteria,
+    params.previousRecipientLeadIds || [],
+  );
+  const fallbackSummary =
+    buildCampaignFilterSummary(params.criteria) ||
+    (params.previousRecipientLeadIds?.length ? "a audiência afinada na conversa" : "o perfil pedido");
+
+  if (!openAIApiKey) {
+    return {
+      selectedLeadIds: fallbackLeadIds,
+      filterSummary: fallbackSummary,
+    };
+  }
+
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${openAIApiKey}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        temperature: 0.2,
+        messages: [
+          {
+            role: "system",
+            content:
+              "És um assistente imobiliário em português de Portugal. Seleciona as leads certas para uma campanha de email com base num pedido livre. Se o pedido apenas afinar o tom ou o texto e não introduzir novos critérios de audiência, reutiliza exatamente os IDs anteriores. Responde APENAS em JSON com as chaves filterSummary e selectedLeadIds.",
+          },
+          {
+            role: "user",
+            content: JSON.stringify({
+              pedido: params.message,
+              criterios_inferidos: params.criteria,
+              historico_recente: (params.history || []).slice(-6),
+              lead_ids_anteriores: params.previousRecipientLeadIds || [],
+              leads_disponiveis: params.leads.map((lead) => ({
+                id: lead.id,
+                nome: lead.name,
+                estado: lead.status,
+                email_registado: Boolean(lead.email),
+                zona: lead.location_preference,
+                tipologia: resolveLeadTypology(lead),
+                quartos: lead.bedrooms,
+                objetivo: lead.buy_purpose,
+                tipo_imovel: lead.property_type,
+                orcamento: formatBudget(lead),
+              })),
+              carteira_imoveis: (params.properties || []).slice(0, 12).map((property) => ({
+                titulo: property.title,
+                tipologia: property.typology,
+                localizacao: property.location,
+                preco: property.price,
+              })),
+              carteira_empreendimentos: (params.developments || []).slice(0, 8).map((development) => ({
+                nome: development.name,
+                tipologias: development.typologies,
+                localizacao: development.location,
+                preco_desde: development.price_from,
+                preco_ate: development.price_to,
+              })),
+            }),
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error("Falha ao selecionar audiência da campanha");
+    }
+
+    const data = await response.json();
+    const rawContent = data.choices?.[0]?.message?.content || "";
+    const parsed = JSON.parse(sanitizeJsonReply(rawContent));
+    const validLeadIds = new Set(params.leads.map((lead) => lead.id));
+    const selectedLeadIds = Array.isArray(parsed.selectedLeadIds)
+      ? parsed.selectedLeadIds.filter((leadId: unknown): leadId is string => {
+          return typeof leadId === "string" && validLeadIds.has(leadId);
+        })
+      : [];
+
+    return {
+      selectedLeadIds: selectedLeadIds.length > 0 ? selectedLeadIds : fallbackLeadIds,
+      filterSummary:
+        typeof parsed.filterSummary === "string" && parsed.filterSummary.trim()
+          ? parsed.filterSummary.trim()
+          : fallbackSummary,
+    };
+  } catch (error) {
+    console.error("Erro ao selecionar audiência da campanha por IA:", error);
+    return {
+      selectedLeadIds: fallbackLeadIds,
+      filterSummary: fallbackSummary,
     };
   }
 }
@@ -512,7 +727,15 @@ function formatEmailCampaignReply(draft: EmailCampaignDraft): string {
     })
     .join("\n");
 
-  return `Preparei um rascunho de email para ${draft.recipients.length} leads com ${draft.filterSummary || "o perfil pedido"}.\n\nAssunto: ${draft.subject}\n\nPrimeiras leads abrangidas:\n${recipientPreview}\n\nO rascunho detalhado ficou disponível abaixo para revisão antes de enviar.`;
+  const matchedLeadCount = draft.matchedLeadCount ?? draft.recipients.length;
+  const missingEmailCount =
+    draft.missingEmailCount ?? Math.max(matchedLeadCount - draft.recipients.length, 0);
+  const coverageNote =
+    missingEmailCount > 0
+      ? `\n\nNota: encontrei ${matchedLeadCount} leads compatíveis, mas ${missingEmailCount} ${missingEmailCount === 1 ? "não tem" : "não têm"} email registado, por isso o rascunho ficou preparado apenas para ${draft.recipients.length}.`
+      : "";
+
+  return `Preparei um rascunho de email para ${draft.recipients.length} leads com ${draft.filterSummary || "o perfil pedido"}${coverageNote}\n\nAssunto: ${draft.subject}\n\nPrimeiras leads abrangidas:\n${recipientPreview}\n\nO rascunho detalhado ficou disponível abaixo para revisão antes de enviar.`;
 }
 
 function isLeadLookupRequest(message: string): boolean {
@@ -750,17 +973,7 @@ async function executeBulkLeadUpdate(
 }
 
 function matchesBedrooms(lead: LeadContext, requestedBedrooms: number): boolean {
-  if (lead.bedrooms === requestedBedrooms) {
-    return true;
-  }
-
-  const propertyType = normalizeText(lead.property_type || "");
-
-  if (requestedBedrooms === 0) {
-    return propertyType.includes("t0") || propertyType.includes("estudio") || propertyType.includes("studio");
-  }
-
-  return propertyType.includes(`t${requestedBedrooms}`) || propertyType.includes(`${requestedBedrooms} quarto`);
+  return matchesRequestedBedrooms(lead, requestedBedrooms);
 }
 
 function formatCurrency(value: number): string {
@@ -878,19 +1091,36 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const { message, history } = req.body as { message?: string; history?: ChatMessage[] };
+    const userScopedSupabase = createClient(supabaseUrl, supabaseAnonKey, {
+      global: {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      },
+    });
+
+    const { message, history, campaignContext } = req.body as {
+      message?: string;
+      history?: ChatMessage[];
+      campaignContext?: {
+        mode?: "email_campaign";
+        criteria?: EmailCampaignCriteria | null;
+        previousDraft?: Pick<EmailCampaignDraft, "subject" | "htmlBody" | "textBody"> | null;
+        recipientLeadIds?: string[] | null;
+      };
+    };
 
     if (!message || typeof message !== "string") {
       return res.status(400).json({ error: "Message is required" });
     }
 
-    const { data: profile } = await supabase.from("profiles").select("*").eq("id", user.id).single();
+    const { data: profile } = await userScopedSupabase.from("profiles").select("*").eq("id", user.id).single();
 
     // Fetch a broad array of data to give the AI complete business context
-    const { data: leads, error: leadsError } = await supabase
+    const { data: leads, error: leadsError } = await userScopedSupabase
       .from("leads")
       .select(
-        "id, name, phone, email, status, lead_type, next_follow_up, property_type, location_preference, buy_purpose, budget, budget_min, budget_max, min_area, max_area, bedrooms, bathrooms, source, meta_form_id",
+        "id, name, phone, email, status, lead_type, next_follow_up, property_type, location_preference, typology, buy_purpose, budget, budget_min, budget_max, min_area, max_area, bedrooms, bathrooms, source, meta_form_id",
       )
       .or(`assigned_to.eq.${user.id},user_id.eq.${user.id}`)
       .is("archived_at", null)
@@ -905,51 +1135,107 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const requestedBedrooms = detectRequestedBedrooms(message);
 
-    if (isEmailCampaignRequest(message)) {
+    if (isEmailCampaignRequest(message) || campaignContext?.mode === "email_campaign") {
+      const baseCriteria = campaignContext?.criteria || null;
       const criteria: EmailCampaignCriteria = {
-        location: resolveRequestedLocation(message, activeLeads),
-        typology: requestedBedrooms !== null ? `T${requestedBedrooms}` : null,
-        bedrooms: requestedBedrooms,
-        buyPurpose: detectRequestedBuyPurpose(message),
-        propertyType: detectRequestedPropertyType(message),
+        location: resolveRequestedLocation(message, activeLeads) ?? baseCriteria?.location ?? null,
+        typology:
+          requestedBedrooms !== null
+            ? `T${requestedBedrooms}`
+            : baseCriteria?.typology ?? null,
+        bedrooms: requestedBedrooms ?? baseCriteria?.bedrooms ?? null,
+        buyPurpose: detectRequestedBuyPurpose(message) ?? baseCriteria?.buyPurpose ?? null,
+        propertyType: detectRequestedPropertyType(message) ?? baseCriteria?.propertyType ?? null,
       };
 
-      if (!criteria.location && criteria.bedrooms === null && !criteria.buyPurpose && !criteria.propertyType) {
-        return res.status(200).json({
-          reply:
-            "Consigo preparar esse email, mas preciso pelo menos de um critério de procura, como zona, tipologia, objetivo da compra ou tipo de imóvel.",
-        });
+      const [propertiesResult, developmentsResult] = await Promise.all([
+        userScopedSupabase
+          .from("properties")
+          .select("id, title, status, price, typology, address, city, district, area")
+          .order("created_at", { ascending: false })
+          .limit(100),
+        userScopedSupabase
+          .from("developments")
+          .select("id, name, status, address, city, district, typologies, price_from, price_to, available_units")
+          .order("created_at", { ascending: false })
+          .limit(50),
+      ]);
+
+      if (propertiesResult.error) {
+        throw propertiesResult.error;
       }
 
-      const matchedLeads = activeLeads.filter((lead) => {
-        return (
-          matchesRequestedBedrooms(lead, criteria.bedrooms) &&
-          matchesRequestedLocation(lead, criteria.location) &&
-          matchesRequestedBuyPurpose(lead, criteria.buyPurpose) &&
-          matchesRequestedPropertyType(lead, criteria.propertyType)
-        );
+      if (developmentsResult.error) {
+        throw developmentsResult.error;
+      }
+
+      const properties: PropertyContext[] = (propertiesResult.data || []).map((property: any) => ({
+        id: property.id,
+        title: property.title,
+        status: property.status,
+        price: property.price,
+        typology: property.typology,
+        location: [property.city, property.district].filter(Boolean).join(", ") || property.address || null,
+        area: property.area,
+      }));
+
+      const developments: DevelopmentContext[] = (developmentsResult.data || []).map((development: any) => ({
+        id: development.id,
+        name: development.name,
+        status: development.status,
+        location: [development.city, development.district].filter(Boolean).join(", ") || development.address || null,
+        typologies: development.typologies || [],
+        price_from: development.price_from,
+        price_to: development.price_to,
+        available_units: development.available_units,
+      }));
+
+      const audienceSelection = await selectEmailCampaignAudience({
+        message,
+        criteria,
+        leads: activeLeads,
+        history: history || [],
+        previousRecipientLeadIds: campaignContext?.recipientLeadIds || [],
+        properties,
+        developments,
       });
+      const matchedLeadIdSet = new Set(audienceSelection.selectedLeadIds);
+      const matchedLeads = activeLeads.filter((lead) => matchedLeadIdSet.has(lead.id));
 
       const emailableLeads = matchedLeads.filter((lead) => Boolean(lead.email));
 
       if (matchedLeads.length === 0) {
         return res.status(200).json({
-          reply: `Não encontrei leads com ${buildCampaignFilterSummary(criteria) || "esses critérios"} na tua carteira ativa.`,
+          reply: `Não encontrei leads com ${audienceSelection.filterSummary || "o perfil pedido"} na tua carteira ativa.`,
         });
       }
 
       if (emailableLeads.length === 0) {
         return res.status(200).json({
-          reply: `Encontrei ${matchedLeads.length} leads com ${buildCampaignFilterSummary(criteria) || "esses critérios"}, mas nenhuma tem email registado.`,
+          reply: `Encontrei ${matchedLeads.length} leads com ${audienceSelection.filterSummary || "o perfil pedido"}, mas nenhuma tem email registado.`,
         });
       }
 
-      const campaignDraft = await generateEmailCampaignDraft(
+      const baseCampaignDraft = await generateEmailCampaignDraft(
         message,
         criteria,
         emailableLeads,
         profile?.full_name || "Agente",
+        {
+          history: history || [],
+          previousDraft: campaignContext?.previousDraft || null,
+          properties,
+          developments,
+          filterSummaryOverride: audienceSelection.filterSummary,
+        },
       );
+
+      const campaignDraft: EmailCampaignDraft = {
+        ...baseCampaignDraft,
+        matchedLeadCount: matchedLeads.length,
+        missingEmailCount: matchedLeads.length - emailableLeads.length,
+        recipientLeadIds: emailableLeads.map((lead) => lead.id),
+      };
 
       return res.status(200).json({
         reply: formatEmailCampaignReply(campaignDraft),
@@ -1024,7 +1310,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(500).json({ error: "OPENAI_API_KEY missing in environment" });
     }
 
-    const { data: events, error: eventsError } = await supabase
+    const { data: events, error: eventsError } = await userScopedSupabase
       .from("calendar_events")
       .select("id, title, start_time, event_type")
       .eq("user_id", user.id)
@@ -1036,29 +1322,129 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       throw eventsError;
     }
 
-    const [
-      { data: tasks },
-      { data: properties },
-      { data: developments },
-      { data: interactions }
-    ] = await Promise.all([
-      supabase.from("tasks").select("id, title, description, due_date, status, priority, lead_id").eq("user_id", user.id).eq("status", "pending").order("due_date", { ascending: true, nullsFirst: false }).limit(30),
-      supabase.from("properties").select("id, title, description, status, price, property_type, typology, location, bedrooms, bathrooms, area, year_built, condition, parking_spots, features, condominium_fee, energy_certificate, floor, total_floors, balcony, terrace, garden, pool, garage, elevator").eq("user_id", user.id).limit(100),
-      supabase.from("developments").select("id, name, description, location, typology, total_units, available_units, price_from, price_to, status, features, delivery_date, builder, images").eq("user_id", user.id).limit(50),
-      supabase.from("lead_interactions").select("id, type, content, created_at, lead_id").eq("user_id", user.id).order("created_at", { ascending: false }).limit(40)
+    const [tasksResult, propertiesResult, developmentsResult, interactionsResult] = await Promise.all([
+      userScopedSupabase
+        .from("tasks")
+        .select("id, title, description, due_date, status, priority, related_lead_id")
+        .eq("user_id", user.id)
+        .eq("status", "pending")
+        .order("due_date", { ascending: true, nullsFirst: false })
+        .limit(30),
+      userScopedSupabase
+        .from("properties")
+        .select("id, title, description, status, price, property_type, typology, address, city, district, bedrooms, bathrooms, area, land_area, year_built, floor, total_floors, price_per_sqm, condominium_fee, features, amenities, notes, reference_code, energy_rating, main_image_url, listed_at")
+        .order("created_at", { ascending: false })
+        .limit(100),
+      userScopedSupabase
+        .from("developments")
+        .select("id, name, description, status, address, city, district, developer_name, price_from, price_to, typologies, total_units, available_units, delivery_date, highlights, reference_code, main_image_url, published_at")
+        .order("created_at", { ascending: false })
+        .limit(50),
+      userScopedSupabase
+        .from("interactions")
+        .select("id, interaction_type, content, interaction_date, created_at, lead_id")
+        .eq("user_id", user.id)
+        .order("interaction_date", { ascending: false })
+        .limit(40),
     ]);
+
+    if (tasksResult.error) {
+      throw tasksResult.error;
+    }
+
+    if (propertiesResult.error) {
+      throw propertiesResult.error;
+    }
+
+    if (developmentsResult.error) {
+      throw developmentsResult.error;
+    }
+
+    if (interactionsResult.error) {
+      throw interactionsResult.error;
+    }
+
+    const tasks = (tasksResult.data || []).map((task: any) => ({
+      id: task.id,
+      title: task.title,
+      description: task.description,
+      due_date: task.due_date,
+      status: task.status,
+      priority: task.priority,
+      lead_id: task.related_lead_id,
+    }));
+
+    const properties = (propertiesResult.data || []).map((property: any) => ({
+      id: property.id,
+      title: property.title,
+      description: property.description,
+      status: property.status,
+      price: property.price,
+      property_type: property.property_type,
+      typology: property.typology,
+      address: property.address,
+      city: property.city,
+      district: property.district,
+      location: [property.city, property.district].filter(Boolean).join(", ") || property.address || null,
+      bedrooms: property.bedrooms,
+      bathrooms: property.bathrooms,
+      area: property.area,
+      land_area: property.land_area,
+      year_built: property.year_built,
+      floor: property.floor,
+      total_floors: property.total_floors,
+      price_per_sqm: property.price_per_sqm,
+      condominium_fee: property.condominium_fee,
+      features: property.features || [],
+      amenities: property.amenities || [],
+      notes: property.notes,
+      reference_code: property.reference_code,
+      energy_rating: property.energy_rating,
+      main_image_url: property.main_image_url,
+      listed_at: property.listed_at,
+    }));
+
+    const developments = (developmentsResult.data || []).map((development: any) => ({
+      id: development.id,
+      name: development.name,
+      description: development.description,
+      status: development.status,
+      address: development.address,
+      city: development.city,
+      district: development.district,
+      location: [development.city, development.district].filter(Boolean).join(", ") || development.address || null,
+      developer_name: development.developer_name,
+      price_from: development.price_from,
+      price_to: development.price_to,
+      typologies: development.typologies || [],
+      total_units: development.total_units,
+      available_units: development.available_units,
+      delivery_date: development.delivery_date,
+      highlights: development.highlights || [],
+      reference_code: development.reference_code,
+      main_image_url: development.main_image_url,
+      published_at: development.published_at,
+    }));
+
+    const interactions = (interactionsResult.data || []).map((interaction: any) => ({
+      id: interaction.id,
+      type: interaction.interaction_type,
+      content: interaction.content,
+      created_at: interaction.interaction_date || interaction.created_at,
+      lead_id: interaction.lead_id,
+    }));
 
     // Detailed debug logging for properties query
     console.log("[AI Chat Debug] User ID:", user.id);
     console.log("[AI Chat Debug] Properties query result:", {
-      success: properties !== null,
-      count: (properties || []).length,
-      sample: (properties || []).slice(0, 2),
+      success: true,
+      count: properties.length,
+      sample: properties.slice(0, 2),
     });
     console.log("[AI Chat Debug] Developments query result:", {
-      success: developments !== null,
-      count: (developments || []).length,
-      sample: (developments || []).slice(0, 2),
+      success: true,
+      count: developments.length,
+      sample: developments.slice(0, 2),
     });
 
     const contextStr = JSON.stringify({
@@ -1066,10 +1452,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       current_time: new Date().toISOString(),
       leads: activeLeads,
       upcoming_events: events || [],
-      pending_tasks: tasks || [],
-      portfolio_properties: properties || [],
-      portfolio_developments: developments || [],
-      recent_history_interactions: interactions || [],
+      pending_tasks: tasks,
+      portfolio_properties: properties,
+      portfolio_developments: developments,
+      recent_history_interactions: interactions,
       requested_typology_bedrooms: requestedBedrooms,
     });
 
@@ -1077,10 +1463,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     console.log("[AI Chat Debug] Context summary:", {
       leads_count: activeLeads.length,
       events_count: (events || []).length,
-      tasks_count: (tasks || []).length,
-      properties_count: (properties || []).length,
-      developments_count: (developments || []).length,
-      interactions_count: (interactions || []).length,
+      tasks_count: tasks.length,
+      properties_count: properties.length,
+      developments_count: developments.length,
+      interactions_count: interactions.length,
     });
 
     const systemMessage: ChatMessage = {
@@ -1089,30 +1475,30 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 📊 DADOS DISPONÍVEIS EM TEMPO REAL:
 - "leads": array com ${activeLeads.length} leads ativas
-- "portfolio_properties": array com ${(properties || []).length} imóveis na carteira do agente
-- "portfolio_developments": array com ${(developments || []).length} empreendimentos na carteira do agente
+- "portfolio_properties": array com ${properties.length} imóveis acessíveis ao agente
+- "portfolio_developments": array com ${developments.length} empreendimentos acessíveis ao agente
 - "upcoming_events": array com ${(events || []).length} eventos futuros
-- "pending_tasks": array com ${(tasks || []).length} tarefas pendentes
-- "recent_history_interactions": array com ${(interactions || []).length} interações recentes
+- "pending_tasks": array com ${tasks.length} tarefas pendentes
+- "recent_history_interactions": array com ${interactions.length} interações recentes
  
 📋 CONTEXTO COMPLETO (JSON):
 ${contextStr}
 
 INSTRUÇÕES IMPORTANTES:
 - Os dados fornecidos representam a carteira real do agente (Leads globais, Tarefas Pendentes, Eventos, A TUA CARTEIRA DE IMÓVEIS no array portfolio_properties e Histórico Recente de Interações/Emails).
-- **IMPORTANTE**: TENS ACESSO DIRETO E COMPLETO a ${(properties || []).length} imóveis no array "portfolio_properties" com TODOS os detalhes (preço, localização, quartos, área, características, etc.). USA SEMPRE ESTES DADOS quando o agente perguntar sobre os seus imóveis.
-- **IMPORTANTE**: TENS ACESSO DIRETO E COMPLETO a ${(developments || []).length} empreendimentos no array "portfolio_developments" com TODOS os detalhes (localização, tipologias, unidades, preços, características, datas, etc.). USA SEMPRE ESTES DADOS quando o agente perguntar sobre os seus empreendimentos.
+- **IMPORTANTE**: TENS ACESSO DIRETO E COMPLETO a ${properties.length} imóveis no array "portfolio_properties" com TODOS os detalhes reais da plataforma. USA SEMPRE ESTES DADOS quando o agente perguntar sobre os seus imóveis.
+- **IMPORTANTE**: TENS ACESSO DIRETO E COMPLETO a ${developments.length} empreendimentos no array "portfolio_developments" com TODOS os detalhes reais da plataforma. USA SEMPRE ESTES DADOS quando o agente perguntar sobre os seus empreendimentos.
 - Se portfolio_properties ou portfolio_developments estiverem vazios (length = 0), significa que o agente ainda não criou imóveis/empreendimentos na plataforma. DEVES INFORMAR O AGENTE DISSO CLARAMENTE.
 - NUNCA DIGAS que não tens acesso aos dados - TU TENS ACESSO COMPLETO através do JSON fornecido acima. Analisa o JSON e responde com base nesses dados.
 
 🎯 SOBRE IMÓVEIS E EMPREENDIMENTOS:
-${(properties || []).length > 0 
-  ? `✅ TENS ${(properties || []).length} IMÓVEIS DISPONÍVEIS no array "portfolio_properties". Cada imóvel tem: título, descrição, preço, localização, quartos, casas de banho, área, ano de construção, condição, características completas, etc. ANALISA ESSES DADOS quando o agente perguntar sobre imóveis.`
+${properties.length > 0 
+  ? `✅ TENS ${properties.length} IMÓVEIS DISPONÍVEIS no array "portfolio_properties". Cada imóvel tem: título, descrição, preço, localização, quartos, casas de banho, área, tipologia, características, notas e referência. ANALISA ESSES DADOS quando o agente perguntar sobre imóveis.`
   : `⚠️ O array "portfolio_properties" está VAZIO (length = 0). O agente ainda NÃO criou imóveis na plataforma.`
 }
 
-${(developments || []).length > 0
-  ? `✅ TENS ${(developments || []).length} EMPREENDIMENTOS DISPONÍVEIS no array "portfolio_developments". Cada empreendimento tem: nome, descrição, localização, tipologias, unidades totais/disponíveis, preços min/max, características, data de entrega, etc. ANALISA ESSES DADOS quando o agente perguntar sobre empreendimentos.`
+${developments.length > 0
+  ? `✅ TENS ${developments.length} EMPREENDIMENTOS DISPONÍVEIS no array "portfolio_developments". Cada empreendimento tem: nome, descrição, localização, tipologias, unidades totais/disponíveis, preços min/max, destaques e data de entrega. ANALISA ESSES DADOS quando o agente perguntar sobre empreendimentos.`
   : `⚠️ O array "portfolio_developments" está VAZIO (length = 0). O agente ainda NÃO criou empreendimentos na plataforma.`
 }
 

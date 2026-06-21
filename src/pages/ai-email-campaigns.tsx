@@ -29,6 +29,9 @@ interface EmailCampaignDraft {
   subject: string;
   htmlBody: string;
   textBody: string;
+  recipientLeadIds?: string[];
+  matchedLeadCount?: number;
+  missingEmailCount?: number;
   recipients: Array<{
     id: string;
     name: string;
@@ -38,6 +41,13 @@ interface EmailCampaignDraft {
     typology: string | null;
   }>;
 }
+
+interface CampaignConversationMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+const AI_DRAFT_STORAGE_KEY = "vyxa-ai-email-campaign-draft";
 
 export default function AiEmailCampaignsPage() {
   const { toast } = useToast();
@@ -52,6 +62,8 @@ export default function AiEmailCampaignsPage() {
   const [extraInstructions, setExtraInstructions] = useState("");
   const [assistantReply, setAssistantReply] = useState("");
   const [latestCampaignDraft, setLatestCampaignDraft] = useState<EmailCampaignDraft | null>(null);
+  const [conversationHistory, setConversationHistory] = useState<CampaignConversationMessage[]>([]);
+  const [refinementPrompt, setRefinementPrompt] = useState("");
 
   useEffect(() => {
     const loadConnectionStatus = async () => {
@@ -111,22 +123,95 @@ export default function AiEmailCampaignsPage() {
 
     const criteriaSentence = criteriaParts.join(", ");
 
-    let prompt = "Prepara um email para todas as leads";
+    const trimmedInstructions = extraInstructions.trim();
+
+    if (criteriaSentence && trimmedInstructions) {
+      return `Prepara um email e seleciona as leads certas que procuram ${criteriaSentence}. Usa também estas instruções para afinar a audiência e o tom: ${trimmedInstructions}`;
+    }
 
     if (criteriaSentence) {
-      prompt += ` que procuram ${criteriaSentence}`;
+      return `Prepara um email e seleciona as leads certas que procuram ${criteriaSentence}.`;
     }
 
-    if (extraInstructions.trim()) {
-      prompt += `. ${extraInstructions.trim()}`;
+    if (trimmedInstructions) {
+      return `Prepara um email e seleciona as leads certas apenas com base nestas instruções: ${trimmedInstructions}`;
     }
 
-    return prompt;
+    return "Prepara um email e seleciona automaticamente as leads mais relevantes com base no contexto completo da minha carteira.";
+  };
+
+  const buildCampaignContext = (draft: EmailCampaignDraft | null = latestCampaignDraft) => ({
+    mode: "email_campaign" as const,
+    criteria: draft?.criteria || {
+      location: location.trim() || null,
+      typology: typology !== "all" ? typology : null,
+      bedrooms: typology !== "all" ? Number(typology.replace("T", "")) : null,
+      buyPurpose: buyPurpose !== "all" ? buyPurpose : null,
+      propertyType: propertyType !== "all" ? propertyType : null,
+    },
+    previousDraft: draft
+      ? {
+          subject: draft.subject,
+          htmlBody: draft.htmlBody,
+          textBody: draft.textBody,
+        }
+      : null,
+    recipientLeadIds:
+      draft?.recipientLeadIds || draft?.recipients.map((recipient) => recipient.id) || null,
+  });
+
+  const requestCampaignDraft = async (
+    prompt: string,
+    options?: { resetConversation?: boolean; draftContext?: EmailCampaignDraft | null },
+  ) => {
+    const historyPayload = options?.resetConversation ? [] : conversationHistory;
+    const response = await fetch("/api/gpt/chat", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${(await supabase.auth.getSession()).data.session?.access_token || ""}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        message: prompt,
+        history: historyPayload,
+        campaignContext: buildCampaignContext(options?.draftContext ?? latestCampaignDraft),
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || data.message || "Falha ao gerar rascunho");
+    }
+
+    const assistantMessage = data.reply || "";
+    const updatedHistory: CampaignConversationMessage[] = [
+      ...(options?.resetConversation ? [] : conversationHistory),
+      { role: "user", content: prompt },
+      { role: "assistant", content: assistantMessage },
+    ];
+
+    setConversationHistory(updatedHistory);
+    setAssistantReply(assistantMessage);
+    setLatestCampaignDraft(data.campaignDraft || null);
   };
 
   const openDraftInBulkMessages = () => {
     if (!latestCampaignDraft) {
       return;
+    }
+
+    if (typeof window !== "undefined") {
+      window.sessionStorage.setItem(
+        AI_DRAFT_STORAGE_KEY,
+        JSON.stringify({
+          recipients: latestCampaignDraft.recipients,
+          recipientLeadIds: latestCampaignDraft.recipientLeadIds || latestCampaignDraft.recipients.map((recipient) => recipient.id),
+          matchedLeadCount: latestCampaignDraft.matchedLeadCount ?? latestCampaignDraft.recipients.length,
+          missingEmailCount: latestCampaignDraft.missingEmailCount ?? 0,
+          filterSummary: latestCampaignDraft.filterSummary,
+        }),
+      );
     }
 
     const query: Record<string, string> = {
@@ -159,17 +244,9 @@ export default function AiEmailCampaignsPage() {
   };
 
   const handleGenerateDraft = async () => {
-    if (!location.trim() && typology === "all" && buyPurpose === "all" && propertyType === "all") {
-      toast({
-        title: "Critérios em falta",
-        description: "Defina pelo menos uma zona, tipologia, objetivo ou tipo de imóvel.",
-        variant: "destructive",
-      });
-      return;
-    }
-
     setIsGenerating(true);
     setAssistantReply("");
+    setConversationHistory([]);
     setLatestCampaignDraft(null);
 
     try {
@@ -181,31 +258,59 @@ export default function AiEmailCampaignsPage() {
         throw new Error("Sessão expirada. Faça login novamente.");
       }
 
-      const response = await fetch("/api/gpt/chat", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${session.access_token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          message: buildPrompt(),
-          history: [],
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || data.message || "Falha ao gerar rascunho");
-      }
-
-      setAssistantReply(data.reply || "");
-      setLatestCampaignDraft(data.campaignDraft || null);
+      await requestCampaignDraft(buildPrompt(), { resetConversation: true, draftContext: null });
     } catch (error) {
       console.error("Erro ao gerar campanha IA:", error);
       toast({
         title: "Erro",
         description: error instanceof Error ? error.message : "Não foi possível gerar o rascunho.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleRefineDraft = async () => {
+    if (!latestCampaignDraft) {
+      toast({
+        title: "Rascunho em falta",
+        description: "Gere primeiro um rascunho antes de pedir ajustes ao agente.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!refinementPrompt.trim()) {
+      toast({
+        title: "Instruções em falta",
+        description: "Escreva o ajuste que quer pedir ao agente.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsGenerating(true);
+
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session) {
+        throw new Error("Sessão expirada. Faça login novamente.");
+      }
+
+      await requestCampaignDraft(refinementPrompt.trim(), {
+        resetConversation: false,
+        draftContext: latestCampaignDraft,
+      });
+      setRefinementPrompt("");
+    } catch (error) {
+      console.error("Erro ao refinar campanha IA:", error);
+      toast({
+        title: "Erro",
+        description: error instanceof Error ? error.message : "Não foi possível refinar o rascunho.",
         variant: "destructive",
       });
     } finally {
@@ -236,7 +341,7 @@ export default function AiEmailCampaignsPage() {
 
             <Alert className="border-indigo-200 bg-indigo-50">
               <AlertDescription>
-                Este fluxo apenas prepara o rascunho e pré-seleciona as leads com email. O envio final acontece na área de Mensagens, depois da sua revisão.
+                Este fluxo usa o agente IA para segmentar, rever e refinar o email antes do envio. Quando abrir em Mensagens, segue a seleção exata das leads escolhidas pelo agente.
               </AlertDescription>
             </Alert>
 
@@ -261,7 +366,7 @@ export default function AiEmailCampaignsPage() {
                   <CardHeader>
                     <CardTitle>Critérios da campanha</CardTitle>
                     <CardDescription>
-                      Indique o perfil de procura para a IA encontrar as leads certas e escrever o email.
+                      Os filtros são opcionais. Pode deixá-los em branco e escrever apenas instruções livres para a IA encontrar as leads certas e escrever o email.
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
@@ -330,7 +435,7 @@ export default function AiEmailCampaignsPage() {
                       <Textarea
                         id="instructions"
                         rows={5}
-                        placeholder="Ex: usa um tom consultivo e menciona que temos novas oportunidades em carteira."
+                        placeholder="Ex: escreve para leads interessadas em investir em novos empreendimentos no Porto e usa um tom consultivo."
                         value={extraInstructions}
                         onChange={(event) => setExtraInstructions(event.target.value)}
                       />
@@ -360,21 +465,21 @@ export default function AiEmailCampaignsPage() {
                   <CardHeader>
                     <CardTitle>Como funciona</CardTitle>
                     <CardDescription>
-                      A IA usa os critérios da procura para preparar uma campanha antes de qualquer envio.
+                      A IA usa os critérios da procura, a carteira e a conversa atual para preparar a campanha antes de qualquer envio.
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-3 text-sm text-gray-700">
                     <div className="rounded-lg border p-3">
                       <p className="font-medium text-gray-900">1. Segmentação</p>
-                      <p className="mt-1">Filtra leads por zona, tipologia, objetivo da compra e tipo de imóvel.</p>
+                      <p className="mt-1">Segmenta as leads com a mesma lógica do agente IA e cruza a procura com a tua carteira.</p>
                     </div>
                     <div className="rounded-lg border p-3">
                       <p className="font-medium text-gray-900">2. Rascunho IA</p>
-                      <p className="mt-1">Gera assunto e corpo do email em português, com base no segmento encontrado.</p>
+                      <p className="mt-1">Gera assunto e corpo do email em português, com base no segmento encontrado e no histórico da conversa.</p>
                     </div>
                     <div className="rounded-lg border p-3">
-                      <p className="font-medium text-gray-900">3. Revisão manual</p>
-                      <p className="mt-1">Abre em Mensagens com as leads pré-selecionadas, sem envio automático.</p>
+                      <p className="font-medium text-gray-900">3. Afinação e revisão</p>
+                      <p className="mt-1">Pode pedir ajustes ao agente e só depois abrir em Mensagens com as leads exatas pré-selecionadas.</p>
                     </div>
                   </CardContent>
                 </Card>
@@ -394,6 +499,9 @@ export default function AiEmailCampaignsPage() {
                     <CardTitle>Rascunho preparado</CardTitle>
                     <CardDescription>
                       {latestCampaignDraft.recipients.length} leads com email no segmento {latestCampaignDraft.filterSummary || "definido"}.
+                      {typeof latestCampaignDraft.matchedLeadCount === "number" && (
+                        <> Total compatíveis: {latestCampaignDraft.matchedLeadCount}. Sem email: {latestCampaignDraft.missingEmailCount || 0}.</>
+                      )}
                     </CardDescription>
                   </div>
                   <Button onClick={openDraftInBulkMessages} className="bg-indigo-600 hover:bg-indigo-700">
@@ -432,7 +540,64 @@ export default function AiEmailCampaignsPage() {
                         dangerouslySetInnerHTML={{ __html: latestCampaignDraft.htmlBody }}
                       />
                     </div>
+                    <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-4 space-y-3">
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">Afinar com o agente</p>
+                        <p className="text-xs text-gray-600 mt-1">
+                          Peça ajustes ao segmento ou ao tom do email. Exemplo: “deixa mais consultivo” ou “foca primeiro nas leads de investimento”.
+                        </p>
+                      </div>
+                      <Textarea
+                        rows={3}
+                        placeholder="Ex: deixa o email mais curto e com foco em investidores de Matosinhos."
+                        value={refinementPrompt}
+                        onChange={(event) => setRefinementPrompt(event.target.value)}
+                      />
+                      <Button
+                        onClick={handleRefineDraft}
+                        disabled={isGenerating}
+                        variant="outline"
+                        className="border-indigo-300 text-indigo-700 hover:bg-indigo-100"
+                      >
+                        {isGenerating ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            A refinar...
+                          </>
+                        ) : (
+                          "Pedir ajuste ao agente"
+                        )}
+                      </Button>
+                    </div>
                   </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {conversationHistory.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Conversa com o agente</CardTitle>
+                  <CardDescription>
+                    Histórico da afinação do segmento e do rascunho antes de enviar.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {conversationHistory.map((entry, index) => (
+                    <div
+                      key={`${entry.role}-${index}`}
+                      className={`rounded-lg border p-3 text-sm ${
+                        entry.role === "user"
+                          ? "border-slate-200 bg-slate-50 text-slate-800"
+                          : "border-indigo-200 bg-indigo-50 text-indigo-950"
+                      }`}
+                    >
+                      <p className="mb-1 text-xs font-semibold uppercase tracking-wide opacity-70">
+                        {entry.role === "user" ? "Pedido" : "Agente IA"}
+                      </p>
+                      <p className="whitespace-pre-wrap">{entry.content}</p>
+                    </div>
+                  ))}
                 </CardContent>
               </Card>
             )}

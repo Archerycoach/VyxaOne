@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/router";
 import { Layout } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
@@ -35,6 +35,31 @@ function normalizeText(value: string): string {
     .trim();
 }
 
+function resolveLeadTypology(
+  lead: LeadWithContacts & { typology?: string | null },
+): string | null {
+  if (typeof lead.typology === "string" && lead.typology.trim()) {
+    return lead.typology.trim();
+  }
+
+  if (typeof lead.bedrooms === "number") {
+    return `T${lead.bedrooms}`;
+  }
+
+  const propertyType = normalizeText(lead.property_type || "");
+  const typologyMatch = propertyType.match(/\bt\s*([0-9])\b/);
+
+  if (typologyMatch) {
+    return `T${typologyMatch[1]}`;
+  }
+
+  if (propertyType.includes("estudio") || propertyType.includes("studio")) {
+    return "T0";
+  }
+
+  return null;
+}
+
 function matchesLeadLocation(lead: LeadWithContacts, location: string): boolean {
   if (!location) {
     return true;
@@ -56,9 +81,14 @@ function matchesLeadTypology(lead: LeadWithContacts, typology: string): boolean 
   }
 
   const requestedTypology = normalizeText(typology);
+  const leadTypology = normalizeText(resolveLeadTypology(lead as LeadWithContacts & { typology?: string | null }) || "");
   const propertyType = normalizeText(lead.property_type || "");
   const requestedBedroomsMatch = requestedTypology.match(/t\s*([0-9])/);
   const requestedBedrooms = requestedBedroomsMatch ? Number(requestedBedroomsMatch[1]) : null;
+
+  if (leadTypology.includes(requestedTypology)) {
+    return true;
+  }
 
   if (propertyType.includes(requestedTypology)) {
     return true;
@@ -69,7 +99,12 @@ function matchesLeadTypology(lead: LeadWithContacts, typology: string): boolean 
   }
 
   if (requestedBedrooms === 0) {
-    return propertyType.includes("estudio") || propertyType.includes("studio");
+    return (
+      leadTypology.includes("t0") ||
+      propertyType.includes("t0") ||
+      propertyType.includes("estudio") ||
+      propertyType.includes("studio")
+    );
   }
 
   return false;
@@ -106,21 +141,102 @@ function getQueryParamValue(value: string | string[] | undefined): string {
   return Array.isArray(value) ? value[0] || "" : value || "";
 }
 
+type LeadAudienceFilters = {
+  status: string;
+  location: string;
+  typology: string;
+  buyPurpose: string;
+  propertyType: string;
+  searchQuery: string;
+};
+
+type LeadAudienceSummary = {
+  totalMatchingLeads: number;
+  missingEmailCount: number;
+  deduplicatedContactsCount: number;
+};
+
+type AiDraftLeadRecipient = {
+  id: string;
+  name: string;
+  email: string | null;
+  status: string | null;
+  location_preference: string | null;
+  typology: string | null;
+};
+
+type StoredAiDraftPayload = {
+  recipients?: AiDraftLeadRecipient[];
+  recipientLeadIds?: string[];
+  matchedLeadCount?: number;
+  missingEmailCount?: number;
+  filterSummary?: string;
+};
+
+const AI_DRAFT_STORAGE_KEY = "vyxa-ai-email-campaign-draft";
+
+function matchesLeadSearchQuery(lead: LeadWithContacts, searchQuery: string): boolean {
+  if (!searchQuery) {
+    return true;
+  }
+
+  const query = searchQuery.toLowerCase();
+
+  return (
+    lead.name.toLowerCase().includes(query) ||
+    lead.email?.toLowerCase().includes(query) ||
+    lead.phone?.toLowerCase().includes(query)
+  );
+}
+
+function matchesLeadAudienceFilters(lead: LeadWithContacts, filters: LeadAudienceFilters): boolean {
+  if (filters.status !== "all" && lead.status !== filters.status) return false;
+  if (filters.location && !matchesLeadLocation(lead, filters.location)) return false;
+  if (filters.typology !== "all" && !matchesLeadTypology(lead, filters.typology)) return false;
+  if (filters.buyPurpose !== "all" && !matchesLeadBuyPurpose(lead, filters.buyPurpose)) return false;
+  if (filters.propertyType !== "all" && !matchesLeadPropertyType(lead, filters.propertyType)) return false;
+  if (!matchesLeadSearchQuery(lead, filters.searchQuery)) return false;
+
+  return true;
+}
+
+function getLeadAudienceSummary(
+  leads: LeadWithContacts[],
+  contacts: Contact[],
+  filters: LeadAudienceFilters,
+  includeContactDeduplication: boolean,
+): LeadAudienceSummary {
+  const matchingLeads = leads.filter((lead) => matchesLeadAudienceFilters(lead, filters));
+  const contactEmails = includeContactDeduplication
+    ? new Set(
+        contacts
+          .map((contact) => contact.email?.trim().toLowerCase())
+          .filter((email): email is string => Boolean(email)),
+      )
+    : new Set<string>();
+
+  const missingEmailCount = matchingLeads.filter((lead) => !lead.email?.trim()).length;
+  const deduplicatedContactsCount = includeContactDeduplication
+    ? matchingLeads.filter((lead) => {
+        const email = lead.email?.trim().toLowerCase();
+        return Boolean(email && contactEmails.has(email));
+      }).length
+    : 0;
+
+  return {
+    totalMatchingLeads: matchingLeads.length,
+    missingEmailCount,
+    deduplicatedContactsCount,
+  };
+}
+
 function getMatchingLeadRecipientIds(
   leads: LeadWithContacts[],
-  filters: {
-    location: string;
-    typology: string;
-    buyPurpose: string;
-    propertyType: string;
-  }
+  filters: LeadAudienceFilters,
 ): string[] {
   return leads
     .filter((lead) => Boolean(lead.email))
-    .filter((lead) => matchesLeadLocation(lead, filters.location))
-    .filter((lead) => matchesLeadTypology(lead, filters.typology))
-    .filter((lead) => matchesLeadBuyPurpose(lead, filters.buyPurpose))
-    .filter((lead) => matchesLeadPropertyType(lead, filters.propertyType))
+    .filter((lead) => matchesLeadAudienceFilters(lead, filters))
     .map((lead) => `lead-${lead.id}`);
 }
 
@@ -156,6 +272,8 @@ export default function BulkMessages() {
   const [sending, setSending] = useState(false);
   const [aiDraftApplied, setAiDraftApplied] = useState(false);
   const [aiDraftNotice, setAiDraftNotice] = useState<string | null>(null);
+  const [aiDraftRecipients, setAiDraftRecipients] = useState<AiDraftLeadRecipient[]>([]);
+  const [aiDraftSummary, setAiDraftSummary] = useState<LeadAudienceSummary | null>(null);
   const copyEmail = user?.email || "";
 
   useEffect(() => {
@@ -207,19 +325,99 @@ export default function BulkMessages() {
       setMessage(nextMessage);
     }
 
+    let storedDraft: StoredAiDraftPayload | null = null;
+
+    if (typeof window !== "undefined") {
+      const rawDraft = window.sessionStorage.getItem(AI_DRAFT_STORAGE_KEY);
+      if (rawDraft) {
+        try {
+          storedDraft = JSON.parse(rawDraft) as StoredAiDraftPayload;
+        } catch (error) {
+          console.error("Erro ao ler rascunho IA guardado:", error);
+        }
+        window.sessionStorage.removeItem(AI_DRAFT_STORAGE_KEY);
+      }
+    }
+
+    if (storedDraft?.recipients && storedDraft.recipients.length > 0) {
+      const normalizedRecipients = storedDraft.recipients.map((recipient) => ({
+        ...recipient,
+        id: recipient.id,
+      }));
+
+      setAiDraftRecipients(normalizedRecipients);
+      setAiDraftSummary({
+        totalMatchingLeads: storedDraft.matchedLeadCount ?? normalizedRecipients.length,
+        missingEmailCount: storedDraft.missingEmailCount ?? 0,
+        deduplicatedContactsCount: 0,
+      });
+      setSelectedRecipients(new Set(normalizedRecipients.map((recipient) => `lead-${recipient.id}`)));
+      setAiDraftNotice(
+        `Rascunho IA aplicado a ${normalizedRecipients.length} lead${normalizedRecipients.length === 1 ? "" : "s"} com email, usando a mesma seleção definida na conversa com o agente.`,
+      );
+      setAiDraftApplied(true);
+      return;
+    }
+
     const matchingLeadIds = getMatchingLeadRecipientIds(leads, {
+      status: "all",
       location: nextLocation,
       typology: nextTypology,
       buyPurpose: nextBuyPurpose,
       propertyType: nextPropertyType,
+      searchQuery: "",
     });
 
+    setAiDraftRecipients([]);
+    setAiDraftSummary({
+      totalMatchingLeads: matchingLeadIds.length,
+      missingEmailCount: 0,
+      deduplicatedContactsCount: 0,
+    });
     setSelectedRecipients(new Set(matchingLeadIds));
     setAiDraftNotice(
       `Rascunho IA aplicado a ${matchingLeadIds.length} lead${matchingLeadIds.length === 1 ? "" : "s"} com email. O envio continua manual.`
     );
     setAiDraftApplied(true);
   }, [router.isReady, router.query, loading, aiDraftApplied, leads]);
+
+  const leadAudienceSummary = useMemo(() => {
+    if (filterSource === "contacts" || messageType !== "email") {
+      return null;
+    }
+
+    if (aiDraftApplied && aiDraftRecipients.length > 0 && filterSource === "leads") {
+      return aiDraftSummary;
+    }
+
+    return getLeadAudienceSummary(
+      leads,
+      contacts,
+      {
+        status: filterStatus,
+        location: filterLocation,
+        typology: filterTypology,
+        buyPurpose: filterBuyPurpose,
+        propertyType: filterPropertyType,
+        searchQuery,
+      },
+      filterSource === "all",
+    );
+  }, [
+    leads,
+    contacts,
+    filterSource,
+    messageType,
+    aiDraftApplied,
+    aiDraftRecipients,
+    aiDraftSummary,
+    filterStatus,
+    filterLocation,
+    filterTypology,
+    filterBuyPurpose,
+    filterPropertyType,
+    searchQuery,
+  ]);
 
   const checkAuth = async () => {
     try {
@@ -322,6 +520,29 @@ export default function BulkMessages() {
   };
 
   const getFilteredRecipients = () => {
+    if (messageType === "email" && filterSource === "leads" && aiDraftApplied && aiDraftRecipients.length > 0) {
+      return aiDraftRecipients
+        .filter((recipient) => {
+          if (!searchQuery) {
+            return true;
+          }
+
+          const query = searchQuery.toLowerCase();
+          return (
+            recipient.name.toLowerCase().includes(query) ||
+            recipient.email?.toLowerCase().includes(query)
+          );
+        })
+        .map((recipient) => ({
+          id: `lead-${recipient.id}`,
+          name: recipient.name,
+          email: recipient.email || undefined,
+          phone: undefined,
+          type: "lead" as const,
+          status: recipient.status || undefined,
+        }));
+    }
+
     const recipients: Array<{ 
       id: string; 
       name: string; 
@@ -382,22 +603,16 @@ export default function BulkMessages() {
     // STEP 2: Add LEADS (only if not duplicate with contacts)
     if (filterSource === "all" || filterSource === "leads") {
       leads
-        .filter((lead) => {
-          if (filterStatus !== "all" && lead.status !== filterStatus) return false;
-          if (filterLocation && !matchesLeadLocation(lead, filterLocation)) return false;
-          if (filterTypology !== "all" && !matchesLeadTypology(lead, filterTypology)) return false;
-          if (filterBuyPurpose !== "all" && !matchesLeadBuyPurpose(lead, filterBuyPurpose)) return false;
-          if (filterPropertyType !== "all" && !matchesLeadPropertyType(lead, filterPropertyType)) return false;
-          if (searchQuery) {
-            const query = searchQuery.toLowerCase();
-            return (
-              lead.name.toLowerCase().includes(query) ||
-              lead.email?.toLowerCase().includes(query) ||
-              lead.phone?.toLowerCase().includes(query)
-            );
-          }
-          return true;
-        })
+        .filter((lead) =>
+          matchesLeadAudienceFilters(lead, {
+            status: filterStatus,
+            location: filterLocation,
+            typology: filterTypology,
+            buyPurpose: filterBuyPurpose,
+            propertyType: filterPropertyType,
+            searchQuery,
+          }),
+        )
         .forEach((lead) => {
           // For email messages, only add if has email and NOT already in contacts
           if (messageType === "email") {
@@ -789,6 +1004,35 @@ export default function BulkMessages() {
                       Limpar
                     </Button>
                   </div>
+
+                  {leadAudienceSummary && (
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                      <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                        <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+                          Leads compatíveis
+                        </p>
+                        <p className="mt-1 text-lg font-semibold text-slate-900">
+                          {leadAudienceSummary.totalMatchingLeads}
+                        </p>
+                      </div>
+                      <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                        <p className="text-[11px] font-medium uppercase tracking-wide text-amber-700">
+                          Sem email
+                        </p>
+                        <p className="mt-1 text-lg font-semibold text-amber-900">
+                          {leadAudienceSummary.missingEmailCount}
+                        </p>
+                      </div>
+                      <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2">
+                        <p className="text-[11px] font-medium uppercase tracking-wide text-blue-700">
+                          Duplicadas com contactos
+                        </p>
+                        <p className="mt-1 text-lg font-semibold text-blue-900">
+                          {leadAudienceSummary.deduplicatedContactsCount}
+                        </p>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Recipients List */}
                   <ScrollArea className="h-[400px] border rounded-md p-4">
