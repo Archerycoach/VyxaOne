@@ -22,6 +22,7 @@ import { Send, Mail, MessageSquare, Loader2, Users, Filter, Paperclip, X } from 
 import { getAllLeads, type LeadWithContacts } from "@/services/leadsService";
 import { getAllContacts, type Contact } from "@/services/contactsService";
 import { getCurrentUser } from "@/services/authService";
+import { getWorkflowRules } from "@/services/workflowService";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
@@ -132,6 +133,8 @@ export default function BulkMessages() {
   const [leads, setLeads] = useState<LeadWithContacts[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [selectedRecipients, setSelectedRecipients] = useState<Set<string>>(new Set());
+  const [emailTemplates, setEmailTemplates] = useState<any[]>([]);
+  const [selectedTemplate, setSelectedTemplate] = useState<string>("");
   
   // Filters
   const [filterSource, setFilterSource] = useState<"all" | "leads" | "contacts">("all");
@@ -162,6 +165,12 @@ export default function BulkMessages() {
   useEffect(() => {
     if (user) {
       loadData();
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (user) {
+      loadEmailTemplates();
     }
   }, [user]);
 
@@ -245,6 +254,71 @@ export default function BulkMessages() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const loadEmailTemplates = async () => {
+    try {
+      const workflows = await getWorkflowRules();
+      // Filter workflows that send emails
+      const emailWorkflows = workflows.filter(
+        (w: any) => {
+          // Check both old schema (action_type) and new schema (actions array)
+          if (w.action_type === "send_email") return true;
+          if (Array.isArray(w.actions)) {
+            return w.actions.some((a: any) => a.type === "send_email");
+          }
+          return false;
+        }
+      );
+      setEmailTemplates(emailWorkflows);
+    } catch (error) {
+      console.error("Error loading email templates:", error);
+    }
+  };
+
+  const handleTemplateSelect = (templateId: string) => {
+    setSelectedTemplate(templateId);
+    
+    if (!templateId) {
+      // Clear fields if "none" selected
+      return;
+    }
+    
+    const template = emailTemplates.find((t: any) => t.id === templateId);
+    if (!template) return;
+    
+    // Extract email config from template
+    let emailConfig: any = {};
+    
+    if (template.action_type === "send_email") {
+      // Old schema
+      emailConfig = template.action_config || {};
+    } else if (Array.isArray(template.actions)) {
+      // New schema - find the send_email action
+      const emailAction = template.actions.find((a: any) => a.type === "send_email");
+      if (emailAction) {
+        emailConfig = emailAction.config || emailAction;
+      }
+    }
+    
+    // Populate fields
+    if (emailConfig.subject) {
+      setSubject(emailConfig.subject);
+    }
+    
+    if (emailConfig.body) {
+      setMessage(emailConfig.body);
+    }
+    
+    // Load attachments if present
+    if (Array.isArray(emailConfig.attachments) && emailConfig.attachments.length > 0) {
+      setAttachments(emailConfig.attachments);
+    }
+    
+    toast({
+      title: "Template carregado",
+      description: `Template "${template.name}" aplicado com sucesso.`,
+    });
   };
 
   const getFilteredRecipients = () => {
@@ -793,6 +867,29 @@ export default function BulkMessages() {
                     </TabsList>
 
                     <TabsContent value="email" className="space-y-4 mt-4">
+                      {/* Template Selector */}
+                      {emailTemplates.length > 0 && (
+                        <div className="space-y-2 pb-2 border-b">
+                          <Label htmlFor="template">Usar Template de Automação</Label>
+                          <Select value={selectedTemplate} onValueChange={handleTemplateSelect}>
+                            <SelectTrigger id="template">
+                              <SelectValue placeholder="Selecionar template..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="">Nenhum template</SelectItem>
+                              {emailTemplates.map((template: any) => (
+                                <SelectItem key={template.id} value={template.id}>
+                                  {template.name || "Template sem nome"}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <p className="text-xs text-gray-500">
+                            Carrega automaticamente o assunto, mensagem e anexos do template selecionado
+                          </p>
+                        </div>
+                      )}
+
                       <div className="space-y-2">
                         <Label htmlFor="subject">Assunto *</Label>
                         <Input

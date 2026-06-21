@@ -575,31 +575,44 @@ async function executeBulkLeadUpdate(
     sourceFilterAttempted = true;
     const sourceName = sourceMatch[1].trim();
     
-    // Try to find Meta form by name first
+    // Load all Meta forms first for error messaging
     const { data: metaForms } = await supabase
       .from("meta_form_configs")
       .select("form_id, form_name")
       .eq("user_id", userId)
       .eq("is_active", true);
     
-    const matchedForm = (metaForms || []).find((form: any) => 
-      normalizeText(form.form_name || "").includes(normalizeText(sourceName)) ||
-      normalizeText(sourceName).includes(normalizeText(form.form_name || ""))
-    );
-    
-    if (matchedForm) {
-      // Filter by meta_form_id
-      targetLeads = leads.filter(lead => lead.meta_form_id === matchedForm.form_id);
+    // Check if user provided a form ID directly (e.g., "formulário com ID: 123456" or "formulário ID 123456")
+    const formIdMatch = sourceName.match(/(?:com\s+)?ID:\s*(\d+)|(?:com\s+)?ID\s+(\d+)/i);
+    if (formIdMatch) {
+      const formId = formIdMatch[1] || formIdMatch[2];
+      // Filter directly by meta_form_id
+      targetLeads = leads.filter(lead => lead.meta_form_id === formId);
       
       if (targetLeads.length === 0) {
-        return `Encontrei o formulário "${matchedForm.form_name}", mas não há leads desse formulário na tua carteira.`;
+        return `Não encontrei leads que vieram do formulário com ID ${formId}. Verifica se o ID está correto.`;
       }
     } else {
-      // Fallback: search in source field
-      targetLeads = leads.filter(lead => {
-        const leadSource = normalizeText(lead.source || "");
-        return leadSource.includes(normalizeText(sourceName));
-      });
+      // Try to find Meta form by name
+      const matchedForm = (metaForms || []).find((form: any) => 
+        normalizeText(form.form_name || "").includes(normalizeText(sourceName)) ||
+        normalizeText(sourceName).includes(normalizeText(form.form_name || ""))
+      );
+      
+      if (matchedForm) {
+        // Filter by meta_form_id
+        targetLeads = leads.filter(lead => lead.meta_form_id === matchedForm.form_id);
+        
+        if (targetLeads.length === 0) {
+          return `Encontrei o formulário "${matchedForm.form_name}", mas não há leads desse formulário na tua carteira.`;
+        }
+      } else {
+        // Fallback: search in source field
+        targetLeads = leads.filter(lead => {
+          const leadSource = normalizeText(lead.source || "");
+          return leadSource.includes(normalizeText(sourceName));
+        });
+      }
     }
     
     // If source filter was specified but found nothing, return clear error
@@ -616,7 +629,15 @@ async function executeBulkLeadUpdate(
   
   // Detect development association
   const devMatch = message.match(/(?:empreendimento|desenvolvimento)\s+([A-Za-zÀ-ÿ0-9\s-]+?)(?:\s+e\s|$)/i);
-  if (devMatch) {
+  
+  // Detect development removal/dissociation request
+  const devRemovalMatch = /(retira|retirar|remove|remover|desassocia|desassociar|limpa|limpar).*?(?:associa[cç][aã]o|empreendimento|desenvolvimento)/i.test(message);
+  
+  if (devRemovalMatch) {
+    // User wants to remove development association
+    updates.is_development = false;
+    updates.development_name = null;
+  } else if (devMatch) {
     const devName = devMatch[1].trim();
     
     // Find the development
@@ -707,6 +728,9 @@ async function executeBulkLeadUpdate(
   // Build success message
   const updatedFields = Object.entries(updates).map(([key, value]) => {
     if (key === "is_development" || key === "development_name") {
+      if (value === false || value === null) {
+        return "associação a empreendimento removida";
+      }
       return `associadas ao empreendimento "${value}"`;
     }
     if (key === "temperature") {
