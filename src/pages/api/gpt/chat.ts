@@ -448,7 +448,13 @@ function buildFallbackDraft(criteria: EmailCampaignCriteria, agentName: string) 
 }
 
 function sanitizeJsonReply(content: string): string {
-  return content.replace(/^```json\s*/i, "").replace(/```$/i, "").trim();
+  const cleaned = content.replace(/^```json\s*/i, "").replace(/```$/i, "").trim();
+  const objStart = cleaned.indexOf('{');
+  const objEnd = cleaned.lastIndexOf('}');
+  if (objStart >= 0 && objEnd > objStart) {
+    return cleaned.substring(objStart, objEnd + 1);
+  }
+  return cleaned;
 }
 
 function resolveLeadTypology(
@@ -571,7 +577,13 @@ async function generateEmailCampaignDraft(
 
     const draftData = await draftResponse.json();
     const rawContent = draftData.choices?.[0]?.message?.content || "";
-    const parsed = JSON.parse(sanitizeJsonReply(rawContent));
+    
+    let parsed: any = {};
+    try {
+      parsed = JSON.parse(sanitizeJsonReply(rawContent));
+    } catch (e) {
+      console.warn("Aviso: Falha ao interpretar JSON do rascunho gerado pela IA. Usando fallback.", rawContent);
+    }
 
     return {
       criteria,
@@ -694,7 +706,14 @@ async function selectEmailCampaignAudience(params: {
 
     const data = await response.json();
     const rawContent = data.choices?.[0]?.message?.content || "";
-    const parsed = JSON.parse(sanitizeJsonReply(rawContent));
+    
+    let parsed: any = {};
+    try {
+      parsed = JSON.parse(sanitizeJsonReply(rawContent));
+    } catch (e) {
+      console.warn("Aviso: Falha ao interpretar JSON da audiência gerado pela IA. Usando fallback.", rawContent);
+    }
+    
     const validLeadIds = new Set(params.leads.map((lead) => lead.id));
     const selectedLeadIds = Array.isArray(parsed.selectedLeadIds)
       ? parsed.selectedLeadIds.filter((leadId: unknown): leadId is string => {

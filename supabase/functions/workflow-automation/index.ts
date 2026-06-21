@@ -194,11 +194,11 @@ async function getLeadsForTrigger(supabase: any, rule: WorkflowRule): Promise<Le
   const now = new Date();
   const today = now.toISOString().split("T")[0];
 
-  // Base query - filter by assigned user, not creator
+  // Base query - include leads owned by the user and leads explicitly assigned to them
   let query = supabase
     .from("leads")
     .select("*")
-    .eq("assigned_to", user_id)
+    .or(`assigned_to.eq.${user_id},user_id.eq.${user_id}`)
     .is("archived_at", null); // Only active leads
 
   switch (triggerType) {
