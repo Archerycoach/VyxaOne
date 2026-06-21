@@ -112,10 +112,29 @@ interface EmailCampaignAudienceResult {
   filterSummary: string;
 }
 
+interface DebugNote {
+  stage: string;
+  message: string;
+  details?: Record<string, unknown>;
+}
+
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const openAIApiKey = process.env.OPENAI_API_KEY;
+
+function addDebugNote(
+  debugNotes: DebugNote[] | undefined,
+  stage: string,
+  message: string,
+  details?: Record<string, unknown>,
+) {
+  if (!debugNotes) {
+    return;
+  }
+
+  debugNotes.push({ stage, message, details });
+}
 
 function normalizeText(value: string): string {
   return value
@@ -493,12 +512,14 @@ async function generateEmailCampaignDraft(
     properties?: PropertyContext[];
     developments?: DevelopmentContext[];
     filterSummaryOverride?: string | null;
+    debugNotes?: DebugNote[];
   } = {},
 ): Promise<EmailCampaignDraft> {
   const filterSummary = context.filterSummaryOverride?.trim() || buildCampaignFilterSummary(criteria);
   const fallback = buildFallbackDraft(criteria, agentName);
 
   if (!openAIApiKey) {
+    addDebugNote(context.debugNotes, "draft_no_openai_key", "A chave OPENAI_API_KEY não está configurada. Foi usado o rascunho fallback.");
     return {
       criteria,
       filterSummary,
@@ -572,16 +593,27 @@ async function generateEmailCampaignDraft(
     });
 
     if (!draftResponse.ok) {
-      throw new Error("Falha ao gerar rascunho IA");
+      const errorText = await draftResponse.text();
+      addDebugNote(context.debugNotes, "draft_openai_http_error", "O OpenAI devolveu erro ao gerar o rascunho.", {
+        status: draftResponse.status,
+        bodyPreview: errorText.slice(0, 500),
+      });
+      throw new Error(`Falha ao gerar rascunho IA (OpenAI ${draftResponse.status})`);
     }
 
     const draftData = await draftResponse.json();
     const rawContent = draftData.choices?.[0]?.message?.content || "";
-    
+
     let parsed: any = {};
     try {
       parsed = JSON.parse(sanitizeJsonReply(rawContent));
-    } catch (e) {
+    } catch {
+      addDebugNote(
+        context.debugNotes,
+        "draft_json_parse_fallback",
+        "A resposta do OpenAI para o rascunho não veio em JSON válido. Foi usado fallback parcial.",
+        { rawContentPreview: rawContent.slice(0, 500) },
+      );
       console.warn("Aviso: Falha ao interpretar JSON do rascunho gerado pela IA. Usando fallback.", rawContent);
     }
 
@@ -602,6 +634,9 @@ async function generateEmailCampaignDraft(
       })),
     };
   } catch (error) {
+    addDebugNote(context.debugNotes, "draft_generation_catch", "Foi usado o rascunho fallback devido a um erro interno.", {
+      errorMessage: error instanceof Error ? error.message : "Unknown error",
+    });
     console.error("Erro ao gerar rascunho de campanha por IA:", error);
 
     return {
@@ -629,6 +664,7 @@ async function selectEmailCampaignAudience(params: {
   previousRecipientLeadIds?: string[];
   properties?: PropertyContext[];
   developments?: DevelopmentContext[];
+  debugNotes?: DebugNote[];
 }): Promise<EmailCampaignAudienceResult> {
   const fallbackLeadIds = getFallbackAudienceLeadIds(
     params.leads,
@@ -640,6 +676,7 @@ async function selectEmailCampaignAudience(params: {
     (params.previousRecipientLeadIds?.length ? "a audiência afinada na conversa" : "o perfil pedido");
 
   if (!openAIApiKey) {
+    addDebugNote(params.debugNotes, "audience_no_openai_key", "A chave OPENAI_API_KEY não está configurada. Foi usada a audiência fallback.");
     return {
       selectedLeadIds: fallbackLeadIds,
       filterSummary: fallbackSummary,
@@ -701,19 +738,30 @@ async function selectEmailCampaignAudience(params: {
     });
 
     if (!response.ok) {
-      throw new Error("Falha ao selecionar audiência da campanha");
+      const errorText = await response.text();
+      addDebugNote(params.debugNotes, "audience_openai_http_error", "O OpenAI devolveu erro ao selecionar a audiência.", {
+        status: response.status,
+        bodyPreview: errorText.slice(0, 500),
+      });
+      throw new Error(`Falha ao selecionar audiência da campanha (OpenAI ${response.status})`);
     }
 
     const data = await response.json();
     const rawContent = data.choices?.[0]?.message?.content || "";
-    
+
     let parsed: any = {};
     try {
       parsed = JSON.parse(sanitizeJsonReply(rawContent));
-    } catch (e) {
+    } catch {
+      addDebugNote(
+        params.debugNotes,
+        "audience_json_parse_fallback",
+        "A resposta do OpenAI para a audiência não veio em JSON válido. Foi usada a audiência fallback.",
+        { rawContentPreview: rawContent.slice(0, 500) },
+      );
       console.warn("Aviso: Falha ao interpretar JSON da audiência gerado pela IA. Usando fallback.", rawContent);
     }
-    
+
     const validLeadIds = new Set(params.leads.map((lead) => lead.id));
     const selectedLeadIds = Array.isArray(parsed.selectedLeadIds)
       ? parsed.selectedLeadIds.filter((leadId: unknown): leadId is string => {
@@ -729,6 +777,9 @@ async function selectEmailCampaignAudience(params: {
           : fallbackSummary,
     };
   } catch (error) {
+    addDebugNote(params.debugNotes, "audience_selection_catch", "Foi usada a audiência fallback devido a um erro interno.", {
+      errorMessage: error instanceof Error ? error.message : "Unknown error",
+    });
     console.error("Erro ao selecionar audiência da campanha por IA:", error);
     return {
       selectedLeadIds: fallbackLeadIds,
@@ -1095,6 +1146,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).end();
   }
 
+  let debugRequested = false;
+  let debugFlow = "chat";
+  let debugMessagePreview = "";
+  const debugNotes: DebugNote[] = [];
+  const buildDebugPayload = (stage: string, extras: Record<string, unknown> = {}) => ({
+    flow: debugFlow,
+    stage,
+    messagePreview: debugMessagePreview,
+    notes: debugNotes,
+    ...extras,
+  });
+
   try {
     const token = req.headers.authorization?.split(" ")[1];
     if (!token) {
@@ -1118,7 +1181,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       },
     });
 
-    const { message, history, campaignContext } = req.body as {
+    const { message, history, campaignContext, debug } = req.body as {
       message?: string;
       history?: ChatMessage[];
       campaignContext?: {
@@ -1127,7 +1190,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         previousDraft?: Pick<EmailCampaignDraft, "subject" | "htmlBody" | "textBody"> | null;
         recipientLeadIds?: string[] | null;
       };
+      debug?: boolean;
     };
+
+    debugRequested = Boolean(debug);
+    debugFlow = campaignContext?.mode === "email_campaign" ? "email_campaign" : "chat";
+    debugMessagePreview = typeof message === "string" ? message.slice(0, 240) : "";
 
     if (!message || typeof message !== "string") {
       return res.status(400).json({ error: "Message is required" });
@@ -1155,6 +1223,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const requestedBedrooms = detectRequestedBedrooms(message);
 
     if (isEmailCampaignRequest(message) || campaignContext?.mode === "email_campaign") {
+      addDebugNote(debugRequested ? debugNotes : undefined, "email_campaign_start", "Início da geração de campanha por email.", {
+        activeLeads: activeLeads.length,
+        requestedBedrooms,
+        previousRecipientLeadIds: campaignContext?.recipientLeadIds?.length || 0,
+      });
+
       const baseCriteria = campaignContext?.criteria || null;
       const criteria: EmailCampaignCriteria = {
         location: resolveRequestedLocation(message, activeLeads) ?? baseCriteria?.location ?? null,
@@ -1209,6 +1283,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         available_units: development.available_units,
       }));
 
+      addDebugNote(debugRequested ? debugNotes : undefined, "email_campaign_context_loaded", "Contexto carregado para a campanha.", {
+        properties: properties.length,
+        developments: developments.length,
+      });
+
       const audienceSelection = await selectEmailCampaignAudience({
         message,
         criteria,
@@ -1217,21 +1296,48 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         previousRecipientLeadIds: campaignContext?.recipientLeadIds || [],
         properties,
         developments,
+        debugNotes: debugRequested ? debugNotes : undefined,
       });
       const matchedLeadIdSet = new Set(audienceSelection.selectedLeadIds);
       const matchedLeads = activeLeads.filter((lead) => matchedLeadIdSet.has(lead.id));
 
       const emailableLeads = matchedLeads.filter((lead) => Boolean(lead.email));
 
+      addDebugNote(debugRequested ? debugNotes : undefined, "email_campaign_audience_selected", "Audiência resolvida para a campanha.", {
+        matchedLeads: matchedLeads.length,
+        emailableLeads: emailableLeads.length,
+        filterSummary: audienceSelection.filterSummary,
+      });
+
       if (matchedLeads.length === 0) {
         return res.status(200).json({
           reply: `Não encontrei leads com ${audienceSelection.filterSummary || "o perfil pedido"} na tua carteira ativa.`,
+          debug: debugRequested
+            ? buildDebugPayload("email_campaign_no_matches", {
+                criteria,
+                counts: {
+                  activeLeads: activeLeads.length,
+                  matchedLeads: matchedLeads.length,
+                  emailableLeads: emailableLeads.length,
+                },
+              })
+            : undefined,
         });
       }
 
       if (emailableLeads.length === 0) {
         return res.status(200).json({
           reply: `Encontrei ${matchedLeads.length} leads com ${audienceSelection.filterSummary || "o perfil pedido"}, mas nenhuma tem email registado.`,
+          debug: debugRequested
+            ? buildDebugPayload("email_campaign_no_emailable_leads", {
+                criteria,
+                counts: {
+                  activeLeads: activeLeads.length,
+                  matchedLeads: matchedLeads.length,
+                  emailableLeads: emailableLeads.length,
+                },
+              })
+            : undefined,
         });
       }
 
@@ -1246,6 +1352,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           properties,
           developments,
           filterSummaryOverride: audienceSelection.filterSummary,
+          debugNotes: debugRequested ? debugNotes : undefined,
         },
       );
 
@@ -1259,6 +1366,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(200).json({
         reply: formatEmailCampaignReply(campaignDraft),
         campaignDraft,
+        debug: debugRequested
+          ? buildDebugPayload("email_campaign_success", {
+              criteria,
+              counts: {
+                activeLeads: activeLeads.length,
+                matchedLeads: matchedLeads.length,
+                emailableLeads: emailableLeads.length,
+                properties: properties.length,
+                developments: developments.length,
+              },
+            })
+          : undefined,
       });
     }
 
@@ -1575,6 +1694,9 @@ ${developments.length > 0
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
     console.error("Chat error:", error);
-    return res.status(500).json({ error: errorMessage });
+    return res.status(500).json({
+      error: errorMessage,
+      debug: debugRequested ? buildDebugPayload("handler_exception", { errorMessage }) : undefined,
+    });
   }
 }

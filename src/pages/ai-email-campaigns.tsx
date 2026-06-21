@@ -47,6 +47,17 @@ interface CampaignConversationMessage {
   content: string;
 }
 
+interface EmailCampaignDebugInfo {
+  requestPrompt: string;
+  requestHistoryCount: number;
+  apiStatus: number | null;
+  contentType: string | null;
+  errorMessage: string | null;
+  backendDebug: unknown;
+  rawResponseText: string | null;
+  updatedAt: string;
+}
+
 const AI_DRAFT_STORAGE_KEY = "vyxa-ai-email-campaign-draft";
 
 export default function AiEmailCampaignsPage() {
@@ -64,6 +75,8 @@ export default function AiEmailCampaignsPage() {
   const [latestCampaignDraft, setLatestCampaignDraft] = useState<EmailCampaignDraft | null>(null);
   const [conversationHistory, setConversationHistory] = useState<CampaignConversationMessage[]>([]);
   const [refinementPrompt, setRefinementPrompt] = useState("");
+  const [debugMode, setDebugMode] = useState(false);
+  const [debugInfo, setDebugInfo] = useState<EmailCampaignDebugInfo | null>(null);
 
   useEffect(() => {
     const loadConnectionStatus = async () => {
@@ -165,35 +178,86 @@ export default function AiEmailCampaignsPage() {
     options?: { resetConversation?: boolean; draftContext?: EmailCampaignDraft | null },
   ) => {
     const historyPayload = options?.resetConversation ? [] : conversationHistory;
-    const response = await fetch("/api/gpt/chat", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${(await supabase.auth.getSession()).data.session?.access_token || ""}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        message: prompt,
-        history: historyPayload,
-        campaignContext: buildCampaignContext(options?.draftContext ?? latestCampaignDraft),
-      }),
-    });
+    const requestPayload = {
+      message: prompt,
+      history: historyPayload,
+      campaignContext: buildCampaignContext(options?.draftContext ?? latestCampaignDraft),
+      debug: debugMode,
+    };
 
-    const data = await response.json();
+    try {
+      const response = await fetch("/api/gpt/chat", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${(await supabase.auth.getSession()).data.session?.access_token || ""}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(requestPayload),
+      });
 
-    if (!response.ok) {
-      throw new Error(data.error || data.message || "Falha ao gerar rascunho");
+      const contentType = response.headers.get("content-type");
+      let data: any = null;
+      let rawResponseText: string | null = null;
+
+      if (contentType?.includes("application/json")) {
+        data = await response.json();
+      } else {
+        rawResponseText = await response.text();
+        if (rawResponseText) {
+          try {
+            data = JSON.parse(rawResponseText);
+          } catch {
+            data = null;
+          }
+        }
+      }
+
+      const nextDebugInfo: EmailCampaignDebugInfo = {
+        requestPrompt: prompt,
+        requestHistoryCount: historyPayload.length,
+        apiStatus: response.status,
+        contentType: contentType || null,
+        errorMessage: response.ok
+          ? null
+          : data?.error || data?.message || rawResponseText || `Falha ao gerar rascunho (HTTP ${response.status})`,
+        backendDebug: data && typeof data === "object" ? data.debug ?? null : null,
+        rawResponseText,
+        updatedAt: new Date().toISOString(),
+      };
+
+      setDebugInfo(nextDebugInfo);
+
+      if (!response.ok) {
+        throw new Error(nextDebugInfo.errorMessage || "Falha ao gerar rascunho");
+      }
+
+      if (!data || typeof data !== "object") {
+        throw new Error("A resposta do servidor não veio em JSON válido.");
+      }
+
+      const assistantMessage = data.reply || "";
+      const updatedHistory: CampaignConversationMessage[] = [
+        ...(options?.resetConversation ? [] : conversationHistory),
+        { role: "user", content: prompt },
+        { role: "assistant", content: assistantMessage },
+      ];
+
+      setConversationHistory(updatedHistory);
+      setAssistantReply(assistantMessage);
+      setLatestCampaignDraft(data.campaignDraft || null);
+    } catch (error) {
+      setDebugInfo((current) => ({
+        requestPrompt: current?.requestPrompt || prompt,
+        requestHistoryCount: current?.requestHistoryCount ?? historyPayload.length,
+        apiStatus: current?.apiStatus ?? null,
+        contentType: current?.contentType ?? null,
+        errorMessage: error instanceof Error ? error.message : "Falha desconhecida no pedido.",
+        backendDebug: current?.backendDebug ?? null,
+        rawResponseText: current?.rawResponseText ?? null,
+        updatedAt: new Date().toISOString(),
+      }));
+      throw error;
     }
-
-    const assistantMessage = data.reply || "";
-    const updatedHistory: CampaignConversationMessage[] = [
-      ...(options?.resetConversation ? [] : conversationHistory),
-      { role: "user", content: prompt },
-      { role: "assistant", content: assistantMessage },
-    ];
-
-    setConversationHistory(updatedHistory);
-    setAssistantReply(assistantMessage);
-    setLatestCampaignDraft(data.campaignDraft || null);
   };
 
   const openDraftInBulkMessages = () => {
@@ -248,6 +312,7 @@ export default function AiEmailCampaignsPage() {
     setAssistantReply("");
     setConversationHistory([]);
     setLatestCampaignDraft(null);
+    setDebugInfo(null);
 
     try {
       const {
@@ -334,9 +399,14 @@ export default function AiEmailCampaignsPage() {
                   A IA prepara o email e segmenta as leads segundo a procura. O envio continua sempre com revisão manual.
                 </p>
               </div>
-              <Link href="/ai-agent">
-                <Button variant="outline">Voltar ao Agente IA</Button>
-              </Link>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" onClick={() => setDebugMode((value) => !value)}>
+                  {debugMode ? "Ocultar debug" : "Mostrar debug"}
+                </Button>
+                <Link href="/ai-agent">
+                  <Button variant="outline">Voltar ao Agente IA</Button>
+                </Link>
+              </div>
             </div>
 
             <Alert className="border-indigo-200 bg-indigo-50">
@@ -344,6 +414,84 @@ export default function AiEmailCampaignsPage() {
                 Este fluxo usa o agente IA para segmentar, rever e refinar o email antes do envio. Quando abrir em Mensagens, segue a seleção exata das leads escolhidas pelo agente.
               </AlertDescription>
             </Alert>
+
+            {debugMode && (
+              <Card className="border-amber-200 bg-amber-50">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    Debug da geração do email
+                    <Badge variant="outline">
+                      {debugInfo?.errorMessage ? "Último erro" : "À espera de execução"}
+                    </Badge>
+                  </CardTitle>
+                  <CardDescription>
+                    Use este painel para perceber se a falha vem da autenticação, da API, do parse da resposta ou da IA. Reproduza o erro e envie-me estes detalhes.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4 text-sm">
+                  {!debugInfo ? (
+                    <p className="text-gray-700">
+                      Ainda não há dados de debug. Clique em “Gerar email com IA” para registar o próximo pedido.
+                    </p>
+                  ) : (
+                    <>
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <div className="rounded-lg border bg-white p-3">
+                          <p className="font-medium text-gray-900">Estado HTTP</p>
+                          <p className="mt-1 text-gray-700">{debugInfo.apiStatus ?? "sem resposta"}</p>
+                        </div>
+                        <div className="rounded-lg border bg-white p-3">
+                          <p className="font-medium text-gray-900">Content-Type</p>
+                          <p className="mt-1 break-all text-gray-700">{debugInfo.contentType || "desconhecido"}</p>
+                        </div>
+                        <div className="rounded-lg border bg-white p-3">
+                          <p className="font-medium text-gray-900">Mensagens no histórico</p>
+                          <p className="mt-1 text-gray-700">{debugInfo.requestHistoryCount}</p>
+                        </div>
+                        <div className="rounded-lg border bg-white p-3">
+                          <p className="font-medium text-gray-900">Última atualização</p>
+                          <p className="mt-1 break-all text-gray-700">{debugInfo.updatedAt}</p>
+                        </div>
+                      </div>
+
+                      <div className="rounded-lg border bg-white p-3">
+                        <p className="font-medium text-gray-900">Prompt enviado</p>
+                        <pre className="mt-2 whitespace-pre-wrap break-words text-xs text-gray-700">
+                          {debugInfo.requestPrompt}
+                        </pre>
+                      </div>
+
+                      {debugInfo.errorMessage && (
+                        <div className="rounded-lg border border-red-200 bg-red-50 p-3">
+                          <p className="font-medium text-red-800">Erro visível</p>
+                          <pre className="mt-2 whitespace-pre-wrap break-words text-xs text-red-900">
+                            {debugInfo.errorMessage}
+                          </pre>
+                        </div>
+                      )}
+
+                      {debugInfo.rawResponseText && (
+                        <div className="rounded-lg border bg-white p-3">
+                          <p className="font-medium text-gray-900">Resposta bruta do servidor</p>
+                          <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words text-xs text-gray-700">
+                            {debugInfo.rawResponseText}
+                          </pre>
+                        </div>
+                      )}
+
+                      {debugInfo.backendDebug && (
+                        <div className="rounded-lg border bg-white p-3">
+                          <p className="font-medium text-gray-900">Debug devolvido pela API</p>
+                          <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words text-xs text-gray-700">
+                            {JSON.stringify(debugInfo.backendDebug, null, 2)}
+                          </pre>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            )}
 
             {isCheckingConnection ? (
               <Card>
