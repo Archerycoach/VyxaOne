@@ -1048,6 +1048,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       supabase.from("lead_interactions").select("id, type, content, created_at, lead_id").eq("user_id", user.id).order("created_at", { ascending: false }).limit(40)
     ]);
 
+    // Detailed debug logging for properties query
+    console.log("[AI Chat Debug] User ID:", user.id);
+    console.log("[AI Chat Debug] Properties query result:", {
+      success: properties !== null,
+      count: (properties || []).length,
+      sample: (properties || []).slice(0, 2),
+    });
+    console.log("[AI Chat Debug] Developments query result:", {
+      success: developments !== null,
+      count: (developments || []).length,
+      sample: (developments || []).slice(0, 2),
+    });
+
     const contextStr = JSON.stringify({
       agent_name: profile?.full_name || "Agente",
       current_time: new Date().toISOString(),
@@ -1069,22 +1082,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       developments_count: (developments || []).length,
       interactions_count: (interactions || []).length,
     });
-
-    // Check if user is asking about properties/developments when arrays are empty
-    const asksAboutProperties = /(im[oó]veis?|propriedades?|apartamentos?|moradias?|portfolio|carteira de im[oó]veis)/i.test(message);
-    const asksAboutDevelopments = /(empreendimentos?|desenvolvimentos?|projetos?)/i.test(message);
-    
-    if (asksAboutProperties && (!properties || properties.length === 0)) {
-      return res.status(200).json({
-        reply: `Ainda não tens imóveis criados na tua carteira.\n\nPara eu conseguir analisar e cruzar imóveis com leads, vai a **Imóveis** no menu e cria pelo menos 1 imóvel.\n\nDepois posso:\n- Analisar preços e características\n- Sugerir matches com leads\n- Fazer análises de mercado\n- Comparar imóveis entre si`
-      });
-    }
-    
-    if (asksAboutDevelopments && (!developments || developments.length === 0)) {
-      return res.status(200).json({
-        reply: `Ainda não tens empreendimentos criados na tua carteira.\n\nPara eu conseguir analisar e cruzar empreendimentos com leads, vai a **Empreendimentos** no menu e cria pelo menos 1 empreendimento.\n\nDepois posso:\n- Analisar tipologias e disponibilidades\n- Sugerir leads adequadas para cada projeto\n- Comparar preços e características\n- Acompanhar o progresso de vendas`
-      });
-    }
 
     const systemMessage: ChatMessage = {
       role: "system",

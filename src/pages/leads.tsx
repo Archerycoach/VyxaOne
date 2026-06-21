@@ -247,7 +247,7 @@ export default function Leads() {
               <Button 
                 onClick={() => setShowForm(true)} 
                 className="bg-purple-600 hover:bg-purple-700"
-                disabled={isImporting || isLoading}
+                disabled={isImporting}
               >
                 <Plus className="h-5 w-5 mr-2" />
                 Nova Lead
