@@ -26,10 +26,10 @@ export async function logEmailInteraction(data: EmailInteractionData): Promise<v
 
     // 1. Create interaction record
     const interactionData: any = {
-      type: "email",
-      date: now,
+      interaction_type: "email",
+      interaction_date: now,
       outcome: outcome,
-      notes: `Assunto: ${data.subject}${data.body ? `\n\n${data.body.substring(0, 500)}` : ""}`,
+      content: `Assunto: ${data.subject}${data.body ? `\n\n${data.body.substring(0, 500)}` : ""}`,
       user_id: data.userId,
     };
 
@@ -83,10 +83,10 @@ export async function logEmailInteractionServer(
 
     // 1. Create interaction record
     const interactionData: any = {
-      type: "email",
-      date: now,
+      interaction_type: "email",
+      interaction_date: now,
       outcome: outcome,
-      notes: `Assunto: ${data.subject}${data.body ? `\n\n${data.body.substring(0, 500)}` : ""}`,
+      content: `Assunto: ${data.subject}${data.body ? `\n\n${data.body.substring(0, 500)}` : ""}`,
       user_id: data.userId,
     };
 
