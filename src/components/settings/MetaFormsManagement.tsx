@@ -377,8 +377,13 @@ export function MetaFormsManagement({ integrationId, integrationName }: MetaForm
   const handleResubscribeWebhook = async () => {
     try {
       setResubscribing(true);
+      
+      console.log("[Frontend] Attempting to resubscribe webhook for integration:", integrationId);
+      
       const session = await supabase.auth.getSession();
       const token = session.data.session?.access_token;
+
+      console.log("[Frontend] Sending request with integration_id:", integrationId);
 
       const response = await fetch("/api/meta/resubscribe-webhook", {
         method: "POST",
@@ -392,6 +397,8 @@ export function MetaFormsManagement({ integrationId, integrationName }: MetaForm
       });
 
       const data = await response.json();
+      
+      console.log("[Frontend] Response received:", data);
 
       if (data.success) {
         toast({
