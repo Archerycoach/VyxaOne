@@ -396,6 +396,101 @@ export const fetchPageForms = async (pageId: string, accessToken: string) => {
 };
 
 // ============================================
+// WEBHOOK MANAGEMENT
+// ============================================
+
+export const subscribePageToWebhook = async (
+  pageId: string,
+  pageAccessToken: string
+): Promise<{ success: boolean; error?: string }> => {
+  try {
+    const response = await fetch(
+      `https://graph.facebook.com/v18.0/${pageId}/subscribed_apps`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          access_token: pageAccessToken,
+          subscribed_fields: ["leadgen"],
+        }),
+      }
+    );
+
+    const data = await response.json();
+    
+    if (data.error) {
+      console.error("[Meta] Webhook subscription error:", data.error);
+      return { success: false, error: data.error.message };
+    }
+
+    return { success: data.success === true };
+  } catch (error) {
+    console.error("[Meta] Error subscribing to webhook:", error);
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : "Unknown error" 
+    };
+  }
+};
+
+export const getPageWebhookSubscriptions = async (
+  pageId: string,
+  pageAccessToken: string
+): Promise<{ subscribed: boolean; fields: string[] }> => {
+  try {
+    const response = await fetch(
+      `https://graph.facebook.com/v18.0/${pageId}/subscribed_apps?access_token=${pageAccessToken}`
+    );
+
+    const data = await response.json();
+    
+    if (data.data && data.data.length > 0) {
+      const app = data.data[0];
+      return {
+        subscribed: true,
+        fields: app.subscribed_fields || [],
+      };
+    }
+
+    return { subscribed: false, fields: [] };
+  } catch (error) {
+    console.error("[Meta] Error checking webhook subscriptions:", error);
+    return { subscribed: false, fields: [] };
+  }
+};
+
+export const resubscribeIntegrationWebhook = async (integrationId: string) => {
+  const { data: integration, error: fetchError } = await supabase
+    .from("meta_integrations" as any)
+    .select("*")
+    .eq("id", integrationId)
+    .single();
+
+  if (fetchError || !integration) {
+    throw new Error("Integration not found");
+  }
+
+  const integrationData = integration as any;
+
+  const result = await subscribePageToWebhook(
+    integrationData.page_id,
+    integrationData.page_access_token
+  );
+
+  if (result.success) {
+    await supabase
+      .from("meta_integrations" as any)
+      .update({
+        webhook_subscribed: true,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", integrationId);
+  }
+
+  return result;
+};
+
+// ============================================
 // WEBHOOK LOGGING
 // ============================================
 

@@ -80,6 +80,7 @@ export function MetaFormsManagement({ integrationId, integrationName }: MetaForm
   const [sellerStages, setSellerStages] = useState<PipelineStage[]>([]);
   const [properties, setProperties] = useState<PropertyOption[]>([]);
   const [developments, setDevelopments] = useState<DevelopmentOption[]>([]);
+  const [resubscribing, setResubscribing] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -350,6 +351,45 @@ export function MetaFormsManagement({ integrationId, integrationName }: MetaForm
     }
   };
 
+  const handleResubscribeWebhook = async () => {
+    try {
+      setResubscribing(true);
+      const session = await supabase.auth.getSession();
+      const token = session.data.session?.access_token;
+
+      const response = await fetch("/api/meta/resubscribe-webhook", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          integration_id: integrationId,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        toast({
+          title: "✓ Webhook Re-subscrito",
+          description: "A sincronização em tempo real está agora ativa. Novas leads da Meta chegarão automaticamente.",
+        });
+      } else {
+        throw new Error(data.error || "Falha ao re-subscrever webhook");
+      }
+    } catch (error: any) {
+      console.error("Error resubscribing webhook:", error);
+      toast({
+        title: "Erro ao Re-subscrever",
+        description: error.message || "Erro ao re-subscrever webhook. Verifique as suas permissões na Meta.",
+        variant: "destructive",
+      });
+    } finally {
+      setResubscribing(false);
+    }
+  };
+
   if (loading) {
     return (
       <Card>
@@ -364,6 +404,67 @@ export function MetaFormsManagement({ integrationId, integrationName }: MetaForm
 
   return (
     <div className="space-y-4">
+      {/* Webhook Diagnostics Card */}
+      <Card className="border-blue-200 bg-blue-50/50">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center">
+                <RefreshCw className="h-4 w-4 text-blue-600" />
+              </div>
+              <div>
+                <CardTitle className="text-base">Sincronização em Tempo Real</CardTitle>
+                <CardDescription className="text-xs mt-0.5">
+                  Webhook para captura automática de leads
+                </CardDescription>
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleResubscribeWebhook}
+              disabled={resubscribing}
+              className="bg-white"
+            >
+              {resubscribing ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  A subscrever...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Re-subscrever Webhook
+                </>
+              )}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <div className="rounded-lg bg-white border p-3 space-y-2">
+            <div className="flex items-start gap-2 text-sm">
+              <CheckCircle className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
+              <div>
+                <p className="font-medium text-gray-900">Como funciona a sincronização em tempo real:</p>
+                <ul className="text-gray-600 text-xs mt-1 space-y-1 ml-1">
+                  <li>• A Meta envia webhooks quando há uma nova lead nos seus formulários</li>
+                  <li>• As leads aparecem automaticamente na plataforma sem sincronização manual</li>
+                  <li>• Se as leads não estiverem a chegar automaticamente, clique em "Re-subscrever Webhook"</li>
+                </ul>
+              </div>
+            </div>
+            
+            <div className="pt-2 mt-2 border-t">
+              <p className="text-xs text-gray-600">
+                <strong>Nota:</strong> Se a sincronização em tempo real não funcionar após re-subscrever, 
+                verifique se a sua aplicação Meta tem permissões de <code className="bg-gray-100 px-1 py-0.5 rounded text-xs">leads_retrieval</code> 
+                e se o webhook está configurado para o evento <code className="bg-gray-100 px-1 py-0.5 rounded text-xs">leadgen</code>.
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader className="flex flex-row items-center justify-between pb-4">
           <div className="space-y-1.5">

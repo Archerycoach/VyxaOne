@@ -52,6 +52,13 @@ export default async function handler(
       });
     }
 
+    // Get user's profile for email signature
+    const { data: profile }: { data: any } = await supabase
+      .from("profiles")
+      .select("email_signature_text, email_signature_image_url")
+      .eq("id", user.id)
+      .single();
+
     const { to, subject, html, text, cc, bcc, attachments, sendCopyToSender } = req.body;
     const { leadId, contactId } = req.body;
 
@@ -86,6 +93,26 @@ export default async function handler(
       ? Array.from(new Set([...normalizedBcc, copyRecipient]))
       : normalizedBcc;
 
+    // Build email signature HTML
+    let signatureHtml = "";
+    if (profile?.email_signature_text || profile?.email_signature_image_url) {
+      signatureHtml = '<div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #e5e7eb;">';
+      
+      if (profile.email_signature_text) {
+        const textWithBreaks = profile.email_signature_text.replace(/\n/g, '<br>');
+        signatureHtml += `<p style="margin: 0; white-space: pre-wrap;">${textWithBreaks}</p>`;
+      }
+      
+      if (profile.email_signature_image_url) {
+        signatureHtml += `<img src="${profile.email_signature_image_url}" alt="Assinatura" style="max-width: 100%; height: auto; margin-top: 10px;">`;
+      }
+      
+      signatureHtml += '</div>';
+    }
+
+    // Add signature to HTML content
+    const finalHtml = html ? `${html}${signatureHtml}` : signatureHtml;
+
     // Create transporter with user's SMTP settings
     const transporter = nodemailer.createTransport({
       host: smtpSettings.smtp_host,
@@ -108,7 +135,7 @@ export default async function handler(
       to,
       subject,
       text,
-      html,
+      html: finalHtml,
       cc: normalizedCc.length > 0 ? normalizedCc : undefined,
       bcc: finalBcc.length > 0 ? finalBcc : undefined,
       attachments: formattedAttachments.length > 0 ? formattedAttachments : undefined,

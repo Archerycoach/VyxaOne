@@ -516,6 +516,10 @@ export default function Settings() {
               <Mail className="h-4 w-4 mr-2" />
               SMTP
             </TabsTrigger>
+            <TabsTrigger value="signature">
+              <FileText className="h-4 w-4 mr-2" />
+              Assinatura
+            </TabsTrigger>
             <TabsTrigger value="meta">
               <Facebook className="h-4 w-4 mr-2" />
               Meta
@@ -727,6 +731,86 @@ export default function Settings() {
                   >
                     <Mail className="mr-2 h-4 w-4" />
                     Configurar SMTP
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="signature">
+            <Card>
+              <CardHeader>
+                <CardTitle>Assinatura de Email</CardTitle>
+                <CardDescription>
+                  Configure a assinatura que aparecerá automaticamente em todos os seus emails
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="signatureText">Assinatura em Texto</Label>
+                    <textarea
+                      id="signatureText"
+                      className="w-full min-h-[120px] p-3 border rounded-md"
+                      value={profile?.email_signature_text || ""}
+                      onChange={e => setProfile(prev => prev ? {...prev, email_signature_text: e.target.value} : null)}
+                      placeholder={`Ex:\nMelhores cumprimentos,\n${profile?.full_name || "Seu Nome"}\n${profile?.phone || "Telefone"}\n${profile?.email || "email@exemplo.pt"}`}
+                    />
+                    <p className="text-xs text-slate-500">
+                      Esta assinatura será adicionada no final de todos os emails que enviar através da plataforma.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="signatureImage">URL da Imagem da Assinatura (Opcional)</Label>
+                    <Input
+                      id="signatureImage"
+                      type="url"
+                      value={profile?.email_signature_image_url || ""}
+                      onChange={e => setProfile(prev => prev ? {...prev, email_signature_image_url: e.target.value} : null)}
+                      placeholder="https://exemplo.pt/assinatura.png"
+                    />
+                    <p className="text-xs text-slate-500">
+                      Cole o URL de uma imagem da sua assinatura (logotipo, banner, etc.). A imagem será incluída abaixo do texto.
+                    </p>
+                  </div>
+
+                  {profile?.email_signature_image_url && (
+                    <div className="p-4 border rounded-lg bg-slate-50">
+                      <p className="text-sm font-medium mb-2">Pré-visualização da Imagem:</p>
+                      <img 
+                        src={profile.email_signature_image_url} 
+                        alt="Assinatura" 
+                        className="max-w-full h-auto max-h-32 rounded border"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).style.display = 'none';
+                        }}
+                      />
+                    </div>
+                  )}
+
+                  <div className="p-4 border rounded-lg bg-blue-50">
+                    <p className="text-sm font-medium mb-2">Pré-visualização Completa:</p>
+                    <div className="bg-white p-4 rounded border">
+                      <p className="text-sm whitespace-pre-wrap">
+                        {profile?.email_signature_text || "Sua assinatura aparecerá aqui..."}
+                      </p>
+                      {profile?.email_signature_image_url && (
+                        <img 
+                          src={profile.email_signature_image_url} 
+                          alt="Assinatura" 
+                          className="mt-2 max-w-full h-auto max-h-32"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display = 'none';
+                          }}
+                        />
+                      )}
+                    </div>
+                  </div>
+
+                  <Button onClick={updateProfile} disabled={loading}>
+                    <Save className="mr-2 h-4 w-4" />
+                    {loading ? "A guardar..." : "Guardar Assinatura"}
                   </Button>
                 </div>
               </CardContent>

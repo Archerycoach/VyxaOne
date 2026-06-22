@@ -1,4 +1,3 @@
- 
 export type Json =
   | string
   | number
@@ -820,6 +819,8 @@ export type Database = {
           email_daily_events: boolean | null
           email_daily_tasks: boolean | null
           email_new_lead_assigned: boolean | null
+          email_signature_image_url: string | null
+          email_signature_text: string | null
           full_name: string | null
           id: string
           is_active: boolean | null
@@ -837,6 +838,8 @@ export type Database = {
           email_daily_events?: boolean | null
           email_daily_tasks?: boolean | null
           email_new_lead_assigned?: boolean | null
+          email_signature_image_url?: string | null
+          email_signature_text?: string | null
           full_name?: string | null
           id: string
           is_active?: boolean | null
@@ -854,6 +857,8 @@ export type Database = {
           email_daily_events?: boolean | null
           email_daily_tasks?: boolean | null
           email_new_lead_assigned?: boolean | null
+          email_signature_image_url?: string | null
+          email_signature_text?: string | null
           full_name?: string | null
           id?: string
           is_active?: boolean | null
