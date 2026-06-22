@@ -22,7 +22,8 @@ import {
   ArrowRight,
   Plus,
   Save,
-  Wand2
+  Wand2,
+  AlertCircle
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -85,6 +86,8 @@ export function MetaFormsManagement({ integrationId, integrationName }: MetaForm
   const [dailySyncHour, setDailySyncHour] = useState(6);
   const [lastDailySyncAt, setLastDailySyncAt] = useState<string | null>(null);
   const [savingDailySync, setSavingDailySync] = useState(false);
+  const [checkingStatus, setCheckingStatus] = useState(false);
+  const [webhookStatus, setWebhookStatus] = useState<any>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -452,6 +455,55 @@ export function MetaFormsManagement({ integrationId, integrationName }: MetaForm
     }
   };
 
+  const handleCheckWebhookStatus = async () => {
+    try {
+      setCheckingStatus(true);
+      const session = await supabase.auth.getSession();
+      const token = session.data.session?.access_token;
+
+      const response = await fetch("/api/meta/webhook-status", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          integration_id: integrationId,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setWebhookStatus(data);
+        
+        if (!data.webhook.subscribed || !data.webhook.has_leadgen) {
+          toast({
+            title: "⚠️ Webhook Não Subscrito",
+            description: "O webhook não está ativo na Meta. Clique em 'Re-subscrever Webhook' para resolver.",
+            variant: "destructive",
+          });
+        } else {
+          toast({
+            title: "✓ Webhook Ativo",
+            description: `Webhook subscrito corretamente. ${data.logs.total_received} eventos recebidos.`,
+          });
+        }
+      } else {
+        throw new Error(data.error || "Failed to check status");
+      }
+    } catch (error: any) {
+      console.error("Error checking webhook status:", error);
+      toast({
+        title: "Erro",
+        description: error.message || "Erro ao verificar status do webhook.",
+        variant: "destructive",
+      });
+    } finally {
+      setCheckingStatus(false);
+    }
+  };
+
   if (loading) {
     return (
       <Card>
@@ -467,63 +519,134 @@ export function MetaFormsManagement({ integrationId, integrationName }: MetaForm
   return (
     <div className="space-y-4">
       {/* Webhook Diagnostics Card */}
-      <Card className="border-blue-200 bg-blue-50/50">
+      <Card className="border-yellow-200 bg-yellow-50/50">
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center">
-                <RefreshCw className="h-4 w-4 text-blue-600" />
+              <div className="h-8 w-8 rounded-full bg-yellow-100 flex items-center justify-center">
+                <AlertCircle className="h-4 w-4 text-yellow-600" />
               </div>
               <div>
-                <CardTitle className="text-base">Sincronização em Tempo Real</CardTitle>
+                <CardTitle className="text-base">Diagnóstico de Webhook</CardTitle>
                 <CardDescription className="text-xs mt-0.5">
-                  Webhook para captura automática de leads
+                  Verificar se os webhooks da Meta estão a funcionar
                 </CardDescription>
               </div>
             </div>
             <Button
               variant="outline"
               size="sm"
-              onClick={handleResubscribeWebhook}
-              disabled={resubscribing}
+              onClick={handleCheckWebhookStatus}
+              disabled={checkingStatus}
               className="bg-white"
             >
-              {resubscribing ? (
+              {checkingStatus ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  A subscrever...
+                  A verificar...
                 </>
               ) : (
                 <>
-                  <RefreshCw className="h-4 w-4 mr-2" />
-                  Re-subscrever Webhook
+                  <AlertCircle className="h-4 w-4 mr-2" />
+                  Verificar Status
                 </>
               )}
             </Button>
           </div>
         </CardHeader>
-        <CardContent className="pt-0">
-          <div className="rounded-lg bg-white border p-3 space-y-2">
-            <div className="flex items-start gap-2 text-sm">
-              <CheckCircle className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
-              <div>
-                <p className="font-medium text-gray-900">Como funciona a sincronização em tempo real:</p>
-                <ul className="text-gray-600 text-xs mt-1 space-y-1 ml-1">
-                  <li>• A Meta envia webhooks quando há uma nova lead nos seus formulários</li>
-                  <li>• As leads aparecem automaticamente na plataforma sem sincronização manual</li>
-                  <li>• Se as leads não estiverem a chegar automaticamente, clique em "Re-subscrever Webhook"</li>
-                </ul>
+        <CardContent className="pt-0 space-y-4">
+          {webhookStatus && (
+            <>
+              {/* Webhook Status */}
+              <div className="rounded-lg bg-white border p-4 space-y-3">
+                <div className="flex items-start gap-2">
+                  {webhookStatus.webhook.subscribed && webhookStatus.webhook.has_leadgen ? (
+                    <CheckCircle className="h-5 w-5 text-green-600 mt-0.5 shrink-0" />
+                  ) : (
+                    <XCircle className="h-5 w-5 text-red-600 mt-0.5 shrink-0" />
+                  )}
+                  <div className="flex-1">
+                    <p className="font-medium text-gray-900">
+                      {webhookStatus.webhook.subscribed && webhookStatus.webhook.has_leadgen 
+                        ? "✅ Webhook Subscrito Corretamente" 
+                        : "❌ Webhook NÃO Subscrito"}
+                    </p>
+                    <p className="text-xs text-gray-600 mt-1">
+                      Campos subscritos na Meta: {webhookStatus.webhook.subscribed_fields.join(", ") || "Nenhum"}
+                    </p>
+                    {webhookStatus.webhook.subscribed && !webhookStatus.webhook.has_leadgen && (
+                      <p className="text-xs text-red-600 mt-1 font-medium">
+                        ⚠️ O campo "leadgen" não está subscrito! Clique em "Re-subscrever Webhook" acima.
+                      </p>
+                    )}
+                  </div>
+                </div>
               </div>
-            </div>
-            
-            <div className="pt-2 mt-2 border-t">
-              <p className="text-xs text-gray-600">
-                <strong>Nota:</strong> Se a sincronização em tempo real não funcionar após re-subscrever, 
-                verifique se a sua aplicação Meta tem permissões de <code className="bg-gray-100 px-1 py-0.5 rounded text-xs">leads_retrieval</code> 
-                e se o webhook está configurado para o evento <code className="bg-gray-100 px-1 py-0.5 rounded text-xs">leadgen</code>.
+
+              {/* Recent Webhooks Received */}
+              <div className="rounded-lg bg-white border p-4 space-y-2">
+                <p className="font-medium text-gray-900 text-sm">
+                  📡 Últimos Webhooks Recebidos ({webhookStatus.logs.total_received})
+                </p>
+                {webhookStatus.logs.recent.length > 0 ? (
+                  <div className="space-y-1">
+                    {webhookStatus.logs.recent.slice(0, 5).map((log: any) => (
+                      <div key={log.id} className="flex items-center justify-between text-xs py-1 border-b last:border-0">
+                        <div className="flex items-center gap-2">
+                          {log.status === "success" ? (
+                            <CheckCircle className="h-3 w-3 text-green-600" />
+                          ) : (
+                            <XCircle className="h-3 w-3 text-red-600" />
+                          )}
+                          <span className="text-gray-700">
+                            Lead ID: {log.leadgen_id?.substring(0, 10)}...
+                          </span>
+                        </div>
+                        <span className="text-gray-500">
+                          {new Date(log.created_at).toLocaleString("pt-PT")}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-600">
+                    ⚠️ Nenhum webhook recebido recentemente. Se criou uma lead teste na Meta e não apareceu aqui, o problema está na subscrição do webhook.
+                  </p>
+                )}
+              </div>
+
+              {/* Recent Leads Created */}
+              <div className="rounded-lg bg-white border p-4 space-y-2">
+                <p className="font-medium text-gray-900 text-sm">
+                  👥 Leads Recentes da Meta ({webhookStatus.leads.total})
+                </p>
+                {webhookStatus.leads.recent.length > 0 ? (
+                  <div className="space-y-1">
+                    {webhookStatus.leads.recent.map((lead: any) => (
+                      <div key={lead.id} className="flex items-center justify-between text-xs py-1 border-b last:border-0">
+                        <span className="text-gray-700 font-medium">{lead.name}</span>
+                        <span className="text-gray-500">
+                          {new Date(lead.created_at).toLocaleString("pt-PT")}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-600">
+                    Nenhuma lead da Meta foi criada ainda.
+                  </p>
+                )}
+              </div>
+            </>
+          )}
+
+          {!webhookStatus && (
+            <div className="rounded-lg bg-white border p-4">
+              <p className="text-sm text-gray-600 text-center">
+                Clique em "Verificar Status" para diagnosticar o webhook
               </p>
             </div>
-          </div>
+          )}
         </CardContent>
       </Card>
 
