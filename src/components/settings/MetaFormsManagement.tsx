@@ -1152,6 +1152,7 @@ export function MetaFormsManagement({ integrationId, integrationName }: MetaForm
                             <SelectItem value="budget_max">Orçamento Máximo</SelectItem>
                             <SelectItem value="desired_price">Preço Desejado</SelectItem>
                             <SelectItem value="buy_purpose">Objetivo (Habitação/Investimento)</SelectItem>
+                            <SelectItem value="purchase_timeline">Prazo de Compra</SelectItem>
                             <SelectItem value="location_preference">Localização / Zona</SelectItem>
                             <SelectItem value="property_type">Tipo de Imóvel</SelectItem>
                             <SelectItem value="lead_type">Tipo de Cliente (buyer/seller)</SelectItem>

@@ -12,6 +12,7 @@ interface EmailInteractionData {
   subject: string;
   body?: string;
   outcome?: string;
+  updateLastContact?: boolean; // Defaults to true, if false it won't update the lead's last_contact_date
 }
 
 /**
@@ -50,7 +51,7 @@ export async function logEmailInteraction(data: EmailInteractionData): Promise<v
     }
 
     // 2. Update lead's last_contact_date and last_contact_outcome
-    if (data.leadId) {
+    if (data.leadId && data.updateLastContact !== false) {
       const { error: leadError } = await supabase
         .from("leads")
         .update({
@@ -106,7 +107,7 @@ export async function logEmailInteractionServer(
     }
 
     // 2. Update lead's last_contact_date and last_contact_outcome
-    if (data.leadId) {
+    if (data.leadId && data.updateLastContact !== false) {
       const { error: leadError } = await supabaseAdmin
         .from("leads")
         .update({

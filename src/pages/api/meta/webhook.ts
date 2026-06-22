@@ -776,11 +776,18 @@ async function executeAutoResponderWorkflows(userId: string, lead: any) {
         attachments,
       });
       
-      // Note: We deliberately do NOT log autoresponder emails as interactions
-      // to avoid marking new leads as "recently contacted" when they first arrive
-      // Only manual emails sent by the user should count as recent interactions
+      // Log the autoresponder email as an interaction so it shows in history,
+      // but explicitly tell it NOT to update last_contact_date so the lead doesn't turn blue
+      await logEmailInteractionServer(supabase, {
+        leadId: lead.id,
+        userId: userId,
+        subject: subject,
+        body: body.replace(/\n/g, ""),
+        outcome: "Email automático enviado",
+        updateLastContact: false, // <-- This prevents the blue highlight!
+      });
 
-      console.log(`✅ Autoresponder sent to ${lead.email} (not logged as interaction)`);
+      console.log(`✅ Autoresponder sent to ${lead.email} (logged silently)`);
       
       // Log execution history
       await supabase.from("workflow_executions").insert({

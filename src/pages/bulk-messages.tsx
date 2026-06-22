@@ -793,6 +793,8 @@ export default function BulkMessages() {
                 text: textContent,
                 attachments: emailAttachments.length > 0 ? emailAttachments : undefined,
                 sendCopyToSender: sendCopyToSelf && Boolean(copyEmail),
+                leadId: recipient.type === "lead" ? recipient.id.replace("lead-", "") : undefined,
+                contactId: recipient.type === "contact" ? recipient.id.replace("contact-", "") : undefined,
               }),
             });
 
