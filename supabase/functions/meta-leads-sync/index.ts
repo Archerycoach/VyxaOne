@@ -18,18 +18,35 @@ serve(async (req) => {
       console.log("No authorization header and not a cron invocation - allowing for testing");
     }
 
-    // Get all active integrations
+    // Get all active integrations with auto_daily_sync enabled
     const { data: integrations, error: integrationsError } = await supabase
       .from("meta_integrations")
       .select("*")
       .eq("is_active", true)
-      .eq("webhook_subscribed", true);
+      .eq("auto_daily_sync", true);
 
     if (integrationsError) {
       throw integrationsError;
     }
 
-    console.log(`Found ${integrations?.length || 0} active integrations`);
+    console.log(`Found ${integrations?.length || 0} active integrations with auto_daily_sync enabled`);
+    
+    if (!integrations || integrations.length === 0) {
+      console.log("No integrations with auto_daily_sync enabled. Exiting.");
+      return new Response(
+        JSON.stringify({
+          success: true,
+          message: "No integrations configured for automatic daily sync",
+          results: {
+            integrations_processed: 0,
+            leads_fetched: 0,
+            leads_created: 0,
+            leads_skipped: 0,
+          },
+        }),
+        { headers: { "Content-Type": "application/json" } }
+      );
+    }
 
     let totalFetched = 0;
     let totalCreated = 0;
@@ -248,6 +265,14 @@ serve(async (req) => {
     }
 
     console.log(`Sync completed: ${totalCreated} leads created, ${totalSkipped} skipped, ${totalFetched} total fetched`);
+
+    // Update last_daily_sync_at for all processed integrations
+    for (const integration of integrations || []) {
+      await supabase
+        .from("meta_integrations")
+        .update({ last_daily_sync_at: new Date().toISOString() })
+        .eq("id", integration.id);
+    }
 
     return new Response(
       JSON.stringify({

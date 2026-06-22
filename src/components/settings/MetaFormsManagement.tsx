@@ -81,13 +81,36 @@ export function MetaFormsManagement({ integrationId, integrationName }: MetaForm
   const [properties, setProperties] = useState<PropertyOption[]>([]);
   const [developments, setDevelopments] = useState<DevelopmentOption[]>([]);
   const [resubscribing, setResubscribing] = useState(false);
+  const [autoDailySync, setAutoDailySync] = useState(false);
+  const [dailySyncHour, setDailySyncHour] = useState(6);
+  const [lastDailySyncAt, setLastDailySyncAt] = useState<string | null>(null);
+  const [savingDailySync, setSavingDailySync] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
     loadForms();
     loadPipelineStages();
     loadAssociationOptions();
+    loadIntegrationSettings();
   }, [integrationId]);
+
+  const loadIntegrationSettings = async () => {
+    try {
+      const { data: integration }: { data: any } = await supabase
+        .from("meta_integrations" as any)
+        .select("auto_daily_sync, daily_sync_hour, last_daily_sync_at")
+        .eq("id", integrationId)
+        .single();
+
+      if (integration) {
+        setAutoDailySync(integration.auto_daily_sync || false);
+        setDailySyncHour(integration.daily_sync_hour || 6);
+        setLastDailySyncAt(integration.last_daily_sync_at);
+      }
+    } catch (error) {
+      console.error("Error loading integration settings:", error);
+    }
+  };
 
   const loadPipelineStages = async () => {
     try {
@@ -390,6 +413,38 @@ export function MetaFormsManagement({ integrationId, integrationName }: MetaForm
     }
   };
 
+  const handleSaveDailySync = async () => {
+    try {
+      setSavingDailySync(true);
+      
+      const { error } = await supabase
+        .from("meta_integrations" as any)
+        .update({
+          auto_daily_sync: autoDailySync,
+          daily_sync_hour: dailySyncHour,
+        })
+        .eq("id", integrationId);
+
+      if (error) throw error;
+
+      toast({
+        title: "✓ Configuração Guardada",
+        description: autoDailySync 
+          ? `Sincronização automática ativada para as ${dailySyncHour}h diariamente.`
+          : "Sincronização automática desativada.",
+      });
+    } catch (error: any) {
+      console.error("Error saving daily sync settings:", error);
+      toast({
+        title: "Erro",
+        description: "Erro ao guardar configurações de sincronização.",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingDailySync(false);
+    }
+  };
+
   if (loading) {
     return (
       <Card>
@@ -460,6 +515,109 @@ export function MetaFormsManagement({ integrationId, integrationName }: MetaForm
                 verifique se a sua aplicação Meta tem permissões de <code className="bg-gray-100 px-1 py-0.5 rounded text-xs">leads_retrieval</code> 
                 e se o webhook está configurado para o evento <code className="bg-gray-100 px-1 py-0.5 rounded text-xs">leadgen</code>.
               </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Daily Sync Configuration Card */}
+      <Card className="border-green-200 bg-green-50/50">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="h-8 w-8 rounded-full bg-green-100 flex items-center justify-center">
+                <RefreshCw className="h-4 w-4 text-green-600" />
+              </div>
+              <div>
+                <CardTitle className="text-base">Sincronização Automática Diária</CardTitle>
+                <CardDescription className="text-xs mt-0.5">
+                  Backup que garante que nenhuma lead seja perdida
+                </CardDescription>
+              </div>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-0 space-y-4">
+          <div className="rounded-lg bg-white border p-4 space-y-4">
+            <div className="flex items-start gap-2 text-sm">
+              <CheckCircle className="h-4 w-4 text-green-600 mt-0.5 shrink-0" />
+              <div>
+                <p className="font-medium text-gray-900">Sistema de backup automático:</p>
+                <ul className="text-gray-600 text-xs mt-1 space-y-1 ml-1">
+                  <li>• Sincroniza automaticamente uma vez por dia às horas configuradas</li>
+                  <li>• Captura leads que possam não ter chegado via webhook em tempo real</li>
+                  <li>• Funciona independentemente do webhook (dupla segurança)</li>
+                  <li>• Deteta e ignora leads duplicadas automaticamente</li>
+                </ul>
+              </div>
+            </div>
+
+            <div className="pt-3 border-t space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <Switch
+                    id="auto-daily-sync"
+                    checked={autoDailySync}
+                    onCheckedChange={setAutoDailySync}
+                  />
+                  <Label htmlFor="auto-daily-sync" className="cursor-pointer">
+                    <span className="font-medium">Ativar sincronização automática diária</span>
+                  </Label>
+                </div>
+                <Button
+                  size="sm"
+                  onClick={handleSaveDailySync}
+                  disabled={savingDailySync}
+                  className="bg-green-600 hover:bg-green-700"
+                >
+                  {savingDailySync ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      A guardar...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="h-4 w-4 mr-2" />
+                      Guardar
+                    </>
+                  )}
+                </Button>
+              </div>
+
+              {autoDailySync && (
+                <div className="space-y-2 pl-11">
+                  <Label htmlFor="sync-hour" className="text-sm">
+                    Hora da sincronização (formato 24h):
+                  </Label>
+                  <Select
+                    value={dailySyncHour.toString()}
+                    onValueChange={(value) => setDailySyncHour(parseInt(value))}
+                  >
+                    <SelectTrigger id="sync-hour" className="w-48">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Array.from({ length: 24 }, (_, i) => i).map((hour) => (
+                        <SelectItem key={hour} value={hour.toString()}>
+                          {hour.toString().padStart(2, '0')}:00
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-gray-500">
+                    A sincronização será executada diariamente à hora selecionada (hora do servidor UTC).
+                  </p>
+                </div>
+              )}
+
+              {lastDailySyncAt && (
+                <div className="pt-2 border-t">
+                  <p className="text-xs text-gray-600">
+                    <strong>Última sincronização automática:</strong>{" "}
+                    {new Date(lastDailySyncAt).toLocaleString("pt-PT")}
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         </CardContent>

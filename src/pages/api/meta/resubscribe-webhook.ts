@@ -26,9 +26,9 @@ export default async function handler(
       return res.status(401).json({ error: "Invalid token" });
     }
 
-    const { integrationId } = req.body;
+    const { integration_id } = req.body;
     
-    if (!integrationId) {
+    if (!integration_id) {
       return res.status(400).json({ error: "Integration ID is required" });
     }
 
@@ -36,14 +36,14 @@ export default async function handler(
     const { data: integration, error: fetchError } = await supabase
       .from("meta_integrations")
       .select("user_id")
-      .eq("id", integrationId)
+      .eq("id", integration_id)
       .single();
 
     if (fetchError || !integration || integration.user_id !== user.id) {
       return res.status(404).json({ error: "Integration not found" });
     }
 
-    const result = await resubscribeIntegrationWebhook(integrationId);
+    const result = await resubscribeIntegrationWebhook(integration_id);
 
     if (result.success) {
       return res.status(200).json({ 
