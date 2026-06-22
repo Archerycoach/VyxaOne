@@ -196,7 +196,8 @@ export default async function handler(
                 mappedData.email = value;
               } else if (fieldName.includes("phone") || fieldName.includes("telefone")) {
                 mappedData.phone = value;
-              } else if (fieldName.includes("budget") || fieldName.includes("orcamento") || fieldName.includes("orçamento") || fieldName.includes("investir") || fieldName.includes("valor") || fieldName.includes("preço") || fieldName.includes("preco")) {
+              } else if (fieldName.includes("budget") || fieldName.includes("orcamento") || fieldName.includes("orçamento") || fieldName.includes("investir") || fieldName.includes("valor") || fieldName.includes("preço") || fieldName.includes("preco") || fieldName.includes("máximo") || fieldName.includes("maximo")) {
+                console.log(`[Budget Mapping] Found budget field: ${metaField} = ${value}`);
                 mappedData.budget_max = value;
               } else if (fieldName.includes("location") || fieldName.includes("bairro") || fieldName.includes("zona") || fieldName === "city") {
                 mappedData.location_preference = value;
@@ -259,6 +260,7 @@ export default async function handler(
           for (const field of integerFields) {
             if (mappedData[field] !== undefined && typeof mappedData[field] === 'string') {
               if (['budget', 'budget_min', 'budget_max', 'price'].includes(field)) {
+                console.log(`[Budget Parsing] Field: ${field}, Original value: ${mappedData[field]}`);
                 // Special parsing for currency and budgets (e.g. "150.000€ - 200.000€", "Até 250.000")
                 // Remove spaces and dots (used as thousand separators in PT)
                 let cleanStr = mappedData[field].replace(/\s/g, '').replace(/\./g, '');
@@ -278,6 +280,7 @@ export default async function handler(
                     finalValue = finalValue * 1000;
                   }
                   
+                  console.log(`[Budget Parsing] Field: ${field}, Parsed value: ${finalValue}`);
                   mappedData[field] = finalValue;
                 } else {
                   // If no numbers found, preserve original text in notes
@@ -773,16 +776,11 @@ async function executeAutoResponderWorkflows(userId: string, lead: any) {
         attachments,
       });
       
-      // Log the autoresponder email as an interaction
-      await logEmailInteractionServer(supabase, {
-        leadId: lead.id,
-        userId: userId,
-        subject: subject,
-        body: body.replace(/\n/g, ""),
-        outcome: "Email automático enviado",
-      });
+      // Note: We deliberately do NOT log autoresponder emails as interactions
+      // to avoid marking new leads as "recently contacted" when they first arrive
+      // Only manual emails sent by the user should count as recent interactions
 
-      console.log(`✅ Autoresponder sent to ${lead.email}`);
+      console.log(`✅ Autoresponder sent to ${lead.email} (not logged as interaction)`);
       
       // Log execution history
       await supabase.from("workflow_executions").insert({

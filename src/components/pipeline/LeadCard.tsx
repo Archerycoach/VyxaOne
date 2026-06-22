@@ -565,6 +565,12 @@ export function LeadCard({ lead, onClick, onDelete, onConvertSuccess }: LeadCard
                 <span>Tem imóvel p/ vender</span>
               </div>
             )}
+            {lead.purchase_timeline && (
+              <div className="flex items-center gap-2">
+                <span>📅</span>
+                <span>{lead.purchase_timeline}</span>
+              </div>
+            )}
           </div>
         )}
 

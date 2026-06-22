@@ -49,6 +49,7 @@ export function LeadForm({ initialData, onSuccess, onCancel }: LeadFormProps) {
     needs_financing: false,
     has_property_to_sell: false,
     buy_purpose: "",
+    purchase_timeline: "",
     // Seller specific fields
     bathrooms: "",
     property_area: "",
@@ -74,6 +75,7 @@ export function LeadForm({ initialData, onSuccess, onCancel }: LeadFormProps) {
         needs_financing: initialData.needs_financing || false,
         has_property_to_sell: initialData.has_property_to_sell || false,
         buy_purpose: initialData.buy_purpose || "",
+        purchase_timeline: (initialData as any).purchase_timeline || "",
         bathrooms: initialData.bathrooms ? initialData.bathrooms.toString() : "",
         property_area: initialData.property_area ? initialData.property_area.toString() : "",
         desired_price: initialData.desired_price ? initialData.desired_price.toString() : "",
@@ -116,6 +118,7 @@ export function LeadForm({ initialData, onSuccess, onCancel }: LeadFormProps) {
         needs_financing: formData.needs_financing,
         has_property_to_sell: formData.has_property_to_sell,
         buy_purpose: formData.buy_purpose || null,
+        purchase_timeline: formData.purchase_timeline || null,
         desired_price: parseFloat(formData.desired_price) || 0,
         contact_id: null,
         custom_fields: {},
@@ -314,6 +317,16 @@ export function LeadForm({ initialData, onSuccess, onCancel }: LeadFormProps) {
                     </SelectContent>
                   </Select>
                 </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="purchase_timeline">Prazo de Compra</Label>
+                <Input
+                  id="purchase_timeline"
+                  value={formData.purchase_timeline}
+                  onChange={(e) => setFormData({ ...formData, purchase_timeline: e.target.value })}
+                  placeholder="Ex: Imediato, 3-6 meses, 1 ano, etc."
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
