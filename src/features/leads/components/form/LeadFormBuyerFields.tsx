@@ -23,6 +23,7 @@ interface LeadFormBuyerFieldsProps {
     is_development?: boolean;
     development_name?: string;
     buy_purpose?: string;
+    purchase_timeline?: string;
   };
   onChange: (field: string, value: any) => void;
 }
@@ -73,6 +74,21 @@ export function LeadFormBuyerFields({ formData, onChange }: LeadFormBuyerFieldsP
             </SelectContent>
           </Select>
         </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label htmlFor="purchase_timeline">Prazo de Compra</Label>
+          <Input
+            id="purchase_timeline"
+            value={formData.purchase_timeline || ""}
+            onChange={(e) => onChange("purchase_timeline", e.target.value)}
+            placeholder="Ex: Imediato, 3-6 meses, 1 ano, etc."
+          />
+        </div>
+        
+        {/* Placeholder for grid alignment */}
+        <div className="space-y-2"></div>
       </div>
 
       <div className="grid grid-cols-2 gap-4">

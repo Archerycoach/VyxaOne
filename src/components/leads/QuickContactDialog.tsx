@@ -125,7 +125,6 @@ export function QuickContactDialog({
       // 2. Update the lead with last contact info
       await updateLead(leadId, {
         last_contact_date: new Date().toISOString(),
-        last_contact_outcome: outcomeValue,
       });
 
       toast({

@@ -9,25 +9,37 @@ const CACHE_TTL = 5 * 60 * 1000; // 5 minutos
 
 // Use standard types from Database
 type BaseLead = Database["public"]["Tables"]["leads"]["Row"];
-type Lead = BaseLead & { last_contact_outcome?: string | null; purchase_timeline?: string | null };
+type Contact = Database["public"]["Tables"]["contacts"]["Row"];
+type Lead = BaseLead;
 type BaseLeadInsert = Database["public"]["Tables"]["leads"]["Insert"];
-type LeadInsert = BaseLeadInsert & { last_contact_outcome?: string | null };
+type LeadInsert = BaseLeadInsert;
 type BaseLeadUpdate = Database["public"]["Tables"]["leads"]["Update"];
-type LeadUpdate = BaseLeadUpdate & { last_contact_outcome?: string | null };
+type LeadUpdate = BaseLeadUpdate;
 type Interaction = Database["public"]["Tables"]["interactions"]["Row"];
 type InteractionInsert = Database["public"]["Tables"]["interactions"]["Insert"];
 
+// LeadWithDetails extends the full Lead type from database
+// and adds optional relational fields fetched via joins
 export interface LeadWithDetails extends Lead {
+  contact?: {
+    id: string;
+    name: string;
+    email: string | null;
+    phone: string | null;
+  };
   assigned_user?: {
     id: string;
     full_name: string;
     email: string;
-  } | null;
-  interactions?: Interaction[];
-  is_development?: boolean | null;
-  development_name?: string | null;
+  };
+  interaction_count?: number;
+  // Explicitly include fields that may not be in base Lead type yet
+  purchase_timeline?: string | null;
   has_property_to_sell?: boolean | null;
   buy_purpose?: string | null;
+  is_development?: boolean | null;
+  development_name?: string | null;
+  last_contact_outcome?: string | null;
 }
 
 export type LeadWithContacts = LeadWithDetails;
@@ -85,7 +97,7 @@ export const getLeads = async (useCache = false) => {
       .from("leads")
       .select(`
         *,
-        contact:contacts!leads_contact_id_fkey (*),
+        contact:contacts!leads_contact_id_fkey(id, name, email, phone),
         assigned_user:profiles!leads_assigned_to_fkey(id, full_name, email)
       `)
       .is("archived_at", null);

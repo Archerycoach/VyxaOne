@@ -112,6 +112,7 @@ export function LeadFormContainer({ initialData, onSuccess, onCancel }: LeadForm
     is_development: false,
     development_name: "",
     buy_purpose: "",
+    purchase_timeline: "",
     // Seller specific fields
     bathrooms: "",
     property_area: "",
@@ -138,6 +139,7 @@ export function LeadFormContainer({ initialData, onSuccess, onCancel }: LeadForm
         is_development: initialData.is_development || false,
         development_name: initialData.development_name || "",
         buy_purpose: initialData.buy_purpose || "",
+        purchase_timeline: initialData.purchase_timeline || "",
         bathrooms: initialData.bathrooms ? initialData.bathrooms.toString() : "",
         property_area: initialData.property_area ? initialData.property_area.toString() : "",
         desired_price: initialData.desired_price ? initialData.desired_price.toString() : "",
@@ -206,6 +208,7 @@ export function LeadFormContainer({ initialData, onSuccess, onCancel }: LeadForm
         needs_financing: formData.needs_financing,
         has_property_to_sell: formData.has_property_to_sell,
         buy_purpose: formData.buy_purpose || null,
+        purchase_timeline: formData.purchase_timeline || null,
         // Campos de vendedor
         bathrooms: parsedBathrooms,
         property_area: parsedPropertyArea,
