@@ -58,7 +58,8 @@ export type ContactOpportunityMatchStatus = "new" | "task_created" | "contacted"
 export interface ContactAlertRequest {
   id: string;
   user_id: string;
-  contact_id: string;
+  contact_id?: string;
+  lead_id?: string;
   name: string;
   opportunity_type: ContactAlertOpportunityType;
   preferred_cities: string[];
@@ -72,6 +73,10 @@ export interface ContactAlertRequest {
   notification_channel: ContactAlertNotificationChannel;
   is_active: boolean;
   notes?: string | null;
+  auto_send_email?: boolean;
+  send_cc?: boolean;
+  email_subject?: string;
+  email_body?: string;
   last_synced_at?: string | null;
   created_at: string;
   updated_at: string;
@@ -81,7 +86,8 @@ export interface ContactOpportunityMatch {
   id: string;
   user_id: string;
   request_id: string;
-  contact_id: string;
+  contact_id?: string;
+  lead_id?: string;
   property_id?: string | null;
   development_id?: string | null;
   opportunity_type: "property" | "development";

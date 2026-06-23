@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { createClient } from "@supabase/supabase-js";
+import nodemailer from "nodemailer";
 import {
   isRecentOpportunity,
   scoreDevelopmentAgainstRequest,
@@ -110,6 +111,64 @@ async function maybeCreateAgendaTask(
   return true;
 }
 
+async function maybeSendMatchEmail(
+  supabase: any,
+  request: ContactAlertRequest,
+  entity: { name: string; email: string | null; phone: string | null },
+  opportunityTitle: string
+) {
+  if (!request.auto_send_email || !entity.email) return;
+
+  try {
+    const { data: smtpSettings } = await (supabase
+      .from("user_smtp_settings" as any)
+      .select("*")
+      .eq("user_id", request.user_id)
+      .eq("is_active", true)
+      .single() as any);
+
+    if (!smtpSettings) return;
+
+    const transporter = nodemailer.createTransport({
+      host: smtpSettings.smtp_host,
+      port: smtpSettings.smtp_port,
+      secure: smtpSettings.smtp_secure,
+      auth: { user: smtpSettings.smtp_username, pass: smtpSettings.smtp_password },
+      tls: { rejectUnauthorized: smtpSettings.reject_unauthorized ?? true },
+    });
+
+    let subject = request.email_subject || "Nova Oportunidade Encontrada";
+    let body = request.email_body || "Encontrámos uma nova oportunidade que corresponde ao seu pedido.";
+
+    const replacer = (str: string) => str
+      .replace(/\{nome\}/g, entity.name)
+      .replace(/\{email\}/g, entity.email || "")
+      .replace(/\{telefone\}/g, entity.phone || "")
+      .replace(/\{empreendimento\}/g, opportunityTitle);
+
+    subject = replacer(subject);
+    body = replacer(body);
+
+    const mailOptions: any = {
+      from: `"${smtpSettings.from_name}" <${smtpSettings.from_email}>`,
+      to: entity.email,
+      subject,
+      html: body.replace(/\n/g, "<br>")
+    };
+
+    if (request.send_cc) {
+      const { data: userProfile } = await supabase.from("profiles").select("email").eq("id", request.user_id).single();
+      if (userProfile?.email) {
+        mailOptions.cc = userProfile.email;
+      }
+    }
+
+    await transporter.sendMail(mailOptions);
+  } catch (error) {
+    console.error("Failed to send auto match email from cron:", error);
+  }
+}
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "GET" && req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
@@ -147,16 +206,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
     }
 
-    const contactIds = [...new Set(activeRequests.map((request) => request.contact_id))];
+    const contactIds = [...new Set(activeRequests.map((request) => request.contact_id).filter(Boolean))];
+    const leadIds = [...new Set(activeRequests.map((request) => request.lead_id).filter(Boolean))];
     const requestIds = activeRequests.map((request) => request.id);
 
     const [
       contactsResult,
+      leadsResult,
       propertiesResult,
       developmentsResult,
       existingMatchesResult,
     ] = await Promise.all([
-      (supabase.from("contacts").select("id, name").in("id", contactIds) as any),
+      (supabase.from("contacts").select("id, name, email, phone").in("id", contactIds) as any),
+      (supabase.from("leads").select("id, name, email, phone").in("id", leadIds) as any),
       (supabase
         .from("properties")
         .select("id, user_id, title, city, district, address, property_type, typology, price, bedrooms, created_at, listed_at")
@@ -174,9 +236,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     ]);
 
     if (contactsResult.error) throw contactsResult.error;
+    if (leadsResult.error) throw leadsResult.error;
     if (propertiesResult.error) throw propertiesResult.error;
     if (developmentsResult.error) throw developmentsResult.error;
     if (existingMatchesResult.error) throw existingMatchesResult.error;
+
+    const entities = new Map<string, { name: string; email: string | null; phone: string | null }>();
+    ((contactsResult.data ?? []) as any[]).forEach(c => entities.set(c.id, { name: c.name, email: c.email, phone: c.phone }));
+    ((leadsResult.data ?? []) as any[]).forEach(l => entities.set(l.id, { name: l.name, email: l.email, phone: l.phone }));
 
     const contactNames = new Map<string, string>(
       ((contactsResult.data ?? []) as Array<{ id: string; name: string }>).map((contact) => [contact.id, contact.name]),
@@ -206,7 +273,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     for (const request of activeRequests) {
       try {
-        const contactName = contactNames.get(request.contact_id) ?? "Contacto";
+        const entityId = request.lead_id || request.contact_id;
+        const entity = entityId ? entities.get(entityId) : undefined;
+        const entityFallback = entity || { name: "Cliente", email: null, phone: null };
+        const contactName = entityFallback.name;
+        
         const requestMatches = matchesByRequest.get(request.id) ?? [];
         const existingPropertyIds = new Set(requestMatches.map((match) => match.property_id).filter(Boolean));
         const existingDevelopmentIds = new Set(requestMatches.map((match) => match.development_id).filter(Boolean));
@@ -269,17 +340,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
           matchesCreated += 1;
 
+          const opportunityTitle = property.title || "Imóvel";
+
           const taskCreated = await maybeCreateAgendaTask(
             supabase,
             { ...(data as ExistingMatchRow), opportunity_type: "property" },
             request,
             contactName,
-            property.title,
+            opportunityTitle,
           );
 
           if (taskCreated) {
             tasksCreated += 1;
           }
+
+          await maybeSendMatchEmail(supabase, request, entityFallback, opportunityTitle);
         }
 
         for (const development of userDevelopments) {
@@ -321,17 +396,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
           matchesCreated += 1;
 
+          const opportunityTitle = development.name || "Empreendimento";
+
           const taskCreated = await maybeCreateAgendaTask(
             supabase,
             { ...(data as ExistingMatchRow), opportunity_type: "development" },
             request,
             contactName,
-            development.name,
+            opportunityTitle,
           );
 
           if (taskCreated) {
             tasksCreated += 1;
           }
+
+          await maybeSendMatchEmail(supabase, request, entityFallback, opportunityTitle);
         }
 
         await (supabase

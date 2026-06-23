@@ -109,7 +109,7 @@ serve(async (req) => {
               .eq("lead_id", lead.id)
               .gte("executed_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()) // Last 24h
               .limit(1)
-              .single();
+              .maybeSingle();
 
             if (recentExecution) {
               console.log(`⏭️  Skipping lead ${lead.id} - already executed in last 24h`);
@@ -342,6 +342,21 @@ async function createTaskAction(supabase: any, rule: WorkflowRule, lead: Lead) {
   const title = replaceVariables(config.subject || "Tarefa automática", lead);
   const description = replaceVariables(config.body || "", lead);
   
+  // Deduplication check
+  const { data: existingTask } = await supabase
+    .from("tasks")
+    .select("id")
+    .eq("title", title)
+    .eq("related_lead_id", lead.id)
+    .gte("created_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+    .limit(1)
+    .maybeSingle();
+
+  if (existingTask) {
+    console.log(`✅ Skipped duplicate task creation: ${title}`);
+    return;
+  }
+
   const dueDate = new Date();
   dueDate.setDate(dueDate.getDate() + 1);
 
@@ -362,6 +377,21 @@ async function createCalendarEventAction(supabase: any, rule: WorkflowRule, lead
   const config = rule.action_config || {};
   const title = replaceVariables(config.subject || "Evento automático", lead);
   const description = replaceVariables(config.body || "", lead);
+
+  // Deduplication check
+  const { data: existingEvent } = await supabase
+    .from("calendar_events")
+    .select("id")
+    .eq("title", title)
+    .eq("lead_id", lead.id)
+    .gte("created_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+    .limit(1)
+    .maybeSingle();
+
+  if (existingEvent) {
+    console.log(`✅ Skipped duplicate calendar event creation: ${title}`);
+    return;
+  }
 
   const startTime = new Date();
   startTime.setDate(startTime.getDate() + 1);

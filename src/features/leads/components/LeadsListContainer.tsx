@@ -7,7 +7,7 @@ import { LeadDetailsDialog } from "@/components/leads/LeadDetailsDialog";
 import { AssignLeadDialog } from "@/components/leads/AssignLeadDialog";
 import { QuickContactDialog } from "@/components/leads/QuickContactDialog";
 import { Button } from "@/components/ui/button";
-import { LayoutGrid, List, Edit, MoreVertical, Eye, Mail, MessageSquare, MessageCircle, CalendarDays, StickyNote, UserCheck, Phone, Trash2, Users } from "lucide-react";
+import { LayoutGrid, List, Edit, MoreVertical, Eye, Mail, MessageSquare, MessageCircle, CalendarDays, StickyNote, UserCheck, Phone, Trash2, Users, ArrowDownAZ, ArrowUpZA } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,6 +27,7 @@ import { getLeadColumnsConfig, type LeadColumnConfig } from "@/services/leadColu
 import type { LeadWithContacts } from "@/services/leadsService";
 import { supabase } from "@/integrations/supabase/client";
 import { getLeadRecentInteractionState } from "@/lib/leadInteractionHighlight";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 // Default columns configuration for fallback
 const DEFAULT_COLUMNS: LeadColumnConfig[] = [
@@ -55,6 +56,8 @@ export function LeadsListContainer({
 
   // Filter states
   const [showArchived, setShowArchived] = useState(false);
+  const [sortField, setSortField] = useState<string>("created_at");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   
   // View mode state with localStorage persistence
   const [viewMode, setViewMode] = useState<"grid" | "list">(() => {
@@ -133,6 +136,25 @@ export function LeadsListContainer({
     setFilterType,
     filteredLeads,
   } = useLeadFilters(leads);
+
+  const sortedLeads = useMemo(() => {
+    return [...filteredLeads].sort((a, b) => {
+      let aVal: any = a[sortField as keyof typeof a];
+      let bVal: any = b[sortField as keyof typeof b];
+
+      if (sortField === "created_at" || sortField === "last_contact_date") {
+        aVal = aVal ? new Date(aVal).getTime() : 0;
+        bVal = bVal ? new Date(bVal).getTime() : 0;
+      } else if (typeof aVal === "string") {
+        aVal = aVal.toLowerCase();
+        bVal = (bVal || "").toLowerCase();
+      }
+
+      if (aVal < bVal) return sortOrder === "asc" ? -1 : 1;
+      if (aVal > bVal) return sortOrder === "asc" ? 1 : -1;
+      return 0;
+    });
+  }, [filteredLeads, sortField, sortOrder]);
 
   // CRUD operations - destructure from useLeadMutations hook
   const { convertLead, deleteLead, restore, permanentlyDelete, assign } = useLeadMutations(stableRefetch);
@@ -627,26 +649,53 @@ export function LeadsListContainer({
           onToggleArchived={() => setShowArchived(!showArchived)}
         />
         
-        {/* View Mode Toggle */}
-        <div className="flex gap-1 border rounded-lg p-1 bg-gray-50">
-          <Button
-            variant={viewMode === "grid" ? "default" : "ghost"}
-            size="sm"
-            onClick={() => setViewMode("grid")}
-            className="gap-2"
-          >
-            <LayoutGrid className="h-4 w-4" />
-            <span className="hidden sm:inline">Grelha</span>
-          </Button>
-          <Button
-            variant={viewMode === "list" ? "default" : "ghost"}
-            size="sm"
-            onClick={() => setViewMode("list")}
-            className="gap-2"
-          >
-            <List className="h-4 w-4" />
-            <span className="hidden sm:inline">Lista</span>
-          </Button>
+        <div className="flex gap-4 items-center flex-wrap sm:flex-nowrap">
+          <div className="flex items-center gap-2">
+            <Select value={sortField} onValueChange={setSortField}>
+              <SelectTrigger className="w-[180px] bg-white h-9">
+                <SelectValue placeholder="Ordenar por..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="created_at">Data de criação</SelectItem>
+                <SelectItem value="last_contact_date">Última interação</SelectItem>
+                <SelectItem value="name">Nome</SelectItem>
+                <SelectItem value="property_type">Tipo de imóvel</SelectItem>
+                <SelectItem value="bedrooms">Tipologia</SelectItem>
+                <SelectItem value="development_name">Empreendimento</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button 
+              variant="outline" 
+              size="icon"
+              onClick={() => setSortOrder(o => o === "asc" ? "desc" : "asc")}
+              className="bg-white shrink-0 h-9 w-9"
+              title={sortOrder === "asc" ? "Crescente" : "Decrescente"}
+            >
+              {sortOrder === "asc" ? <ArrowDownAZ className="h-4 w-4" /> : <ArrowUpZA className="h-4 w-4" />}
+            </Button>
+          </div>
+
+          {/* View Mode Toggle */}
+          <div className="flex gap-1 border rounded-lg p-1 bg-gray-50 h-9">
+            <Button
+              variant={viewMode === "grid" ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setViewMode("grid")}
+              className="gap-2"
+            >
+              <LayoutGrid className="h-4 w-4" />
+              <span className="hidden sm:inline">Grelha</span>
+            </Button>
+            <Button
+              variant={viewMode === "list" ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setViewMode("list")}
+              className="gap-2"
+            >
+              <List className="h-4 w-4" />
+              <span className="hidden sm:inline">Lista</span>
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -662,7 +711,7 @@ export function LeadsListContainer({
         </div>
       ) : viewMode === "grid" ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {filteredLeads.map((lead) => (
+          {sortedLeads.map((lead) => (
             <LeadCard
               key={lead.id}
               lead={lead}
@@ -705,7 +754,7 @@ export function LeadsListContainer({
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {filteredLeads.map((lead, index) => {
+                {sortedLeads.map((lead, index) => {
                   const recentInteractionState = getLeadRecentInteractionState(lead.last_contact_date, lead.last_contact_outcome);
                   const bgClass = recentInteractionState.isHighlighted
                     ? "bg-blue-50 hover:bg-blue-100"

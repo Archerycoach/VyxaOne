@@ -54,6 +54,8 @@ import { useToast } from "@/hooks/use-toast";
 import { LeadAIInsightsPanel } from "./LeadAIInsightsPanel";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { updateLead } from "@/services/leadsService";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 
 interface LeadDetailsDialogProps {
   leadId: string | null;
@@ -86,6 +88,7 @@ export function LeadDetailsDialog({
   const [newInteractionText, setNewInteractionText] = useState("");
   const [isSubmittingInteraction, setIsSubmittingInteraction] = useState(false);
   const [isUpdatingTemperature, setIsUpdatingTemperature] = useState(false);
+  const [sendCopyToSelf, setSendCopyToSelf] = useState(false);
   const { toast } = useToast();
   
   // Use ref to prevent multiple fetches
@@ -492,25 +495,13 @@ export function LeadDetailsDialog({
                 </CardContent>
               </Card>
 
-              {linkedContactId ? (
-                <ContactAlertRequestsPanel
-                  contact={{
-                    id: linkedContactId,
-                    name: linkedContactName,
-                  }}
-                />
-              ) : (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base">Pedidos de alerta</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-sm text-muted-foreground">
-                      Associe primeiro um contacto a esta lead para gerir alertas de novos imóveis ou empreendimentos sem sair do fluxo comercial.
-                    </p>
-                  </CardContent>
-                </Card>
-              )}
+              <ContactAlertRequestsPanel
+                entity={{
+                  id: lead.id,
+                  name: lead.name,
+                  type: "lead",
+                }}
+              />
 
               {(lead.lead_type === "buyer" || lead.lead_type === "both") && (
                 <>
@@ -1010,6 +1001,16 @@ export function LeadDetailsDialog({
 
           {generatedDraft?.channel === 'email' && (
             <div className="space-y-2 mt-4 border-t pt-4">
+              <div className="flex items-center space-x-2 mb-4">
+                <Checkbox 
+                  id="cc-consultant" 
+                  checked={sendCopyToSelf} 
+                  onCheckedChange={(checked) => setSendCopyToSelf(checked === true)} 
+                />
+                <Label htmlFor="cc-consultant" className="text-sm font-medium cursor-pointer">
+                  Receber uma cópia deste email (CC)
+                </Label>
+              </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium">Anexos</span>
                 <div>
@@ -1078,8 +1079,12 @@ export function LeadDetailsDialog({
               try {
                 setIsSending(true);
                 const subjectMatch = generatedDraft.text.match(/^Assunto: (.*)/m);
-                const subject = subjectMatch ? subjectMatch[1] : "Follow-up";
-                const body = generatedDraft.text.replace(/^Assunto: .*\n?/, "").trim();
+                let subject = subjectMatch ? subjectMatch[1] : "Follow-up";
+                let body = generatedDraft.text.replace(/^Assunto: .*\n?/, "").trim();
+                
+                // Replace variables
+                subject = subject.replace(/\{empreendimento\}/g, lead.development_name || "");
+                body = body.replace(/\{empreendimento\}/g, lead.development_name || "");
                 
                 const { data: { session } } = await supabase.auth.getSession();
                 
@@ -1090,7 +1095,8 @@ export function LeadDetailsDialog({
                     to: lead.email,
                     subject,
                     html: body.replace(/\n/g, "<br>"),
-                    attachments: emailAttachments.map(att => ({ filename: att.name, content: att.content, encoding: att.encoding }))
+                    attachments: emailAttachments.map(att => ({ filename: att.name, content: att.content, encoding: att.encoding })),
+                    sendCopyToSender: sendCopyToSelf
                   })
                 });
                 

@@ -26,20 +26,21 @@ import {
   getContactOpportunityMatches,
   saveContactAlertRequest,
   setContactAlertRequestActive,
-  syncContactAlertRequestsForContact,
+  syncContactAlertRequestsForEntity,
+  deleteContactAlertRequest,
   type ContactAlertRequestInput,
 } from "@/services/contactAlertsService";
 import type { ContactAlertRequest, ContactOpportunityMatch } from "@/types";
 
 interface ContactAlertRequestsPanelProps {
-  contact: {
+  entity: {
     id: string;
     name: string;
+    type: "contact" | "lead";
   };
 }
 
 const emptyForm: ContactAlertRequestInput = {
-  contact_id: "",
   name: "",
   opportunity_type: "both",
   preferred_cities: [],
@@ -53,6 +54,10 @@ const emptyForm: ContactAlertRequestInput = {
   notification_channel: "both",
   is_active: true,
   notes: "",
+  auto_send_email: false,
+  send_cc: false,
+  email_subject: "",
+  email_body: "",
 };
 
 function toCsv(values: string[]): string {
@@ -73,7 +78,7 @@ function statusLabel(status: ContactOpportunityMatch["status"]): string {
   return "Novo";
 }
 
-export function ContactAlertRequestsPanel({ contact }: ContactAlertRequestsPanelProps) {
+export function ContactAlertRequestsPanel({ entity }: ContactAlertRequestsPanelProps) {
   const [requests, setRequests] = useState<ContactAlertRequest[]>([]);
   const [matches, setMatches] = useState<ContactOpportunityMatch[]>([]);
   const [loading, setLoading] = useState(true);
@@ -87,15 +92,15 @@ export function ContactAlertRequestsPanel({ contact }: ContactAlertRequestsPanel
 
   const loadData = useCallback(async () => {
     setLoading(true);
-    await syncContactAlertRequestsForContact(contact.id);
+    await syncContactAlertRequestsForEntity(entity.id, entity.type);
     const [nextRequests, nextMatches] = await Promise.all([
-      getContactAlertRequests(contact.id),
-      getContactOpportunityMatches(contact.id),
+      getContactAlertRequests(entity.id, entity.type),
+      getContactOpportunityMatches(entity.id, entity.type),
     ]);
     setRequests(nextRequests);
     setMatches(nextMatches);
     setLoading(false);
-  }, [contact.id]);
+  }, [entity.id, entity.type]);
 
   useEffect(() => {
     void loadData();
@@ -107,7 +112,11 @@ export function ContactAlertRequestsPanel({ contact }: ContactAlertRequestsPanel
   );
 
   const openCreateDialog = () => {
-    setForm({ ...emptyForm, contact_id: contact.id });
+    setForm({
+      ...emptyForm,
+      contact_id: entity.type === "contact" ? entity.id : undefined,
+      lead_id: entity.type === "lead" ? entity.id : undefined,
+    });
     setCityInput("");
     setDistrictInput("");
     setPropertyTypeInput("");
@@ -124,15 +133,35 @@ export function ContactAlertRequestsPanel({ contact }: ContactAlertRequestsPanel
     setDialogOpen(true);
   };
 
+  const handleDelete = async () => {
+    if (!form.id) return;
+    if (!confirm("Tem a certeza que deseja eliminar este pedido de alerta?")) return;
+    setSaving(true);
+    try {
+      await deleteContactAlertRequest(form.id);
+      setDialogOpen(false);
+      await loadData();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleSave = async () => {
     setSaving(true);
     await saveContactAlertRequest({
       ...form,
-      contact_id: contact.id,
+      contact_id: entity.type === "contact" ? entity.id : undefined,
+      lead_id: entity.type === "lead" ? entity.id : undefined,
       preferred_cities: fromCsv(cityInput),
       preferred_districts: fromCsv(districtInput),
       property_types: fromCsv(propertyTypeInput),
       typologies: fromCsv(typologyInput),
+      auto_send_email: form.auto_send_email ?? false,
+      send_cc: form.send_cc ?? false,
+      email_subject: form.email_subject ?? "",
+      email_body: form.email_body ?? "",
     });
     setDialogOpen(false);
     await loadData();
@@ -171,7 +200,7 @@ export function ContactAlertRequestsPanel({ contact }: ContactAlertRequestsPanel
         <p className="text-sm text-muted-foreground">A carregar pedidos e correspondências...</p>
       ) : requests.length === 0 ? (
         <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-          Ainda não existem pedidos estruturados para {contact.name}. Crie o primeiro pedido para ativar o matching automático.
+          Ainda não existem pedidos estruturados para {entity.name}. Crie o primeiro pedido para ativar o matching automático.
         </div>
       ) : (
         <div className="space-y-3">
@@ -241,11 +270,11 @@ export function ContactAlertRequestsPanel({ contact }: ContactAlertRequestsPanel
       </div>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-2xl">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{form.id ? "Editar pedido" : "Novo pedido de alerta"}</DialogTitle>
             <DialogDescription>
-              Defina preferências estruturadas para o sistema detetar novas oportunidades automaticamente.
+              Defina preferências estruturadas para o sistema detetar novas oportunidades automaticamente. Quando for encontrado um match, você (consultor) será notificado para avaliar e apresentar a oportunidade ao cliente.
             </DialogDescription>
           </DialogHeader>
 
@@ -273,7 +302,7 @@ export function ContactAlertRequestsPanel({ contact }: ContactAlertRequestsPanel
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ia">Agente IA</SelectItem>
-                  <SelectItem value="agenda">Agenda</SelectItem>
+                  <SelectItem value="agenda">Agenda (Tarefa para mim)</SelectItem>
                   <SelectItem value="both">IA + Agenda</SelectItem>
                 </SelectContent>
               </Select>
@@ -339,15 +368,61 @@ export function ContactAlertRequestsPanel({ contact }: ContactAlertRequestsPanel
               </div>
               <Switch checked={form.is_active} onCheckedChange={(checked) => setForm((current) => ({ ...current, is_active: checked }))} />
             </div>
+
+            <div className="col-span-2 flex items-center justify-between rounded-lg border p-3 border-blue-100 bg-blue-50/30">
+              <div>
+                <p className="font-medium text-blue-900">Enviar e-mail automático</p>
+                <p className="text-sm text-blue-700/80">Enviar sugestão automaticamente para o cliente ao encontrar um match.</p>
+              </div>
+              <Switch checked={form.auto_send_email} onCheckedChange={(checked) => setForm((current) => ({ ...current, auto_send_email: checked }))} />
+            </div>
+
+            {form.auto_send_email && (
+              <div className="col-span-2 space-y-4 border-l-2 border-blue-500 pl-4 py-2 bg-slate-50/50 rounded-r-lg">
+                <div className="space-y-2">
+                  <Label>Assunto do e-mail</Label>
+                  <Input 
+                    value={form.email_subject ?? ""} 
+                    onChange={(e) => setForm(c => ({...c, email_subject: e.target.value}))} 
+                    placeholder="Nova oportunidade encontrada: {empreendimento}" 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Corpo do e-mail</Label>
+                  <Textarea 
+                    rows={5} 
+                    value={form.email_body ?? ""} 
+                    onChange={(e) => setForm(c => ({...c, email_body: e.target.value}))} 
+                    placeholder="Olá {nome},&#10;&#10;Encontrámos uma nova oportunidade que corresponde ao seu pedido: {empreendimento}.&#10;&#10;Podemos agendar visita?" 
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Variáveis disponíveis: <code className="bg-white px-1 rounded">{"{nome}"}</code>, <code className="bg-white px-1 rounded">{"{email}"}</code>, <code className="bg-white px-1 rounded">{"{telefone}"}</code>, <code className="bg-white px-1 rounded">{"{empreendimento}"}</code>
+                  </p>
+                </div>
+                <div className="flex items-center space-x-2 pt-2 border-t">
+                  <Switch checked={form.send_cc} onCheckedChange={(checked) => setForm(c => ({...c, send_cc: checked}))} />
+                  <Label className="font-medium cursor-pointer">Receber uma cópia deste email (CC para o consultor)</Label>
+                </div>
+              </div>
+            )}
           </div>
 
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
-              Cancelar
-            </Button>
-            <Button type="button" onClick={() => void handleSave()} disabled={saving || !form.name.trim()}>
-              {saving ? "A guardar..." : "Guardar pedido"}
-            </Button>
+          <div className="flex justify-between items-center mt-4">
+            <div>
+              {form.id && (
+                <Button type="button" variant="destructive" onClick={() => void handleDelete()} disabled={saving}>
+                  Eliminar
+                </Button>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
+                Cancelar
+              </Button>
+              <Button type="button" onClick={() => void handleSave()} disabled={saving || !form.name.trim()}>
+                {saving ? "A guardar..." : "Guardar pedido"}
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

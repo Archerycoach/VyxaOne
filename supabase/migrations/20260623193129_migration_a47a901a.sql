@@ -1,0 +1,1 @@
+ALTER TABLE contact_alert_requests ADD COLUMN IF NOT EXISTS send_cc BOOLEAN DEFAULT false;

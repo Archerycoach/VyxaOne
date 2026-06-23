@@ -126,7 +126,7 @@ export const processLeadWorkflows = async (leadId: string, triggerType: string) 
           .eq("lead_id", leadId)
           .gte("executed_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
           .limit(1)
-          .single();
+          .maybeSingle();
 
         if (recentExecution) {
           console.log(`Skipping workflow ${workflow.id} - already executed in last 24h`);
@@ -289,6 +289,7 @@ async function sendEmailAction(action: any, lead: any, content: string, userId: 
         html: body.replace(/\n/g, "<br>"),
         text: body,
         attachments,
+        sendCopyToSender: config.send_cc === true,
       }),
     });
 
@@ -318,13 +319,30 @@ async function sendEmailAction(action: any, lead: any, content: string, userId: 
 async function createTaskAction(action: any, lead: any, content: string, userId: string) {
   try {
     const config = action.config || action;
+    const title = personalizeContent(config.subject || action.title || "Tarefa automática", lead);
+
+    // Deduplication check
+    const { data: existingTask } = await supabase
+      .from("tasks")
+      .select("id")
+      .eq("title", title)
+      .eq("related_lead_id", lead.id)
+      .gte("created_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+      .limit(1)
+      .maybeSingle();
+
+    if (existingTask) {
+      console.log(`✅ Skipped duplicate task creation: ${title}`);
+      return;
+    }
+
     const dueDate = new Date();
     dueDate.setDate(dueDate.getDate() + (config.daysOffset || 1));
 
     const { error } = await supabase
       .from("tasks")
       .insert({
-        title: personalizeContent(config.subject || action.title || "Tarefa automática", lead),
+        title,
         description: content,
         related_lead_id: lead.id,
         user_id: userId,
@@ -346,6 +364,23 @@ async function createTaskAction(action: any, lead: any, content: string, userId:
 async function createCalendarEventAction(action: any, lead: any, content: string, userId: string) {
   try {
     const config = action.config || action;
+    const title = personalizeContent(config.subject || action.title || "Evento automático", lead);
+
+    // Deduplication check
+    const { data: existingEvent } = await supabase
+      .from("calendar_events")
+      .select("id")
+      .eq("title", title)
+      .eq("lead_id", lead.id)
+      .gte("created_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+      .limit(1)
+      .maybeSingle();
+
+    if (existingEvent) {
+      console.log(`✅ Skipped duplicate event creation: ${title}`);
+      return;
+    }
+
     const startTime = new Date();
     startTime.setDate(startTime.getDate() + (config.daysOffset || 1));
     
@@ -363,7 +398,7 @@ async function createCalendarEventAction(action: any, lead: any, content: string
     const { error } = await supabase
       .from("calendar_events")
       .insert({
-        title: personalizeContent(config.subject || action.title || "Evento automático", lead),
+        title,
         description: content,
         start_time: startTimeISO,
         end_time: endTimeISO,
@@ -413,5 +448,6 @@ function personalizeContent(content: string, lead: any): string {
     .replace(/{email}/g, lead.email || "")
     .replace(/{telefone}/g, lead.phone || "")
     .replace(/{lead_name}/g, lead.name || "")
+    .replace(/{empreendimento}/g, lead.development_name || "")
     .replace(/{empresa}/g, "REMAX"); // Default company name
 }

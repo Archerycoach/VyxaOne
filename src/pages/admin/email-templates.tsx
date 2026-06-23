@@ -238,7 +238,7 @@ export default function EmailTemplatesPage() {
   const getAvailableVariables = (type: string) => {
     const variables = {
       daily_email: ["userName", "date", "hasEvents", "events", "hasTasks", "tasks"],
-      workflow: ["userName", "workflowName", "message", "leadName", "leadEmail", "leadPhone", "leadSource", "actionUrl"],
+      workflow: ["userName", "workflowName", "message", "leadName", "leadEmail", "leadPhone", "leadSource", "empreendimento", "actionUrl"],
       whatsapp: ["userName", "tasks", "date"],
       meta_lead_consultant: ["consultantName", "leadName", "leadEmail", "leadPhone", "leadSource", "formName", "pageName", "submittedAt", "leadUrl", "formFields"],
       meta_lead_client: ["clientName", "formName", "pageName", "companyName", "consultantName", "consultantEmail", "consultantPhone", "submittedAt"],

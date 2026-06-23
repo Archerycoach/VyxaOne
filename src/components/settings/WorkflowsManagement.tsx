@@ -240,7 +240,8 @@ export function WorkflowsManagement() {
     target_id: "",
     email_subject: "",
     email_body: "",
-    attachments: [] as Array<{name: string, url: string}>
+    attachments: [] as Array<{name: string, url: string}>,
+    send_cc: false
   });
 
   const [executeFormState, setExecuteFormState] = useState({
@@ -440,7 +441,8 @@ export function WorkflowsManagement() {
       target_id: "",
       email_subject: defaultSubject,
       email_body: normalizeEmailBodyForEditor(defaultBody),
-      attachments: []
+      attachments: [],
+      send_cc: false
     });
     setIsNewWorkflowOpen(true);
   };
@@ -457,7 +459,8 @@ export function WorkflowsManagement() {
       target_id: "",
       email_subject: workflow.action_config?.subject || "",
       email_body: normalizeEmailBodyForEditor(workflow.action_config?.body || ""),
-      attachments: workflow.action_config?.attachments || []
+      attachments: workflow.action_config?.attachments || [],
+      send_cc: workflow.action_config?.send_cc || false
     });
     setEditingWorkflowId(workflow.id);
     setSelectedTemplate(null);
@@ -493,7 +496,8 @@ export function WorkflowsManagement() {
         action_config: {
           subject: formState.email_subject,
           body: formState.email_body,
-          attachments: formState.attachments
+          attachments: formState.attachments,
+          send_cc: formState.send_cc
         },
         delay_days: formState.delay_days,
         delay_hours: formState.delay_hours,
@@ -539,7 +543,8 @@ export function WorkflowsManagement() {
         target_id: "",
         email_subject: "",
         email_body: "",
-        attachments: []
+        attachments: [],
+        send_cc: false
       });
 
       await Promise.all([
@@ -723,7 +728,8 @@ export function WorkflowsManagement() {
                 target_id: "",
                 email_subject: "",
                 email_body: "",
-                attachments: []
+                attachments: [],
+                send_cc: false
               });
             }}>
               <Plus className="h-4 w-4 mr-2" />
@@ -931,6 +937,20 @@ export function WorkflowsManagement() {
                     ) : (
                       <p className="text-xs text-gray-500">Nenhum anexo definido nesta automação.</p>
                     )}
+
+                  </div>
+                )}
+
+                {formState.action_type === "send_email" && (
+                  <div className="flex items-center space-x-2 pt-2 mt-4 border-t border-blue-100">
+                    <Switch 
+                      id="send_cc" 
+                      checked={formState.send_cc} 
+                      onCheckedChange={(checked) => setFormState({ ...formState, send_cc: checked })} 
+                    />
+                    <Label htmlFor="send_cc" className="font-medium cursor-pointer">
+                      Receber uma cópia deste email (CC para o consultor)
+                    </Label>
                   </div>
                 )}
 
@@ -940,6 +960,7 @@ export function WorkflowsManagement() {
                     <li><code className="bg-white px-1 rounded">{"{nome}"}</code> - Nome da lead/contacto</li>
                     <li><code className="bg-white px-1 rounded">{"{email}"}</code> - Email da lead/contacto</li>
                     <li><code className="bg-white px-1 rounded">{"{telefone}"}</code> - Telefone da lead/contacto</li>
+                    <li><code className="bg-white px-1 rounded">{"{empreendimento}"}</code> - Nome do empreendimento associado</li>
                   </ul>
                 </div>
               </div>

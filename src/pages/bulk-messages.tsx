@@ -540,6 +540,7 @@ export default function BulkMessages() {
           phone: undefined,
           type: "lead" as const,
           status: recipient.status || undefined,
+          development_name: undefined,
         }));
     }
 
@@ -549,7 +550,8 @@ export default function BulkMessages() {
       email?: string; 
       phone?: string; 
       type: "lead" | "contact"; 
-      status?: string 
+      status?: string;
+      development_name?: string;
     }> = [];
 
     // Track emails and phones already added to prevent duplicates
@@ -625,6 +627,7 @@ export default function BulkMessages() {
                 phone: lead.phone || undefined,
                 type: "lead",
                 status: lead.status,
+                development_name: lead.development_name,
               });
             }
           } 
@@ -639,6 +642,7 @@ export default function BulkMessages() {
                 phone: lead.phone,
                 type: "lead",
                 status: lead.status,
+                development_name: lead.development_name,
               });
             }
           }
@@ -759,12 +763,14 @@ export default function BulkMessages() {
             const personalizedMessage = message
               .replace(/\{nome\}/g, recipient.name)
               .replace(/\{email\}/g, recipient.email || "")
-              .replace(/\{telefone\}/g, recipient.phone || "");
+              .replace(/\{telefone\}/g, recipient.phone || "")
+              .replace(/\{empreendimento\}/g, recipient.development_name || "");
 
             const personalizedSubject = subject
               .replace(/\{nome\}/g, recipient.name)
               .replace(/\{email\}/g, recipient.email || "")
-              .replace(/\{telefone\}/g, recipient.phone || "");
+              .replace(/\{telefone\}/g, recipient.phone || "")
+              .replace(/\{empreendimento\}/g, recipient.development_name || "");
 
             // Se for email, a mensagem já vem em formato HTML do RichTextEditor
             const htmlContent = messageType === "email" ? personalizedMessage : personalizedMessage.replace(/\n/g, "<br>");
@@ -1156,7 +1162,7 @@ export default function BulkMessages() {
                           />
                         </div>
                         <p className="text-xs text-gray-500 pt-1">
-                          Pode usar variáveis: {"{nome}"}, {"{email}"}, {"{telefone}"}. O editor suporta imagens até 1MB e pode clicar numa imagem para ajustar a largura da assinatura.
+                          Pode usar variáveis: {"{nome}"}, {"{email}"}, {"{telefone}"}, {"{empreendimento}"}. O editor suporta imagens até 1MB e pode clicar numa imagem para ajustar a largura da assinatura.
                         </p>
                       </div>
 
@@ -1236,7 +1242,7 @@ export default function BulkMessages() {
                           className="font-mono text-sm"
                         />
                         <p className="text-xs text-gray-500">
-                          Pode usar variáveis: {"{nome}"}, {"{email}"}, {"{telefone}"}
+                          Pode usar variáveis: {"{nome}"}, {"{email}"}, {"{telefone}"}, {"{empreendimento}"}
                         </p>
                       </div>
                     </TabsContent>

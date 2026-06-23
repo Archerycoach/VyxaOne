@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { Development, DevelopmentStatus } from "@/types";
+import { matchNewDevelopment } from "./contactAlertsService";
 
 export interface DevelopmentInsert {
   user_id: string;
@@ -59,7 +60,13 @@ export async function createDevelopment(payload: DevelopmentInsert): Promise<Dev
     .single();
 
   if (error) throw error;
-  return mapDevelopment(data as DevelopmentRow);
+  
+  const development = mapDevelopment(data as DevelopmentRow);
+  
+  // Asynchronously match new development against active contact alerts
+  matchNewDevelopment(development).catch(console.error);
+  
+  return development;
 }
 
 export async function updateDevelopment(id: string, updates: DevelopmentUpdate): Promise<Development> {

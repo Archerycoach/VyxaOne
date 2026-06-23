@@ -126,35 +126,58 @@ export function scorePropertyAgainstRequest(
 
   const reasons: string[] = ["Publicado nos últimos 30 dias"];
   let score = 15;
+  let hasAnyFilter = false;
 
-  if (hasTextFilters(request.preferred_cities) && property.city) {
-    reasons.push(`Zona compatível: ${property.city}`);
-    score += 25;
+  if (hasTextFilters(request.preferred_cities)) {
+    hasAnyFilter = true;
+    if (property.city) {
+      reasons.push(`Zona compatível: ${property.city}`);
+      score += 25;
+    }
   }
 
-  if (hasTextFilters(request.preferred_districts) && property.district) {
-    reasons.push(`Distrito compatível: ${property.district}`);
-    score += 15;
+  if (hasTextFilters(request.preferred_districts)) {
+    hasAnyFilter = true;
+    if (property.district) {
+      reasons.push(`Distrito compatível: ${property.district}`);
+      score += 15;
+    }
   }
 
-  if (hasTextFilters(request.property_types) && property.property_type) {
-    reasons.push(`Tipo compatível: ${property.property_type}`);
-    score += 15;
+  if (hasTextFilters(request.property_types)) {
+    hasAnyFilter = true;
+    if (property.property_type) {
+      reasons.push(`Tipo compatível: ${property.property_type}`);
+      score += 15;
+    }
   }
 
-  if (hasTextFilters(request.typologies) && property.typology) {
-    reasons.push(`Tipologia compatível: ${property.typology}`);
-    score += 15;
+  if (hasTextFilters(request.typologies)) {
+    hasAnyFilter = true;
+    if (property.typology) {
+      reasons.push(`Tipologia compatível: ${property.typology}`);
+      score += 15;
+    }
   }
 
-  if ((request.min_price != null || request.max_price != null) && property.price != null) {
-    reasons.push(`Preço dentro do intervalo: €${Number(property.price).toLocaleString("pt-PT")}`);
-    score += 20;
+  if (request.min_price != null || request.max_price != null) {
+    hasAnyFilter = true;
+    if (property.price != null) {
+      reasons.push(`Preço dentro do intervalo: €${Number(property.price).toLocaleString("pt-PT")}`);
+      score += 20;
+    }
   }
 
-  if (request.min_bedrooms != null && property.bedrooms != null) {
-    reasons.push(`Quartos compatíveis: ${property.bedrooms}`);
-    score += 10;
+  if (request.min_bedrooms != null) {
+    hasAnyFilter = true;
+    if (property.bedrooms != null) {
+      reasons.push(`Quartos compatíveis: ${property.bedrooms}`);
+      score += 10;
+    }
+  }
+
+  if (!hasAnyFilter) {
+    score = 30; // Auto-match se o utilizador não definir critérios restritivos (ex: apenas "Quero Imóveis")
   }
 
   return {
@@ -185,8 +208,11 @@ export function scoreDevelopmentAgainstRequest(
   }
 
   const devTypologies = development.typologies ?? [];
-  if (devTypologies.length > 0 && !matchesAnyText(devTypologies, request.typologies)) {
-    return { isMatch: false, score: 0, reasons: [] };
+  if (hasTextFilters(request.typologies)) {
+    if (devTypologies.length === 0) return { isMatch: false, score: 0, reasons: [] };
+    if (!matchesAnyText(devTypologies, request.typologies)) {
+      return { isMatch: false, score: 0, reasons: [] };
+    }
   }
 
   if (!overlapsPriceRange(
@@ -200,30 +226,43 @@ export function scoreDevelopmentAgainstRequest(
 
   const reasons: string[] = ["Empreendimento publicado nos últimos 30 dias"];
   let score = 15;
+  let hasAnyFilter = false;
 
-  if (hasTextFilters(request.preferred_cities) && development.city) {
-    reasons.push(`Zona compatível: ${development.city}`);
-    score += 25;
+  if (hasTextFilters(request.preferred_cities)) {
+    hasAnyFilter = true;
+    if (development.city) {
+      reasons.push(`Zona compatível: ${development.city}`);
+      score += 25;
+    }
   }
 
-  if (hasTextFilters(request.preferred_districts) && development.district) {
-    reasons.push(`Distrito compatível: ${development.district}`);
-    score += 15;
+  if (hasTextFilters(request.preferred_districts)) {
+    hasAnyFilter = true;
+    if (development.district) {
+      reasons.push(`Distrito compatível: ${development.district}`);
+      score += 15;
+    }
   }
 
-  if (hasTextFilters(request.typologies) && (development.typologies ?? []).length > 0) {
-    reasons.push(`Tipologias compatíveis: ${(development.typologies ?? []).join(", ")}`);
-    score += 20;
+  if (hasTextFilters(request.typologies)) {
+    hasAnyFilter = true;
+    if (devTypologies.length > 0) {
+      reasons.push(`Tipologias compatíveis: ${devTypologies.join(", ")}`);
+      score += 20;
+    }
   }
 
   if (request.min_price != null || request.max_price != null) {
+    hasAnyFilter = true;
     const fromLabel = development.price_from != null ? `€${Number(development.price_from).toLocaleString("pt-PT")}` : null;
     const toLabel = development.price_to != null ? `€${Number(development.price_to).toLocaleString("pt-PT")}` : null;
     reasons.push(`Intervalo de preço compatível: ${fromLabel ?? "—"} a ${toLabel ?? "—"}`);
     score += 20;
   }
 
-  if ((development.available_units ?? 0) > 0) {
+  if (!hasAnyFilter) {
+    score = 30; // Auto-match se não houver critérios específicos definidos no pedido
+  } else if ((development.available_units ?? 0) > 0) {
     reasons.push(`Unidades disponíveis: ${development.available_units}`);
     score += 10;
   }

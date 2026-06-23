@@ -1,6 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { Property } from "@/types";
 import { getCachedData, setCachedData } from "@/lib/cacheUtils";
+import { matchNewProperty } from "./contactAlertsService";
 
 const PROPERTIES_CACHE_KEY = "properties_list";
 const CACHE_DURATION = 3 * 60 * 1000; // 3 minutes
@@ -86,7 +87,13 @@ export const createProperty = async (propertyData: Omit<Property, "id" | "create
 
     if (error) throw error;
     if (!data) throw new Error("Failed to create property");
-    return data as Property;
+    
+    const property = data as Property;
+    
+    // Asynchronously match new property against active contact alerts
+    matchNewProperty(property).catch(console.error);
+    
+    return property;
   } catch (e) {
     throw e;
   }

@@ -495,9 +495,10 @@ export function ContactDialogs({
 
             {selectedContact && (
               <ContactAlertRequestsPanel
-                contact={{
+                entity={{
                   id: selectedContact.id,
                   name: selectedContact.name,
+                  type: "contact"
                 }}
               />
             )}

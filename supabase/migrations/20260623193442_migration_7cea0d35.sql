@@ -1,0 +1,5 @@
+ALTER TABLE contact_alert_requests 
+ADD COLUMN IF NOT EXISTS auto_send_email BOOLEAN DEFAULT false,
+ADD COLUMN IF NOT EXISTS send_cc BOOLEAN DEFAULT false,
+ADD COLUMN IF NOT EXISTS email_subject VARCHAR(255),
+ADD COLUMN IF NOT EXISTS email_body TEXT;

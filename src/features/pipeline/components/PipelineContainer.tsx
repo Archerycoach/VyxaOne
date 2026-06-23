@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Search } from "lucide-react";
+import { Plus, Search, ArrowDownAZ, ArrowUpZA } from "lucide-react";
 import { PipelineBoard } from "@/components/pipeline/PipelineBoard";
 import { PipelineStats } from "@/components/pipeline/PipelineStats";
 import { LeadFormContainer } from "@/features/leads/components/form/LeadFormContainer";
 import { getLeads, updateLead, deleteLead } from "@/services/leadsService";
 import { useToast } from "@/hooks/use-toast";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { LeadWithContacts } from "@/services/leadsService";
 import type { LeadType } from "@/types";
 
@@ -17,6 +18,8 @@ export function PipelineContainer() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [pipelineView, setPipelineView] = useState<LeadType>("buyer");
   const [searchQuery, setSearchQuery] = useState("");
+  const [sortField, setSortField] = useState<string>("created_at");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const [editingLead, setEditingLead] = useState<LeadWithContacts | undefined>(undefined);
   const { toast } = useToast();
 
@@ -122,6 +125,23 @@ export function PipelineContainer() {
     }
   );
 
+  const sortedLeads = [...filteredLeads].sort((a, b) => {
+    let aVal: any = a[sortField as keyof typeof a];
+    let bVal: any = b[sortField as keyof typeof b];
+
+    if (sortField === "created_at" || sortField === "last_contact_date") {
+      aVal = aVal ? new Date(aVal).getTime() : 0;
+      bVal = bVal ? new Date(bVal).getTime() : 0;
+    } else if (typeof aVal === "string") {
+      aVal = aVal.toLowerCase();
+      bVal = (bVal || "").toLowerCase();
+    }
+
+    if (aVal < bVal) return sortOrder === "asc" ? -1 : 1;
+    if (aVal > bVal) return sortOrder === "asc" ? 1 : -1;
+    return 0;
+  });
+
   // Debug logging
   console.log("[PipelineContainer] Total leads:", leads.length);
   console.log("[PipelineContainer] Current view:", pipelineView);
@@ -147,7 +167,7 @@ export function PipelineContainer() {
             Gerencie seus leads através das diferentes fases
           </p>
         </div>
-        <div className="flex flex-col sm:flex-row items-center gap-3 w-full lg:w-auto">
+        <div className="flex flex-col sm:flex-row items-center gap-3 w-full lg:w-auto flex-wrap">
           <div className="relative w-full sm:w-64">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
@@ -158,6 +178,32 @@ export function PipelineContainer() {
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
+          
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <Select value={sortField} onValueChange={setSortField}>
+              <SelectTrigger className="w-[180px] bg-white">
+                <SelectValue placeholder="Ordenar por..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="created_at">Data de criação</SelectItem>
+                <SelectItem value="last_contact_date">Última interação</SelectItem>
+                <SelectItem value="name">Nome</SelectItem>
+                <SelectItem value="property_type">Tipo de imóvel</SelectItem>
+                <SelectItem value="bedrooms">Tipologia</SelectItem>
+                <SelectItem value="development_name">Empreendimento</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button 
+              variant="outline" 
+              size="icon"
+              onClick={() => setSortOrder(o => o === "asc" ? "desc" : "asc")}
+              className="bg-white shrink-0"
+              title={sortOrder === "asc" ? "Crescente" : "Decrescente"}
+            >
+              {sortOrder === "asc" ? <ArrowDownAZ className="h-4 w-4" /> : <ArrowUpZA className="h-4 w-4" />}
+            </Button>
+          </div>
+
           <Tabs
             value={pipelineView}
             onValueChange={(v) => setPipelineView(v as LeadType)}
@@ -176,11 +222,11 @@ export function PipelineContainer() {
       </div>
 
       {/* Stats */}
-      <PipelineStats leads={filteredLeads} pipelineView={pipelineView} />
+      <PipelineStats leads={sortedLeads} pipelineView={pipelineView} />
 
       {/* Pipeline Board */}
       <PipelineBoard
-        leads={filteredLeads}
+        leads={sortedLeads}
         onLeadMove={handleStageChange}
         onLeadClick={handleLeadClick}
         onLeadDelete={handleLeadDelete}
