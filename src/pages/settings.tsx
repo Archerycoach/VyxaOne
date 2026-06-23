@@ -17,6 +17,7 @@ import { MetaFormsManagement } from "@/components/settings/MetaFormsManagement";
 import { GptApiSettings } from "@/components/settings/GptApiSettings";
 import { WorkflowsManagement } from "@/components/settings/WorkflowsManagement";
 import { NotionAccountConnection } from "@/components/settings/NotionAccountConnection";
+import { RichTextEditor } from "@/components/ui/RichTextEditor";
 
 const REQUIRED_GOOGLE_SCOPES = [
   "openid",
@@ -748,57 +749,31 @@ export default function Settings() {
               <CardContent className="space-y-6">
                 <div className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="signatureText">Assinatura em Texto</Label>
-                    <textarea
-                      id="signatureText"
-                      className="w-full min-h-[120px] p-3 border rounded-md"
-                      value={profile?.email_signature_text || ""}
-                      onChange={e => setProfile(prev => prev ? {...prev, email_signature_text: e.target.value} : null)}
-                      placeholder={`Ex:\nMelhores cumprimentos,\n${profile?.full_name || "Seu Nome"}\n${profile?.phone || "Telefone"}\n${profile?.email || "email@exemplo.pt"}`}
-                    />
-                    <p className="text-xs text-slate-500">
-                      Esta assinatura será adicionada no final de todos os emails que enviar através da plataforma.
-                    </p>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="signatureImage">URL da Imagem da Assinatura (Opcional)</Label>
-                    <Input
-                      id="signatureImage"
-                      type="url"
-                      value={profile?.email_signature_image_url || ""}
-                      onChange={e => setProfile(prev => prev ? {...prev, email_signature_image_url: e.target.value} : null)}
-                      placeholder="https://exemplo.pt/assinatura.png"
-                    />
-                    <p className="text-xs text-slate-500">
-                      Cole o URL de uma imagem da sua assinatura (logotipo, banner, etc.). A imagem será incluída abaixo do texto.
-                    </p>
-                  </div>
-
-                  {profile?.email_signature_image_url && (
-                    <div className="p-4 border rounded-lg bg-slate-50">
-                      <p className="text-sm font-medium mb-2">Pré-visualização da Imagem:</p>
-                      <img 
-                        src={profile.email_signature_image_url} 
-                        alt="Assinatura" 
-                        className="max-w-full h-auto max-h-32 rounded border"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).style.display = 'none';
-                        }}
+                    <Label>Editor de Assinatura</Label>
+                    <div className="border rounded-md overflow-hidden">
+                      <RichTextEditor
+                        value={profile?.email_signature_text || ""}
+                        onChange={val => setProfile(prev => prev ? {...prev, email_signature_text: val} : null)}
+                        placeholder={`Melhores cumprimentos,\nO seu Nome...`}
                       />
                     </div>
-                  )}
+                    <p className="text-xs text-slate-500">
+                      Esta assinatura será adicionada no final de todos os emails que enviar através da plataforma. Pode escrever, formatar e fazer o upload de imagens diretamente na caixa acima (limite de 1MB por imagem).
+                    </p>
+                  </div>
 
                   <div className="p-4 border rounded-lg bg-blue-50">
                     <p className="text-sm font-medium mb-2">Pré-visualização Completa:</p>
                     <div className="bg-white p-4 rounded border">
-                      <p className="text-sm whitespace-pre-wrap">
-                        {profile?.email_signature_text || "Sua assinatura aparecerá aqui..."}
-                      </p>
+                      <div 
+                        className="text-sm prose prose-sm max-w-none" 
+                        dangerouslySetInnerHTML={{ __html: profile?.email_signature_text || "Sua assinatura aparecerá aqui..." }} 
+                      />
+                      {/* Mantemos compatibilidade com imagens antigas se existirem */}
                       {profile?.email_signature_image_url && (
                         <img 
                           src={profile.email_signature_image_url} 
-                          alt="Assinatura" 
+                          alt="Assinatura legada" 
                           className="mt-2 max-w-full h-auto max-h-32"
                           onError={(e) => {
                             (e.target as HTMLImageElement).style.display = 'none';
