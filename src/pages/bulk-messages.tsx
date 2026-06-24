@@ -261,6 +261,11 @@ export default function BulkMessages() {
   const [filterBuyPurpose, setFilterBuyPurpose] = useState<string>("all");
   const [filterPropertyType, setFilterPropertyType] = useState<string>("all");
   
+  // Manual Recipients
+  const [manualName, setManualName] = useState("");
+  const [manualEmail, setManualEmail] = useState("");
+  const [manualRecipients, setManualRecipients] = useState<Array<{ id: string; name: string; email: string; type: "manual" }>>([]);
+
   // Message
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
@@ -549,7 +554,7 @@ export default function BulkMessages() {
       name: string; 
       email?: string; 
       phone?: string; 
-      type: "lead" | "contact"; 
+      type: "lead" | "contact" | "manual"; 
       status?: string;
       development_name?: string;
     }> = [];
@@ -649,6 +654,21 @@ export default function BulkMessages() {
         });
     }
 
+    // STEP 3: Add MANUAL RECIPIENTS
+    if (messageType === "email") {
+      manualRecipients.forEach((manual) => {
+        if (!seenEmails.has(manual.email.toLowerCase())) {
+          seenEmails.add(manual.email.toLowerCase());
+          recipients.push({
+            id: manual.id,
+            name: manual.name,
+            email: manual.email,
+            type: "manual",
+          });
+        }
+      });
+    }
+
     return recipients;
   };
 
@@ -670,6 +690,29 @@ export default function BulkMessages() {
 
   const deselectAll = () => {
     setSelectedRecipients(new Set());
+  };
+
+  const handleAddManualRecipient = () => {
+    if (!manualEmail.trim()) {
+      toast({
+        title: "Aviso",
+        description: "Introduza um e-mail válido.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    const newId = `manual-${Date.now()}`;
+    setManualRecipients(prev => [...prev, {
+      id: newId,
+      name: manualName.trim() || manualEmail.trim().split('@')[0],
+      email: manualEmail.trim(),
+      type: "manual"
+    }]);
+    
+    setSelectedRecipients(prev => new Set(prev).add(newId));
+    setManualEmail("");
+    setManualName("");
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -996,6 +1039,39 @@ export default function BulkMessages() {
                       </>
                     )}
 
+                    {/* Manual Recipients Input */}
+                    {messageType === "email" && (
+                      <div className="space-y-3 pt-3 border-t border-slate-100">
+                        <Label className="text-sm font-medium text-slate-700">Adicionar Destinatário Avulso</Label>
+                        <div className="flex flex-col gap-2">
+                          <Input 
+                            placeholder="Nome (Opcional)" 
+                            value={manualName}
+                            onChange={(e) => setManualName(e.target.value)}
+                            className="h-8 text-sm"
+                          />
+                          <div className="flex gap-2">
+                            <Input 
+                              placeholder="E-mail" 
+                              type="email"
+                              value={manualEmail}
+                              onChange={(e) => setManualEmail(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  handleAddManualRecipient();
+                                }
+                              }}
+                              className="h-8 text-sm"
+                            />
+                            <Button variant="outline" type="button" onClick={handleAddManualRecipient} size="sm">
+                              Adicionar
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
                     <Input
                       placeholder="Pesquisar por nome, email ou telefone..."
                       value={searchQuery}
@@ -1077,7 +1153,7 @@ export default function BulkMessages() {
                               </p>
                               <div className="flex gap-1 mt-1">
                                 <Badge variant="outline" className="text-xs">
-                                  {recipient.type === "lead" ? "Lead" : "Contacto"}
+                                  {recipient.type === "lead" ? "Lead" : recipient.type === "manual" ? "Avulso" : "Contacto"}
                                 </Badge>
                                 {recipient.status && (
                                   <Badge variant="secondary" className="text-xs">
