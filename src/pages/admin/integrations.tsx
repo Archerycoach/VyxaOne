@@ -228,10 +228,19 @@ export default function Integrations() {
 
   const handleSaveWhatsapp = async () => {
     try {
-      if (!whatsapp.access_token || !whatsapp.business_account_id || !whatsapp.verify_token) {
+      if (!whatsapp.verify_token) {
         toast({
           title: "Campos obrigatórios",
-          description: "Por favor, preencha todos os campos do WhatsApp.",
+          description: "Por favor, preencha pelo menos o Verify Token.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (whatsapp.enabled && (!whatsapp.access_token || !whatsapp.business_account_id)) {
+        toast({
+          title: "Não é possível ativar",
+          description: "Para ativar a integração global, precisa preencher o Access Token e o Account ID.",
           variant: "destructive",
         });
         return;

@@ -12,27 +12,41 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   // Webhook verification from Meta
   if (req.method === "GET") {
-    const mode = req.query["hub.mode"];
-    const token = req.query["hub.verify_token"];
-    const challenge = req.query["hub.challenge"];
+    try {
+      const mode = req.query["hub.mode"];
+      const token = req.query["hub.verify_token"];
+      const challenge = req.query["hub.challenge"];
 
-    // Retrieve global verify token
-    const { data: adminSettings } = await supabaseAdmin
-      .from("integration_settings")
-      .select("settings")
-      .eq("integration_name", "whatsapp_api")
-      .maybeSingle();
+      if (!supabaseUrl || !supabaseServiceKey) {
+        console.error("Missing Supabase credentials for WhatsApp Webhook");
+        return res.status(500).send("Server configuration error");
+      }
 
-    const globalVerifyToken = adminSettings?.settings?.verify_token;
+      // Retrieve global verify token
+      const { data: adminSettings, error } = await supabaseAdmin
+        .from("integration_settings")
+        .select("settings")
+        .eq("integration_name", "whatsapp_api")
+        .maybeSingle();
 
-    if (mode === "subscribe" && token === globalVerifyToken) {
-      console.log("WhatsApp Webhook verified with Global API token");
-      res.status(200).send(challenge);
-      return;
+      if (error) {
+        console.error("Error fetching global WhatsApp settings during webhook verification:", error);
+        return res.status(500).send("Database error");
+      }
+
+      const globalVerifyToken = adminSettings?.settings ? (adminSettings.settings as any).verify_token : undefined;
+
+      if (mode === "subscribe" && token === globalVerifyToken) {
+        console.log("WhatsApp Webhook verified with Global API token");
+        return res.status(200).send(challenge);
+      }
+      
+      console.error(`Webhook verification failed. Provided token: ${token}, Expected: ${globalVerifyToken}`);
+      return res.status(403).send("Forbidden");
+    } catch (error) {
+      console.error("Unexpected error during WhatsApp Webhook GET verification:", error);
+      return res.status(500).send("Internal Server Error");
     }
-    
-    res.status(403).send("Forbidden");
-    return;
   }
 
   // Handle incoming messages
