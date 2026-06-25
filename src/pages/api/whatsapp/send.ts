@@ -7,10 +7,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ error: "Method Not Allowed" });
   }
   
-  const { lead_id, type, content } = req.body;
+  const { lead_id, phone, type, content } = req.body;
   const token = req.headers.authorization?.split(" ")[1];
   
-  if (!token || !lead_id || !type || !content) {
+  if (!token || (!lead_id && !phone) || !type || !content) {
     return res.status(400).json({ error: "Missing required fields or authorization" });
   }
 
@@ -26,23 +26,35 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(401).json({ error: "Invalid token" });
   }
 
-  // Get lead phone
-  const { data: lead } = await supabaseAdmin
-    .from("leads")
-    .select("phone, user_id")
-    .eq("id", lead_id)
-    .single();
-  
-  if (!lead || !lead.phone) {
-    return res.status(400).json({ error: "Lead não encontrada ou sem número de telefone associado." });
+  let targetPhone = phone;
+  let targetUserId = user.id;
+
+  // If lead_id is provided, prioritize fetching data from the lead
+  if (lead_id) {
+    const { data: lead } = await supabaseAdmin
+      .from("leads")
+      .select("phone, user_id")
+      .eq("id", lead_id)
+      .single();
+    
+    if (!lead || !lead.phone) {
+      return res.status(400).json({ error: "Lead não encontrada ou sem número de telefone associado." });
+    }
+    
+    targetPhone = lead.phone;
+    targetUserId = lead.user_id;
+  }
+
+  if (!targetPhone) {
+    return res.status(400).json({ error: "Número de telefone não fornecido." });
   }
 
   try {
     let result;
     if (type === 'template') {
-      result = await sendWhatsAppTemplate(lead.user_id, lead.phone, content, supabaseAdmin);
+      result = await sendWhatsAppTemplate(targetUserId, targetPhone, content, supabaseAdmin);
     } else {
-      result = await sendWhatsAppMessage(lead.user_id, lead.phone, content, supabaseAdmin);
+      result = await sendWhatsAppMessage(targetUserId, targetPhone, content, supabaseAdmin);
     }
 
     if (!result.success) {
@@ -52,10 +64,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // Log interaction
     const prefix = type === 'template' ? 'Template' : 'Texto';
     await supabaseAdmin.from("interactions").insert({
-      lead_id: lead_id,
+      lead_id: lead_id || null,
       user_id: user.id,
       interaction_type: "whatsapp_outbound",
-      content: `Enviado (Manual - ${prefix}): ${content}`,
+      content: `Para: ${targetPhone}\nEnviado (Manual - ${prefix}): ${content}`,
       interaction_date: new Date().toISOString()
     });
 

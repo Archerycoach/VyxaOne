@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
-import { ArrowLeft, User, Lock, Building2, Bell, Save, Loader2, Mail, Facebook, Calendar, Bot, Activity, Zap, FileText, Globe, Sparkles, CheckCircle2, XCircle, MessageCircle } from "lucide-react";
+import { ArrowLeft, User, Lock, Building2, Bell, Save, Loader2, Mail, Facebook, Calendar, Bot, Activity, Zap, FileText, Globe, Sparkles, CheckCircle2, XCircle, MessageCircle, Trash2 } from "lucide-react";
 import { getUserProfile, updateUserProfile } from "@/services/profileService";
 import { updatePassword, getSession, signOut } from "@/services/authService";
 import { useToast } from "@/hooks/use-toast";
@@ -406,6 +406,8 @@ export default function Settings() {
         email_daily_tasks: profile.email_daily_tasks,
         email_daily_events: profile.email_daily_events,
         email_new_lead_assigned: profile.email_new_lead_assigned,
+        email_signature_text: profile.email_signature_text,
+        email_signature_image_url: profile.email_signature_image_url,
       });
       
       toast({
@@ -783,10 +785,21 @@ export default function Settings() {
                     </div>
                   </div>
 
-                  <Button onClick={updateProfile} disabled={loading}>
-                    <Save className="mr-2 h-4 w-4" />
-                    {loading ? "A guardar..." : "Guardar Assinatura"}
-                  </Button>
+                  <div className="flex gap-3">
+                    <Button onClick={updateProfile} disabled={loading} className="bg-gradient-to-r from-blue-600 to-purple-600">
+                      <Save className="mr-2 h-4 w-4" />
+                      {loading ? "A guardar..." : "Guardar Assinatura"}
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      onClick={() => setProfile((prev: any) => prev ? {...prev, email_signature_text: "", email_signature_image_url: null} : null)} 
+                      disabled={loading}
+                      className="text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Apagar Assinatura
+                    </Button>
+                  </div>
                 </div>
               </CardContent>
             </Card>

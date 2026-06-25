@@ -268,8 +268,8 @@ export default function BulkMessages() {
   
   // Manual Recipients
   const [manualName, setManualName] = useState("");
-  const [manualEmail, setManualEmail] = useState("");
-  const [manualRecipients, setManualRecipients] = useState<Array<{ id: string; name: string; email: string; type: "manual" }>>([]);
+  const [manualContact, setManualContact] = useState("");
+  const [manualRecipients, setManualRecipients] = useState<Array<{ id: string; name: string; email?: string; phone?: string; type: "manual" }>>([]);
 
   // Message
   const [subject, setSubject] = useState("");
@@ -286,6 +286,10 @@ export default function BulkMessages() {
   const [aiDraftSummary, setAiDraftSummary] = useState<LeadAudienceSummary | null>(null);
   const copyEmail = user?.email || "";
 
+  // Signature
+  const [userSignature, setUserSignature] = useState<{text: string | null, image: string | null}>({text: null, image: null});
+  const [includeSignature, setIncludeSignature] = useState(true);
+
   // Template Save State
   const [isSaveTemplateOpen, setIsSaveTemplateOpen] = useState(false);
   const [newTemplateName, setNewTemplateName] = useState("");
@@ -298,8 +302,28 @@ export default function BulkMessages() {
   useEffect(() => {
     if (user) {
       loadData();
+      loadSignature();
     }
   }, [user]);
+
+  const loadSignature = async () => {
+    try {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("email_signature_text, email_signature_image_url")
+        .eq("id", user.id)
+        .single();
+      
+      if (profile) {
+        setUserSignature({
+          text: profile.email_signature_text,
+          image: profile.email_signature_image_url
+        });
+      }
+    } catch (error) {
+      console.error("Error loading signature:", error);
+    }
+  };
 
   useEffect(() => {
     if (user) {
@@ -697,8 +721,8 @@ export default function BulkMessages() {
     }
 
     // STEP 3: Add MANUAL RECIPIENTS
-    if (messageType === "email") {
-      manualRecipients.forEach((manual) => {
+    manualRecipients.forEach((manual) => {
+      if (messageType === "email" && manual.email) {
         if (!seenEmails.has(manual.email.toLowerCase())) {
           seenEmails.add(manual.email.toLowerCase());
           recipients.push({
@@ -708,8 +732,18 @@ export default function BulkMessages() {
             type: "manual",
           });
         }
-      });
-    }
+      } else if (messageType === "whatsapp" && manual.phone) {
+        if (!seenPhones.has(manual.phone)) {
+          seenPhones.add(manual.phone);
+          recipients.push({
+            id: manual.id,
+            name: manual.name,
+            phone: manual.phone,
+            type: "manual",
+          });
+        }
+      }
+    });
 
     return recipients;
   };
@@ -735,25 +769,32 @@ export default function BulkMessages() {
   };
 
   const handleAddManualRecipient = () => {
-    if (!manualEmail.trim()) {
+    if (!manualContact.trim()) {
       toast({
         title: "Aviso",
-        description: "Introduza um e-mail válido.",
+        description: messageType === "email" ? "Introduza um e-mail válido." : "Introduza um telefone válido.",
         variant: "destructive",
       });
       return;
     }
     
     const newId = `manual-${Date.now()}`;
-    setManualRecipients(prev => [...prev, {
+    const newRecipient: any = {
       id: newId,
-      name: manualName.trim() || manualEmail.trim().split('@')[0],
-      email: manualEmail.trim(),
+      name: manualName.trim() || manualContact.trim().split('@')[0],
       type: "manual"
-    }]);
+    };
+
+    if (messageType === "email") {
+      newRecipient.email = manualContact.trim();
+    } else {
+      newRecipient.phone = manualContact.trim();
+    }
+
+    setManualRecipients(prev => [...prev, newRecipient]);
     
     setSelectedRecipients(prev => new Set(prev).add(newId));
-    setManualEmail("");
+    setManualContact("");
     setManualName("");
   };
 
@@ -857,13 +898,21 @@ export default function BulkMessages() {
               .replace(/\{telefone\}/g, recipient.phone || "")
               .replace(/\{empreendimento\}/g, recipient.development_name || "");
 
-            // Se for email, a mensagem já vem em formato HTML do RichTextEditor
-            const htmlContent = messageType === "email" ? personalizedMessage : personalizedMessage.replace(/\n/g, "<br>");
+            // Convert to HTML and append signature if enabled
+            let htmlContent = personalizedMessage.replace(/\n/g, "<br>");
+            if (includeSignature && (userSignature.text || userSignature.image)) {
+              htmlContent += '<br><br><br><div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #eaeaea;">';
+              if (userSignature.text) {
+                htmlContent += `<div style="color: #666; font-size: 14px;">${userSignature.text.replace(/\n/g, '<br>')}</div>`;
+              }
+              if (userSignature.image) {
+                htmlContent += `<br><img src="${userSignature.image}" alt="Assinatura" style="max-width: 250px; height: auto;" />`;
+              }
+              htmlContent += '</div>';
+            }
             
-            // Para a versão texto, tentamos remover as tags HTML básicas se vier do editor
-            const textContent = messageType === "email" 
-              ? personalizedMessage.replace(/<[^>]*>?/gm, '') 
-              : personalizedMessage;
+            // For text version, remove basic HTML tags
+            const textContent = htmlContent.replace(/<[^>]*>?/gm, '').replace(/&nbsp;/g, ' ');
 
             const emailAttachments = attachments.map(att => ({
               filename: att.name,
@@ -1082,37 +1131,35 @@ export default function BulkMessages() {
                     )}
 
                     {/* Manual Recipients Input */}
-                    {messageType === "email" && (
-                      <div className="space-y-3 pt-3 border-t border-slate-100">
-                        <Label className="text-sm font-medium text-slate-700">Adicionar Destinatário Avulso</Label>
-                        <div className="flex flex-col gap-2">
+                    <div className="space-y-3 pt-3 border-t border-slate-100">
+                      <Label className="text-sm font-medium text-slate-700">Adicionar Destinatário Avulso</Label>
+                      <div className="flex flex-col gap-2">
+                        <Input 
+                          placeholder="Nome (Opcional)" 
+                          value={manualName}
+                          onChange={(e) => setManualName(e.target.value)}
+                          className="h-8 text-sm"
+                        />
+                        <div className="flex gap-2">
                           <Input 
-                            placeholder="Nome (Opcional)" 
-                            value={manualName}
-                            onChange={(e) => setManualName(e.target.value)}
+                            placeholder={messageType === "email" ? "E-mail" : "Número de Telefone"} 
+                            type={messageType === "email" ? "email" : "tel"}
+                            value={manualContact}
+                            onChange={(e) => setManualContact(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handleAddManualRecipient();
+                              }
+                            }}
                             className="h-8 text-sm"
                           />
-                          <div className="flex gap-2">
-                            <Input 
-                              placeholder="E-mail" 
-                              type="email"
-                              value={manualEmail}
-                              onChange={(e) => setManualEmail(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  e.preventDefault();
-                                  handleAddManualRecipient();
-                                }
-                              }}
-                              className="h-8 text-sm"
-                            />
-                            <Button variant="outline" type="button" onClick={handleAddManualRecipient} size="sm">
-                              Adicionar
-                            </Button>
-                          </div>
+                          <Button variant="outline" type="button" onClick={handleAddManualRecipient} size="sm">
+                            Adicionar
+                          </Button>
                         </div>
                       </div>
-                    )}
+                    </div>
 
                     <Input
                       placeholder="Pesquisar por nome, email ou telefone..."
@@ -1322,6 +1369,29 @@ export default function BulkMessages() {
                           Pode usar variáveis: {"{nome}"}, {"{email}"}, {"{telefone}"}, {"{empreendimento}"}. O editor suporta imagens até 1MB e pode clicar numa imagem para ajustar a largura da assinatura.
                         </p>
                       </div>
+
+                      {/* Signature Option */}
+                      {(userSignature.text || userSignature.image) && (
+                        <div className="space-y-2 bg-slate-50 p-3 rounded-lg border">
+                          <div className="flex items-center space-x-2">
+                            <Checkbox 
+                              id="include-signature" 
+                              checked={includeSignature} 
+                              onCheckedChange={(checked) => setIncludeSignature(checked === true)} 
+                            />
+                            <Label htmlFor="include-signature" className="text-sm font-medium cursor-pointer">
+                              Anexar a minha assinatura ao final do e-mail
+                            </Label>
+                          </div>
+                          {includeSignature && (
+                            <div className="mt-3 pt-3 border-t border-slate-200">
+                              <p className="text-xs text-slate-500 mb-2">Pré-visualização da assinatura:</p>
+                              {userSignature.text && <div className="text-sm text-slate-600 whitespace-pre-wrap">{userSignature.text}</div>}
+                              {userSignature.image && <img src={userSignature.image} alt="Assinatura" className="max-w-[200px] h-auto mt-2" />}
+                            </div>
+                          )}
+                        </div>
+                      )}
 
                       <div className="flex items-start gap-3 rounded-md border border-slate-200 bg-slate-50 p-3">
                         <Checkbox
