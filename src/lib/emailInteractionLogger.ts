@@ -9,6 +9,7 @@ interface EmailInteractionData {
   leadId?: string;
   contactId?: string;
   userId: string;
+  to?: string | string[];
   subject: string;
   body?: string;
   outcome?: string;
@@ -23,13 +24,17 @@ export async function logEmailInteraction(data: EmailInteractionData): Promise<v
   try {
     const now = new Date().toISOString();
     const outcome = data.outcome || "Email enviado";
+    
+    // Format recipients
+    const toRecipients = Array.isArray(data.to) ? data.to.join(', ') : (data.to || 'Desconhecido');
 
     // 1. Create interaction record
     const interactionData: any = {
       interaction_type: "email",
       interaction_date: now,
       outcome: outcome,
-      content: `Assunto: ${data.subject}${data.body ? `\n\n${data.body.substring(0, 500)}` : ""}`,
+      subject: data.subject,
+      content: `Para: ${toRecipients}\nAssunto: ${data.subject}${data.body ? `\n\n${data.body.substring(0, 500)}` : ""}`,
       user_id: data.userId,
     };
 
@@ -81,12 +86,16 @@ export async function logEmailInteractionServer(
     const now = new Date().toISOString();
     const outcome = data.outcome || "Email enviado";
 
+    // Format recipients
+    const toRecipients = Array.isArray(data.to) ? data.to.join(', ') : (data.to || 'Desconhecido');
+
     // 1. Create interaction record
     const interactionData: any = {
       interaction_type: "email",
       interaction_date: now,
       outcome: outcome,
-      content: `Assunto: ${data.subject}${data.body ? `\n\n${data.body.substring(0, 500)}` : ""}`,
+      subject: data.subject,
+      content: `Para: ${toRecipients}\nAssunto: ${data.subject}${data.body ? `\n\n${data.body.substring(0, 500)}` : ""}`,
       user_id: data.userId,
     };
 
