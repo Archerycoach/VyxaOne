@@ -828,13 +828,13 @@ export default function BulkMessages() {
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    const maxSize = 5 * 1024 * 1024; // 5MB total per file
+    const maxSize = 10 * 1024 * 1024; // 10MB total per file
 
     files.forEach((file) => {
       if (file.size > maxSize) {
         toast({
           title: "Ficheiro demasiado grande",
-          description: `O ficheiro ${file.name} excede o limite de 5MB.`,
+          description: `O ficheiro ${file.name} excede o limite de 10MB.`,
           variant: "destructive",
         });
         return;

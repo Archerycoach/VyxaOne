@@ -1203,8 +1203,8 @@ export function LeadDetailsDialog({
                       const file = e.target.files?.[0];
                       if (!file) return;
                       
-                      if (file.size > 5 * 1024 * 1024) {
-                        toast({ title: "Ficheiro demasiado grande", description: "O limite é de 5MB por ficheiro.", variant: "destructive" });
+                      if (file.size > 10 * 1024 * 1024) {
+                        toast({ title: "Ficheiro demasiado grande", description: "O limite é de 10MB por ficheiro.", variant: "destructive" });
                         return;
                       }
                       
