@@ -56,15 +56,17 @@ export function PipelineContainer() {
   }, []);
 
   const handleStageChange = async (leadId: string, newStage: string) => {
+    const statusField = pipelineView === "buyer" ? "buyer_status" : "seller_status";
+
     // Optimistic update
     setLeads(
       leads.map((lead) =>
-        lead.id === leadId ? { ...lead, status: newStage } : lead
+        lead.id === leadId ? { ...lead, [statusField]: newStage } : lead
       )
     );
 
     try {
-      await updateLead(leadId, { status: newStage });
+      await updateLead(leadId, { [statusField]: newStage });
       toast({
         title: "Lead atualizado",
         description: "O status do lead foi atualizado",

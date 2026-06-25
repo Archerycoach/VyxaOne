@@ -40,6 +40,8 @@ export interface LeadWithDetails extends Lead {
   is_development?: boolean | null;
   development_name?: string | null;
   last_contact_outcome?: string | null;
+  buyer_status?: string | null;
+  seller_status?: string | null;
 }
 
 export type LeadWithContacts = LeadWithDetails;

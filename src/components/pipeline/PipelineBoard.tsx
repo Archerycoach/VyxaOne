@@ -81,14 +81,17 @@ export function PipelineBoard({ leads, onLeadMove, onLeadClick, onLeadDelete, is
   };
 
   const getLeadsByStage = (stageId: string, isFirstStage: boolean) => {
+    const statusField = pipelineView === "buyer" ? "buyer_status" : "seller_status";
+    
     return leads.filter((lead) => {
       // Direct match
-      if (lead.status === stageId) return true;
+      const currentStatus = (lead as any)[statusField] || lead.status;
+      if (currentStatus === stageId) return true;
       
       // Fallback: If this is the first column, and the lead's status doesn't match ANY column in the current pipeline, put it here
       if (isFirstStage) {
         const stagesList = pipelineView === "buyer" ? buyerStages : sellerStages;
-        const existsInPipeline = stagesList.some(s => s.id === lead.status);
+        const existsInPipeline = stagesList.some(s => s.id === currentStatus);
         if (!existsInPipeline) return true;
       }
       

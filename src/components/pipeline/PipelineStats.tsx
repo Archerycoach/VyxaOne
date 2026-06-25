@@ -35,22 +35,24 @@ export function PipelineStats({ leads, pipelineView }: PipelineStatsProps) {
   // Calculate stats
   const total = leads.length;
   
+  const statusField = pipelineView === "buyer" ? "buyer_status" : "seller_status";
+  
   // Find the last stage ID (converted/won leads)
   const lastStageId = stages.length > 0 ? stages[stages.length - 1].id : null;
   
   // Count leads in the last stage (conversions)
   const conversions = lastStageId 
-    ? leads.filter((l) => l.status === lastStageId).length 
+    ? leads.filter((l) => ((l as any)[statusField] || l.status) === lastStageId).length 
     : 0;
   
   // Count qualified leads (second stage typically)
   const qualifiedStageId = stages.length > 1 ? stages[1].id : null;
   const qualified = qualifiedStageId
-    ? leads.filter((l) => l.status === qualifiedStageId).length
+    ? leads.filter((l) => ((l as any)[statusField] || l.status) === qualifiedStageId).length
     : 0;
   
   // Count lost leads (assuming "lost" status exists, or count by stage if custom)
-  const lost = leads.filter((l) => l.status === "lost").length;
+  const lost = leads.filter((l) => ((l as any)[statusField] || l.status) === "lost").length;
   
   // Calculate conversion rate (conversions / total)
   const conversionRate = total > 0 ? ((conversions / total) * 100).toFixed(1) : "0.0";
