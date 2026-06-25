@@ -495,3 +495,15 @@ export interface ExternalProperty {
   bathrooms?: number;
   area?: number;
 }
+
+export interface WhatsAppSettings {
+  id: string;
+  user_id: string;
+  phone_number_id?: string;
+  business_account_id?: string;
+  access_token?: string;
+  verify_token?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}

@@ -61,23 +61,28 @@ async function withRetry<T>(
  * Get Google Calendar access token for current user
  * Refreshes token if expired
  */
-export async function getGoogleCalendarToken(): Promise<string | null> {
+export async function getGoogleCalendarToken(userIdOverride?: string): Promise<string | null> {
   try {
     console.log("[googleCalendar:getToken] Starting token retrieval...");
     
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
+    let userId = userIdOverride;
+    if (!userId) {
+      const { data: { user } } = await supabase.auth.getUser();
+      userId = user?.id;
+    }
+    
+    if (!userId) {
       console.log("[googleCalendar:getToken] ❌ No authenticated user");
       return null;
     }
 
-    console.log("[googleCalendar:getToken] User ID:", user.id);
+    console.log("[googleCalendar:getToken] User ID:", userId);
 
     // Get integration settings
     const { data: integration } = await supabase
       .from("google_calendar_integrations" as any)
       .select("*")
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .maybeSingle();
 
     if (!integration) {
@@ -176,22 +181,28 @@ export async function syncEventToGoogle(
     end_time: string;
     location?: string;
   },
-  googleEventId?: string | null
+  googleEventId?: string | null,
+  userIdOverride?: string
 ): Promise<string | null> {
   try {
     console.log("[googleCalendar:syncEvent] ===== SYNC EVENT START =====");
     console.log("[googleCalendar:syncEvent] Event:", eventData.title);
     console.log("[googleCalendar:syncEvent] Google Event ID:", googleEventId || "none (new event)");
     
-    const accessToken = await getGoogleCalendarToken();
+    const accessToken = await getGoogleCalendarToken(userIdOverride);
     if (!accessToken) {
       console.log("[googleCalendar:syncEvent] ❌ No access token, skipping sync");
       return null;
     }
 
     // Get calendar ID from integration settings
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
+    let userId = userIdOverride;
+    if (!userId) {
+      const { data: { user } } = await supabase.auth.getUser();
+      userId = user?.id;
+    }
+    
+    if (!userId) {
       console.error("[googleCalendar:syncEvent] ❌ No authenticated user");
       return null;
     }
@@ -199,7 +210,7 @@ export async function syncEventToGoogle(
     const { data: integration } = await supabase
       .from("google_calendar_integrations" as any)
       .select("calendar_id, sync_direction")
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .maybeSingle();
 
     if (!integration) {
@@ -670,4 +681,66 @@ export function setupAutoSync(
     isRunning = false;
     clearInterval(intervalId);
   };
+}
+
+/**
+ * Get Free/Busy availability from Google Calendar for the next 3 days
+ * Useful for AI scheduling
+ */
+export async function getGoogleCalendarFreeBusy(userId: string): Promise<string> {
+  try {
+    const { data: integration } = await supabase
+      .from("google_calendar_integrations" as any)
+      .select("calendar_id, access_token, refresh_token, expires_at, id")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (!integration) return "Agenda não conectada.";
+    
+    // Simplistic token check (in production we'd use a server-side refresh token flow, 
+    // but here we just try to use the current access_token)
+    const integrationData = integration as any;
+    const accessToken = integrationData.access_token;
+    if (!accessToken) return "Sem acesso à agenda.";
+
+    const calendarId = integrationData.calendar_id || "primary";
+    
+    const timeMin = new Date();
+    const timeMax = new Date();
+    timeMax.setDate(timeMax.getDate() + 3); // Look ahead 3 days
+
+    const response = await fetch("https://www.googleapis.com/calendar/v3/freeBusy", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        timeMin: timeMin.toISOString(),
+        timeMax: timeMax.toISOString(),
+        items: [{ id: calendarId }]
+      })
+    });
+
+    if (!response.ok) return "Erro ao ler disponibilidade da agenda.";
+
+    const data = await response.json();
+    const busySlots = data.calendars?.[calendarId]?.busy || [];
+    
+    if (busySlots.length === 0) {
+      return "Agenda totalmente livre nos próximos 3 dias.";
+    }
+
+    // Format busy slots to pass to AI
+    const formattedBusy = busySlots.map((slot: any) => {
+      const start = new Date(slot.start).toLocaleString('pt-PT');
+      const end = new Date(slot.end).toLocaleString('pt-PT');
+      return `Ocupado: ${start} até ${end}`;
+    }).join("\n");
+
+    return `Horários ocupados nos próximos 3 dias:\n${formattedBusy}\n(Sugere horários fora destes períodos, preferencialmente entre as 09:00 e as 18:00)`;
+  } catch (error) {
+    console.error("FreeBusy fetch error:", error);
+    return "Erro ao consultar a agenda.";
+  }
 }

@@ -41,6 +41,15 @@ export default function Integrations() {
   });
   const [isNotionConfigured, setIsNotionConfigured] = useState(false);
 
+  // WhatsApp Global Settings
+  const [whatsapp, setWhatsapp] = useState({
+    access_token: "",
+    business_account_id: "",
+    verify_token: "",
+    enabled: false
+  });
+  const [isWhatsappConfigured, setIsWhatsappConfigured] = useState(false);
+
   useEffect(() => {
     loadIntegrationSettings();
   }, []);
@@ -84,6 +93,26 @@ export default function Integrations() {
           enabled: notionData.is_active || false
         });
         setIsNotionConfigured(!!(settings.client_id && settings.client_secret));
+      }
+
+      // Load WhatsApp settings
+      const { data: waData, error: waError } = await supabase
+        .from("integration_settings")
+        .select("*")
+        .eq("integration_name", "whatsapp_api")
+        .maybeSingle();
+
+      if (waError) throw waError;
+
+      if (waData) {
+        const settings = (waData.settings as any) || {};
+        setWhatsapp({
+          access_token: settings.access_token || "",
+          business_account_id: settings.business_account_id || "",
+          verify_token: settings.verify_token || "",
+          enabled: waData.is_active || false
+        });
+        setIsWhatsappConfigured(!!(settings.access_token && settings.business_account_id));
       }
 
     } catch (error: any) {
@@ -197,6 +226,55 @@ export default function Integrations() {
     }
   };
 
+  const handleSaveWhatsapp = async () => {
+    try {
+      if (!whatsapp.access_token || !whatsapp.business_account_id || !whatsapp.verify_token) {
+        toast({
+          title: "Campos obrigatórios",
+          description: "Por favor, preencha todos os campos do WhatsApp.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setSaving(true);
+
+      const { error } = await supabase
+        .from("integration_settings")
+        .upsert({
+          integration_name: "whatsapp_api",
+          settings: {
+            access_token: whatsapp.access_token.trim(),
+            business_account_id: whatsapp.business_account_id.trim(),
+            verify_token: whatsapp.verify_token.trim()
+          },
+          is_active: whatsapp.enabled,
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: "integration_name"
+        });
+
+      if (error) throw error;
+
+      setIsWhatsappConfigured(true);
+      toast({
+        title: "✅ Sucesso",
+        description: "Configurações Globais do WhatsApp salvas!",
+      });
+
+      await loadIntegrationSettings();
+    } catch (error: any) {
+      console.error("Error saving WhatsApp settings:", error);
+      toast({
+        title: "Erro",
+        description: error.message || "Falha ao salvar configurações do WhatsApp.",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleTestGoogleCalendar = async () => {
     try {
       setIsTesting(true);
@@ -294,6 +372,37 @@ export default function Integrations() {
     }
   };
 
+  const handleToggleWhatsappEnabled = async (enabled: boolean) => {
+    try {
+      if (!isWhatsappConfigured && enabled) {
+        toast({
+          title: "Configuração necessária",
+          description: "Configure o Access Token e Account ID primeiro.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const { error } = await supabase
+        .from("integration_settings")
+        .update({ 
+          is_active: enabled,
+          updated_at: new Date().toISOString()
+        })
+        .eq("integration_name", "whatsapp_api");
+
+      if (error) throw error;
+
+      setWhatsapp(prev => ({ ...prev, enabled }));
+      toast({
+        title: enabled ? "✅ WhatsApp Ativado" : "⚠️ WhatsApp Desativado",
+      });
+    } catch (error: any) {
+      console.error("Error toggling WhatsApp:", error);
+      toast({ title: "Erro", description: error.message, variant: "destructive" });
+    }
+  };
+
   const handleClearGoogleConfig = async () => {
     if (!confirm("Tem certeza que deseja limpar as configurações OAuth do Google Calendar? Esta ação não pode ser desfeita.")) {
       return;
@@ -360,6 +469,11 @@ export default function Integrations() {
         variant: "destructive",
       });
     }
+  };
+
+  const generateVerifyToken = () => {
+    const newToken = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+    setWhatsapp(prev => ({ ...prev, verify_token: newToken }));
   };
 
   if (loading) {
@@ -491,6 +605,90 @@ export default function Integrations() {
                     <ExternalLink className="mr-2 h-4 w-4" />
                     Google Cloud Console
                   </a>
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* WhatsApp Global API Integration */}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+              <div className="flex items-center gap-2">
+                <Settings className="h-5 w-5" />
+                <CardTitle>WhatsApp Global API</CardTitle>
+              </div>
+              {isWhatsappConfigured && (
+                <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
+                  <CheckCircle2 className="h-4 w-4" />
+                  Configurado
+                </div>
+              )}
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <CardDescription>
+                Credenciais centrais do Meta for Developers (System User). Ao configurar aqui, os utilizadores apenas precisarão de inserir o seu número de telemóvel para utilizar o WhatsApp na plataforma.
+              </CardDescription>
+
+              <Alert>
+                <InfoIcon className="h-4 w-4" />
+                <AlertDescription>
+                  <p className="font-semibold mb-2">URL de Webhook (Coloque na consola da Meta):</p>
+                  <code className="block bg-muted p-2 rounded text-sm">
+                    {typeof window !== 'undefined' && `${window.location.origin}/api/whatsapp/webhook`}
+                  </code>
+                </AlertDescription>
+              </Alert>
+
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label>System User Access Token</Label>
+                  <Input
+                    type="password"
+                    placeholder="EAA..."
+                    value={whatsapp.access_token}
+                    onChange={(e) => setWhatsapp(prev => ({ ...prev, access_token: e.target.value }))}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>WhatsApp Business Account ID</Label>
+                  <Input
+                    placeholder="Ex: 10423..."
+                    value={whatsapp.business_account_id}
+                    onChange={(e) => setWhatsapp(prev => ({ ...prev, business_account_id: e.target.value }))}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Verify Token (Webhook)</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Token para verificar o webhook na Meta"
+                      value={whatsapp.verify_token}
+                      onChange={(e) => setWhatsapp(prev => ({ ...prev, verify_token: e.target.value }))}
+                    />
+                    <Button variant="outline" onClick={generateVerifyToken}>Gerar</Button>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div className="space-y-1">
+                    <Label>Ativar Integração Global</Label>
+                    <p className="text-sm text-muted-foreground">
+                      Disponibilizar o WhatsApp a todos os utilizadores
+                    </p>
+                  </div>
+                  <Switch
+                    checked={whatsapp.enabled}
+                    onCheckedChange={handleToggleWhatsappEnabled}
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <Button onClick={handleSaveWhatsapp} disabled={saving}>
+                  <Settings className="mr-2 h-4 w-4" />
+                  {saving ? "Salvando..." : "Salvar Configurações"}
                 </Button>
               </div>
             </CardContent>

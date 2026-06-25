@@ -10,11 +10,14 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -26,6 +29,7 @@ import { getWorkflowRules } from "@/services/workflowService";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
+import { getTemplates, createTemplate } from "@/services/templateService";
 
 function normalizeText(value: string): string {
   return value
@@ -250,6 +254,7 @@ export default function BulkMessages() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [selectedRecipients, setSelectedRecipients] = useState<Set<string>>(new Set());
   const [emailTemplates, setEmailTemplates] = useState<any[]>([]);
+  const [personalTemplates, setPersonalTemplates] = useState<any[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<string>("");
   
   // Filters
@@ -280,6 +285,11 @@ export default function BulkMessages() {
   const [aiDraftRecipients, setAiDraftRecipients] = useState<AiDraftLeadRecipient[]>([]);
   const [aiDraftSummary, setAiDraftSummary] = useState<LeadAudienceSummary | null>(null);
   const copyEmail = user?.email || "";
+
+  // Template Save State
+  const [isSaveTemplateOpen, setIsSaveTemplateOpen] = useState(false);
+  const [newTemplateName, setNewTemplateName] = useState("");
+  const [savingTemplate, setSavingTemplate] = useState(false);
 
   useEffect(() => {
     checkAuth();
@@ -474,54 +484,86 @@ export default function BulkMessages() {
         }
       );
       setEmailTemplates(emailWorkflows);
+
+      const emailTpls = await getTemplates("email");
+      const waTpls = await getTemplates("whatsapp");
+      setPersonalTemplates([...emailTpls, ...waTpls]);
     } catch (error) {
       console.error("Error loading email templates:", error);
     }
   };
 
-  const handleTemplateSelect = (templateId: string) => {
-    setSelectedTemplate(templateId);
+  const handleTemplateSelect = (val: string) => {
+    setSelectedTemplate(val);
     
-    if (!templateId || templateId === "none") {
-      // Clear fields if "none" selected
+    if (!val || val === "none") {
       return;
     }
     
-    const template = emailTemplates.find((t: any) => t.id === templateId);
-    if (!template) return;
-    
-    // Extract email config from template
-    let emailConfig: any = {};
-    
-    if (template.action_type === "send_email") {
-      // Old schema
-      emailConfig = template.action_config || {};
-    } else if (Array.isArray(template.actions)) {
-      // New schema - find the send_email action
-      const emailAction = template.actions.find((a: any) => a.type === "send_email");
-      if (emailAction) {
-        emailConfig = emailAction.config || emailAction;
+    if (val.startsWith("workflow-")) {
+      const templateId = val.replace("workflow-", "");
+      const template = emailTemplates.find((t: any) => t.id === templateId);
+      if (!template) return;
+      
+      // Extract email config from template
+      let emailConfig: any = {};
+      
+      if (template.action_type === "send_email") {
+        emailConfig = template.action_config || {};
+      } else if (Array.isArray(template.actions)) {
+        const emailAction = template.actions.find((a: any) => a.type === "send_email");
+        if (emailAction) {
+          emailConfig = emailAction.config || emailAction;
+        }
       }
+      
+      if (emailConfig.subject) setSubject(emailConfig.subject);
+      if (emailConfig.body) setMessage(emailConfig.body);
+      if (Array.isArray(emailConfig.attachments) && emailConfig.attachments.length > 0) {
+        setAttachments(emailConfig.attachments);
+      }
+      
+      toast({
+        title: "Template carregado",
+        description: `Template "${template.name}" aplicado com sucesso.`,
+      });
+    } else if (val.startsWith("personal-")) {
+      const templateId = val.replace("personal-", "");
+      const template = personalTemplates.find((t: any) => t.id === templateId);
+      if (!template) return;
+
+      if (template.subject) setSubject(template.subject);
+      if (template.body) setMessage(template.body);
+      
+      toast({
+        title: "Template carregado",
+        description: `Template "${template.name}" aplicado com sucesso.`,
+      });
     }
-    
-    // Populate fields
-    if (emailConfig.subject) {
-      setSubject(emailConfig.subject);
+  };
+
+  const handleSaveTemplate = async () => {
+    if (!newTemplateName.trim() || !user) return;
+    setSavingTemplate(true);
+    try {
+      await createTemplate({
+        name: newTemplateName.trim(),
+        subject: subject,
+        body: message,
+        template_type: messageType,
+        user_id: user.id,
+        is_active: true
+      });
+      toast({ title: "Sucesso", description: "Template guardado com sucesso." });
+      setIsSaveTemplateOpen(false);
+      setNewTemplateName("");
+      await loadEmailTemplates(); // Reloads all templates
+    } catch (error) {
+      console.error("Erro a guardar template", error);
+      toast({ title: "Erro", description: "Falha ao guardar template.", variant: "destructive" });
+    } finally {
+      setSavingTemplate(false);
     }
-    
-    if (emailConfig.body) {
-      setMessage(emailConfig.body);
-    }
-    
-    // Load attachments if present
-    if (Array.isArray(emailConfig.attachments) && emailConfig.attachments.length > 0) {
-      setAttachments(emailConfig.attachments);
-    }
-    
-    toast({
-      title: "Template carregado",
-      description: `Template "${template.name}" aplicado com sucesso.`,
-    });
   };
 
   const getFilteredRecipients = () => {
@@ -1196,25 +1238,64 @@ export default function BulkMessages() {
 
                     <TabsContent value="email" className="space-y-4 mt-4">
                       {/* Template Selector */}
-                      {emailTemplates.length > 0 && (
-                        <div className="space-y-2 pb-2 border-b">
-                          <Label htmlFor="template">Usar Template de Automação</Label>
-                          <Select value={selectedTemplate} onValueChange={handleTemplateSelect}>
-                            <SelectTrigger id="template">
-                              <SelectValue placeholder="Selecionar template..." />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="none">Nenhum template</SelectItem>
-                              {emailTemplates.map((template: any) => (
-                                <SelectItem key={template.id} value={template.id}>
-                                  {template.name || "Template sem nome"}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <p className="text-xs text-gray-500">
-                            Carrega automaticamente o assunto, mensagem e anexos do template selecionado
-                          </p>
+                      {(emailTemplates.length > 0 || personalTemplates.filter(t => t.template_type === 'email').length > 0) && (
+                        <div className="flex items-end justify-between pb-4 border-b gap-4">
+                          <div className="flex-1 space-y-2">
+                            <Label htmlFor="template">Usar Template</Label>
+                            <Select value={selectedTemplate} onValueChange={handleTemplateSelect}>
+                              <SelectTrigger id="template">
+                                <SelectValue placeholder="Selecionar template..." />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">Nenhum template</SelectItem>
+                                
+                                {personalTemplates.filter(t => t.template_type === 'email').length > 0 && (
+                                  <SelectGroup>
+                                    <SelectLabel>Meus Templates</SelectLabel>
+                                    {personalTemplates.filter(t => t.template_type === 'email').map((template: any) => (
+                                      <SelectItem key={`personal-${template.id}`} value={`personal-${template.id}`}>
+                                        {template.name}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectGroup>
+                                )}
+
+                                {emailTemplates.length > 0 && (
+                                  <SelectGroup>
+                                    <SelectLabel>Templates de Automação</SelectLabel>
+                                    {emailTemplates.map((template: any) => (
+                                      <SelectItem key={`workflow-${template.id}`} value={`workflow-${template.id}`}>
+                                        {template.name || "Template sem nome"}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectGroup>
+                                )}
+                              </SelectContent>
+                            </Select>
+                            <p className="text-xs text-gray-500">
+                              Carrega o assunto e mensagem guardados
+                            </p>
+                          </div>
+                          
+                          <Button 
+                            variant="outline" 
+                            onClick={() => setIsSaveTemplateOpen(true)} 
+                            disabled={!message.trim() || !subject.trim()}
+                          >
+                            Guardar como Template
+                          </Button>
+                        </div>
+                      )}
+
+                      {!emailTemplates.length && personalTemplates.filter(t => t.template_type === 'email').length === 0 && (
+                        <div className="flex justify-end pb-2">
+                          <Button 
+                            variant="outline" 
+                            onClick={() => setIsSaveTemplateOpen(true)} 
+                            disabled={!message.trim() || !subject.trim()}
+                          >
+                            Guardar como Template
+                          </Button>
                         </div>
                       )}
 
@@ -1307,6 +1388,49 @@ export default function BulkMessages() {
                         </AlertDescription>
                       </Alert>
 
+                      {(personalTemplates.filter(t => t.template_type === 'whatsapp').length > 0) && (
+                        <div className="flex items-end justify-between pb-4 border-b gap-4">
+                          <div className="flex-1 space-y-2">
+                            <Label htmlFor="wa-template">Usar Template Pessoal</Label>
+                            <Select value={selectedTemplate} onValueChange={handleTemplateSelect}>
+                              <SelectTrigger id="wa-template">
+                                <SelectValue placeholder="Selecionar template..." />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">Nenhum template</SelectItem>
+                                <SelectGroup>
+                                  <SelectLabel>Meus Templates</SelectLabel>
+                                  {personalTemplates.filter(t => t.template_type === 'whatsapp').map((template: any) => (
+                                    <SelectItem key={`personal-${template.id}`} value={`personal-${template.id}`}>
+                                      {template.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectGroup>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <Button 
+                            variant="outline" 
+                            onClick={() => setIsSaveTemplateOpen(true)} 
+                            disabled={!message.trim()}
+                          >
+                            Guardar como Template
+                          </Button>
+                        </div>
+                      )}
+
+                      {personalTemplates.filter(t => t.template_type === 'whatsapp').length === 0 && (
+                        <div className="flex justify-end pb-2">
+                          <Button 
+                            variant="outline" 
+                            onClick={() => setIsSaveTemplateOpen(true)} 
+                            disabled={!message.trim()}
+                          >
+                            Guardar como Template
+                          </Button>
+                        </div>
+                      )}
+
                       <div className="space-y-2">
                         <Label htmlFor="whatsapp-message">Mensagem *</Label>
                         <Textarea
@@ -1373,6 +1497,34 @@ export default function BulkMessages() {
           </div>
         </div>
       </div>
+
+      {/* Save Template Dialog */}
+      <Dialog open={isSaveTemplateOpen} onOpenChange={setIsSaveTemplateOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Guardar como Template Pessoal</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Nome do Template</Label>
+              <Input 
+                value={newTemplateName} 
+                onChange={(e) => setNewTemplateName(e.target.value)} 
+                placeholder="Ex: Apresentação de Novo Imóvel" 
+              />
+              <p className="text-xs text-muted-foreground">
+                Este template ficará disponível no menu para futuros envios de {messageType === "email" ? "Email" : "WhatsApp"}.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsSaveTemplateOpen(false)}>Cancelar</Button>
+            <Button onClick={handleSaveTemplate} disabled={savingTemplate || !newTemplateName.trim()}>
+              {savingTemplate ? "A guardar..." : "Guardar Template"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Layout>
   );
 }
