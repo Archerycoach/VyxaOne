@@ -5,6 +5,7 @@ import type ReactQuillType from "react-quill";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
+import { uploadImage } from "@/services/imageUploadService";
 
 const ReactQuillDynamic = dynamic(
   async () => {
@@ -200,47 +201,59 @@ export function RichTextEditor({ value, onChange, placeholder, autoFocus = false
               }
 
               const file = input.files[0];
-              const maxSizeBytes = 1 * 1024 * 1024;
+              const maxSizeBytes = 5 * 1024 * 1024; // 5MB limit
               if (file.size > maxSizeBytes) {
                 toast({
                   title: "Imagem muito grande",
                   description:
-                    "Para poupar espaço no servidor e nos emails dos clientes, a imagem não pode ter mais de 1MB. Por favor, redimensione-a e tente novamente.",
+                    "A imagem não pode ter mais de 5MB. Por favor, escolha uma imagem mais pequena.",
                   variant: "destructive",
                 });
                 return;
               }
 
-              const reader = new FileReader();
-              reader.onload = () => {
-                const base64String = reader.result as string;
-                const range = quill.getSelection(true);
-                const index = range ? range.index : quill.getLength();
+              toast({
+                title: "A carregar imagem...",
+                description: "Por favor aguarde um momento.",
+              });
 
-                quill.insertEmbed(index, "image", base64String);
-                quill.setSelection(index + 1);
+              try {
+                // Upload the image to Supabase Storage (using profile bucket so it's handled as a user asset)
+                const result = await uploadImage(file, "profile");
 
-                window.setTimeout(() => {
-                  const images = quill.root.querySelectorAll("img");
-                  const insertedImage = images.item(images.length - 1);
+                if (result.success && result.url) {
+                  const range = quill.getSelection(true);
+                  const index = range ? range.index : quill.getLength();
 
-                  if (insertedImage instanceof HTMLImageElement) {
-                    focusSelectedImage(insertedImage);
-                  }
+                  quill.insertEmbed(index, "image", result.url);
+                  quill.setSelection(index + 1);
 
-                  syncEditorHtml();
-                }, 0);
-              };
+                  window.setTimeout(() => {
+                    const images = quill.root.querySelectorAll("img");
+                    const insertedImage = images.item(images.length - 1);
 
-              reader.onerror = () => {
+                    if (insertedImage instanceof HTMLImageElement) {
+                      focusSelectedImage(insertedImage);
+                    }
+
+                    syncEditorHtml();
+                  }, 0);
+                  
+                  toast({
+                    title: "Sucesso",
+                    description: "Imagem carregada com sucesso.",
+                  });
+                } else {
+                  throw new Error(result.error || "Erro desconhecido no upload.");
+                }
+              } catch (error: any) {
+                console.error("Upload error:", error);
                 toast({
-                  title: "Erro",
-                  description: "Não foi possível ler a imagem.",
+                  title: "Erro no upload",
+                  description: "Não foi possível carregar a imagem: " + (error.message || "Erro desconhecido"),
                   variant: "destructive",
                 });
-              };
-
-              reader.readAsDataURL(file);
+              }
             };
           },
         },

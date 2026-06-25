@@ -59,6 +59,7 @@ import { updateLead } from "@/services/leadsService";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { RichTextEditor } from "@/components/ui/RichTextEditor";
 
 interface LeadDetailsDialogProps {
   leadId: string | null;
@@ -100,7 +101,6 @@ export function LeadDetailsDialog({
 
   // User signature state
   const [userSignature, setUserSignature] = useState<{text: string | null, image: string | null}>({text: null, image: null});
-  const [includeSignature, setIncludeSignature] = useState(true);
 
   const { toast } = useToast();
   
@@ -297,7 +297,22 @@ export function LeadDetailsDialog({
 
       if (!res.ok) throw new Error(data.error || `Erro HTTP ${res.status}`);
 
-      setGeneratedDraft({ text: data.draft, channel });
+      let initialText = data.draft;
+      if (channel === 'email') {
+        initialText = initialText.replace(/\n/g, "<br>");
+        if (userSignature.text || userSignature.image) {
+          initialText += '<br><br><div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #eaeaea;">';
+          if (userSignature.text) {
+            initialText += `<div style="color: #666; font-size: 14px;">${userSignature.text.replace(/\n/g, '<br>')}</div>`;
+          }
+          if (userSignature.image) {
+            initialText += `<br><img src="${userSignature.image}" alt="Assinatura" style="max-width: 250px; height: auto;" />`;
+          }
+          initialText += '</div>';
+        }
+      }
+
+      setGeneratedDraft({ text: initialText, channel });
       toast({ title: "Rascunho Gerado", description: "Pode rever a mensagem antes de a enviar." });
     } catch (err: any) {
       toast({ title: "Erro ao gerar rascunho", description: err.message, variant: "destructive" });
@@ -1124,12 +1139,21 @@ export function LeadDetailsDialog({
           <DialogTitle>Rever Mensagem ({generatedDraft?.channel === 'whatsapp' ? 'WhatsApp' : 'E-mail'})</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 pt-4">
-          <Textarea 
-            value={generatedDraft?.text || ""} 
-            onChange={(e) => setGeneratedDraft(prev => prev ? {...prev, text: e.target.value} : null)}
-            rows={12}
-            className="resize-none"
-          />
+          {generatedDraft?.channel === 'email' ? (
+            <div className="border rounded-md overflow-hidden">
+              <RichTextEditor 
+                value={generatedDraft.text} 
+                onChange={(val) => setGeneratedDraft(prev => prev ? {...prev, text: val} : null)}
+              />
+            </div>
+          ) : (
+            <Textarea 
+              value={generatedDraft?.text || ""} 
+              onChange={(e) => setGeneratedDraft(prev => prev ? {...prev, text: e.target.value} : null)}
+              rows={12}
+              className="resize-none"
+            />
+          )}
           <p className="text-xs text-gray-500">
             Pode editar a mensagem à vontade. Quando clicar no botão abaixo, a aplicação irá {generatedDraft?.channel === 'whatsapp' ? 'abrir no WhatsApp.' : 'enviar o e-mail diretamente a partir da plataforma.'}
           </p>
@@ -1137,24 +1161,24 @@ export function LeadDetailsDialog({
           {generatedDraft?.channel === 'email' && (
             <div className="space-y-4 mt-4 border-t pt-4">
               {(userSignature.text || userSignature.image) && (
-                <div className="space-y-2 mb-4 bg-slate-50 p-3 rounded-lg border">
-                  <div className="flex items-center space-x-2">
-                    <Checkbox 
-                      id="include-signature" 
-                      checked={includeSignature} 
-                      onCheckedChange={(checked) => setIncludeSignature(checked === true)} 
-                    />
-                    <Label htmlFor="include-signature" className="text-sm font-medium cursor-pointer">
-                      Anexar a minha assinatura ao final do e-mail
-                    </Label>
-                  </div>
-                  {includeSignature && (
-                    <div className="mt-3 pt-3 border-t border-slate-200">
-                      <p className="text-xs text-slate-500 mb-2">Pré-visualização da assinatura:</p>
-                      {userSignature.text && <div className="text-sm text-slate-600 whitespace-pre-wrap">{userSignature.text}</div>}
-                      {userSignature.image && <img src={userSignature.image} alt="Assinatura" className="max-w-[200px] h-auto mt-2" />}
-                    </div>
-                  )}
+                <div className="flex justify-end">
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => {
+                      let sigHtml = '<br><br><div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #eaeaea;">';
+                      if (userSignature.text) {
+                        sigHtml += `<div style="color: #666; font-size: 14px;">${userSignature.text.replace(/\n/g, '<br>')}</div>`;
+                      }
+                      if (userSignature.image) {
+                        sigHtml += `<br><img src="${userSignature.image}" alt="Assinatura" style="max-width: 250px; height: auto;" />`;
+                      }
+                      sigHtml += '</div>';
+                      setGeneratedDraft(prev => prev ? {...prev, text: prev.text + sigHtml} : null);
+                    }}
+                  >
+                    Inserir Assinatura no Editor
+                  </Button>
                 </div>
               )}
 
@@ -1235,27 +1259,22 @@ export function LeadDetailsDialog({
               
               try {
                 setIsSending(true);
-                const subjectMatch = generatedDraft.text.match(/^Assunto: (.*)/m);
-                let subject = subjectMatch ? subjectMatch[1] : "Follow-up";
-                let body = generatedDraft.text.replace(/^Assunto: .*\n?/, "").trim();
+                
+                // Extract subject properly from HTML
+                const tempDiv = document.createElement("div");
+                tempDiv.innerHTML = generatedDraft.text;
+                const plainText = tempDiv.textContent || tempDiv.innerText || "";
+                const subjectMatch = plainText.match(/^Assunto:\s*(.*)/mi);
+                let subject = subjectMatch ? subjectMatch[1].trim() : "Follow-up";
+                
+                let body = generatedDraft.text.replace(/<p>\s*Assunto:.*?<\/p>/i, "").replace(/Assunto:.*?<br>/i, "").trim();
                 
                 // Replace variables
-                subject = subject.replace(/\{empreendimento\}/g, lead.development_name || "");
+                subject = subject.replace(/\{empreendimento\}/g, lead.development_name || "").replace(/<[^>]*>?/gm, '');
                 body = body.replace(/\{empreendimento\}/g, lead.development_name || "");
                 
-                // Convert text to HTML and append signature
-                let htmlBody = body.replace(/\n/g, "<br>");
-                
-                if (includeSignature && (userSignature.text || userSignature.image)) {
-                  htmlBody += '<br><br><br><div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #eaeaea;">';
-                  if (userSignature.text) {
-                    htmlBody += `<div style="color: #666; font-size: 14px;">${userSignature.text.replace(/\n/g, '<br>')}</div>`;
-                  }
-                  if (userSignature.image) {
-                    htmlBody += `<br><img src="${userSignature.image}" alt="Assinatura" style="max-width: 250px; height: auto;" />`;
-                  }
-                  htmlBody += '</div>';
-                }
+                // Content is already HTML from RichTextEditor
+                const htmlBody = body;
                 
                 const { data: { session } } = await supabase.auth.getSession();
                 

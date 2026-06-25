@@ -3,6 +3,14 @@ import nodemailer from "nodemailer";
 import { createClient } from "@supabase/supabase-js";
 import { logEmailInteractionServer } from "@/lib/emailInteractionLogger";
 
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: '10mb',
+    },
+  },
+};
+
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
@@ -127,15 +135,19 @@ export default async function handler(
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     );
 
-    await logEmailInteractionServer(supabaseAdmin, {
-      leadId: leadId || undefined,
-      contactId: contactId || undefined,
-      userId: user.id,
-      to: to,
-      subject,
-      body: html,
-      outcome: "Email enviado",
-    });
+    try {
+      await logEmailInteractionServer(supabaseAdmin, {
+        leadId: leadId || undefined,
+        contactId: contactId || undefined,
+        userId: user.id,
+        to: to,
+        subject,
+        body: html,
+        outcome: "Email enviado",
+      });
+    } catch (logError) {
+      console.error("Failed to log email interaction, but email was sent:", logError);
+    }
 
     return res.status(200).json({
       success: true,

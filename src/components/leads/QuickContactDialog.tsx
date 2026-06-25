@@ -22,6 +22,8 @@ import {
 import { createInteraction } from "@/services/interactionsService";
 import { updateLead } from "@/services/leadsService";
 import { useToast } from "@/hooks/use-toast";
+import { RichTextEditor } from "@/components/ui/RichTextEditor";
+import { supabase } from "@/integrations/supabase/client";
 
 interface QuickContactDialogProps {
   leadId: string;
@@ -94,6 +96,15 @@ export function QuickContactDialog({
   const [notes, setNotes] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
+  const [waMessage, setWaMessage] = useState("");
+  const [waTemplate, setWaTemplate] = useState("");
+  const [isSendingWa, setIsSendingWa] = useState(false);
+  const [userSignature, setUserSignature] = useState<{text: string | null, image: string | null}>({text: null, image: null});
+
+  useEffect(() => {
+    if (open) {
+    }
+  }, [open]);
 
   const handleSave = async () => {
     if (!selectedOutcome) {
@@ -181,11 +192,10 @@ export function QuickContactDialog({
 
           <div className="space-y-2 pt-2">
             <label className="text-sm font-medium">Notas adicionais (Opcional)</label>
-            <Textarea
-              placeholder="Ex: O cliente pediu para ligar amanhã de manhã..."
+            <RichTextEditor
               value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              rows={3}
+              onChange={(content) => setNotes(content)}
+              placeholder="Ex: O cliente pediu para ligar amanhã de manhã..."
             />
           </div>
         </div>

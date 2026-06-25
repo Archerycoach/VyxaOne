@@ -21,7 +21,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Send, Mail, MessageSquare, Loader2, Users, Filter, Paperclip, X } from "lucide-react";
+import { Send, Mail, MessageSquare, Loader2, Users, Filter, Paperclip, X, Trash2 } from "lucide-react";
 import { getAllLeads, type LeadWithContacts } from "@/services/leadsService";
 import { getAllContacts, type Contact } from "@/services/contactsService";
 import { getCurrentUser } from "@/services/authService";
@@ -29,7 +29,7 @@ import { getWorkflowRules } from "@/services/workflowService";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
-import { getTemplates, createTemplate } from "@/services/templateService";
+import { getTemplates, createTemplate, deleteTemplate } from "@/services/templateService";
 
 function normalizeText(value: string): string {
   return value
@@ -288,7 +288,6 @@ export default function BulkMessages() {
 
   // Signature
   const [userSignature, setUserSignature] = useState<{text: string | null, image: string | null}>({text: null, image: null});
-  const [includeSignature, setIncludeSignature] = useState(true);
 
   // Template Save State
   const [isSaveTemplateOpen, setIsSaveTemplateOpen] = useState(false);
@@ -319,6 +318,18 @@ export default function BulkMessages() {
           text: profile.email_signature_text,
           image: profile.email_signature_image_url
         });
+        
+        if (!message && messageType === "email") {
+          let sigHtml = '<br><br><div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #eaeaea;">';
+          if (profile.email_signature_text) {
+            sigHtml += `<div style="color: #666; font-size: 14px;">${profile.email_signature_text.replace(/\n/g, '<br>')}</div>`;
+          }
+          if (profile.email_signature_image_url) {
+            sigHtml += `<br><img src="${profile.email_signature_image_url}" alt="Assinatura" style="max-width: 250px; height: auto;" />`;
+          }
+          sigHtml += '</div>';
+          setMessage(sigHtml);
+        }
       }
     } catch (error) {
       console.error("Error loading signature:", error);
@@ -590,6 +601,23 @@ export default function BulkMessages() {
     }
   };
 
+  const handleDeleteTemplate = async () => {
+    if (!selectedTemplate.startsWith("personal-")) return;
+    if (!confirm("Tem a certeza que deseja apagar este template?")) return;
+    
+    const templateId = selectedTemplate.replace("personal-", "");
+    try {
+      await deleteTemplate(templateId);
+      toast({ title: "Template apagado" });
+      setSelectedTemplate("none");
+      setSubject("");
+      setMessage("");
+      await loadEmailTemplates();
+    } catch (error) {
+      toast({ title: "Erro", description: "Não foi possível apagar o template.", variant: "destructive" });
+    }
+  };
+
   const getFilteredRecipients = () => {
     if (messageType === "email" && filterSource === "leads" && aiDraftApplied && aiDraftRecipients.length > 0) {
       return aiDraftRecipients
@@ -831,6 +859,19 @@ export default function BulkMessages() {
   const removeAttachment = (index: number) => {
     setAttachments((prev) => prev.filter((_, i) => i !== index));
   };
+  
+  const insertSignatureIntoEditor = () => {
+    if (!userSignature.text && !userSignature.image) return;
+    let sigHtml = '<br><br><div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #eaeaea;">';
+    if (userSignature.text) {
+      sigHtml += `<div style="color: #666; font-size: 14px;">${userSignature.text.replace(/\n/g, '<br>')}</div>`;
+    }
+    if (userSignature.image) {
+      sigHtml += `<br><img src="${userSignature.image}" alt="Assinatura" style="max-width: 250px; height: auto;" />`;
+    }
+    sigHtml += '</div>';
+    setMessage(prev => prev + sigHtml);
+  };
 
   const handleSend = async () => {
     if (selectedRecipients.size === 0) {
@@ -842,7 +883,8 @@ export default function BulkMessages() {
       return;
     }
 
-    if (!message.trim()) {
+    const cleanMsg = message.replace(/<[^>]*>?/gm, '').trim();
+    if (!message.trim() || (!cleanMsg && !message.includes('<img'))) {
       toast({
         title: "Aviso",
         description: "A mensagem não pode estar vazia.",
@@ -898,18 +940,8 @@ export default function BulkMessages() {
               .replace(/\{telefone\}/g, recipient.phone || "")
               .replace(/\{empreendimento\}/g, recipient.development_name || "");
 
-            // Convert to HTML and append signature if enabled
-            let htmlContent = personalizedMessage.replace(/\n/g, "<br>");
-            if (includeSignature && (userSignature.text || userSignature.image)) {
-              htmlContent += '<br><br><br><div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #eaeaea;">';
-              if (userSignature.text) {
-                htmlContent += `<div style="color: #666; font-size: 14px;">${userSignature.text.replace(/\n/g, '<br>')}</div>`;
-              }
-              if (userSignature.image) {
-                htmlContent += `<br><img src="${userSignature.image}" alt="Assinatura" style="max-width: 250px; height: auto;" />`;
-              }
-              htmlContent += '</div>';
-            }
+            // RichTextEditor already outputs HTML
+            const htmlContent = personalizedMessage;
             
             // For text version, remove basic HTML tags
             const textContent = htmlContent.replace(/<[^>]*>?/gm, '').replace(/&nbsp;/g, ' ');
@@ -943,7 +975,7 @@ export default function BulkMessages() {
             try {
               result = JSON.parse(responseText);
             } catch(e) {
-              throw new Error(`Falha de comunicação (Status ${response.status}). A sua configuração SMTP pode estar inválida.`);
+              throw new Error(`Falha de comunicação (Status ${response.status}). Resposta: ${responseText.substring(0, 150)}`);
             }
 
             if (result.success) {
@@ -973,25 +1005,97 @@ export default function BulkMessages() {
           console.error("Failed emails:", errors);
           toast({
             title: "Alguns emails falharam",
-            description: `${failCount} email${failCount > 1 ? "s" : ""} não ${failCount > 1 ? "foram enviados" : "foi enviado"}. Verifique as configurações SMTP.`,
+            description: errors.length === 1 ? errors[0] : `${failCount} emails falharam. Verifique as configurações SMTP. Detalhe: ${errors[0].substring(0, 100)}...`,
             variant: "destructive",
           });
+        } else if (successCount > 0) {
+          // Reset form only on full success
+          setSubject("");
+          setMessage("");
+          setAttachments([]);
+          setSelectedRecipients(new Set());
         }
       } else {
-        // WhatsApp implementation (to be done)
-        toast({
-          title: "Em desenvolvimento",
-          description: "O envio de mensagens WhatsApp em massa ainda não está implementado.",
-          variant: "destructive",
-        });
-        return;
+        // WhatsApp implementation
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          throw new Error("Sessão expirada. Por favor, faça login novamente.");
+        }
+
+        let successCount = 0;
+        let failCount = 0;
+        const errors: string[] = [];
+
+        // Send WhatsApp messages
+        for (const recipient of selectedData) {
+          if (!recipient.phone) {
+            failCount++;
+            errors.push(`${recipient.name}: Telefone não disponível`);
+            continue;
+          }
+
+          try {
+            const personalizedMessage = message
+              .replace(/\{nome\}/g, recipient.name)
+              .replace(/\{email\}/g, recipient.email || "")
+              .replace(/\{telefone\}/g, recipient.phone || "")
+              .replace(/\{empreendimento\}/g, recipient.development_name || "");
+
+            // Send to WhatsApp API
+            const res = await fetch("/api/whatsapp/send", {
+              method: "POST",
+              headers: { 
+                "Content-Type": "application/json", 
+                "Authorization": `Bearer ${session.access_token}` 
+              },
+              body: JSON.stringify({ 
+                lead_id: recipient.type === "lead" ? recipient.id.replace("lead-", "") : undefined, 
+                phone: recipient.phone,
+                type: 'text', 
+                content: personalizedMessage 
+              })
+            });
+            
+            const data = await res.json();
+            if (res.ok && data.success) {
+              successCount++;
+            } else {
+              failCount++;
+              errors.push(`${recipient.name}: ${data.error || "Falha no envio via WhatsApp"}`);
+            }
+          } catch (error: any) {
+            failCount++;
+            errors.push(`${recipient.name}: ${error.message || "Erro desconhecido no WhatsApp"}`);
+          }
+          
+          // Small delay to avoid rate limit
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+
+        // Show results
+        if (successCount > 0) {
+          toast({
+            title: "Mensagens Enviadas",
+            description: `${successCount} mensagem(ns) de WhatsApp enviada(s) com sucesso${failCount > 0 ? `. ${failCount} falharam.` : "."}`,
+          });
+        }
+
+        if (failCount > 0) {
+          console.error("Failed WhatsApp messages:", errors);
+          toast({
+            title: "Algumas mensagens falharam",
+            description: errors.length === 1 ? errors[0] : `${failCount} mensagens falharam. Primeiro erro: ${errors[0].substring(0, 100)}...`,
+            variant: "destructive",
+          });
+        } else if (successCount > 0) {
+          // Reset form only on full success
+          setSubject("");
+          setMessage("");
+          setAttachments([]);
+          setSelectedRecipients(new Set());
+        }
       }
 
-      // Reset form
-      setSubject("");
-      setMessage("");
-      setAttachments([]);
-      setSelectedRecipients(new Set());
     } catch (error) {
       console.error("Error sending messages:", error);
       toast({
@@ -1289,36 +1393,43 @@ export default function BulkMessages() {
                         <div className="flex items-end justify-between pb-4 border-b gap-4">
                           <div className="flex-1 space-y-2">
                             <Label htmlFor="template">Usar Template</Label>
-                            <Select value={selectedTemplate} onValueChange={handleTemplateSelect}>
-                              <SelectTrigger id="template">
-                                <SelectValue placeholder="Selecionar template..." />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="none">Nenhum template</SelectItem>
-                                
-                                {personalTemplates.filter(t => t.template_type === 'email').length > 0 && (
-                                  <SelectGroup>
-                                    <SelectLabel>Meus Templates</SelectLabel>
-                                    {personalTemplates.filter(t => t.template_type === 'email').map((template: any) => (
-                                      <SelectItem key={`personal-${template.id}`} value={`personal-${template.id}`}>
-                                        {template.name}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectGroup>
-                                )}
+                            <div className="flex gap-2">
+                              <Select value={selectedTemplate} onValueChange={handleTemplateSelect}>
+                                <SelectTrigger id="template" className="flex-1">
+                                  <SelectValue placeholder="Selecionar template..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="none">Nenhum template</SelectItem>
+                                  
+                                  {personalTemplates.filter(t => t.template_type === 'email').length > 0 && (
+                                    <SelectGroup>
+                                      <SelectLabel>Meus Templates</SelectLabel>
+                                      {personalTemplates.filter(t => t.template_type === 'email').map((template: any) => (
+                                        <SelectItem key={`personal-${template.id}`} value={`personal-${template.id}`}>
+                                          {template.name}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectGroup>
+                                  )}
 
-                                {emailTemplates.length > 0 && (
-                                  <SelectGroup>
-                                    <SelectLabel>Templates de Automação</SelectLabel>
-                                    {emailTemplates.map((template: any) => (
-                                      <SelectItem key={`workflow-${template.id}`} value={`workflow-${template.id}`}>
-                                        {template.name || "Template sem nome"}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectGroup>
-                                )}
-                              </SelectContent>
-                            </Select>
+                                  {emailTemplates.length > 0 && (
+                                    <SelectGroup>
+                                      <SelectLabel>Templates de Automação</SelectLabel>
+                                      {emailTemplates.map((template: any) => (
+                                        <SelectItem key={`workflow-${template.id}`} value={`workflow-${template.id}`}>
+                                          {template.name || "Template sem nome"}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectGroup>
+                                  )}
+                                </SelectContent>
+                              </Select>
+                              {selectedTemplate.startsWith("personal-") && (
+                                <Button variant="outline" size="icon" onClick={handleDeleteTemplate} className="text-red-500 hover:text-red-700 hover:bg-red-50" title="Apagar Template">
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              )}
+                            </div>
                             <p className="text-xs text-gray-500">
                               Carrega o assunto e mensagem guardados
                             </p>
@@ -1372,24 +1483,14 @@ export default function BulkMessages() {
 
                       {/* Signature Option */}
                       {(userSignature.text || userSignature.image) && (
-                        <div className="space-y-2 bg-slate-50 p-3 rounded-lg border">
-                          <div className="flex items-center space-x-2">
-                            <Checkbox 
-                              id="include-signature" 
-                              checked={includeSignature} 
-                              onCheckedChange={(checked) => setIncludeSignature(checked === true)} 
-                            />
-                            <Label htmlFor="include-signature" className="text-sm font-medium cursor-pointer">
-                              Anexar a minha assinatura ao final do e-mail
-                            </Label>
-                          </div>
-                          {includeSignature && (
-                            <div className="mt-3 pt-3 border-t border-slate-200">
-                              <p className="text-xs text-slate-500 mb-2">Pré-visualização da assinatura:</p>
-                              {userSignature.text && <div className="text-sm text-slate-600 whitespace-pre-wrap">{userSignature.text}</div>}
-                              {userSignature.image && <img src={userSignature.image} alt="Assinatura" className="max-w-[200px] h-auto mt-2" />}
-                            </div>
-                          )}
+                        <div className="flex justify-end">
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={insertSignatureIntoEditor}
+                          >
+                            Inserir Assinatura no Editor
+                          </Button>
                         </div>
                       )}
 
@@ -1462,22 +1563,29 @@ export default function BulkMessages() {
                         <div className="flex items-end justify-between pb-4 border-b gap-4">
                           <div className="flex-1 space-y-2">
                             <Label htmlFor="wa-template">Usar Template Pessoal</Label>
-                            <Select value={selectedTemplate} onValueChange={handleTemplateSelect}>
-                              <SelectTrigger id="wa-template">
-                                <SelectValue placeholder="Selecionar template..." />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="none">Nenhum template</SelectItem>
-                                <SelectGroup>
-                                  <SelectLabel>Meus Templates</SelectLabel>
-                                  {personalTemplates.filter(t => t.template_type === 'whatsapp').map((template: any) => (
-                                    <SelectItem key={`personal-${template.id}`} value={`personal-${template.id}`}>
-                                      {template.name}
-                                    </SelectItem>
-                                  ))}
-                                </SelectGroup>
-                              </SelectContent>
-                            </Select>
+                            <div className="flex gap-2">
+                              <Select value={selectedTemplate} onValueChange={handleTemplateSelect}>
+                                <SelectTrigger id="wa-template" className="flex-1">
+                                  <SelectValue placeholder="Selecionar template..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="none">Nenhum template</SelectItem>
+                                  <SelectGroup>
+                                    <SelectLabel>Meus Templates</SelectLabel>
+                                    {personalTemplates.filter(t => t.template_type === 'whatsapp').map((template: any) => (
+                                      <SelectItem key={`personal-${template.id}`} value={`personal-${template.id}`}>
+                                        {template.name}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectGroup>
+                                </SelectContent>
+                              </Select>
+                              {selectedTemplate.startsWith("personal-") && (
+                                <Button variant="outline" size="icon" onClick={handleDeleteTemplate} className="text-red-500 hover:text-red-700 hover:bg-red-50" title="Apagar Template">
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              )}
+                            </div>
                           </div>
                           <Button 
                             variant="outline" 
