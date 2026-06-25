@@ -546,6 +546,7 @@ export type Database = {
           created_at: string | null
           custom_fields: Json | null
           desired_price: number | null
+          development_id: string | null
           email: string | null
           estimated_value: number | null
           id: string
@@ -583,6 +584,7 @@ export type Database = {
           created_at?: string | null
           custom_fields?: Json | null
           desired_price?: number | null
+          development_id?: string | null
           email?: string | null
           estimated_value?: number | null
           id?: string
@@ -620,6 +622,7 @@ export type Database = {
           created_at?: string | null
           custom_fields?: Json | null
           desired_price?: number | null
+          development_id?: string | null
           email?: string | null
           estimated_value?: number | null
           id?: string

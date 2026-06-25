@@ -1,0 +1,1 @@
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS development_id uuid REFERENCES developments(id) ON DELETE SET NULL;

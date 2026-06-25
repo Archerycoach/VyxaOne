@@ -559,6 +559,7 @@ async function applyMetaFormAssociation(
       .from("leads")
       .update({
         is_development: true,
+        development_id: association.developmentId,
         development_name: association.developmentName,
         custom_fields: {
           ...nextCustomFields,

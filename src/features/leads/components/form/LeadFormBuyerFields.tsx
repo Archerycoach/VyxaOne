@@ -21,14 +21,16 @@ interface LeadFormBuyerFieldsProps {
     needs_financing: boolean;
     has_property_to_sell?: boolean;
     is_development?: boolean;
+    development_id?: string;
     development_name?: string;
     buy_purpose?: string;
     purchase_timeline?: string;
   };
+  developments: {id: string, name: string}[];
   onChange: (field: string, value: any) => void;
 }
 
-export function LeadFormBuyerFields({ formData, onChange }: LeadFormBuyerFieldsProps) {
+export function LeadFormBuyerFields({ formData, developments, onChange }: LeadFormBuyerFieldsProps) {
   return (
     <div className="space-y-4 bg-blue-50 p-4 rounded-lg border-2 border-blue-200">
       <h3 className="text-lg font-semibold text-blue-900 border-b border-blue-200 pb-2 flex items-center gap-2">
@@ -197,13 +199,28 @@ export function LeadFormBuyerFields({ formData, onChange }: LeadFormBuyerFieldsP
 
         {formData.is_development && (
           <div className="space-y-2">
-            <Label htmlFor="development_name">Nome do Empreendimento</Label>
-            <Input
-              id="development_name"
-              value={formData.development_name || ""}
-              onChange={(e) => onChange("development_name", e.target.value)}
-              placeholder="Ex: Empreendimento Vista Mar"
-            />
+            <Label htmlFor="development_id">Empreendimento</Label>
+            <Select
+              value={formData.development_id || ""}
+              onValueChange={(value) => {
+                onChange("development_id", value);
+                const dev = developments.find(d => d.id === value);
+                if (dev) {
+                  onChange("development_name", dev.name);
+                }
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Selecione o empreendimento" />
+              </SelectTrigger>
+              <SelectContent>
+                {developments.map((dev) => (
+                  <SelectItem key={dev.id} value={dev.id}>
+                    {dev.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         )}
       </div>

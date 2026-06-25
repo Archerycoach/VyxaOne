@@ -93,6 +93,7 @@ const normalizeLeadStatus = (status: string, leadType: string): string => {
 export function LeadFormContainer({ initialData, onSuccess, onCancel }: LeadFormContainerProps) {
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
+  const [developments, setDevelopments] = useState<{id: string, name: string}[]>([]);
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -110,6 +111,7 @@ export function LeadFormContainer({ initialData, onSuccess, onCancel }: LeadForm
     needs_financing: false,
     has_property_to_sell: false,
     is_development: false,
+    development_id: "",
     development_name: "",
     buy_purpose: "",
     purchase_timeline: "",
@@ -118,6 +120,16 @@ export function LeadFormContainer({ initialData, onSuccess, onCancel }: LeadForm
     property_area: "",
     desired_price: "",
   });
+
+  useEffect(() => {
+    const fetchDevelopments = async () => {
+      const { data } = await supabase.from('developments' as any).select('id, name').order('name');
+      if (data) {
+        setDevelopments(data as unknown as {id: string, name: string}[]);
+      }
+    };
+    fetchDevelopments();
+  }, []);
 
   useEffect(() => {
     if (initialData) {
@@ -137,6 +149,7 @@ export function LeadFormContainer({ initialData, onSuccess, onCancel }: LeadForm
         needs_financing: initialData.needs_financing || false,
         has_property_to_sell: initialData.has_property_to_sell || false,
         is_development: initialData.is_development || false,
+        development_id: initialData.development_id || "",
         development_name: initialData.development_name || "",
         buy_purpose: initialData.buy_purpose || "",
         purchase_timeline: initialData.purchase_timeline || "",
@@ -214,6 +227,7 @@ export function LeadFormContainer({ initialData, onSuccess, onCancel }: LeadForm
         property_area: parsedPropertyArea,
         desired_price: parsedDesiredPrice,
         is_development: formData.is_development,
+        development_id: formData.development_id || null,
         development_name: formData.development_name || null,
         // Orçamento (usado pelo cartão)
         budget: parsedBudget,
@@ -276,7 +290,7 @@ export function LeadFormContainer({ initialData, onSuccess, onCancel }: LeadForm
           <LeadFormBasicFields formData={formData} onChange={handleChange} />
 
           {/* Buyer Specific Fields */}
-          {isBuyer && <LeadFormBuyerFields formData={formData} onChange={handleChange} />}
+          {isBuyer && <LeadFormBuyerFields formData={formData} developments={developments} onChange={handleChange} />}
 
           {/* Seller Specific Fields */}
           {isSeller && <LeadFormSellerFields formData={{ ...formData, lead_type: formData.lead_type }} onChange={handleChange} />}
