@@ -829,6 +829,7 @@ export type Database = {
           role: string | null
           team_lead_id: string | null
           updated_at: string | null
+          whatsapp_module_enabled: boolean | null
         }
         Insert: {
           avatar_url?: string | null
@@ -848,6 +849,7 @@ export type Database = {
           role?: string | null
           team_lead_id?: string | null
           updated_at?: string | null
+          whatsapp_module_enabled?: boolean | null
         }
         Update: {
           avatar_url?: string | null
@@ -867,6 +869,7 @@ export type Database = {
           role?: string | null
           team_lead_id?: string | null
           updated_at?: string | null
+          whatsapp_module_enabled?: boolean | null
         }
         Relationships: [
           {

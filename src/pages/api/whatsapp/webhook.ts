@@ -56,22 +56,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       if (body.object === "whatsapp_business_account") {
         for (const entry of body.entry) {
-          const phoneNumberId = entry.changes[0]?.value?.metadata?.phone_number_id;
+          const incomingPhoneNumberId = entry.changes[0]?.value?.metadata?.phone_number_id;
           
-          if (!phoneNumberId) continue;
-
-          // Find which user owns this phone number ID
-          const { data: settings } = await supabaseAdmin
-            .from("whatsapp_settings")
-            .select("user_id")
-            .eq("phone_number_id", phoneNumberId)
-            .eq("is_active", true)
-            .maybeSingle();
-
-          if (!settings) {
-            console.log("Ignored WhatsApp message: phone number ID not mapped to any active user", phoneNumberId);
-            continue;
-          }
+          if (!incomingPhoneNumberId) continue;
 
           // Process the incoming messages
           if (entry.changes[0]?.value?.messages) {
@@ -81,35 +68,47 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
               
               if (!text) continue;
               
-              console.log(`Received WA message from ${from} for user ${settings.user_id}: ${text.substring(0, 50)}...`);
+              console.log(`Received WA message from ${from}: ${text.substring(0, 50)}...`);
 
-              // 1. Identify if 'from' matches a Lead phone number
-              // Format incoming phone (usually includes country code, e.g. 351912345678)
-              // We'll do a fuzzy match using ilike
+              // 1. Identify which Lead this number belongs to (Global Search)
               const phoneSuffix = from.length > 9 ? from.substring(from.length - 9) : from;
               
-              const { data: lead } = await supabaseAdmin
+              const { data: leads } = await supabaseAdmin
                 .from("leads")
-                .select("id, name, temperature, status")
-                .eq("user_id", settings.user_id)
+                .select("id, name, temperature, status, user_id")
                 .ilike("phone", `%${phoneSuffix}%`)
-                .maybeSingle();
+                .order("created_at", { ascending: false })
+                .limit(1);
+
+              const lead = leads?.[0];
 
               if (!lead) {
                 console.log(`No lead found for phone ${from}`);
                 continue;
               }
 
-              // 2. Add message to Interaction history
+              // 2. Check if the consultant who owns this lead has WhatsApp active
+              const { data: userProfile } = await supabaseAdmin
+                .from("profiles")
+                .select("whatsapp_module_enabled")
+                .eq("id", lead.user_id)
+                .maybeSingle();
+
+              if (!userProfile?.whatsapp_module_enabled) {
+                console.log(`User ${lead.user_id} has WA module disabled. Ignoring message from lead.`);
+                continue;
+              }
+
+              // 3. Add message to Interaction history
               await supabaseAdmin.from("interactions").insert({
                 lead_id: lead.id,
-                user_id: settings.user_id,
+                user_id: lead.user_id,
                 interaction_type: "whatsapp_inbound",
                 content: `Recebido: ${text}`,
                 interaction_date: new Date().toISOString()
               });
 
-              // 3. Trigger the GPT agent to respond and qualify
+              // 4. Trigger the GPT agent to respond and qualify
               const openAIApiKey = process.env.OPENAI_API_KEY;
               if (openAIApiKey) {
                 try {
@@ -126,7 +125,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                     : 'Sem histórico anterior.';
 
                   // Fetch agent's calendar availability
-                  const availability = await getGoogleCalendarFreeBusy(settings.user_id);
+                  const availability = await getGoogleCalendarFreeBusy(lead.user_id);
 
                   const systemPrompt = `És o assistente virtual imobiliário do consultor. Estás a falar no WhatsApp com a lead chamada ${lead.name}.
 A temperatura atual desta lead é: ${lead.temperature || 'desconhecida'}.
@@ -173,12 +172,12 @@ Usa "unchanged" se ainda não tiveres informação suficiente para alterar a tem
                     
                     if (result.reply) {
                       // Send the reply back to the lead
-                      await sendWhatsAppMessage(settings.user_id, from, result.reply, supabaseAdmin);
+                      await sendWhatsAppMessage(lead.user_id, from, result.reply, supabaseAdmin);
                       
                       // Save outbound interaction
                       await supabaseAdmin.from("interactions").insert({
                         lead_id: lead.id,
-                        user_id: settings.user_id,
+                        user_id: lead.user_id,
                         interaction_type: "whatsapp_outbound",
                         content: `Enviado (IA): ${result.reply}`,
                         interaction_date: new Date().toISOString()
@@ -188,7 +187,6 @@ Usa "unchanged" se ainda não tiveres informação suficiente para alterar a tem
                     // Schedule the meeting if lead accepted a slot
                     if (result.schedule_meeting && result.schedule_meeting.start_time) {
                       const startTime = result.schedule_meeting.start_time;
-                      // Default to 30 mins if end_time not provided
                       const endTime = result.schedule_meeting.end_time || new Date(new Date(startTime).getTime() + 30*60000).toISOString();
 
                       console.log(`[WhatsApp Webhook] IA requested to schedule meeting for lead ${lead.id} at ${startTime}`);
@@ -198,12 +196,12 @@ Usa "unchanged" se ainda não tiveres informação suficiente para alterar a tem
                         description: `Agendado automaticamente pelo Agente IA via WhatsApp.\nTelefone: ${from}`,
                         start_time: startTime,
                         end_time: endTime,
-                      }, null, settings.user_id);
+                      }, null, lead.user_id);
 
                       // Also register this as a new interaction/event
                       await supabaseAdmin.from("interactions").insert({
                         lead_id: lead.id,
-                        user_id: settings.user_id,
+                        user_id: lead.user_id,
                         interaction_type: "call",
                         content: `Chamada agendada automaticamente via WhatsApp para ${new Date(startTime).toLocaleString('pt-PT')}`,
                         interaction_date: new Date().toISOString()

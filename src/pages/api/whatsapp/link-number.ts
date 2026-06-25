@@ -54,8 +54,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
 
     if (!phoneMatch) {
+      const availableNumbers = data.data?.map((p: any) => p.display_phone_number).join(", ") || "Nenhum";
       return res.status(404).json({ 
-        error: "Número não encontrado na conta Business da Meta. Certifique-se que o número já foi adicionado no WhatsApp Manager." 
+        error: `Número não encontrado na conta Meta. Números disponíveis na conta: ${availableNumbers}. Certifique-se que o ID da conta está correto e o número foi adicionado no WhatsApp Manager.` 
       });
     }
 

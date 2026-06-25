@@ -1,0 +1,1 @@
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS whatsapp_module_enabled BOOLEAN DEFAULT false;

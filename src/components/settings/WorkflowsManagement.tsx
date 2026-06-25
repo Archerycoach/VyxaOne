@@ -241,7 +241,8 @@ export function WorkflowsManagement() {
     email_subject: "",
     email_body: "",
     attachments: [] as Array<{name: string, url: string}>,
-    send_cc: false
+    send_cc: false,
+    wa_template_name: ""
   });
 
   const [executeFormState, setExecuteFormState] = useState({
@@ -442,7 +443,8 @@ export function WorkflowsManagement() {
       email_subject: defaultSubject,
       email_body: normalizeEmailBodyForEditor(defaultBody),
       attachments: [],
-      send_cc: false
+      send_cc: false,
+      wa_template_name: ""
     });
     setIsNewWorkflowOpen(true);
   };
@@ -460,7 +462,8 @@ export function WorkflowsManagement() {
       email_subject: workflow.action_config?.subject || "",
       email_body: normalizeEmailBodyForEditor(workflow.action_config?.body || ""),
       attachments: workflow.action_config?.attachments || [],
-      send_cc: workflow.action_config?.send_cc || false
+      send_cc: workflow.action_config?.send_cc || false,
+      wa_template_name: workflow.action_config?.template_name || ""
     });
     setEditingWorkflowId(workflow.id);
     setSelectedTemplate(null);
@@ -493,12 +496,14 @@ export function WorkflowsManagement() {
         description: formState.description,
         trigger_status: formState.trigger,
         action_type: formState.action_type,
-        action_config: {
-          subject: formState.email_subject,
-          body: formState.email_body,
-          attachments: formState.attachments,
-          send_cc: formState.send_cc
-        },
+        action_config: formState.action_type === "send_whatsapp" 
+          ? { template_name: formState.wa_template_name }
+          : {
+            subject: formState.email_subject,
+            body: formState.email_body,
+            attachments: formState.attachments,
+            send_cc: formState.send_cc
+          },
         delay_days: formState.delay_days,
         delay_hours: formState.delay_hours,
         enabled: true
@@ -544,7 +549,8 @@ export function WorkflowsManagement() {
         email_subject: "",
         email_body: "",
         attachments: [],
-        send_cc: false
+        send_cc: false,
+        wa_template_name: ""
       });
 
       await Promise.all([
@@ -729,7 +735,8 @@ export function WorkflowsManagement() {
                 email_subject: "",
                 email_body: "",
                 attachments: [],
-                send_cc: false
+                send_cc: false,
+                wa_template_name: ""
               });
             }}>
               <Plus className="h-4 w-4 mr-2" />
@@ -827,6 +834,7 @@ export function WorkflowsManagement() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="send_email">📧 Enviar Email</SelectItem>
+                    <SelectItem value="send_whatsapp">💬 Enviar Template WhatsApp</SelectItem>
                     <SelectItem value="create_task">✅ Criar Tarefa</SelectItem>
                     <SelectItem value="send_notification">🔔 Enviar Notificação</SelectItem>
                     <SelectItem value="create_calendar_event">📅 Criar Evento</SelectItem>
@@ -836,48 +844,65 @@ export function WorkflowsManagement() {
               
               <div className="space-y-4 p-4 border rounded-lg bg-blue-50/50">
                 <h4 className="font-semibold text-sm text-blue-900">
-                  {formState.action_type === "send_email" ? "Configuração do Email" : "Configuração da Ação"}
+                  {formState.action_type === "send_email" ? "Configuração do Email" : 
+                   formState.action_type === "send_whatsapp" ? "Configuração do WhatsApp" : "Configuração da Ação"}
                 </h4>
-                <div className="space-y-2">
-                  <Label htmlFor="email_subject">
-                    {formState.action_type === "send_email" ? "Assunto do Email *" : "Título *"}
-                  </Label>
-                  <Input
-                    id="email_subject"
-                    value={formState.email_subject}
-                    onChange={(e) => setFormState({ ...formState, email_subject: e.target.value })}
-                    placeholder={formState.action_type === "send_email" ? "Ex: Bem-vindo à nossa equipa, {nome}!" : "Ex: Ligar ao cliente {nome}"}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="email_body">
-                    {formState.action_type === "send_email" ? "Corpo do Email *" : "Descrição *"}
-                  </Label>
-                  {formState.action_type === "send_email" ? (
-                    <div className="overflow-hidden rounded-md border border-slate-200 bg-white shadow-sm">
-                      <RichTextEditor
-                        key={`${editingWorkflowId ?? selectedTemplate?.id ?? "new"}-${formState.trigger}-${isNewWorkflowOpen ? "open" : "closed"}`}
-                        value={formState.email_body}
-                        onChange={(value) => setFormState({ ...formState, email_body: value })}
-                        placeholder="Introduza o texto e insira imagens..."
-                        autoFocus
+                
+                {formState.action_type === "send_whatsapp" ? (
+                  <div className="space-y-2">
+                    <Label htmlFor="wa_template_name">Nome do Template Meta *</Label>
+                    <Input
+                      id="wa_template_name"
+                      value={formState.wa_template_name}
+                      onChange={(e) => setFormState({ ...formState, wa_template_name: e.target.value })}
+                      placeholder="Ex: ola_primeiro_contacto"
+                    />
+                    <p className="text-xs text-gray-500">O template tem de estar previamente aprovado no WhatsApp Manager. O envio via WhatsApp também tem de estar desbloqueado pelo Admin para o utilizador.</p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="space-y-2">
+                      <Label htmlFor="email_subject">
+                        {formState.action_type === "send_email" ? "Assunto do Email *" : "Título *"}
+                      </Label>
+                      <Input
+                        id="email_subject"
+                        value={formState.email_subject}
+                        onChange={(e) => setFormState({ ...formState, email_subject: e.target.value })}
+                        placeholder={formState.action_type === "send_email" ? "Ex: Bem-vindo à nossa equipa, {nome}!" : "Ex: Ligar ao cliente {nome}"}
                       />
                     </div>
-                  ) : (
-                    <Textarea
-                      id="email_body"
-                      value={formState.email_body}
-                      onChange={(e) => setFormState({ ...formState, email_body: e.target.value })}
-                      placeholder="Introduza a descrição..."
-                      rows={8}
-                    />
-                  )}
-                  {formState.action_type === "send_email" && (
-                    <p className="text-xs text-gray-500">
-                      Clique numa imagem para ajustar a largura da assinatura antes de guardar a automação.
-                    </p>
-                  )}
-                </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="email_body">
+                        {formState.action_type === "send_email" ? "Corpo do Email *" : "Descrição *"}
+                      </Label>
+                      {formState.action_type === "send_email" ? (
+                        <div className="overflow-hidden rounded-md border border-slate-200 bg-white shadow-sm">
+                          <RichTextEditor
+                            key={`${editingWorkflowId ?? selectedTemplate?.id ?? "new"}-${formState.trigger}-${isNewWorkflowOpen ? "open" : "closed"}`}
+                            value={formState.email_body}
+                            onChange={(value) => setFormState({ ...formState, email_body: value })}
+                            placeholder="Introduza o texto e insira imagens..."
+                            autoFocus
+                          />
+                        </div>
+                      ) : (
+                        <Textarea
+                          id="email_body"
+                          value={formState.email_body}
+                          onChange={(e) => setFormState({ ...formState, email_body: e.target.value })}
+                          placeholder="Introduza a descrição..."
+                          rows={8}
+                        />
+                      )}
+                      {formState.action_type === "send_email" && (
+                        <p className="text-xs text-gray-500">
+                          Clique numa imagem para ajustar a largura da assinatura antes de guardar a automação.
+                        </p>
+                      )}
+                    </div>
+                  </>
+                )}
 
                 {formState.action_type === "send_email" && (
                   <div className="space-y-2 pt-2 border-t border-blue-100 mt-4">

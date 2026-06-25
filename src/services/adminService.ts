@@ -526,6 +526,29 @@ export const assignAgentToTeamLead = async (agentId: string, teamLeadId: string 
   await logActivity(agentId, "assign_agent_to_team_lead", "profile", agentId, JSON.stringify({ team_lead_id: teamLeadId }));
 };
 
+// Toggle WhatsApp module for user
+export const toggleWhatsappModule = async (userId: string, enabled: boolean) => {
+  const isAdminUser = await isAdmin();
+  if (!isAdminUser) {
+    throw new Error("Apenas administradores podem gerir os módulos dos utilizadores");
+  }
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .update({ whatsapp_module_enabled: enabled })
+    .eq("id", userId)
+    .select()
+    .single();
+
+  if (error) throw error;
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (user) {
+    await logActivity(user.id, "toggle_whatsapp_module", "profile", userId, JSON.stringify({ enabled }));
+  }
+  return data;
+};
+
 // Get agents for a team lead
 export const getTeamLeadAgents = async (teamLeadId: string): Promise<Profile[]> => {
   const { data, error } = await supabase

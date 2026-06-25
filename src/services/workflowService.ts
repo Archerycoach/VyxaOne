@@ -242,6 +242,10 @@ async function executeWorkflowAction(action: any, lead: any, userId: string) {
       await sendEmailAction(action, lead, personalizedContent, userId);
       break;
       
+    case "send_whatsapp":
+      await sendWhatsappAction(action, lead, userId);
+      break;
+      
     case "create_task":
       await createTaskAction(action, lead, personalizedContent, userId);
       break;
@@ -311,6 +315,44 @@ async function sendEmailAction(action: any, lead: any, content: string, userId: 
     console.log("✅ Email sent to:", lead.email);
   } catch (error) {
     console.error("❌ Failed to send email:", error);
+    throw error;
+  }
+}
+
+// Send WhatsApp template
+async function sendWhatsappAction(action: any, lead: any, userId: string) {
+  try {
+    const config = action.config || action;
+    if (!lead.phone) {
+      console.log(`Skipping WhatsApp action for lead ${lead.id} - no phone number`);
+      return;
+    }
+
+    const { sendWhatsAppTemplate } = await import("./whatsappService");
+    const templateName = config.template_name || action.template_name;
+    
+    if (!templateName) {
+      throw new Error("Nome do template não configurado na ação");
+    }
+
+    const result = await sendWhatsAppTemplate(userId, lead.phone, templateName);
+    
+    if (!result.success) {
+      throw new Error(result.error || "Falha ao enviar WhatsApp");
+    }
+
+    // Log the interaction
+    await supabase.from("interactions").insert({
+      lead_id: lead.id,
+      user_id: userId,
+      interaction_type: "whatsapp_outbound",
+      content: `Enviado automático (Workflow): Template '${templateName}'`,
+      interaction_date: new Date().toISOString()
+    });
+
+    console.log("✅ WhatsApp template sent to:", lead.phone);
+  } catch (error) {
+    console.error("❌ Failed to send WhatsApp:", error);
     throw error;
   }
 }

@@ -17,7 +17,6 @@ import { MetaFormsManagement } from "@/components/settings/MetaFormsManagement";
 import { GptApiSettings } from "@/components/settings/GptApiSettings";
 import { WorkflowsManagement } from "@/components/settings/WorkflowsManagement";
 import { NotionAccountConnection } from "@/components/settings/NotionAccountConnection";
-import { WhatsAppConnection } from "@/components/settings/WhatsAppConnection";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
 
 const REQUIRED_GOOGLE_SCOPES = [
@@ -526,10 +525,6 @@ export default function Settings() {
               <Facebook className="h-4 w-4 mr-2" />
               Meta
             </TabsTrigger>
-            <TabsTrigger value="whatsapp">
-              <MessageCircle className="h-4 w-4 mr-2" />
-              WhatsApp
-            </TabsTrigger>
             <TabsTrigger value="google-calendar">
               <Calendar className="h-4 w-4 mr-2" />
               Calendário
@@ -862,25 +857,6 @@ export default function Settings() {
                     />
                   </div>
                 )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="whatsapp" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>
-                  <div className="flex items-center gap-2">
-                    <MessageCircle className="h-6 w-6 text-green-600" />
-                    WhatsApp Cloud API
-                  </div>
-                </CardTitle>
-                <CardDescription>
-                  Conecte o seu número de WhatsApp Business via Meta Cloud API para que o Agente IA possa enviar e receber mensagens automaticamente.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <WhatsAppConnection />
               </CardContent>
             </Card>
           </TabsContent>

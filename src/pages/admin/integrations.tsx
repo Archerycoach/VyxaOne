@@ -46,6 +46,8 @@ export default function Integrations() {
     access_token: "",
     business_account_id: "",
     verify_token: "",
+    phone_number_id: "",
+    template_name: "",
     enabled: false
   });
   const [isWhatsappConfigured, setIsWhatsappConfigured] = useState(false);
@@ -110,9 +112,11 @@ export default function Integrations() {
           access_token: settings.access_token || "",
           business_account_id: settings.business_account_id || "",
           verify_token: settings.verify_token || "",
+          phone_number_id: settings.phone_number_id || "",
+          template_name: settings.template_name || "",
           enabled: waData.is_active || false
         });
-        setIsWhatsappConfigured(!!(settings.access_token && settings.business_account_id));
+        setIsWhatsappConfigured(!!(settings.access_token && settings.phone_number_id));
       }
 
     } catch (error: any) {
@@ -237,10 +241,10 @@ export default function Integrations() {
         return;
       }
 
-      if (whatsapp.enabled && (!whatsapp.access_token || !whatsapp.business_account_id)) {
+      if (whatsapp.enabled && (!whatsapp.access_token || !whatsapp.business_account_id || !whatsapp.phone_number_id)) {
         toast({
           title: "Não é possível ativar",
-          description: "Para ativar a integração global, precisa preencher o Access Token e o Account ID.",
+          description: "Para ativar a integração, precisa preencher o Access Token, Account ID e o Phone Number ID.",
           variant: "destructive",
         });
         return;
@@ -255,7 +259,9 @@ export default function Integrations() {
           settings: {
             access_token: whatsapp.access_token.trim(),
             business_account_id: whatsapp.business_account_id.trim(),
-            verify_token: whatsapp.verify_token.trim()
+            verify_token: whatsapp.verify_token.trim(),
+            phone_number_id: whatsapp.phone_number_id.trim(),
+            template_name: whatsapp.template_name.trim()
           },
           is_active: whatsapp.enabled,
           updated_at: new Date().toISOString()
@@ -669,6 +675,16 @@ export default function Integrations() {
                 </div>
 
                 <div className="space-y-2">
+                  <Label>Phone Number ID (Número Central)</Label>
+                  <Input
+                    placeholder="Ex: 28472..."
+                    value={whatsapp.phone_number_id}
+                    onChange={(e) => setWhatsapp(prev => ({ ...prev, phone_number_id: e.target.value }))}
+                  />
+                  <p className="text-xs text-muted-foreground">ID do número único que será partilhado por todos os consultores.</p>
+                </div>
+
+                <div className="space-y-2">
                   <Label>Verify Token (Webhook)</Label>
                   <div className="flex gap-2">
                     <Input
@@ -678,6 +694,16 @@ export default function Integrations() {
                     />
                     <Button variant="outline" onClick={generateVerifyToken}>Gerar</Button>
                   </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Nome do Template Automático (Início de Conversa)</Label>
+                  <Input
+                    placeholder="Ex: ola_nova_lead"
+                    value={whatsapp.template_name}
+                    onChange={(e) => setWhatsapp(prev => ({ ...prev, template_name: e.target.value }))}
+                  />
+                  <p className="text-xs text-muted-foreground">Nome do template aprovado na Meta para iniciar contacto automático com a Lead. Se deixado vazio, o disparo automático não ocorre.</p>
                 </div>
 
                 <div className="flex items-center justify-between">

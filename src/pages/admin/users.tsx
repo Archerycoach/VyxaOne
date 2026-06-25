@@ -24,9 +24,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { Search, UserPlus, Trash2, Edit, Mail, Phone, RefreshCw } from "lucide-react";
-import { getAllUsers, createUser, deleteUser, updateUserRole, getTeamLeads, assignAgentToTeamLead } from "@/services/adminService";
+import { Search, UserPlus, Trash2, Edit, Mail, Phone, RefreshCw, MessageCircle } from "lucide-react";
+import { getAllUsers, createUser, deleteUser, updateUserRole, getTeamLeads, assignAgentToTeamLead, toggleWhatsappModule } from "@/services/adminService";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
@@ -40,6 +41,7 @@ interface Profile {
   role: string;
   created_at: string;
   updated_at: string;
+  whatsapp_module_enabled?: boolean;
 }
 
 export default function UsersManagement() {
@@ -303,6 +305,29 @@ export default function UsersManagement() {
     }
   };
 
+  const handleToggleWhatsapp = async (enabled: boolean) => {
+    if (!selectedUser) return;
+    try {
+      await toggleWhatsappModule(selectedUser.id, enabled);
+      toast({
+        title: "Sucesso",
+        description: enabled ? "Módulo WhatsApp ativado" : "Módulo WhatsApp desativado",
+      });
+
+      // Refresh locally
+      const updatedUsers = users.map(u => u.id === selectedUser.id ? { ...u, whatsapp_module_enabled: enabled } : u);
+      setUsers(updatedUsers);
+      setFilteredUsers(filteredUsers.map(u => u.id === selectedUser.id ? { ...u, whatsapp_module_enabled: enabled } : u));
+      setSelectedUser({ ...selectedUser, whatsapp_module_enabled: enabled });
+    } catch (error: any) {
+      toast({
+        title: "Erro",
+        description: error.message || "Erro ao atualizar módulo WhatsApp",
+        variant: "destructive",
+      });
+    }
+  };
+
   const getRoleBadge = (role: string) => {
     const variants: Record<string, "default" | "secondary" | "destructive"> = {
       admin: "destructive",
@@ -524,6 +549,22 @@ export default function UsersManagement() {
                     </Select>
                   </div>
                 )}
+
+                <div className="flex items-center justify-between border rounded-md p-4 mt-4 bg-slate-50">
+                  <div className="space-y-0.5 pr-4">
+                    <Label className="text-base flex items-center gap-2">
+                      <MessageCircle className="h-4 w-4 text-green-600" />
+                      Módulo WhatsApp IA
+                    </Label>
+                    <p className="text-sm text-muted-foreground">
+                      Permitir que este utilizador aceda ao envio de templates e Agente IA via WhatsApp.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={selectedUser?.whatsapp_module_enabled || false}
+                    onCheckedChange={handleToggleWhatsapp}
+                  />
+                </div>
               </div>
               <DialogFooter>
                 <Button
@@ -585,6 +626,22 @@ export default function UsersManagement() {
                     </Select>
                   </div>
                 )}
+
+                <div className="flex items-center justify-between border rounded-md p-4 mt-4 bg-slate-50">
+                  <div className="space-y-0.5 pr-4">
+                    <Label className="text-base flex items-center gap-2">
+                      <MessageCircle className="h-4 w-4 text-green-600" />
+                      Módulo WhatsApp IA
+                    </Label>
+                    <p className="text-sm text-muted-foreground">
+                      Permitir que este utilizador aceda ao envio de templates e Agente IA via WhatsApp.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={selectedUser?.whatsapp_module_enabled || false}
+                    onCheckedChange={handleToggleWhatsapp}
+                  />
+                </div>
               </div>
               <DialogFooter>
                 <Button
