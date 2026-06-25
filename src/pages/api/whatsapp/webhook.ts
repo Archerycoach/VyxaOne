@@ -138,16 +138,24 @@ O teu objetivo é:
 2. Tentar perceber a urgência e qualificar a lead (Quente/Morna/Fria).
 3. Se qualificares a lead como Quente (hot) ou se a lead pedir explicitamente, deves proativamente propor o agendamento de uma chamada telefónica. Para isso, analisa os espaços livres na agenda acima e sugere exatamente 3 opções claras de horários (em blocos de 30 minutos).
 4. Se a lead responder e aceitar um dos horários propostos, confirma o agendamento na tua resposta e preenche o campo "schedule_meeting".
-5. Deves responder em JSON estrito com o seguinte formato:
+5. Extrai qualquer informação útil que a lead mencione sobre o imóvel que procura ou tem para venda (orçamento, quartos, zonas, tipologia) e coloca-a no objeto "lead_updates".
+6. Deves responder em JSON estrito com o seguinte formato:
 {
   "reply": "A tua resposta para enviar no WhatsApp",
   "suggested_temperature": "hot" | "warm" | "cold" | "unchanged",
   "schedule_meeting": {
     "start_time": "YYYY-MM-DDTHH:mm:ssZ",
     "end_time": "YYYY-MM-DDTHH:mm:ssZ"
-  } // Preenche APENAS se a lead acabou de confirmar um horário. Deixa null ou não incluas se estiveres apenas a propor.
+  },
+  "lead_updates": {
+    "budget_min": 100000,
+    "budget_max": 200000,
+    "property_type": "apartamento",
+    "location_preference": "Lisboa",
+    "bedrooms": 2
+  }
 }
-Usa "unchanged" se ainda não tiveres informação suficiente para alterar a temperatura atual.`;
+Atenção: No 'lead_updates' inclui apenas os campos que conseguiste extrair claramente. Se não souberes o valor, não incluas o campo ou coloca null. Usa "unchanged" se ainda não tiveres informação suficiente para alterar a temperatura atual.`;
 
                   const response = await fetch("https://api.openai.com/v1/chat/completions", {
                     method: "POST",
@@ -209,11 +217,38 @@ Usa "unchanged" se ainda não tiveres informação suficiente para alterar a tem
                     }
 
                     // Update lead temperature if suggested
+                    const updates: any = {};
+                    
                     if (result.suggested_temperature && result.suggested_temperature !== "unchanged") {
+                      updates.temperature = result.suggested_temperature;
+                    }
+                    
+                    // Apply AI extracted lead updates
+                    if (result.lead_updates) {
+                      for (const [key, value] of Object.entries(result.lead_updates)) {
+                        if (value !== null && value !== undefined) {
+                          updates[key] = value;
+                        }
+                      }
+                    }
+
+                    if (Object.keys(updates).length > 0) {
                       await supabaseAdmin
                         .from("leads")
-                        .update({ temperature: result.suggested_temperature })
+                        .update(updates)
                         .eq("id", lead.id);
+                        
+                      console.log(`[WhatsApp Webhook] Lead ${lead.id} updated with AI data:`, updates);
+                      
+                      if (result.lead_updates && Object.keys(result.lead_updates).length > 0) {
+                        await supabaseAdmin.from("interactions").insert({
+                          lead_id: lead.id,
+                          user_id: lead.user_id,
+                          interaction_type: "note",
+                          content: `Dados atualizados automaticamente pelo Agente IA (via WhatsApp):\n${JSON.stringify(result.lead_updates, null, 2)}`,
+                          interaction_date: new Date().toISOString()
+                        });
+                      }
                     }
                   }
                 } catch (aiError) {

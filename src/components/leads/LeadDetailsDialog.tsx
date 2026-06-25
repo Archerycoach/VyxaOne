@@ -33,7 +33,9 @@ import {
   Plus,
   Sparkles,
   Paperclip,
-  Loader2
+  Loader2,
+  MessageCircle,
+  Send
 } from "lucide-react";
 import { getLeadById } from "@/services/leadsService";
 import { getInteractionsByLead, createInteraction } from "@/services/interactionsService";
@@ -56,6 +58,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { updateLead } from "@/services/leadsService";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 
 interface LeadDetailsDialogProps {
   leadId: string | null;
@@ -89,6 +92,16 @@ export function LeadDetailsDialog({
   const [isSubmittingInteraction, setIsSubmittingInteraction] = useState(false);
   const [isUpdatingTemperature, setIsUpdatingTemperature] = useState(false);
   const [sendCopyToSelf, setSendCopyToSelf] = useState(false);
+  
+  // WhatsApp State
+  const [waMessage, setWaMessage] = useState("");
+  const [waTemplate, setWaTemplate] = useState("");
+  const [isSendingWa, setIsSendingWa] = useState(false);
+
+  // User signature state
+  const [userSignature, setUserSignature] = useState<{text: string | null, image: string | null}>({text: null, image: null});
+  const [includeSignature, setIncludeSignature] = useState(true);
+
   const { toast } = useToast();
   
   // Use ref to prevent multiple fetches
@@ -150,6 +163,23 @@ export function LeadDetailsDialog({
           relatedLeadId: t.related_lead_id,
         }));
         setTasks(mappedTasks);
+        
+        // Fetch user signature
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: profile } = await supabase
+            .from("profiles")
+            .select("email_signature_text, email_signature_image_url")
+            .eq("id", user.id)
+            .single();
+          
+          if (profile) {
+            setUserSignature({
+              text: profile.email_signature_text,
+              image: profile.email_signature_image_url
+            });
+          }
+        }
         
         console.log("[LeadDetailsDialog] Data set in state");
       } catch (error) {
@@ -332,6 +362,44 @@ export function LeadDetailsDialog({
     }
   };
 
+  const handleSendWhatsApp = async (type: 'text' | 'template') => {
+    if (!leadId) return;
+    const content = type === 'text' ? waMessage : waTemplate;
+    
+    if (!content.trim()) {
+      toast({ title: "Erro", description: "O conteúdo não pode estar vazio.", variant: "destructive" });
+      return;
+    }
+    
+    setIsSendingWa(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch("/api/whatsapp/send", {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json", 
+          "Authorization": `Bearer ${session?.access_token}` 
+        },
+        body: JSON.stringify({ lead_id: leadId, type, content: content.trim() })
+      });
+      
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erro ao enviar WhatsApp");
+      
+      toast({ title: "Mensagem enviada com sucesso" });
+      if (type === 'text') setWaMessage("");
+      if (type === 'template') setWaTemplate("");
+      
+      // Refresh interactions
+      const interData = await getInteractionsByLead(leadId);
+      setInteractions(interData);
+    } catch (err: any) {
+      toast({ title: "Erro ao enviar WhatsApp", description: err.message, variant: "destructive" });
+    } finally {
+      setIsSendingWa(false);
+    }
+  };
+
   const linkedContactId = (lead as any)?.contact_id ?? null;
   const linkedContactName = (lead as any)?.contact?.name ?? lead?.name ?? "Contacto associado";
 
@@ -384,6 +452,10 @@ export function LeadDetailsDialog({
               <TabsTrigger value="ai-assistant" className="text-indigo-700 bg-indigo-50/50 data-[state=active]:bg-indigo-100 data-[state=active]:text-indigo-900 border border-indigo-100/50">
                 <Sparkles className="h-3.5 w-3.5 mr-1.5" />
                 Assistente IA
+              </TabsTrigger>
+              <TabsTrigger value="whatsapp" className="text-green-700 bg-green-50/50 data-[state=active]:bg-green-100 data-[state=active]:text-green-900 border border-green-100/50">
+                <MessageCircle className="h-3.5 w-3.5 mr-1.5" />
+                WhatsApp
               </TabsTrigger>
               {(lead.lead_type === "seller" || lead.lead_type === "both") && (
                 <TabsTrigger value="properties">Imóveis ({properties.length})</TabsTrigger>
@@ -612,6 +684,69 @@ export function LeadDetailsDialog({
 
             <TabsContent value="ai-assistant" className="mt-0">
               <LeadAIInsightsPanel leadId={lead.id} />
+            </TabsContent>
+
+            <TabsContent value="whatsapp" className="mt-4 flex flex-col h-[500px]">
+              <Card className="flex flex-col h-full border-green-100">
+                <CardHeader className="py-3 px-4 bg-green-50/50 border-b border-green-100">
+                  <CardTitle className="text-sm font-medium flex items-center text-green-800">
+                    <MessageCircle className="h-4 w-4 mr-2" />
+                    Chat do WhatsApp (Teste / Retoma Manual)
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="flex-1 p-0 overflow-y-auto bg-[#e5ddd5] flex flex-col gap-2 p-4">
+                  {interactions
+                    .filter(i => i.interaction_type.startsWith('whatsapp'))
+                    .sort((a, b) => new Date(a.interaction_date).getTime() - new Date(b.interaction_date).getTime())
+                    .map(msg => {
+                      const isInbound = msg.interaction_type === 'whatsapp_inbound';
+                      return (
+                        <div key={msg.id} className={`max-w-[75%] p-2.5 rounded-lg shadow-sm ${isInbound ? 'bg-white self-start rounded-tl-none' : 'bg-[#dcf8c6] self-end rounded-tr-none'}`}>
+                          <p className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">
+                            {msg.content.replace(/^(Recebido: |Enviado \(IA\): |Enviado \(Automático\): |Enviado \(Manual[^\)]*\): )/, '')}
+                          </p>
+                          <div className="flex items-center justify-end gap-1 mt-1">
+                            {!isInbound && <span className="text-[9px] text-gray-500">{msg.content.match(/\(IA\)/) ? '🤖 IA' : msg.content.match(/\(Automático\)/) ? '⚡ Auto' : '👤 Humano'}</span>}
+                            <span className="text-[10px] text-gray-500">
+                              {new Date(msg.interaction_date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  {interactions.filter(i => i.interaction_type.startsWith('whatsapp')).length === 0 && (
+                    <div className="flex flex-col items-center justify-center h-full text-gray-500 space-y-2 opacity-50">
+                      <MessageCircle className="h-12 w-12" />
+                      <p className="text-sm">Nenhuma conversa de WhatsApp registada.</p>
+                    </div>
+                  )}
+                </CardContent>
+                <div className="p-3 bg-white border-t space-y-3">
+                  <div className="flex gap-2">
+                    <Input 
+                      value={waMessage} 
+                      onChange={e => setWaMessage(e.target.value)} 
+                      placeholder="Escreva uma mensagem para o cliente (assume o controlo da IA)..." 
+                      onKeyDown={(e) => { if(e.key === 'Enter') handleSendWhatsApp('text') }}
+                    />
+                    <Button onClick={() => handleSendWhatsApp('text')} disabled={isSendingWa || !waMessage.trim()} className="bg-green-600 hover:bg-green-700">
+                      {isSendingWa ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                    </Button>
+                  </div>
+                  <div className="flex gap-2 items-center bg-gray-50 p-2 rounded border border-dashed">
+                    <Label className="text-xs whitespace-nowrap text-gray-500">Disparar Template:</Label>
+                    <Input 
+                      value={waTemplate} 
+                      onChange={e => setWaTemplate(e.target.value)} 
+                      placeholder="Ex: ola_primeiro_contacto" 
+                      className="h-8 text-xs"
+                    />
+                    <Button variant="outline" size="sm" onClick={() => handleSendWhatsApp('template')} disabled={isSendingWa || !waTemplate.trim()} className="h-8 text-xs">
+                      Testar Template
+                    </Button>
+                  </div>
+                </div>
+              </Card>
             </TabsContent>
 
             {(lead.lead_type === "seller" || lead.lead_type === "both") && (
@@ -1000,7 +1135,29 @@ export function LeadDetailsDialog({
           </p>
 
           {generatedDraft?.channel === 'email' && (
-            <div className="space-y-2 mt-4 border-t pt-4">
+            <div className="space-y-4 mt-4 border-t pt-4">
+              {(userSignature.text || userSignature.image) && (
+                <div className="space-y-2 mb-4 bg-slate-50 p-3 rounded-lg border">
+                  <div className="flex items-center space-x-2">
+                    <Checkbox 
+                      id="include-signature" 
+                      checked={includeSignature} 
+                      onCheckedChange={(checked) => setIncludeSignature(checked === true)} 
+                    />
+                    <Label htmlFor="include-signature" className="text-sm font-medium cursor-pointer">
+                      Anexar a minha assinatura ao final do e-mail
+                    </Label>
+                  </div>
+                  {includeSignature && (
+                    <div className="mt-3 pt-3 border-t border-slate-200">
+                      <p className="text-xs text-slate-500 mb-2">Pré-visualização da assinatura:</p>
+                      {userSignature.text && <div className="text-sm text-slate-600 whitespace-pre-wrap">{userSignature.text}</div>}
+                      {userSignature.image && <img src={userSignature.image} alt="Assinatura" className="max-w-[200px] h-auto mt-2" />}
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="flex items-center space-x-2 mb-4">
                 <Checkbox 
                   id="cc-consultant" 
@@ -1086,6 +1243,20 @@ export function LeadDetailsDialog({
                 subject = subject.replace(/\{empreendimento\}/g, lead.development_name || "");
                 body = body.replace(/\{empreendimento\}/g, lead.development_name || "");
                 
+                // Convert text to HTML and append signature
+                let htmlBody = body.replace(/\n/g, "<br>");
+                
+                if (includeSignature && (userSignature.text || userSignature.image)) {
+                  htmlBody += '<br><br><br><div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #eaeaea;">';
+                  if (userSignature.text) {
+                    htmlBody += `<div style="color: #666; font-size: 14px;">${userSignature.text.replace(/\n/g, '<br>')}</div>`;
+                  }
+                  if (userSignature.image) {
+                    htmlBody += `<br><img src="${userSignature.image}" alt="Assinatura" style="max-width: 250px; height: auto;" />`;
+                  }
+                  htmlBody += '</div>';
+                }
+                
                 const { data: { session } } = await supabase.auth.getSession();
                 
                 const res = await fetch("/api/smtp/send", {
@@ -1094,9 +1265,10 @@ export function LeadDetailsDialog({
                   body: JSON.stringify({
                     to: lead.email,
                     subject,
-                    html: body.replace(/\n/g, "<br>"),
+                    html: htmlBody,
                     attachments: emailAttachments.map(att => ({ filename: att.name, content: att.content, encoding: att.encoding })),
-                    sendCopyToSender: sendCopyToSelf
+                    sendCopyToSender: sendCopyToSelf,
+                    leadId: leadId
                   })
                 });
                 
