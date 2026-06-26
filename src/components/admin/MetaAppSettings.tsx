@@ -67,13 +67,13 @@ export function MetaAppSettings() {
         setSettings({
           id: data.id,
           app_id: data.app_id || "",
-          app_secret: data.app_secret || "",
-          verify_token: data.verify_token || "",
+          app_secret: "••••••••••••••••", // Esconder token (fake)
+          verify_token: "••••••••••••••••", // Esconder token (fake)
           webhook_url: `${window.location.origin}/api/meta/webhook`,
           is_active: data.is_active || false
         });
         
-        if (data.is_active && data.app_id && data.app_secret) {
+        if (data.is_active && data.app_id) {
           setConnectionStatus("connected");
         }
 
@@ -534,9 +534,8 @@ export function MetaAppSettings() {
             <Input
               id="app_secret"
               type="password"
-              value={settings.app_secret}
               onChange={(e) => setSettings({ ...settings, app_secret: e.target.value })}
-              placeholder="••••••••••••••••"
+              placeholder="Inserir novo secret para substituir (••••••••)"
             />
           </div>
         </div>
@@ -569,9 +568,9 @@ export function MetaAppSettings() {
             <div className="flex gap-2">
               <Input
                 id="verify_token"
-                value={settings.verify_token}
+                type="password"
                 onChange={(e) => setSettings({ ...settings, verify_token: e.target.value })}
-                placeholder="Gere um token único"
+                placeholder="Gerar novo ou introduzir (••••••••)"
               />
               <Button variant="outline" onClick={generateVerifyToken}>
                 <RefreshCw className="h-4 w-4" />

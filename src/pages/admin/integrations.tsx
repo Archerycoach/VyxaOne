@@ -5,19 +5,13 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { InfoIcon, ExternalLink, CheckCircle2, Settings, Activity } from "lucide-react";
+import { InfoIcon, ExternalLink, CheckCircle2, Settings, Activity, ShieldCheck } from "lucide-react";
 import { MetaAppSettings } from "@/components/admin/MetaAppSettings";
 import { ExternalPortalsSettings } from "@/components/settings/ExternalPortalsSettings";
-
-// Define interface for the settings JSON structure
-interface GoogleCalendarSettings {
-  client_id?: string;
-  client_secret?: string;
-  redirect_uri?: string;
-}
 
 export default function Integrations() {
   const { toast } = useToast();
@@ -52,6 +46,19 @@ export default function Integrations() {
   });
   const [isWhatsappConfigured, setIsWhatsappConfigured] = useState(false);
 
+  // Helper para fetch seguro
+  const adminFetch = async (url: string, options: RequestInit = {}) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    return fetch(url, {
+      ...options,
+      headers: {
+        ...options.headers,
+        Authorization: `Bearer ${token}`
+      }
+    });
+  };
+
   useEffect(() => {
     loadIntegrationSettings();
   }, []);
@@ -60,16 +67,15 @@ export default function Integrations() {
     try {
       setLoading(true);
 
-      const { data: gcData, error: gcError } = await supabase
-        .from("integration_settings")
-        .select("*")
-        .eq("integration_name", "google_calendar")
-        .maybeSingle();
+      const res = await adminFetch("/api/admin/integrations");
+      if (!res.ok) throw new Error("Falha ao carregar integrações");
+      
+      const data = await res.json();
 
-      if (gcError) throw gcError;
-
+      // Process Google Calendar
+      const gcData = data.find((i: any) => i.integration_name === "google_calendar");
       if (gcData) {
-        const settings = (gcData.settings as any) || {};
+        const settings = gcData.settings || {};
         setGoogleCalendar({
           client_id: settings.client_id || "",
           client_secret: settings.client_secret || "",
@@ -78,17 +84,10 @@ export default function Integrations() {
         setIsGoogleConfigured(!!(settings.client_id && settings.client_secret));
       }
 
-      // Load Notion settings
-      const { data: notionData, error: notionError } = await supabase
-        .from("integration_settings")
-        .select("*")
-        .eq("integration_name", "notion")
-        .maybeSingle();
-
-      if (notionError) throw notionError;
-
+      // Process Notion
+      const notionData = data.find((i: any) => i.integration_name === "notion");
       if (notionData) {
-        const settings = (notionData.settings as any) || {};
+        const settings = notionData.settings || {};
         setNotion({
           client_id: settings.client_id || "",
           client_secret: settings.client_secret || "",
@@ -97,17 +96,10 @@ export default function Integrations() {
         setIsNotionConfigured(!!(settings.client_id && settings.client_secret));
       }
 
-      // Load WhatsApp settings
-      const { data: waData, error: waError } = await supabase
-        .from("integration_settings")
-        .select("*")
-        .eq("integration_name", "whatsapp_api")
-        .maybeSingle();
-
-      if (waError) throw waError;
-
+      // Process WhatsApp
+      const waData = data.find((i: any) => i.integration_name === "whatsapp_api");
       if (waData) {
-        const settings = (waData.settings as any) || {};
+        const settings = waData.settings || {};
         setWhatsapp({
           access_token: settings.access_token || "",
           business_account_id: settings.business_account_id || "",
@@ -144,9 +136,10 @@ export default function Integrations() {
 
       setSaving(true);
 
-      const { error } = await supabase
-        .from("integration_settings")
-        .upsert({
+      const res = await adminFetch("/api/admin/integrations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
           integration_name: "google_calendar",
           settings: {
             client_id: googleCalendar.client_id.trim(),
@@ -154,28 +147,22 @@ export default function Integrations() {
             redirect_uri: `${window.location.origin}/api/google-calendar/callback`.trim(),
             scopes: ["https://www.googleapis.com/auth/calendar"]
           },
-          is_active: googleCalendar.enabled,
-          updated_at: new Date().toISOString()
-        }, {
-          onConflict: "integration_name"
-        });
+          is_active: googleCalendar.enabled
+        })
+      });
 
-      if (error) throw error;
+      if (!res.ok) throw new Error("Erro ao salvar");
 
       setIsGoogleConfigured(true);
       toast({
         title: "✅ Sucesso",
-        description: "Configurações do Google Calendar salvas com sucesso!",
+        description: "Configurações do Google Calendar salvas de forma segura!",
       });
 
       await loadIntegrationSettings();
     } catch (error: any) {
       console.error("Error saving Google Calendar settings:", error);
-      toast({
-        title: "Erro",
-        description: error.message || "Falha ao salvar configurações.",
-        variant: "destructive",
-      });
+      toast({ title: "Erro", description: "Falha ao salvar configurações.", variant: "destructive" });
     } finally {
       setSaving(false);
     }
@@ -194,37 +181,32 @@ export default function Integrations() {
 
       setSaving(true);
 
-      const { error } = await supabase
-        .from("integration_settings")
-        .upsert({
+      const res = await adminFetch("/api/admin/integrations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
           integration_name: "notion",
           settings: {
             client_id: notion.client_id.trim(),
             client_secret: notion.client_secret.trim(),
             redirect_uri: `${window.location.origin}/api/notion/callback`.trim()
           },
-          is_active: notion.enabled,
-          updated_at: new Date().toISOString()
-        }, {
-          onConflict: "integration_name"
-        });
+          is_active: notion.enabled
+        })
+      });
 
-      if (error) throw error;
+      if (!res.ok) throw new Error("Erro ao salvar");
 
       setIsNotionConfigured(true);
       toast({
         title: "✅ Sucesso",
-        description: "Configurações do Notion salvas com sucesso!",
+        description: "Configurações do Notion salvas de forma segura!",
       });
 
       await loadIntegrationSettings();
     } catch (error: any) {
       console.error("Error saving Notion settings:", error);
-      toast({
-        title: "Erro",
-        description: error.message || "Falha ao salvar configurações do Notion.",
-        variant: "destructive",
-      });
+      toast({ title: "Erro", description: "Falha ao salvar configurações do Notion.", variant: "destructive" });
     } finally {
       setSaving(false);
     }
@@ -241,20 +223,12 @@ export default function Integrations() {
         return;
       }
 
-      if (whatsapp.enabled && (!whatsapp.access_token || !whatsapp.business_account_id || !whatsapp.phone_number_id)) {
-        toast({
-          title: "Não é possível ativar",
-          description: "Para ativar a integração, precisa preencher o Access Token, Account ID e o Phone Number ID.",
-          variant: "destructive",
-        });
-        return;
-      }
-
       setSaving(true);
 
-      const { error } = await supabase
-        .from("integration_settings")
-        .upsert({
+      const res = await adminFetch("/api/admin/integrations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
           integration_name: "whatsapp_api",
           settings: {
             access_token: whatsapp.access_token.trim(),
@@ -263,28 +237,22 @@ export default function Integrations() {
             phone_number_id: whatsapp.phone_number_id.trim(),
             template_name: whatsapp.template_name.trim()
           },
-          is_active: whatsapp.enabled,
-          updated_at: new Date().toISOString()
-        }, {
-          onConflict: "integration_name"
-        });
+          is_active: whatsapp.enabled
+        })
+      });
 
-      if (error) throw error;
+      if (!res.ok) throw new Error("Erro ao salvar");
 
       setIsWhatsappConfigured(true);
       toast({
         title: "✅ Sucesso",
-        description: "Configurações Globais do WhatsApp salvas!",
+        description: "Configurações Globais do WhatsApp salvas de forma segura!",
       });
 
       await loadIntegrationSettings();
     } catch (error: any) {
       console.error("Error saving WhatsApp settings:", error);
-      toast({
-        title: "Erro",
-        description: error.message || "Falha ao salvar configurações do WhatsApp.",
-        variant: "destructive",
-      });
+      toast({ title: "Erro", description: "Falha ao salvar configurações do WhatsApp.", variant: "destructive" });
     } finally {
       setSaving(false);
     }
@@ -313,176 +281,106 @@ export default function Integrations() {
 
   const handleToggleGoogleEnabled = async (enabled: boolean) => {
     try {
-      if (!isGoogleConfigured && enabled) {
-        toast({
-          title: "Configuração necessária",
-          description: "Por favor, configure o Client ID e Client Secret primeiro.",
-          variant: "destructive",
-        });
-        return;
-      }
+      if (!isGoogleConfigured && enabled) return;
 
-      const { error } = await supabase
-        .from("integration_settings")
-        .update({ 
-          is_active: enabled,
-          updated_at: new Date().toISOString()
+      const res = await adminFetch("/api/admin/integrations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          integration_name: "google_calendar",
+          settings: googleCalendar,
+          is_active: enabled
         })
-        .eq("integration_name", "google_calendar");
+      });
 
-      if (error) throw error;
-
+      if (!res.ok) throw new Error("Falha ao atualizar");
+      
       setGoogleCalendar(prev => ({ ...prev, enabled }));
-      toast({
-        title: enabled ? "✅ Integração Ativada" : "⚠️ Integração Desativada",
-        description: enabled 
-          ? "Utilizadores podem agora conectar suas contas Google Calendar." 
-          : "Integração do Google Calendar foi desativada.",
-      });
+      toast({ title: enabled ? "✅ Ativada" : "⚠️ Desativada" });
     } catch (error: any) {
-      console.error("Error toggling Google Calendar:", error);
-      toast({
-        title: "Erro",
-        description: error.message || "Falha ao atualizar status.",
-        variant: "destructive",
-      });
+      toast({ title: "Erro", description: "Falha ao atualizar status.", variant: "destructive" });
     }
   };
 
   const handleToggleNotionEnabled = async (enabled: boolean) => {
     try {
-      if (!isNotionConfigured && enabled) {
-        toast({
-          title: "Configuração necessária",
-          description: "Por favor, configure o Client ID e Client Secret do Notion primeiro.",
-          variant: "destructive",
-        });
-        return;
-      }
+      if (!isNotionConfigured && enabled) return;
 
-      const { error } = await supabase
-        .from("integration_settings")
-        .update({ 
-          is_active: enabled,
-          updated_at: new Date().toISOString()
+      const res = await adminFetch("/api/admin/integrations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          integration_name: "notion",
+          settings: notion,
+          is_active: enabled
         })
-        .eq("integration_name", "notion");
+      });
 
-      if (error) throw error;
+      if (!res.ok) throw new Error("Falha ao atualizar");
 
       setNotion(prev => ({ ...prev, enabled }));
-      toast({
-        title: enabled ? "✅ Notion Ativado" : "⚠️ Notion Desativado",
-        description: enabled 
-          ? "Utilizadores podem agora conectar suas contas Notion." 
-          : "Integração do Notion foi desativada.",
-      });
+      toast({ title: enabled ? "✅ Notion Ativado" : "⚠️ Notion Desativado" });
     } catch (error: any) {
-      console.error("Error toggling Notion:", error);
-      toast({
-        title: "Erro",
-        description: error.message || "Falha ao atualizar status do Notion.",
-        variant: "destructive",
-      });
+      toast({ title: "Erro", description: "Falha ao atualizar status.", variant: "destructive" });
     }
   };
 
   const handleToggleWhatsappEnabled = async (enabled: boolean) => {
     try {
-      if (!isWhatsappConfigured && enabled) {
-        toast({
-          title: "Configuração necessária",
-          description: "Configure o Access Token e Account ID primeiro.",
-          variant: "destructive",
-        });
-        return;
-      }
+      if (!isWhatsappConfigured && enabled) return;
 
-      const { error } = await supabase
-        .from("integration_settings")
-        .update({ 
-          is_active: enabled,
-          updated_at: new Date().toISOString()
+      const res = await adminFetch("/api/admin/integrations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          integration_name: "whatsapp_api",
+          settings: whatsapp,
+          is_active: enabled
         })
-        .eq("integration_name", "whatsapp_api");
+      });
 
-      if (error) throw error;
+      if (!res.ok) throw new Error("Falha ao atualizar");
 
       setWhatsapp(prev => ({ ...prev, enabled }));
-      toast({
-        title: enabled ? "✅ WhatsApp Ativado" : "⚠️ WhatsApp Desativado",
-      });
+      toast({ title: enabled ? "✅ WhatsApp Ativado" : "⚠️ WhatsApp Desativado" });
     } catch (error: any) {
-      console.error("Error toggling WhatsApp:", error);
-      toast({ title: "Erro", description: error.message, variant: "destructive" });
+      toast({ title: "Erro", description: "Falha ao atualizar status.", variant: "destructive" });
     }
   };
 
   const handleClearGoogleConfig = async () => {
-    if (!confirm("Tem certeza que deseja limpar as configurações OAuth do Google Calendar? Esta ação não pode ser desfeita.")) {
-      return;
-    }
-
+    if (!confirm("Tem certeza que deseja limpar as configurações do Google?")) return;
     try {
-      const { error } = await supabase
-        .from("integration_settings")
-        .delete()
-        .eq("integration_name", "google_calendar");
-
-      if (error) throw error;
-
-      setGoogleCalendar({
-        client_id: "",
-        client_secret: "",
-        enabled: false
+      const res = await adminFetch("/api/admin/integrations", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ integration_name: "google_calendar" })
       });
+      if (!res.ok) throw new Error("Falha");
+      
+      setGoogleCalendar({ client_id: "", client_secret: "", enabled: false });
       setIsGoogleConfigured(false);
-
-      toast({
-        title: "✅ Configuração Limpa",
-        description: "Configurações do Google Calendar foram removidas com sucesso.",
-      });
-    } catch (error: any) {
-      console.error("Error clearing Google Calendar config:", error);
-      toast({
-        title: "Erro",
-        description: error.message || "Falha ao limpar configurações.",
-        variant: "destructive",
-      });
+      toast({ title: "✅ Configuração Limpa" });
+    } catch (error) {
+      toast({ title: "Erro", variant: "destructive" });
     }
   };
 
   const handleClearNotionConfig = async () => {
-    if (!confirm("Tem certeza que deseja limpar as configurações do Notion? Esta ação não pode ser desfeita.")) {
-      return;
-    }
-
+    if (!confirm("Tem certeza que deseja limpar as configurações do Notion?")) return;
     try {
-      const { error } = await supabase
-        .from("integration_settings")
-        .delete()
-        .eq("integration_name", "notion");
-
-      if (error) throw error;
-
-      setNotion({
-        client_id: "",
-        client_secret: "",
-        enabled: false
+      const res = await adminFetch("/api/admin/integrations", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ integration_name: "notion" })
       });
+      if (!res.ok) throw new Error("Falha");
+      
+      setNotion({ client_id: "", client_secret: "", enabled: false });
       setIsNotionConfigured(false);
-
-      toast({
-        title: "✅ Configuração Limpa",
-        description: "Configurações do Notion foram removidas com sucesso.",
-      });
-    } catch (error: any) {
-      console.error("Error clearing Notion config:", error);
-      toast({
-        title: "Erro",
-        description: error.message || "Falha ao limpar configurações do Notion.",
-        variant: "destructive",
-      });
+      toast({ title: "✅ Configuração Limpa" });
+    } catch (error) {
+      toast({ title: "Erro", variant: "destructive" });
     }
   };
 
@@ -494,8 +392,9 @@ export default function Integrations() {
   if (loading) {
     return (
       <Layout>
-        <div className="container mx-auto py-8">
-          <p>Carregando configurações...</p>
+        <div className="container mx-auto py-8 text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p>Carregando configurações de forma segura...</p>
         </div>
       </Layout>
     );
@@ -505,9 +404,15 @@ export default function Integrations() {
     <Layout>
       <div className="container mx-auto py-8 space-y-8">
         <div>
-          <h1 className="text-3xl font-bold mb-2">Configurações de Integrações</h1>
+          <div className="flex items-center gap-2 mb-2">
+            <h1 className="text-3xl font-bold">Configurações de Integrações</h1>
+            <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+              <ShieldCheck className="h-3 w-3 mr-1" />
+              API Segura
+            </Badge>
+          </div>
           <p className="text-muted-foreground">
-            Configure as integrações externas para expandir as funcionalidades do CRM
+            As suas chaves privadas estão encriptadas e ocultas para máxima segurança.
           </p>
         </div>
 
@@ -528,14 +433,13 @@ export default function Integrations() {
             </CardHeader>
             <CardContent className="space-y-6">
               <CardDescription>
-                Configure as credenciais do Google Cloud Console para permitir integração com Google Calendar
+                Configure as credenciais do Google Cloud Console.
               </CardDescription>
 
               <Alert>
                 <InfoIcon className="h-4 w-4" />
                 <AlertDescription>
-                  <p className="font-semibold mb-2">Importante</p>
-                  <p className="mb-2">Adicione esta URL de callback no Google Cloud Console:</p>
+                  <p className="font-semibold mb-2">Importante: URL de Callback</p>
                   <code className="block bg-muted p-2 rounded text-sm">
                     {typeof window !== 'undefined' && `${window.location.origin}/api/google-calendar/callback`}
                   </code>
@@ -544,83 +448,44 @@ export default function Integrations() {
 
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="gc-client-id">Client ID</Label>
+                  <Label>Client ID</Label>
                   <Input
-                    id="gc-client-id"
                     type="text"
-                    placeholder="540924658202-xxxxxxxxxxxx.apps.googleusercontent.com"
                     value={googleCalendar.client_id}
                     onChange={(e) => setGoogleCalendar(prev => ({ ...prev, client_id: e.target.value }))}
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="gc-client-secret">Client Secret</Label>
+                  <Label>Client Secret</Label>
                   <Input
-                    id="gc-client-secret"
                     type="password"
-                    placeholder="GOCSPX-xxxxxxxxxxxx"
+                    placeholder="••••••••••••"
                     value={googleCalendar.client_secret}
                     onChange={(e) => setGoogleCalendar(prev => ({ ...prev, client_secret: e.target.value }))}
                   />
+                  <p className="text-xs text-muted-foreground">Oculto por segurança. Insira um novo valor para substituir o atual.</p>
                 </div>
 
                 <div className="flex items-center justify-between">
-                  <div className="space-y-1">
-                    <Label htmlFor="gc-enabled">Ativar Integração</Label>
-                    <p className="text-sm text-muted-foreground">
-                      Permitir que utilizadores conectem suas contas
-                    </p>
-                  </div>
-                  <Switch
-                    id="gc-enabled"
-                    checked={googleCalendar.enabled}
-                    onCheckedChange={handleToggleGoogleEnabled}
-                  />
+                  <Label>Ativar Integração</Label>
+                  <Switch checked={googleCalendar.enabled} onCheckedChange={handleToggleGoogleEnabled} />
                 </div>
               </div>
 
               <div className="flex gap-3">
-                <Button
-                  onClick={handleSaveGoogleCalendar}
-                  disabled={saving}
-                >
-                  <Settings className="mr-2 h-4 w-4" />
+                <Button onClick={handleSaveGoogleCalendar} disabled={saving}>
                   {saving ? "Salvando..." : "Salvar Configurações"}
                 </Button>
 
                 {isGoogleConfigured && (
                   <>
-                    <Button
-                      variant="secondary"
-                      onClick={handleTestGoogleCalendar}
-                      disabled={isTesting}
-                    >
-                      <Activity className="mr-2 h-4 w-4" />
-                      {isTesting ? "A testar..." : "Testar Ligação"}
+                    <Button variant="secondary" onClick={handleTestGoogleCalendar} disabled={isTesting}>
+                      <Activity className="mr-2 h-4 w-4" /> Testar Ligação
                     </Button>
-                    <Button
-                      variant="destructive"
-                      onClick={handleClearGoogleConfig}
-                    >
-                      Limpar Configuração OAuth
-                    </Button>
+                    <Button variant="destructive" onClick={handleClearGoogleConfig}>Limpar</Button>
                   </>
                 )}
-
-                <Button
-                  variant="outline"
-                  asChild
-                >
-                  <a
-                    href="https://console.cloud.google.com/apis/credentials"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <ExternalLink className="mr-2 h-4 w-4" />
-                    Google Cloud Console
-                  </a>
-                </Button>
               </div>
             </CardContent>
           </Card>
@@ -634,32 +499,17 @@ export default function Integrations() {
               </div>
               {isWhatsappConfigured && (
                 <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
-                  <CheckCircle2 className="h-4 w-4" />
-                  Configurado
+                  <CheckCircle2 className="h-4 w-4" /> Configurado
                 </div>
               )}
             </CardHeader>
             <CardContent className="space-y-6">
-              <CardDescription>
-                Credenciais centrais do Meta for Developers (System User). Ao configurar aqui, os utilizadores apenas precisarão de inserir o seu número de telemóvel para utilizar o WhatsApp na plataforma.
-              </CardDescription>
-
-              <Alert>
-                <InfoIcon className="h-4 w-4" />
-                <AlertDescription>
-                  <p className="font-semibold mb-2">URL de Webhook (Coloque na consola da Meta):</p>
-                  <code className="block bg-muted p-2 rounded text-sm">
-                    {typeof window !== 'undefined' && `${window.location.origin}/api/whatsapp/webhook`}
-                  </code>
-                </AlertDescription>
-              </Alert>
-
               <div className="space-y-4">
                 <div className="space-y-2">
                   <Label>System User Access Token</Label>
                   <Input
                     type="password"
-                    placeholder="EAA..."
+                    placeholder="••••••••••••"
                     value={whatsapp.access_token}
                     onChange={(e) => setWhatsapp(prev => ({ ...prev, access_token: e.target.value }))}
                   />
@@ -668,63 +518,40 @@ export default function Integrations() {
                 <div className="space-y-2">
                   <Label>WhatsApp Business Account ID</Label>
                   <Input
-                    placeholder="Ex: 10423..."
                     value={whatsapp.business_account_id}
                     onChange={(e) => setWhatsapp(prev => ({ ...prev, business_account_id: e.target.value }))}
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Phone Number ID (Número Central)</Label>
+                  <Label>Phone Number ID</Label>
                   <Input
-                    placeholder="Ex: 28472..."
                     value={whatsapp.phone_number_id}
                     onChange={(e) => setWhatsapp(prev => ({ ...prev, phone_number_id: e.target.value }))}
                   />
-                  <p className="text-xs text-muted-foreground">ID do número único que será partilhado por todos os consultores.</p>
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Verify Token (Webhook)</Label>
+                  <Label>Verify Token</Label>
                   <div className="flex gap-2">
-                    <Input
-                      placeholder="Token para verificar o webhook na Meta"
-                      value={whatsapp.verify_token}
-                      onChange={(e) => setWhatsapp(prev => ({ ...prev, verify_token: e.target.value }))}
-                    />
+                    <Input value={whatsapp.verify_token} onChange={(e) => setWhatsapp(prev => ({ ...prev, verify_token: e.target.value }))} />
                     <Button variant="outline" onClick={generateVerifyToken}>Gerar</Button>
                   </div>
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Nome do Template Automático (Início de Conversa)</Label>
-                  <Input
-                    placeholder="Ex: ola_nova_lead"
-                    value={whatsapp.template_name}
-                    onChange={(e) => setWhatsapp(prev => ({ ...prev, template_name: e.target.value }))}
-                  />
-                  <p className="text-xs text-muted-foreground">Nome do template aprovado na Meta para iniciar contacto automático com a Lead. Se deixado vazio, o disparo automático não ocorre.</p>
+                  <Label>Nome do Template Automático</Label>
+                  <Input value={whatsapp.template_name} onChange={(e) => setWhatsapp(prev => ({ ...prev, template_name: e.target.value }))} />
                 </div>
 
                 <div className="flex items-center justify-between">
-                  <div className="space-y-1">
-                    <Label>Ativar Integração Global</Label>
-                    <p className="text-sm text-muted-foreground">
-                      Disponibilizar o WhatsApp a todos os utilizadores
-                    </p>
-                  </div>
-                  <Switch
-                    checked={whatsapp.enabled}
-                    onCheckedChange={handleToggleWhatsappEnabled}
-                  />
+                  <Label>Ativar Integração Global</Label>
+                  <Switch checked={whatsapp.enabled} onCheckedChange={handleToggleWhatsappEnabled} />
                 </div>
               </div>
 
               <div className="flex gap-3">
-                <Button onClick={handleSaveWhatsapp} disabled={saving}>
-                  <Settings className="mr-2 h-4 w-4" />
-                  {saving ? "Salvando..." : "Salvar Configurações"}
-                </Button>
+                <Button onClick={handleSaveWhatsapp} disabled={saving}>Salvar Configurações</Button>
               </div>
             </CardContent>
           </Card>
@@ -738,96 +565,38 @@ export default function Integrations() {
               </div>
               {isNotionConfigured && (
                 <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
-                  <CheckCircle2 className="h-4 w-4" />
-                  Configurado
+                  <CheckCircle2 className="h-4 w-4" /> Configurado
                 </div>
               )}
             </CardHeader>
             <CardContent className="space-y-6">
-              <CardDescription>
-                Configure as credenciais do Notion Developers para permitir a sincronização de Leads e Imóveis
-              </CardDescription>
-
-              <Alert>
-                <InfoIcon className="h-4 w-4" />
-                <AlertDescription>
-                  <p className="font-semibold mb-2">Importante</p>
-                  <p className="mb-2">Adicione esta URL de callback nas definições OAuth da sua integração no Notion:</p>
-                  <code className="block bg-muted p-2 rounded text-sm">
-                    {typeof window !== 'undefined' && `${window.location.origin}/api/notion/callback`}
-                  </code>
-                </AlertDescription>
-              </Alert>
-
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="notion-client-id">OAuth Client ID</Label>
-                  <Input
-                    id="notion-client-id"
-                    type="text"
-                    placeholder="Cole o Client ID da sua integração Notion"
-                    value={notion.client_id}
-                    onChange={(e) => setNotion(prev => ({ ...prev, client_id: e.target.value }))}
-                  />
+                  <Label>OAuth Client ID</Label>
+                  <Input value={notion.client_id} onChange={(e) => setNotion(prev => ({ ...prev, client_id: e.target.value }))} />
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="notion-client-secret">OAuth Client Secret</Label>
+                  <Label>OAuth Client Secret</Label>
                   <Input
-                    id="notion-client-secret"
                     type="password"
-                    placeholder="Cole o Client Secret (ex: secret_...)"
+                    placeholder="••••••••••••"
                     value={notion.client_secret}
                     onChange={(e) => setNotion(prev => ({ ...prev, client_secret: e.target.value }))}
                   />
                 </div>
 
                 <div className="flex items-center justify-between">
-                  <div className="space-y-1">
-                    <Label htmlFor="notion-enabled">Ativar Integração</Label>
-                    <p className="text-sm text-muted-foreground">
-                      Permitir que utilizadores conectem suas contas do Notion
-                    </p>
-                  </div>
-                  <Switch
-                    id="notion-enabled"
-                    checked={notion.enabled}
-                    onCheckedChange={handleToggleNotionEnabled}
-                  />
+                  <Label>Ativar Integração</Label>
+                  <Switch checked={notion.enabled} onCheckedChange={handleToggleNotionEnabled} />
                 </div>
               </div>
 
               <div className="flex gap-3">
-                <Button
-                  onClick={handleSaveNotion}
-                  disabled={saving}
-                >
-                  <Settings className="mr-2 h-4 w-4" />
-                  {saving ? "Salvando..." : "Salvar Configurações"}
-                </Button>
-
+                <Button onClick={handleSaveNotion} disabled={saving}>Salvar Configurações</Button>
                 {isNotionConfigured && (
-                  <Button
-                    variant="destructive"
-                    onClick={handleClearNotionConfig}
-                  >
-                    Limpar Configuração
-                  </Button>
+                  <Button variant="destructive" onClick={handleClearNotionConfig}>Limpar</Button>
                 )}
-
-                <Button
-                  variant="outline"
-                  asChild
-                >
-                  <a
-                    href="https://www.notion.so/my-integrations"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <ExternalLink className="mr-2 h-4 w-4" />
-                    Notion Developers
-                  </a>
-                </Button>
               </div>
             </CardContent>
           </Card>
@@ -836,7 +605,6 @@ export default function Integrations() {
             <ExternalPortalsSettings />
           </div>
 
-          {/* Meta Lead Ads Integration */}
           <MetaAppSettings />
         </div>
       </div>

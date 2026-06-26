@@ -41,27 +41,28 @@ export function ExternalPortalsSettings() {
   const loadSettings = async () => {
     try {
       setIsLoading(true);
-
-      const { data: sessionData } = await supabase.auth.getSession();
-      const session = sessionData.session;
-      if (!session) {
-        return;
-      }
-
-      const { data: portalData, error } = await (supabase as any)
-        .from("external_property_portals")
-        .select("*")
-        .eq("user_id", session.user.id);
-
-      if (error) {
-        throw error;
-      }
-
+      // Alterado para carregar da API Segura de Integrações
+      const res = await fetch("/api/admin/integrations", {
+        headers: {
+          Authorization: `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`
+        }
+      });
+      const data = await res.json();
+      
       const portalsMap: Record<string, Partial<ExternalPropertyPortal>> = {};
 
-      if (portalData) {
-        portalData.forEach((portal: ExternalPropertyPortal) => {
-          portalsMap[portal.provider_name] = portal;
+      if (data && Array.isArray(data)) {
+        data.forEach((item: any) => {
+          if (item.integration_name.startsWith('portal_')) {
+             const providerId = item.integration_name.replace('portal_', '');
+             portalsMap[providerId] = {
+               provider_name: providerId,
+               is_enabled: item.is_active,
+               api_key: item.settings?.api_key || "",
+               api_secret: item.settings?.api_secret || "",
+               base_url: item.settings?.base_url || ""
+             };
+          }
         });
       }
 
@@ -82,29 +83,28 @@ export function ExternalPortalsSettings() {
     try {
       setIsSaving(providerId);
 
-      const { data: sessionData } = await supabase.auth.getSession();
-      const session = sessionData.session;
-      if (!session) {
-        return;
-      }
-
       const portalData = portals[providerId] || {};
-      const payload = {
-        user_id: session.user.id,
-        provider_name: providerId,
-        is_enabled: portalData.is_enabled || false,
-        api_key: portalData.api_key || null,
-        api_secret: portalData.api_secret || null,
-        base_url: portalData.base_url || null,
-        updated_at: new Date().toISOString(),
-      };
+      
+      // Enviar para a API Segura em vez de BD local
+      const res = await fetch("/api/admin/integrations", {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}` 
+        },
+        body: JSON.stringify({
+          integration_name: `portal_${providerId}`,
+          settings: {
+            api_key: portalData.api_key,
+            api_secret: portalData.api_secret,
+            base_url: portalData.base_url
+          },
+          is_active: portalData.is_enabled || false
+        })
+      });
 
-      const { error } = await (supabase as any)
-        .from("external_property_portals")
-        .upsert(payload, { onConflict: "user_id,provider_name" });
-
-      if (error) {
-        throw error;
+      if (!res.ok) {
+        throw new Error("Erro ao salvar API");
       }
 
       toast({
@@ -193,9 +193,8 @@ export function ExternalPortalsSettings() {
                       <Label>API Secret / Bearer Token</Label>
                       <Input
                         type="password"
-                        value={typeof state.api_secret === "string" ? state.api_secret : ""}
                         onChange={(event) => handleUpdateField(portalDef.id, "api_secret", event.target.value)}
-                        placeholder="Chave secreta de autenticação"
+                        placeholder="•••••••• (Substituir)"
                       />
                     </div>
                   </div>
