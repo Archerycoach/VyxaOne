@@ -52,9 +52,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     let result;
     if (type === 'template') {
-      result = await sendWhatsAppTemplate(targetUserId, targetPhone, content, supabaseAdmin);
+      result = await sendWhatsAppTemplate(targetUserId, targetPhone, content, supabaseAdmin, lead_id);
     } else {
-      result = await sendWhatsAppMessage(targetUserId, targetPhone, content, supabaseAdmin);
+      result = await sendWhatsAppMessage(targetUserId, targetPhone, content, supabaseAdmin, lead_id);
     }
 
     if (!result.success) {

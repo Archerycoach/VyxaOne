@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { hasValidWhatsAppConsent, isWithin24hWindow } from "./consentService";
 
 export interface WhatsAppSettings {
   phone_number?: string;
@@ -44,9 +45,22 @@ export async function sendWhatsAppMessage(
   userId: string, 
   to: string, 
   message: string,
-  supabaseClient = supabase
+  supabaseClient = supabase,
+  leadId?: string
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
   try {
+    if (leadId) {
+      const hasConsent = await hasValidWhatsAppConsent(leadId, supabaseClient);
+      if (!hasConsent) {
+        return { success: false, error: "A lead revogou o consentimento (Opt-out) para contacto via WhatsApp." };
+      }
+      
+      const within24h = await isWithin24hWindow(leadId, supabaseClient);
+      if (!within24h) {
+        return { success: false, error: "Fora da janela de 24h da Meta. Tem de usar a função de envio de Template." };
+      }
+    }
+
     // Check if user has opted in to WhatsApp locally via Admin module
     const hasModule = await checkWhatsAppModule(userId, supabaseClient);
     
@@ -117,9 +131,18 @@ export async function sendWhatsAppTemplate(
   userId: string, 
   to: string, 
   templateName: string,
-  supabaseClient = supabase
+  supabaseClient = supabase,
+  leadId?: string
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
   try {
+    if (leadId) {
+      const hasConsent = await hasValidWhatsAppConsent(leadId, supabaseClient);
+      if (!hasConsent) {
+        return { success: false, error: "A lead revogou o consentimento (Opt-out) para contacto via WhatsApp." };
+      }
+      // Note: Templates bypass the 24h window constraint
+    }
+
     // Check if user has opted in to WhatsApp locally via Admin module
     const hasModule = await checkWhatsAppModule(userId, supabaseClient);
     

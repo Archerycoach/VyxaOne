@@ -1,0 +1,1 @@
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS reactivation_attempts INTEGER DEFAULT 0;

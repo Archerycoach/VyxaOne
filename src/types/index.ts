@@ -130,6 +130,13 @@ export interface Lead {
   buy_purpose?: string;
   purchase_timeline?: string | null;
   temperature?: LeadTemperature | null;
+  follow_up_state?: "new" | "first_contact" | "in_conversation" | "qualified" | "no_reply" | "reengagement" | "archived" | "opt_out";
+  archive_reason?: string | null;
+  reactivation_attempts?: number;
+  consent_token?: string | null;
+  email_opt_out?: boolean;
+  email_opted_out_at?: string | null;
+  email_unsub_token?: string | null;
 }
 
 // Property Types

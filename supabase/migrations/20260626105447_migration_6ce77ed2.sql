@@ -1,0 +1,2 @@
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS consent_token UUID;
+ALTER TABLE lead_consents ADD COLUMN IF NOT EXISTS evidence_ref TEXT;

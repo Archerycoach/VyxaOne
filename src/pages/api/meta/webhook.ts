@@ -2,6 +2,8 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { createClient } from "@supabase/supabase-js";
 import nodemailer from "nodemailer";
 import { logEmailInteractionServer } from "@/lib/emailInteractionLogger";
+import { recordConsent } from "@/services/consentService";
+import { sendWhatsAppTemplate } from "@/services/whatsappService";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -412,6 +414,81 @@ export default async function handler(
           console.log("✅ Lead created:", newLead.id);
 
           await applyMetaFormAssociation(newLead.id, formAssociation, newLead.custom_fields);
+
+          // Detect WhatsApp Consent from Meta Form
+          const whatsappConsentField = Object.keys(leadFields).find(key => 
+            key.toLowerCase().includes('whatsapp') && 
+            (key.toLowerCase().includes('consent') || 
+             key.toLowerCase().includes('aceito') || 
+             key.toLowerCase().includes('autorizo') ||
+             key.toLowerCase().includes('concordo'))
+          );
+          
+          const whatsappConsentValue = whatsappConsentField ? leadFields[whatsappConsentField] : null;
+          const hasWhatsAppConsent = whatsappConsentValue && 
+            (whatsappConsentValue.toLowerCase() === 'sim' || 
+             whatsappConsentValue.toLowerCase() === 'yes' ||
+             whatsappConsentValue.toLowerCase() === 'aceito');
+
+          if (hasWhatsAppConsent && finalPhone) {
+            console.log(`[Meta Webhook] Lead ${newLead.id} granted WhatsApp consent via Meta form`);
+            
+            // Record WhatsApp consent with full GDPR evidence
+            const consentText = `${whatsappConsentField}: ${whatsappConsentValue}`;
+            const evidenceRef = `meta_form:${formId}:${leadgenId}:${new Date().toISOString()}`;
+            
+            await recordConsent(
+              newLead.id,
+              integration.user_id,
+              "granted",
+              "meta_form",
+              supabase,
+              consentText,
+              evidenceRef
+            );
+            
+            // Check if user has WhatsApp module enabled
+            const { data: userProfile } = await supabase
+              .from("profiles")
+              .select("whatsapp_module_enabled")
+              .eq("id", integration.user_id)
+              .maybeSingle();
+
+            if (userProfile?.whatsapp_module_enabled) {
+              // Send first contact template (NEVER free message - no 24h window yet!)
+              const templateResult = await sendWhatsAppTemplate(
+                integration.user_id,
+                finalPhone,
+                "primeiro_contacto", // This template must be approved in Meta Business Manager
+                supabase,
+                newLead.id
+              );
+
+              if (templateResult.success) {
+                console.log(`✅ WhatsApp first contact template sent to ${newLead.name}`);
+                
+                // Register as interaction (but NOT whatsapp_inbound - that only happens when lead REPLIES)
+                await supabase.from("interactions").insert({
+                  lead_id: newLead.id,
+                  user_id: integration.user_id,
+                  interaction_type: "whatsapp",
+                  content: `Template de primeiro contacto enviado via WhatsApp`,
+                  interaction_date: new Date().toISOString()
+                });
+                
+                // Update follow_up_state to first_contact
+                await supabase.from("leads").update({
+                  follow_up_state: "first_contact"
+                }).eq("id", newLead.id);
+              } else {
+                console.error(`❌ Failed to send WhatsApp template: ${templateResult.error}`);
+              }
+            } else {
+              console.log(`[Meta Webhook] User ${integration.user_id} does not have WhatsApp module enabled`);
+            }
+          } else if (whatsappConsentField && !hasWhatsAppConsent) {
+            console.log(`[Meta Webhook] Lead ${newLead.id} did NOT grant WhatsApp consent (field: ${whatsappConsentField}, value: ${whatsappConsentValue})`);
+          }
 
           // Create internal notification
           await supabase.from("notifications").insert({

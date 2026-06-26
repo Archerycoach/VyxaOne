@@ -3,9 +3,9 @@ import { supabase } from "@/integrations/supabase/client";
 // The lead_scores table might not exist in V2 schema. 
 // Lead score is now likely part of the lead record or calculated dynamically.
 
-export const calculateLeadScore = async (leadId: string) => {
+export const calculateLeadScore = async (leadId: string, supabaseClient = supabase) => {
   // 1. Fetch lead details
-  const { data: lead, error } = await supabase
+  const { data: lead, error } = await supabaseClient
     .from("leads")
     .select("*")
     .eq("id", leadId)
@@ -42,7 +42,7 @@ export const calculateLeadScore = async (leadId: string) => {
   score = Math.min(score, 100);
 
   // 4. Update lead with new score
-  await supabase
+  await supabaseClient
     .from("leads")
     .update({ score })
     .eq("id", leadId);
