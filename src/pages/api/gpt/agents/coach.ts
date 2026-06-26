@@ -1,5 +1,7 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { runAI } from "@/lib/ai/provider";
+import { getPerformanceCoachPrompt } from "@/lib/ai/prompts/performanceCoach";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   console.log("-> [COACH API] Iniciou o pedido POST");
@@ -31,9 +33,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }, {});
     const totalLeads = leads?.length || 0;
 
-    // 2. Negócios Fechados (Este ano)
+    // 2. Negócios Fechados
     console.log("-> [COACH API] A procurar Deals...");
-    const currentYear = new Date().getFullYear();
     const { data: deals, error: dealsError } = await (supabaseAdmin
       .from("deals" as any)
       .select("amount")
@@ -42,77 +43,34 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (dealsError) console.error("Erro deals:", dealsError);
 
     const wonDealsCount = deals?.length || 0;
-    const conversionRate = totalLeads > 0 ? ((wonDealsCount / totalLeads) * 100).toFixed(1) : 0;
+    const conversionRate = totalLeads > 0 ? ((wonDealsCount / totalLeads) * 100).toFixed(1) : "0";
 
-    // 3. Buscar Chave OpenAI do servidor
-    console.log("-> [COACH API] A verificar chave OpenAI do servidor...");
-    const openAIApiKey = process.env.OPENAI_API_KEY;
-
-    if (!openAIApiKey || openAIApiKey.trim() === "") {
-      console.log("-> [COACH API] Erro Crítico: OPENAI_API_KEY não está configurada no servidor.");
-      return res.status(400).json({
-        error: "OpenAI API Key não está configurada no servidor. Atualize a variável OPENAI_API_KEY no ambiente do projeto."
-      });
-    }
-
-    // 4. Construir Prompt Preditivo
-    const systemPrompt = `És um 'Coach de Performance' implacável e experiente em imobiliário.
-Analisa os dados do consultor.
-Regras:
-1. Faz uma avaliação rápida da taxa de conversão (Leads totais vs Negócios fechados).
-2. Se a taxa for baixa (<3%), alerta para o facto de não estar a qualificar bem os leads. Se for >10%, elogia o fecho.
-3. Dá 2 ou 3 conselhos muito matemáticos e preditivos. Exemplo: "Com base no teu funil (onde tens muitos em 'proposta'), deves focar-te em fazer 5 chamadas de fecho hoje."
-4. Mantém a resposta concisa, agressivamente focada em resultados e produtividade. Não divagues.
-5. Formata com parágrafos claros.`;
-
-    const userPrompt = `O meu funil atual: ${JSON.stringify(funnelCounts)}
-Leads Totais no sistema: ${totalLeads}
-Negócios ganhos: ${wonDealsCount}
-Taxa de conversão atual calculada: ${conversionRate}%
-
-Diz-me a verdade sobre o meu funil e onde preciso de focar esforços esta semana.`;
-
-    // 5. Chamar OpenAI
-    console.log("-> [COACH API] A chamar OpenAI...");
-    
-    // Adicionar um controlador de timeout (15 segundos)
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
-    
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${openAIApiKey}`,
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt }
-        ],
-        temperature: 0.7,
-      }),
-      signal: controller.signal
+    // 3. Construir Prompt
+    const prompts = getPerformanceCoachPrompt({
+      funnelCounts,
+      totalLeads,
+      wonDealsCount,
+      conversionRate
     });
+
+    // 4. Chamar IA
+    console.log("-> [COACH API] A chamar IA...");
     
-    clearTimeout(timeoutId);
+    const aiResponse = await runAI({
+      userId: user.id,
+      task: "performance_coach",
+      messages: [
+        { role: "system", content: prompts.system },
+        { role: "user", content: prompts.user }
+      ],
+      temperature: 0.7
+    });
 
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error("OpenAI Error:", errText);
-      return res.status(500).json({ error: "Falha na comunicação com a IA." });
-    }
-
-    console.log("-> [COACH API] Resposta OpenAI recebida com sucesso!");
-    const aiData = await response.json();
-    return res.status(200).json({ advice: aiData.choices[0].message.content });
+    console.log("-> [COACH API] Resposta IA recebida com sucesso!");
+    return res.status(200).json({ advice: aiResponse.text });
 
   } catch (error: any) {
     console.error("Coach Agent Error:", error);
-    if (error.name === 'AbortError') {
-      return res.status(504).json({ error: "A OpenAI demorou demasiado tempo a responder. Tente novamente." });
-    }
     return res.status(500).json({ error: error.message || "Internal server error" });
   }
 }

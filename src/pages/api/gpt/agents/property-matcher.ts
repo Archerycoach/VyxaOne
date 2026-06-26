@@ -1,5 +1,6 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import { createClient } from "@supabase/supabase-js";
+import { runAI } from "@/lib/ai/provider";
 import nodemailer from "nodemailer";
 
 const supabase = createClient(
@@ -18,15 +19,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const { data: lead } = await supabase.from("leads").select("*").eq("id", leadId).single();
     if (!lead || !lead.email) return res.status(200).json({ message: "No email or lead not found" });
 
-    // 2. Check if user has OpenAI key
+    // 2. Check if user has property matcher enabled
     const { data: gptSettings } = await supabase
       .from("gpt_api_keys")
-      .select("api_key, property_matcher_enabled")
+      .select("property_matcher_enabled")
       .eq("user_id", userId)
-      .single();
+      .eq("is_active", true)
+      .maybeSingle();
 
-    if (!gptSettings?.api_key) return res.status(200).json({ message: "No OpenAI key" });
-    if (!gptSettings.property_matcher_enabled) {
+    if (!gptSettings?.property_matcher_enabled) {
       console.log("Property Matcher is disabled in settings. Skipping auto-reply.");
       return res.status(200).json({ message: "Property matcher disabled" });
     }
@@ -78,47 +79,35 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
     ];
 
-    // 6. Generate Email with OpenAI
+    // 6. Generate Email with AI
     const prompt = `Escreve um email persuasivo, profissional e empático em português de Portugal para o cliente "${lead.name}".
-    O cliente procura um imóvel com as seguintes características:
-    - Tipologia: ${lead.typology || "Não especificado"}
-    - Orçamento máximo: ${lead.budget_max ? lead.budget_max + "€" : "Não especificado"}
-    - Zona: ${lead.location_preference || "Não especificado"}
-    
-    Abaixo estão 3 imóveis que encontrámos na nossa base de dados em tempo real (Portais de parceiros) que correspondem a este perfil:
-    ${properties.map((p, i) => `Imóvel ${i+1}: ${p.title} - ${p.price}€ - ${p.location}`).join('\n')}
-    
-    O email DEVE ser escrito em formato HTML válido (podes usar <b>, <p>, <ul>, <li>, <br> e cores suaves para os preços).
-    NÃO incluas as tags <html>, <head> ou <body>, devolve apenas o conteúdo interior da mensagem em HTML.
-    Para cada imóvel, inclui uma estrutura visual atraente. Usa este template de imagem para cada um dos 3 imóveis, usando o link correto:
-    <img src="URL_DA_IMAGEM" alt="Imóvel" style="width:100%; max-width:400px; border-radius:8px; margin-top:10px; margin-bottom:10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);"/>
-    
-    Usa os URLs de imagem fornecidos abaixo pela respetiva ordem:
-    ${properties.map((p, i) => `Imagem ${i+1}: ${p.main_image}`).join('\n')}
-    
-    Despede-te de forma profissional e com uma call-to-action (ex: agendar visita ou chamada).`;
+O cliente procura um imóvel com as seguintes características:
+- Tipologia: ${lead.typology || "Não especificado"}
+- Orçamento máximo: ${lead.budget_max ? lead.budget_max + "€" : "Não especificado"}
+- Zona: ${lead.location_preference || "Não especificado"}
 
-    const openAiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${gptSettings.api_key}`
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini", // Using fast model for quick responses
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0.7,
-      })
+Abaixo estão 3 imóveis que encontrámos na nossa base de dados em tempo real (Portais de parceiros) que correspondem a este perfil:
+${properties.map((p, i) => `Imóvel ${i+1}: ${p.title} - ${p.price}€ - ${p.location}`).join('\n')}
+
+O email DEVE ser escrito em formato HTML válido (podes usar <b>, <p>, <ul>, <li>, <br> e cores suaves para os preços).
+NÃO incluas as tags <html>, <head> ou <body>, devolve apenas o conteúdo interior da mensagem em HTML.
+Para cada imóvel, inclui uma estrutura visual atraente. Usa este template de imagem para cada um dos 3 imóveis, usando o link correto:
+<img src="URL_DA_IMAGEM" alt="Imóvel" style="width:100%; max-width:400px; border-radius:8px; margin-top:10px; margin-bottom:10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);"/>
+
+Usa os URLs de imagem fornecidos abaixo pela respetiva ordem:
+${properties.map((p, i) => `Imagem ${i+1}: ${p.main_image}`).join('\n')}
+
+Despede-te de forma profissional e com uma call-to-action (ex: agendar visita ou chamada).`;
+
+    const aiResponse = await runAI({
+      userId,
+      task: "property_matcher",
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.7
     });
 
-    if (!openAiResponse.ok) {
-      const err = await openAiResponse.json();
-      throw new Error(err.error?.message || "Failed to generate email content with OpenAI");
-    }
-
-    const completion = await openAiResponse.json();
-    let emailHtml = completion.choices[0].message.content || "";
-    // Clean up potential markdown formatting that GPT sometimes includes
+    let emailHtml = aiResponse.text.trim();
+    // Clean up potential markdown formatting that AI sometimes includes
     emailHtml = emailHtml.replace(/```html/g, "").replace(/```/g, "").trim();
 
     // 7. Send the email via SMTP

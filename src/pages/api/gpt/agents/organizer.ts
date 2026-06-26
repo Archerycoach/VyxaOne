@@ -1,5 +1,7 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { runAI } from "@/lib/ai/provider";
+import { getDailyOrganizerPrompt } from "@/lib/ai/prompts/dailyOrganizer";
 
 interface NeglectedLeadRecord {
   id: string;
@@ -180,75 +182,31 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       
     if (eventsError) console.error("Erro events:", eventsError);
 
-    // 4. Buscar Chave OpenAI do servidor
-    console.log("-> [ORGANIZER API] A verificar chave OpenAI do servidor...");
-    const openAIApiKey = process.env.OPENAI_API_KEY;
-
-    if (!openAIApiKey || openAIApiKey.trim() === "") {
-      console.log("-> [ORGANIZER API] Erro Crítico: OPENAI_API_KEY não está configurada no servidor.");
-      return res.status(400).json({
-        error: "OpenAI API Key não está configurada no servidor. Atualize a variável OPENAI_API_KEY no ambiente do projeto."
-      });
-    }
-
-    // 5. Construir Prompt
-    const systemPrompt = `És um Assistente Organizador Pessoal de um consultor imobiliário.
-Analisa os dados fornecidos e cria um plano de ação curto, direto e altamente acionável.
-Regras:
-1. Começa com uma saudação encorajadora.
-2. Destaca o evento ou tarefa mais crítica do dia.
-3. Se houver leads esquecidos, lê SEMPRE as notas e o histórico completo de interações antes de aconselhar o próximo follow-up.
-4. Usa o histórico para sugerir o canal certo, a urgência e a melhor próxima interação.
-5. Usa formatação limpa (listas) e uma linguagem muito objetiva, sem conversa de "robô".
-6. Não inventes dados que não estejam abaixo.`;
-
-    const userPrompt = `Aqui estão os meus dados atuais:
-Tarefas pendentes: ${JSON.stringify(tasks || [])}
-Leads a arrefecer (sem atividade >30 dias, com notas e histórico completo): ${JSON.stringify(enrichedNeglectedLeads || [])}
-Eventos para hoje: ${JSON.stringify(events || [])}
-
-Diz-me exatamente o que devo fazer primeiro e como estruturar o meu dia. Quando sugerires um follow-up a uma lead, justifica-o com base no histórico real dessa lead.`;
-
-    // 6. Chamar OpenAI
-    console.log("-> [ORGANIZER API] A chamar OpenAI...");
-    
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
-    
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${openAIApiKey}`,
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt }
-        ],
-        temperature: 0.7,
-      }),
-      signal: controller.signal
+    // 4. Construir Prompt
+    const prompts = getDailyOrganizerPrompt({
+      tasks: tasks || [],
+      enrichedNeglectedLeads,
+      events: events || []
     });
+
+    // 5. Chamar IA
+    console.log("-> [ORGANIZER API] A chamar IA...");
     
-    clearTimeout(timeoutId);
+    const aiResponse = await runAI({
+      userId: user.id,
+      task: "daily_organizer",
+      messages: [
+        { role: "system", content: prompts.system },
+        { role: "user", content: prompts.user }
+      ],
+      temperature: 0.7
+    });
 
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error("OpenAI Error:", errText);
-      return res.status(500).json({ error: "Falha na comunicação com a IA." });
-    }
-
-    console.log("-> [ORGANIZER API] Resposta OpenAI recebida com sucesso!");
-    const aiData = await response.json();
-    return res.status(200).json({ advice: aiData.choices[0].message.content });
+    console.log("-> [ORGANIZER API] Resposta IA recebida com sucesso!");
+    return res.status(200).json({ advice: aiResponse.text });
 
   } catch (error: any) {
     console.error("Organizer Agent Error:", error);
-    if (error.name === 'AbortError') {
-      return res.status(504).json({ error: "A OpenAI demorou demasiado tempo a responder. Tente novamente." });
-    }
     return res.status(500).json({ error: error.message || "Internal server error" });
   }
 }

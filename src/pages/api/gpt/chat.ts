@@ -1,5 +1,6 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import { createClient } from "@supabase/supabase-js";
+import { runAI } from "@/lib/ai/provider";
 import {
   leadToIdealistaParams,
   searchIdealistaProperties,
@@ -121,7 +122,6 @@ interface DebugNote {
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-const openAIApiKey = process.env.OPENAI_API_KEY;
 
 function addDebugNote(
   debugNotes: DebugNote[] | undefined,
@@ -506,6 +506,7 @@ async function generateEmailCampaignDraft(
   criteria: EmailCampaignCriteria,
   leads: LeadContext[],
   agentName: string,
+  userId: string,
   context: {
     history?: ChatMessage[];
     previousDraft?: Pick<EmailCampaignDraft, "subject" | "htmlBody" | "textBody"> | null;
@@ -518,103 +519,68 @@ async function generateEmailCampaignDraft(
   const filterSummary = context.filterSummaryOverride?.trim() || buildCampaignFilterSummary(criteria);
   const fallback = buildFallbackDraft(criteria, agentName);
 
-  if (!openAIApiKey) {
-    addDebugNote(context.debugNotes, "draft_no_openai_key", "A chave OPENAI_API_KEY não está configurada. Foi usado o rascunho fallback.");
-    return {
-      criteria,
-      filterSummary,
-      ...fallback,
-      recipientLeadIds: leads.map((lead) => lead.id),
-      recipients: leads.map((lead) => ({
-        id: lead.id,
-        name: lead.name,
-        email: lead.email,
-        status: lead.status,
-        location_preference: lead.location_preference,
-        typology: resolveLeadTypology(lead),
-      })),
-    };
-  }
-
   try {
-    const draftResponse = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${openAIApiKey}`,
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        temperature: 0.7,
-        messages: [
-          {
-            role: "system",
-            content:
-              "És um copywriter imobiliário em português de Portugal. Cria emails curtos, humanos e comerciais, sem promessas falsas. Responde APENAS em JSON com as chaves subject, htmlBody e textBody. Usa o placeholder {nome} na saudação.",
-          },
-          {
-            role: "user",
-            content: JSON.stringify({
-              pedido: message,
-              agente: agentName,
-              segmento: filterSummary,
-              numero_de_leads: leads.length,
-              historico_recente: (context.history || []).slice(-6),
-              rascunho_anterior: context.previousDraft || null,
-              amostra_de_leads: leads.slice(0, 8).map((lead) => ({
-                nome: lead.name,
-                zona: lead.location_preference,
-                tipologia: resolveLeadTypology(lead),
-                objetivo: lead.buy_purpose,
-                tipo_imovel: lead.property_type,
-                orcamento: formatBudget(lead),
-              })),
-              carteira_imoveis: (context.properties || []).slice(0, 10).map((property) => ({
-                titulo: property.title,
-                estado: property.status,
-                preco: property.price,
-                tipologia: property.typology,
-                localizacao: property.location,
-                area: property.area,
-              })),
-              carteira_empreendimentos: (context.developments || []).slice(0, 8).map((development) => ({
-                nome: development.name,
-                estado: development.status,
-                localizacao: development.location,
-                tipologias: development.typologies,
-                preco_desde: development.price_from,
-                preco_ate: development.price_to,
-                unidades_disponiveis: development.available_units,
-              })),
-            }),
-          },
-        ],
-      }),
+    const aiResponse = await runAI({
+      userId,
+      task: "email_campaign_draft",
+      messages: [
+        {
+          role: "system",
+          content:
+            "És um copywriter imobiliário em português de Portugal. Cria emails curtos, humanos e comerciais, sem promessas falsas. Responde APENAS em JSON com as chaves subject, htmlBody e textBody. Usa o placeholder {nome} na saudação.",
+        },
+        {
+          role: "user",
+          content: JSON.stringify({
+            pedido: message,
+            agente: agentName,
+            segmento: filterSummary,
+            numero_de_leads: leads.length,
+            historico_recente: (context.history || []).slice(-6),
+            rascunho_anterior: context.previousDraft || null,
+            amostra_de_leads: leads.slice(0, 8).map((lead) => ({
+              nome: lead.name,
+              zona: lead.location_preference,
+              tipologia: resolveLeadTypology(lead),
+              objetivo: lead.buy_purpose,
+              tipo_imovel: lead.property_type,
+              orcamento: formatBudget(lead),
+            })),
+            carteira_imoveis: (context.properties || []).slice(0, 10).map((property) => ({
+              titulo: property.title,
+              estado: property.status,
+              preco: property.price,
+              tipologia: property.typology,
+              localizacao: property.location,
+              area: property.area,
+            })),
+            carteira_empreendimentos: (context.developments || []).slice(0, 8).map((development) => ({
+              nome: development.name,
+              estado: development.status,
+              localizacao: development.location,
+              tipologias: development.typologies,
+              preco_desde: development.price_from,
+              preco_ate: development.price_to,
+              unidades_disponiveis: development.available_units,
+            })),
+          }),
+        },
+      ],
+      jsonMode: true,
+      temperature: 0.7
     });
-
-    if (!draftResponse.ok) {
-      const errorText = await draftResponse.text();
-      addDebugNote(context.debugNotes, "draft_openai_http_error", "O OpenAI devolveu erro ao gerar o rascunho.", {
-        status: draftResponse.status,
-        bodyPreview: errorText.slice(0, 500),
-      });
-      throw new Error(`Falha ao gerar rascunho IA (OpenAI ${draftResponse.status})`);
-    }
-
-    const draftData = await draftResponse.json();
-    const rawContent = draftData.choices?.[0]?.message?.content || "";
 
     let parsed: any = {};
     try {
-      parsed = JSON.parse(sanitizeJsonReply(rawContent));
+      parsed = JSON.parse(sanitizeJsonReply(aiResponse.text));
     } catch {
       addDebugNote(
         context.debugNotes,
         "draft_json_parse_fallback",
-        "A resposta do OpenAI para o rascunho não veio em JSON válido. Foi usado fallback parcial.",
-        { rawContentPreview: rawContent.slice(0, 500) },
+        "A resposta da IA para o rascunho não veio em JSON válido. Foi usado fallback parcial.",
+        { rawContentPreview: aiResponse.text.slice(0, 500) },
       );
-      console.warn("Aviso: Falha ao interpretar JSON do rascunho gerado pela IA. Usando fallback.", rawContent);
+      console.warn("Aviso: Falha ao interpretar JSON do rascunho gerado pela IA. Usando fallback.", aiResponse.text);
     }
 
     return {
@@ -660,6 +626,7 @@ async function selectEmailCampaignAudience(params: {
   message: string;
   criteria: EmailCampaignCriteria;
   leads: LeadContext[];
+  userId: string;
   history?: ChatMessage[];
   previousRecipientLeadIds?: string[];
   properties?: PropertyContext[];
@@ -675,91 +642,66 @@ async function selectEmailCampaignAudience(params: {
     buildCampaignFilterSummary(params.criteria) ||
     (params.previousRecipientLeadIds?.length ? "a audiência afinada na conversa" : "o perfil pedido");
 
-  if (!openAIApiKey) {
-    addDebugNote(params.debugNotes, "audience_no_openai_key", "A chave OPENAI_API_KEY não está configurada. Foi usada a audiência fallback.");
-    return {
-      selectedLeadIds: fallbackLeadIds,
-      filterSummary: fallbackSummary,
-    };
-  }
-
   try {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${openAIApiKey}`,
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        temperature: 0.2,
-        messages: [
-          {
-            role: "system",
-            content:
-              "És um assistente imobiliário em português de Portugal. Seleciona as leads certas para uma campanha de email com base num pedido livre. Se o pedido apenas afinar o tom ou o texto e não introduzir novos critérios de audiência, reutiliza exatamente os IDs anteriores. Responde APENAS em JSON com as chaves filterSummary e selectedLeadIds.",
-          },
-          {
-            role: "user",
-            content: JSON.stringify({
-              pedido: params.message,
-              criterios_inferidos: params.criteria,
-              historico_recente: (params.history || []).slice(-6),
-              lead_ids_anteriores: params.previousRecipientLeadIds || [],
-              leads_disponiveis: params.leads.map((lead) => ({
-                id: lead.id,
-                nome: lead.name,
-                estado: lead.status,
-                email_registado: Boolean(lead.email),
-                zona: lead.location_preference,
-                tipologia: resolveLeadTypology(lead),
-                quartos: lead.bedrooms,
-                objetivo: lead.buy_purpose,
-                tipo_imovel: lead.property_type,
-                orcamento: formatBudget(lead),
-              })),
-              carteira_imoveis: (params.properties || []).slice(0, 12).map((property) => ({
-                titulo: property.title,
-                tipologia: property.typology,
-                localizacao: property.location,
-                preco: property.price,
-              })),
-              carteira_empreendimentos: (params.developments || []).slice(0, 8).map((development) => ({
-                nome: development.name,
-                tipologias: development.typologies,
-                localizacao: development.location,
-                preco_desde: development.price_from,
-                preco_ate: development.price_to,
-              })),
-            }),
-          },
-        ],
-      }),
+    const aiResponse = await runAI({
+      userId: params.userId,
+      task: "email_campaign_audience",
+      messages: [
+        {
+          role: "system",
+          content:
+            "És um assistente imobiliário em português de Portugal. Seleciona as leads certas para uma campanha de email com base num pedido livre. Se o pedido apenas afinar o tom ou o texto e não introduzir novos critérios de audiência, reutiliza exatamente os IDs anteriores. Responde APENAS em JSON com as chaves filterSummary e selectedLeadIds.",
+        },
+        {
+          role: "user",
+          content: JSON.stringify({
+            pedido: params.message,
+            criterios_inferidos: params.criteria,
+            historico_recente: (params.history || []).slice(-6),
+            lead_ids_anteriores: params.previousRecipientLeadIds || [],
+            leads_disponiveis: params.leads.map((lead) => ({
+              id: lead.id,
+              nome: lead.name,
+              estado: lead.status,
+              email_registado: Boolean(lead.email),
+              zona: lead.location_preference,
+              tipologia: resolveLeadTypology(lead),
+              quartos: lead.bedrooms,
+              objetivo: lead.buy_purpose,
+              tipo_imovel: lead.property_type,
+              orcamento: formatBudget(lead),
+            })),
+            carteira_imoveis: (params.properties || []).slice(0, 12).map((property) => ({
+              titulo: property.title,
+              tipologia: property.typology,
+              localizacao: property.location,
+              preco: property.price,
+            })),
+            carteira_empreendimentos: (params.developments || []).slice(0, 8).map((development) => ({
+              nome: development.name,
+              tipologias: development.typologies,
+              localizacao: development.location,
+              preco_desde: development.price_from,
+              preco_ate: development.price_to,
+            })),
+          }),
+        },
+      ],
+      jsonMode: true,
+      temperature: 0.2
     });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      addDebugNote(params.debugNotes, "audience_openai_http_error", "O OpenAI devolveu erro ao selecionar a audiência.", {
-        status: response.status,
-        bodyPreview: errorText.slice(0, 500),
-      });
-      throw new Error(`Falha ao selecionar audiência da campanha (OpenAI ${response.status})`);
-    }
-
-    const data = await response.json();
-    const rawContent = data.choices?.[0]?.message?.content || "";
 
     let parsed: any = {};
     try {
-      parsed = JSON.parse(sanitizeJsonReply(rawContent));
+      parsed = JSON.parse(sanitizeJsonReply(aiResponse.text));
     } catch {
       addDebugNote(
         params.debugNotes,
         "audience_json_parse_fallback",
-        "A resposta do OpenAI para a audiência não veio em JSON válido. Foi usada a audiência fallback.",
-        { rawContentPreview: rawContent.slice(0, 500) },
+        "A resposta da IA para a audiência não veio em JSON válido. Foi usada a audiência fallback.",
+        { rawContentPreview: aiResponse.text.slice(0, 500) },
       );
-      console.warn("Aviso: Falha ao interpretar JSON da audiência gerado pela IA. Usando fallback.", rawContent);
+      console.warn("Aviso: Falha ao interpretar JSON da audiência gerado pela IA. Usando fallback.", aiResponse.text);
     }
 
     const validLeadIds = new Set(params.leads.map((lead) => lead.id));
@@ -857,50 +799,42 @@ async function executeBulkLeadUpdate(
 ): Promise<string> {
   const normalizedMessage = normalizeText(message);
   
-  // Detect which leads to update based on criteria
   let targetLeads: LeadContext[] = [];
   const updates: Record<string, any> = {};
   let sourceFilterAttempted = false;
   
-  // Detect source/form filter
   const sourceMatch = message.match(/formulário\s+([A-Za-zÀ-ÿ0-9\s-]+?)(?:\s+e\s|\s+para\s|$)/i);
   if (sourceMatch) {
     sourceFilterAttempted = true;
     const sourceName = sourceMatch[1].trim();
     
-    // Load all Meta forms first for error messaging
     const { data: metaForms } = await supabase
       .from("meta_form_configs")
       .select("form_id, form_name")
       .eq("user_id", userId)
       .eq("is_active", true);
     
-    // Check if user provided a form ID directly (e.g., "formulário com ID: 123456" or "formulário ID 123456")
     const formIdMatch = sourceName.match(/(?:com\s+)?ID:\s*(\d+)|(?:com\s+)?ID\s+(\d+)/i);
     if (formIdMatch) {
       const formId = formIdMatch[1] || formIdMatch[2];
-      // Filter directly by meta_form_id
       targetLeads = leads.filter(lead => lead.meta_form_id === formId);
       
       if (targetLeads.length === 0) {
         return `Não encontrei leads que vieram do formulário com ID ${formId}. Verifica se o ID está correto.`;
       }
     } else {
-      // Try to find Meta form by name
       const matchedForm = (metaForms || []).find((form: any) => 
         normalizeText(form.form_name || "").includes(normalizeText(sourceName)) ||
         normalizeText(sourceName).includes(normalizeText(form.form_name || ""))
       );
       
       if (matchedForm) {
-        // Filter by meta_form_id
         targetLeads = leads.filter(lead => lead.meta_form_id === matchedForm.form_id);
         
         if (targetLeads.length === 0) {
           return `Encontrei o formulário "${matchedForm.form_name}", mas não há leads desse formulário na tua carteira.`;
         }
       } else {
-        // Fallback: search in source field
         targetLeads = leads.filter(lead => {
           const leadSource = normalizeText(lead.source || "");
           return leadSource.includes(normalizeText(sourceName));
@@ -908,9 +842,7 @@ async function executeBulkLeadUpdate(
       }
     }
     
-    // If source filter was specified but found nothing, return clear error
     if (targetLeads.length === 0) {
-      // List available forms to help the user
       if (metaForms && metaForms.length > 0) {
         const formNames = metaForms.map((f: any) => `- ${f.form_name}`).join("\n");
         return `Não encontrei leads do formulário "${sourceName}".\n\nFormulários Meta disponíveis:\n${formNames}`;
@@ -920,20 +852,15 @@ async function executeBulkLeadUpdate(
     }
   }
   
-  // Detect development association
   const devMatch = message.match(/(?:empreendimento|desenvolvimento)\s+([A-Za-zÀ-ÿ0-9\s-]+?)(?:\s+e\s|$)/i);
-  
-  // Detect development removal/dissociation request
   const devRemovalMatch = /(retira|retirar|remove|remover|desassocia|desassociar|limpa|limpar).*?(?:associa[cç][aã]o|empreendimento|desenvolvimento)/i.test(message);
   
   if (devRemovalMatch) {
-    // User wants to remove development association
     updates.is_development = false;
     updates.development_name = null;
   } else if (devMatch) {
     const devName = devMatch[1].trim();
     
-    // Find the development
     const { data: developments } = await supabase
       .from("developments")
       .select("id, name")
@@ -949,7 +876,6 @@ async function executeBulkLeadUpdate(
     }
   }
   
-  // Detect temperature update
   if (/(temperatura|quente|morna|fria)/i.test(message)) {
     if (/\bquente\b/i.test(message)) {
       updates.temperature = "hot";
@@ -960,7 +886,6 @@ async function executeBulkLeadUpdate(
     }
   }
   
-  // Detect status update
   const statusMapping: Record<string, string> = {
     "novo": "new",
     "nova": "new",
@@ -984,18 +909,15 @@ async function executeBulkLeadUpdate(
     }
   }
   
-  // If no specific leads targeted, check for "all leads" or broader criteria
-  // BUT: if a source filter was attempted and failed, don't fallback to all leads
   if (targetLeads.length === 0 && /\b(todas|todos)\b/.test(normalizedMessage)) {
     if (sourceFilterAttempted) {
       return "O filtro de formulário especificado não encontrou leads. Verifica o nome do formulário.";
     }
     
-    // For safety, require at least one filter criteria
     if (Object.keys(updates).length === 0) {
       return "Por segurança, preciso de pelo menos um critério de filtragem (formulário, zona, estado, etc.) para atualizar leads em massa.";
     }
-    targetLeads = leads; // Use all leads
+    targetLeads = leads;
   }
   
   if (targetLeads.length === 0) {
@@ -1006,7 +928,6 @@ async function executeBulkLeadUpdate(
     return "Não identifiquei que alteração devo fazer. Especifica o que deve ser atualizado (ex: associar ao empreendimento X, marcar como quente, etc.).";
   }
   
-  // Execute the update
   const leadIds = targetLeads.map(l => l.id);
   const { error } = await supabase
     .from("leads")
@@ -1018,7 +939,6 @@ async function executeBulkLeadUpdate(
     return `Erro ao atualizar leads: ${error.message}`;
   }
   
-  // Build success message
   const updatedFields = Object.entries(updates).map(([key, value]) => {
     if (key === "is_development" || key === "development_name") {
       if (value === false || value === null) {
@@ -1158,20 +1078,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     ...extras,
   });
 
-  // Log environment variables status
-  console.log("[AI Chat Debug] Environment check:", {
-    hasOpenAIKey: !!openAIApiKey,
-    hasSupabaseUrl: !!supabaseUrl,
-    hasSupabaseServiceKey: !!supabaseServiceKey,
-    hasSupabaseAnonKey: !!supabaseAnonKey,
-  });
-
   try {
     const token = req.headers.authorization?.split(" ")[1];
-    console.log("[AI Chat Debug] Auth token present:", !!token);
     
     if (!token) {
-      console.error("[AI Chat Debug] Missing authorization token");
       return res.status(401).json({ error: "Token de autorização não encontrado. Por favor, faça login novamente." });
     }
 
@@ -1181,14 +1091,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       error: authError,
     } = await supabase.auth.getUser(token);
 
-    console.log("[AI Chat Debug] Auth result:", {
-      hasUser: !!user,
-      userId: user?.id,
-      authError: authError?.message,
-    });
-
     if (!user) {
-      console.error("[AI Chat Debug] User authentication failed:", authError);
       return res.status(401).json({ 
         error: authError?.message || "Sessão inválida. Por favor, faça login novamente." 
       });
@@ -1224,11 +1127,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const { data: profile } = await userScopedSupabase.from("profiles").select("*").eq("id", user.id).single();
 
-    // Fetch a broad array of data to give the AI complete business context
     const { data: leads, error: leadsError } = await userScopedSupabase
       .from("leads")
       .select(
-        "id, name, phone, email, status, lead_type, next_follow_up, property_type, location_preference, buy_purpose, budget, budget_min, budget_max, min_area, max_area, bedrooms, bathrooms, source, meta_form_id",
+        "id, name, phone, email, status, lead_type, next_follow_up, property_type, location_preference, buy_purpose, budget, budget_min, budget_max, min_area, max_area, bedrooms, bathrooms, source, meta_form_id, typology",
       )
       .or(`assigned_to.eq.${user.id},user_id.eq.${user.id}`)
       .is("archived_at", null)
@@ -1314,6 +1216,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           message,
           criteria,
           leads: activeLeads,
+          userId: user.id,
           history: history || [],
           previousRecipientLeadIds: campaignContext?.recipientLeadIds || [],
           properties,
@@ -1368,6 +1271,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           criteria,
           emailableLeads,
           profile?.full_name || "Agente",
+          user.id,
           {
             history: history || [],
             previousDraft: campaignContext?.previousDraft || null,
@@ -1495,15 +1399,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
     }
 
-    if (!openAIApiKey) {
-      console.error("[AI Chat Debug] OpenAI API key is missing");
-      return res.status(500).json({ 
-        error: "A Chave OpenAI não está configurada no servidor. Por favor, adicione a sua chave OpenAI nas Definições da plataforma ou contacte o administrador do sistema." 
-      });
-    }
-
-    console.log("[AI Chat Debug] About to call OpenAI API");
-
     const { data: events, error: eventsError } = await userScopedSupabase
       .from("calendar_events")
       .select("id, title, start_time, event_type")
@@ -1628,19 +1523,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       lead_id: interaction.lead_id,
     }));
 
-    // Detailed debug logging for properties query
-    console.log("[AI Chat Debug] User ID:", user.id);
-    console.log("[AI Chat Debug] Properties query result:", {
-      success: true,
-      count: properties.length,
-      sample: properties.slice(0, 2),
-    });
-    console.log("[AI Chat Debug] Developments query result:", {
-      success: true,
-      count: developments.length,
-      sample: developments.slice(0, 2),
-    });
-
     const contextStr = JSON.stringify({
       agent_name: profile?.full_name || "Agente",
       current_time: new Date().toISOString(),
@@ -1651,16 +1533,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       portfolio_developments: developments,
       recent_history_interactions: interactions,
       requested_typology_bedrooms: requestedBedrooms,
-    });
-
-    // Debug logging to verify data
-    console.log("[AI Chat Debug] Context summary:", {
-      leads_count: activeLeads.length,
-      events_count: (events || []).length,
-      tasks_count: tasks.length,
-      properties_count: properties.length,
-      developments_count: developments.length,
-      interactions_count: interactions.length,
     });
 
     const systemMessage: ChatMessage = {
@@ -1720,56 +1592,14 @@ ${developments.length > 0
 
     const messages: ChatMessage[] = [systemMessage, ...((history || []) as ChatMessage[]), { role: "user", content: message }];
 
-    console.log("[AI Chat Debug] Calling OpenAI with:", {
-      model: "gpt-4o-mini",
-      messageCount: messages.length,
-      contextLength: contextStr.length,
+    const aiResponse = await runAI({
+      userId: user.id,
+      task: "chat",
+      messages,
+      temperature: 0.7
     });
 
-    const openAiRes = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${openAIApiKey}`,
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages,
-        temperature: 0.7,
-      }),
-    });
-
-    console.log("[AI Chat Debug] OpenAI response status:", openAiRes.status);
-
-    if (!openAiRes.ok) {
-      const errorText = await openAiRes.text();
-      console.error("[AI Chat Debug] OpenAI error response:", {
-        status: openAiRes.status,
-        statusText: openAiRes.statusText,
-        body: errorText.slice(0, 500),
-      });
-      
-      let errorMessage = "Falha ao comunicar com o OpenAI";
-      
-      if (openAiRes.status === 401) {
-        errorMessage = "Chave OpenAI inválida. Verifique a sua chave nas Definições.";
-      } else if (openAiRes.status === 429) {
-        errorMessage = "Limite de quota do OpenAI atingido. Verifique o seu plano OpenAI.";
-      } else if (openAiRes.status === 500) {
-        errorMessage = "Erro interno do OpenAI. Tente novamente mais tarde.";
-      }
-      
-      throw new Error(errorMessage);
-    }
-
-    const gptData = await openAiRes.json();
-    const reply = gptData.choices?.[0]?.message?.content;
-
-    if (!reply) {
-      throw new Error("Empty response from OpenAI");
-    }
-
-    return res.status(200).json({ reply });
+    return res.status(200).json({ reply: aiResponse.text });
   } catch (error: unknown) {
     let errorMessage = "Unknown error";
     let errorDetails: Record<string, unknown> = {};

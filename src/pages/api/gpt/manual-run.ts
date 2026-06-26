@@ -1,366 +1,307 @@
-import type { NextApiRequest, NextApiResponse } from "next";
-import nodemailer from "nodemailer";
+import { NextApiRequest, NextApiResponse } from "next";
 import { createClient } from "@supabase/supabase-js";
-import { dedupeCalendarEventCandidates } from "@/lib/calendarEventDedup";
+import { runAI } from "@/lib/ai/provider";
+import { getDailyOrganizerPrompt } from "@/lib/ai/prompts/dailyOrganizer";
+import nodemailer from "nodemailer";
+import { logEmailInteractionServer } from "@/lib/emailInteractionLogger";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const openAIApiKey = process.env.OPENAI_API_KEY;
 
-export default async function handler(
-  req: NextApiRequest,
-  res: NextApiResponse
-) {
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  if (!openAIApiKey) {
-    return res.status(500).json({ error: "OPENAI_API_KEY is missing. Por favor adicione nas variáveis de ambiente." });
+  const token = req.headers.authorization?.split(" ")[1];
+  if (!token) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+
+  if (authError || !user) {
+    return res.status(401).json({ error: "Invalid token" });
   }
 
   try {
-    const token = req.headers.authorization?.split(" ")[1];
-    if (!token) {
-      return res.status(401).json({ error: "Missing authorization token" });
-    }
-
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
-    const { data: { user }, error: userError } = await supabase.auth.getUser(token);
-
-    if (userError || !user) {
-      return res.status(401).json({ error: "Invalid token" });
-    }
-
-    const { task_id } = req.body || {};
-
     const { data: profile } = await supabase
       .from("profiles")
-      .select("*")
+      .select("full_name, email, automation_paused")
       .eq("id", user.id)
       .single();
 
-    const { data: contactMatches } = await (supabase
-      .from("contact_opportunity_matches" as any)
-      .select(`
-        id,
-        match_score,
-        match_reasons,
-        status,
-        created_at,
-        notification_channel,
-        contacts:contact_id(name, email, phone),
-        contact_alert_requests:request_id(name, urgency, notification_channel),
-        properties:property_id(title, city, price, listed_at),
-        developments:development_id(name, city, price_from, price_to, published_at)
-      `)
-      .eq("user_id", user.id)
-      .in("status", ["new", "task_created"])
-      .order("created_at", { ascending: false })
-      .limit(20) as any);
+    if (!profile) {
+      return res.status(404).json({ error: "Profile not found" });
+    }
 
-    // Buscar leads pendentes do utilizador (expandido para 30 leads para incluir inícios de funil)
-    const { data: leads } = await supabase
-      .from("leads")
-      .select("id, name, phone, email, status, last_contact_date, next_follow_up, lead_type, property_type, location_preference, budget_min, budget_max, min_area, max_area, bedrooms, bathrooms, source")
-      .eq("assigned_to", user.id)
-      .is("archived_at", null)
-      .in("status", ["new", "contacted", "qualified", "proposal", "negotiation"])
-      .limit(30);
-      
-    // Buscar histórico geral (leads ganhas/perdidas recentes)
-    const { data: recentLeads } = await supabase
-      .from("leads")
-      .select("name, status, lead_type, property_type")
-      .eq("assigned_to", user.id)
-      .in("status", ["won", "lost"])
-      .order("updated_at", { ascending: false })
-      .limit(10);
-
-    // Buscar interações recentes 
-    const { data: recentInteractions } = await supabase
-      .from("lead_interactions")
-      .select("type, content, created_at, lead_id")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(20);
-
-    if ((!leads || leads.length === 0) && (!contactMatches || contactMatches.length === 0)) {
-      return res.status(200).json({ 
-        success: true, 
-        message: "<p>Nenhuma lead urgente ou oportunidade nova de contacto encontrada. Bom trabalho!</p>", 
-        emailSent: false 
+    if (profile.automation_paused) {
+      return res.status(200).json({
+        message: "Automation is paused for this user",
+        paused: true
       });
     }
 
-    const leadIds = (leads ?? []).map((lead) => lead.id);
-
-    const notes = leadIds.length > 0
-      ? (await supabase
-          .from("lead_notes")
-          .select("lead_id, note, created_at")
-          .in("lead_id", leadIds)
-          .order("created_at", { ascending: false })).data
-      : [];
-
-    // Buscar eventos já marcados para evitar sobreposição de horários
-    const { data: upcomingEvents } = await supabase
-      .from("calendar_events")
-      .select("id, title, lead_id, start_time, end_time")
+    const { data: tasks } = await supabase
+      .from("tasks")
+      .select("*, leads!related_lead_id(*)")
       .eq("user_id", user.id)
-      .gte("start_time", new Date().toISOString());
-
-    const contextData = {
-      leads: leads || [],
-      recently_closed_leads: recentLeads || [],
-      recent_interactions: recentInteractions || [],
-      recent_notes: notes || [],
-      existing_upcoming_events: upcomingEvents || [],
-      contact_opportunity_matches: contactMatches || []
-    };
+      .in("status", ["pending", "in_progress"])
+      .order("priority", { ascending: false })
+      .order("due_date", { ascending: true, nullsFirst: false })
+      .limit(15);
 
     const now = new Date();
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
-    let customSystemPrompt = "";
-    let reportTitle = "Resumo Diário Automático";
+    const { data: neglectedLeads } = await supabase
+      .from("leads")
+      .select("*, last_interaction:interactions(interaction_date, interaction_type)")
+      .eq("user_id", user.id)
+      .is("archived_at", null)
+      .neq("status", "won")
+      .neq("status", "lost")
+      .or(`last_contacted_at.lt.${sevenDaysAgo.toISOString()},last_contacted_at.is.null`)
+      .order("created_at", { ascending: false })
+      .limit(10);
 
-    if (task_id) {
-      const { data: aiTask } = await (supabase.from("ai_tasks" as any).select("system_prompt, title").eq("id", task_id).single() as any);
-      if (aiTask) {
-        customSystemPrompt = aiTask.system_prompt;
-        reportTitle = aiTask.title;
-      }
-    }
+    const { data: upcomingEvents } = await supabase
+      .from("calendar_events")
+      .select("*")
+      .eq("user_id", user.id)
+      .gte("start_time", now.toISOString())
+      .lte("start_time", new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString())
+      .order("start_time", { ascending: true })
+      .limit(10);
 
-    // Instruções para o OpenAI (System Prompt) com formato JSON forçado
-    const prompt = customSystemPrompt ? 
-    `${customSystemPrompt}
-    
-    Data e hora atual: ${now.toISOString()}
-    Responde SEMPRE em formato JSON com "html_summary" e "new_events".
-    O "new_events" é uma lista de tarefas/eventos a criar no calendário.
-    ATENÇÃO: O campo "lead_id" de cada evento DEVE conter o ID (UUID) real da lead que encontraste nos dados fornecidos!
-    REGRA DE DATAS CRÍTICA: Se a nota referir datas futuras ("em Junho", "próxima semana"), agenda para essa data futura e nunca para hoje!
-    
-    Dados para analisar:
-    ${JSON.stringify(contextData, null, 2)}` 
-    : 
-    `És um assistente de vendas de elite de uma agência imobiliária. 
-Analisa as leads pendentes do consultor/agente ${profile?.full_name || 'Utilizador'}.
-Vais receber os dados das leads, as notas reais recentes escritas sobre cada uma, os eventos de calendário já marcados e os matches pendentes entre contactos e novas oportunidades (imóveis ou empreendimentos).
-Para além disso, tens acesso às últimas interações/emails registados e ao histórico de leads fechadas (ganhas/perdidas) recentemente.
+    const enrichedNeglectedLeads = (neglectedLeads || []).map((lead: any) => {
+      const lastInteractionDate = lead.last_interaction?.[0]?.interaction_date || lead.last_contacted_at;
+      const daysSinceContact = lastInteractionDate
+        ? Math.floor((now.getTime() - new Date(lastInteractionDate).getTime()) / (1000 * 60 * 60 * 24))
+        : 999;
 
-Data e hora atual: ${now.toISOString()}
-
-O teu objetivo é:
-1. Ler as notas para entender o contexto da negociação.
-2. Priorizar também os matches pendentes dos contactos com novas oportunidades publicadas.
-3. Analisar o que aconteceu recentemente nas interações para dar contexto às sugestões de follow-up.
-4. Agendar EVENTOS DE CALENDÁRIO (hora de início e fim) apenas quando fizer sentido operacional.
-5. Evitar sobrepor horários (verifica 'existing_upcoming_events').
-6. Formatar um resumo motivador.
-
-A tua resposta DEVE ser OBRIGATORIAMENTE um objeto JSON com esta estrutura:
-{
-  "html_summary": "E-mail em HTML (<h3>, <p>, <ul>, <li>). Foca-te no contexto lido nas notas e nos matches pendentes dos contactos.",
-  "new_events": [
-    {
-      "title": "Ligar à Ana para confirmar visita",
-      "description": "Justificação baseada na nota ou no novo match...",
-      "lead_id": "INSERIR_AQUI_O_ID_REAL_DA_LEAD",
-      "event_type": "call",
-      "start_time": "2026-06-15T10:00:00Z",
-      "end_time": "2026-06-15T10:30:00Z"
-    }
-  ]
-}
-
-Tipos de evento aceites: 'call', 'meeting', 'visit', 'task'.
-REGRA DE DATAS CRÍTICA: LÊ BEM AS NOTAS. Se a nota pedir para contactar numa data futura (ex: "em Junho", "próxima semana"), marca o \`start_time\` para essa exata data futura. NUNCA agendes para hoje o que foi pedido para depois! Se não houver data, agenda para os próximos dias úteis.
-Marca os eventos com duração de 30 a 60 mins dentro do horário de trabalho.
-O campo "lead_id" é obrigatório apenas quando o evento estiver relacionado com uma lead existente. Para matches de contactos sem lead associada, usa "lead_id": null.
-
-Dados para analisar:
-${JSON.stringify(contextData, null, 2)}`;
-
-    const openAiRes = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${openAIApiKey}`
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [{ role: "system", content: prompt }],
-        temperature: 0.7,
-        response_format: { type: "json_object" }
-      })
+      return {
+        id: lead.id,
+        name: lead.name,
+        status: lead.status,
+        temperature: lead.temperature,
+        phone: lead.phone,
+        email: lead.email,
+        location_preference: lead.location_preference,
+        property_type: lead.property_type,
+        budget: lead.budget,
+        budget_min: lead.budget_min,
+        budget_max: lead.budget_max,
+        days_since_contact: daysSinceContact,
+        last_interaction_type: lead.last_interaction?.[0]?.interaction_type || null,
+      };
     });
 
-    if (!openAiRes.ok) {
-      const errorText = await openAiRes.text();
-      console.error("OpenAI erro:", errorText);
-      
-      // Tentar extrair a mensagem de erro específica da OpenAI
-      let openAiErrorMessage = "Falha ao comunicar com a OpenAI";
-      try {
-        const errorJson = JSON.parse(errorText);
-        if (errorJson.error && errorJson.error.message) {
-          openAiErrorMessage = `Erro da OpenAI: ${errorJson.error.message}`;
-        }
-      } catch (e) {
-        openAiErrorMessage = `Erro da OpenAI: ${errorText}`;
-      }
-      
-      throw new Error(openAiErrorMessage);
+    const prompts = getDailyOrganizerPrompt({
+      tasks: tasks || [],
+      enrichedNeglectedLeads,
+      events: upcomingEvents || [],
+    });
+
+    const aiResponse = await runAI({
+      userId: user.id,
+      task: "daily_organizer",
+      messages: [
+        { role: "system", content: prompts.system },
+        { role: "user", content: prompts.user }
+      ],
+      jsonMode: true,
+      temperature: 0.7
+    });
+
+    let planning: any;
+    try {
+      planning = JSON.parse(aiResponse.text);
+    } catch (parseError) {
+      console.error("Failed to parse AI planning response:", parseError);
+      return res.status(500).json({ error: "Failed to parse AI planning" });
     }
 
-    const gptData = await openAiRes.json();
-    const gptResponse = JSON.parse(gptData.choices[0].message.content);
-    
-    let gptMessage = gptResponse.html_summary || "<p>Resumo gerado.</p>";
-    const newEvents = gptResponse.new_events || [];
-
-    // Criar os novos eventos na base de dados
-    let eventsCreatedCount = 0;
-    if (Array.isArray(newEvents) && newEvents.length > 0) {
-      const eventsToInsert = newEvents.map((e: any) => {
-        // Garantir que o GPT não inventou um ID ou enviou texto solto (prevenindo erro de foreign key do Supabase)
-        const isValidLead = e.lead_id && leadIds.includes(e.lead_id);
-        
-        return {
-          user_id: user.id,
-          title: e.title || "Follow-up AI",
-          description: e.description || "Agendado pelo Vyxa AI",
-          event_type: ["call", "meeting", "visit", "task"].includes(e.event_type) ? e.event_type : "task",
-          start_time: e.start_time || new Date().toISOString(),
-          end_time: e.end_time || new Date(Date.now() + 30 * 60000).toISOString(),
-          lead_id: isValidLead ? e.lead_id : null
-        };
-      });
-
-      const {
-        uniqueEvents,
-        skippedDuplicates,
-        skippedInvalid,
-      } = dedupeCalendarEventCandidates(eventsToInsert, upcomingEvents || []);
-
-      if (uniqueEvents.length > 0) {
-        const { error: insertError } = await supabase.from("calendar_events").insert(uniqueEvents);
-        if (!insertError) {
-          eventsCreatedCount = uniqueEvents.length;
-          
-          let eventsListHtml = "<ul style='margin-top: 10px; padding-left: 20px; font-size: 14px;'>";
-          uniqueEvents.forEach((e: any) => {
-            const dateStr = new Date(e.start_time).toLocaleString("pt-PT", { 
-              day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" 
-            });
-            eventsListHtml += `<li style='margin-bottom: 5px;'><strong>${dateStr}</strong>: ${e.title}</li>`;
-          });
-          eventsListHtml += "</ul>";
-
-          gptMessage += `
-            <div style="margin-top: 20px; padding: 15px; background-color: #eef2ff; border-left: 4px solid #4f46e5; border-radius: 4px;">
-              <strong style="color: #3730a3;">📅 Automação Concluída:</strong><br>
-              Li as suas notas e agendei automaticamente <strong>${eventsCreatedCount} novos eventos</strong> no seu calendário!
-              ${eventsListHtml}
-            </div>
-          `;
-        } else {
-          console.error("Erro ao inserir eventos GPT:", insertError);
-          const safeErrorMessage = insertError ? (insertError.message || JSON.stringify(insertError)) : "Erro desconhecido";
-          gptMessage += `
-            <div style="margin-top: 20px; padding: 15px; background-color: #fef2f2; border-left: 4px solid #ef4444; border-radius: 4px;">
-              <strong style="color: #b91c1c;">⚠️ Aviso de Agendamento:</strong><br>
-              O resumo foi gerado com sucesso, mas o sistema bloqueou a criação automática dos eventos no calendário devido a um erro da base de dados: ${safeErrorMessage}
-            </div>
-          `;
-        }
-      }
-
-      if (skippedDuplicates > 0) {
-        gptMessage += `
-          <div style="margin-top: 20px; padding: 15px; background-color: #f8fafc; border-left: 4px solid #64748b; border-radius: 4px;">
-            <strong style="color: #334155;">🛡️ Duplicados evitados:</strong><br>
-            ${skippedDuplicates} evento(s) já existiam no calendário para a mesma lead e horário, por isso não foram recriados.
-          </div>
-        `;
-      }
-
-      if (skippedInvalid > 0) {
-        gptMessage += `
-          <div style="margin-top: 20px; padding: 15px; background-color: #fff7ed; border-left: 4px solid #f97316; border-radius: 4px;">
-            <strong style="color: #9a3412;">⚠️ Sugestões ignoradas:</strong><br>
-            ${skippedInvalid} evento(s) foram ignorados porque tinham dados de data/hora inválidos.
-          </div>
-        `;
-      }
-    }
-
-    // Gravar o relatório na base de dados para o utilizador consultar no painel "Agente IA"
-    await (supabase.from("ai_reports" as any).insert({
-      user_id: user.id,
-      title: `${reportTitle} - ${now.toLocaleDateString('pt-PT')}`,
-      content: gptMessage
-    }) as any);
-
-    let emailSent = false;
-
-    // Verificar se tem SMTP para enviar uma cópia
     const { data: smtpSettings } = await supabase
-      .from("user_smtp_settings")
+      .from("smtp_settings")
       .select("*")
       .eq("user_id", user.id)
       .eq("is_active", true)
       .single();
 
-    if (smtpSettings) {
-      try {
-        const transporter = nodemailer.createTransport({
-          host: smtpSettings.smtp_host,
-          port: smtpSettings.smtp_port,
-          secure: smtpSettings.smtp_secure,
-          auth: {
-            user: smtpSettings.smtp_username,
-            pass: smtpSettings.smtp_password,
-          },
-          tls: {
-            rejectUnauthorized: smtpSettings.reject_unauthorized ?? true,
-          },
-        });
-
-        await transporter.sendMail({
-          from: `"${smtpSettings.from_name}" <${smtpSettings.from_email}>`,
-          to: user.email,
-          subject: "🤖 O seu Resumo Inteligente GPT - Execução Manual",
-          html: `
-            <div style="font-family: sans-serif; max-width: 650px; margin: 0 auto; padding: 20px;">
-              <div style="border-bottom: 2px solid #e2e8f0; padding-bottom: 15px; margin-bottom: 20px;">
-                <h2 style="color: #4f46e5; margin: 0; font-size: 24px;">Análise Contextual de Leads</h2>
-              </div>
-              <div style="background-color: #f8fafc; padding: 20px; border-radius: 8px; border-left: 4px solid #4f46e5; line-height: 1.6;">
-                ${gptMessage}
-              </div>
-            </div>
-          `
-        });
-        emailSent = true;
-      } catch (e) {
-        console.error("Erro ao enviar email manual:", e);
-      }
+    if (!smtpSettings || !profile.email) {
+      console.log(`No active SMTP or email for user ${user.id}, skipping email send`);
+      return res.status(200).json({
+        message: "Planning generated but not sent (no active SMTP or email)",
+        planning
+      });
     }
 
-    return res.status(200).json({ 
-      success: true, 
-      message: gptMessage, 
-      tasksCreated: eventsCreatedCount,
-      emailSent 
+    const transporter = nodemailer.createTransport({
+      host: smtpSettings.smtp_host,
+      port: smtpSettings.smtp_port,
+      secure: smtpSettings.smtp_port === 465,
+      auth: {
+        user: smtpSettings.smtp_user,
+        pass: smtpSettings.smtp_password,
+      },
     });
-  } catch (error) {
-    console.error("Manual Run Error:", error);
-    return res.status(500).json({
-      error: "Internal server error",
-      message: error instanceof Error ? error.message : "Unknown error",
+
+    const emailHtml = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; padding: 20px; }
+          h1 { color: #2563eb; border-bottom: 2px solid #2563eb; padding-bottom: 10px; }
+          h2 { color: #1e40af; margin-top: 30px; }
+          .section { background: #f8fafc; border-left: 4px solid #3b82f6; padding: 15px; margin: 15px 0; }
+          .priority-urgent { border-left-color: #ef4444; }
+          .priority-high { border-left-color: #f59e0b; }
+          .lead-hot { color: #ef4444; font-weight: bold; }
+          .lead-warm { color: #f59e0b; font-weight: bold; }
+          .lead-cold { color: #3b82f6; }
+          ul { margin: 10px 0; padding-left: 20px; }
+          li { margin: 8px 0; }
+          .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 0.9em; color: #64748b; }
+        </style>
+      </head>
+      <body>
+        <h1>🎯 Plano do Dia - ${new Date().toLocaleDateString("pt-PT", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</h1>
+        
+        ${planning.greeting ? `<p>${planning.greeting}</p>` : ""}
+        
+        ${planning.priorities && planning.priorities.length > 0 ? `
+          <div class="section priority-urgent">
+            <h2>🔥 Prioridades Urgentes</h2>
+            <ul>
+              ${planning.priorities.map((p: string) => `<li>${p}</li>`).join("")}
+            </ul>
+          </div>
+        ` : ""}
+        
+        ${planning.neglected_leads && planning.neglected_leads.length > 0 ? `
+          <div class="section">
+            <h2>📞 Leads a Reativar</h2>
+            <ul>
+              ${planning.neglected_leads.map((lead: any) => `
+                <li>
+                  <strong>${lead.name || "Lead sem nome"}</strong>
+                  ${lead.temperature === "hot" ? '<span class="lead-hot">🔥 Quente</span>' : ""}
+                  ${lead.temperature === "warm" ? '<span class="lead-warm">⚠️ Morna</span>' : ""}
+                  ${lead.temperature === "cold" ? '<span class="lead-cold">❄️ Fria</span>' : ""}
+                  <br>
+                  <small>${lead.context || ""}</small>
+                  ${lead.suggested_action ? `<br><em>→ ${lead.suggested_action}</em>` : ""}
+                </li>
+              `).join("")}
+            </ul>
+          </div>
+        ` : ""}
+        
+        ${planning.upcoming_events && planning.upcoming_events.length > 0 ? `
+          <div class="section">
+            <h2>📅 Eventos Próximos</h2>
+            <ul>
+              ${planning.upcoming_events.map((event: any) => `<li>${event}</li>`).join("")}
+            </ul>
+          </div>
+        ` : ""}
+        
+        ${planning.insights ? `
+          <div class="section">
+            <h2>💡 Insights Estratégicos</h2>
+            <p>${planning.insights}</p>
+          </div>
+        ` : ""}
+        
+        ${planning.recommendations && planning.recommendations.length > 0 ? `
+          <div class="section priority-high">
+            <h2>💼 Recomendações de Negócio</h2>
+            <ul>
+              ${planning.recommendations.map((r: string) => `<li>${r}</li>`).join("")}
+            </ul>
+          </div>
+        ` : ""}
+        
+        ${planning.closing ? `<p><strong>${planning.closing}</strong></p>` : ""}
+        
+        <div class="footer">
+          <p>Este email foi gerado automaticamente pelo Assistente IA do Vyxa CRM.<br>
+          Para desativar estes emails, aceda às definições da sua conta.</p>
+        </div>
+      </body>
+      </html>
+    `;
+
+    const emailText = `
+PLANO DO DIA - ${new Date().toLocaleDateString("pt-PT")}
+
+${planning.greeting || ""}
+
+${planning.priorities && planning.priorities.length > 0 ? `
+PRIORIDADES URGENTES:
+${planning.priorities.map((p: string) => `- ${p}`).join("\n")}
+` : ""}
+
+${planning.neglected_leads && planning.neglected_leads.length > 0 ? `
+LEADS A REATIVAR:
+${planning.neglected_leads.map((lead: any) => `
+- ${lead.name || "Lead"} ${lead.temperature ? `(${lead.temperature})` : ""}
+  ${lead.context || ""}
+  ${lead.suggested_action ? `→ ${lead.suggested_action}` : ""}
+`).join("\n")}
+` : ""}
+
+${planning.upcoming_events && planning.upcoming_events.length > 0 ? `
+EVENTOS PRÓXIMOS:
+${planning.upcoming_events.map((event: any) => `- ${event}`).join("\n")}
+` : ""}
+
+${planning.insights ? `
+INSIGHTS:
+${planning.insights}
+` : ""}
+
+${planning.recommendations && planning.recommendations.length > 0 ? `
+RECOMENDAÇÕES:
+${planning.recommendations.map((r: string) => `- ${r}`).join("\n")}
+` : ""}
+
+${planning.closing || ""}
+
+---
+Este email foi gerado automaticamente pelo Assistente IA do Vyxa CRM.
+    `.trim();
+
+    await transporter.sendMail({
+      from: `"${smtpSettings.sender_name || "Vyxa CRM"}" <${smtpSettings.sender_email}>`,
+      to: profile.email,
+      subject: `🎯 Plano do Dia - ${new Date().toLocaleDateString("pt-PT")}`,
+      text: emailText,
+      html: emailHtml,
     });
+
+    await logEmailInteractionServer(supabase, {
+      userId: user.id,
+      to: profile.email,
+      subject: `Plano do Dia - ${new Date().toLocaleDateString("pt-PT")}`,
+      body: emailText.substring(0, 500),
+      outcome: "Email enviado",
+    });
+
+    console.log(`✅ Daily planning email sent to ${profile.email}`);
+
+    return res.status(200).json({
+      message: "Planning generated and sent successfully",
+      planning,
+      emailSent: true
+    });
+
+  } catch (error: any) {
+    console.error("Manual run error:", error);
+    return res.status(500).json({ error: error.message || "Internal server error" });
   }
 }

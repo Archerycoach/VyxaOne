@@ -1,5 +1,7 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { runAI } from "@/lib/ai/provider";
+import { getLeadDraftMessagePrompt } from "@/lib/ai/prompts/leadDraftMessage";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
@@ -33,7 +35,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(400).json({ error: "Canal inválido. Use 'whatsapp' ou 'email'." });
     }
 
-    // Buscar dados e notas da lead (usando maybeSingle para não "partir" se algo falhar)
     const { data: lead, error: leadError } = await (supabaseAdmin
       .from("leads" as any)
       .select("*")
@@ -51,71 +52,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     if (notesError) console.error("Notes fetch error:", notesError);
 
-    const openAIApiKey = process.env.OPENAI_API_KEY;
-
-    if (!openAIApiKey) {
-      return res.status(500).json({
-        error: "OpenAI API Key não está configurada no servidor. Atualize a variável OPENAI_API_KEY no ambiente do projeto.",
-      });
-    }
-
-    const channelInstructions = channel === 'whatsapp' 
-      ? "Escreve uma mensagem de WhatsApp amigável, curta e direta, usando emojis. Não escrevas o campo de 'Assunto'."
-      : "Escreve um E-mail profissional mas empático. Inclui um 'Assunto:' na primeira linha.";
-
-    const prompt = `És um assistente comercial imobiliário.
-    Cria uma sugestão de mensagem para enviar ao cliente para fazer follow-up.
-    
-    Dados do cliente:
-    Nome: ${lead?.name}
-    Status Atual: ${lead?.status}
-    Origem: ${lead?.source}
-    
-    Últimas notas do CRM sobre o cliente (usa isto para ter contexto do que se falou antes):
-    ${JSON.stringify(notes || [], null, 2)}
-    
-    ${channelInstructions}
-    
-    Assina como a equipa comercial.
-    Responde EXCLUSIVAMENTE com o texto da mensagem final pronta a enviar.`;
-
-    const openAiRes = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${openAIApiKey}`
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0.7
-      })
+    const prompt = getLeadDraftMessagePrompt({
+      leadName: lead?.name || "Cliente",
+      leadStatus: lead?.status || null,
+      leadSource: lead?.source || null,
+      notes: notes || null,
+      channel
     });
 
-    if (!openAiRes.ok) {
-      const errorText = await openAiRes.text();
-      console.error("OpenAI erro no rascunho:", errorText);
-      let openAiErrorMessage = "Erro ao gerar rascunho na OpenAI";
-      try {
-        const errorJson = JSON.parse(errorText);
-        if (errorJson.error && errorJson.error.message) {
-          openAiErrorMessage = `Erro OpenAI: ${errorJson.error.message}`;
-        }
-      } catch (e) {
-        openAiErrorMessage = `Erro OpenAI: ${errorText}`;
-      }
-      throw new Error(openAiErrorMessage);
-    }
+    const aiResponse = await runAI({
+      userId: user.id,
+      task: "lead_draft_message",
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.7
+    });
 
-    const responseText = await openAiRes.text();
-    let gptData;
-    try {
-      gptData = JSON.parse(responseText);
-    } catch (e) {
-      throw new Error(`A resposta da OpenAI não é válida: ${responseText.substring(0, 100)}...`);
-    }
-    
-    const generatedText = gptData.choices?.[0]?.message?.content?.trim() || "";
+    const generatedText = aiResponse.text.trim();
 
     return res.status(200).json({ success: true, draft: generatedText });
   } catch (error: any) {
