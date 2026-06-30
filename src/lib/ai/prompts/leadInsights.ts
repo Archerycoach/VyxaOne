@@ -5,7 +5,7 @@ interface LeadInsightsContext {
 }
 
 export function getLeadInsightsPrompt(context: LeadInsightsContext): string {
-  return `Analisa esta lead imobiliária e fornece insights acionáveis em formato JSON.
+  return `És um assistente especializado em vendas imobiliárias. Analisa esta lead e devolve uma análise acionável em JSON.
 
 DADOS DA LEAD:
 ${JSON.stringify(context.leadData, null, 2)}
@@ -16,13 +16,20 @@ ${JSON.stringify(context.interactionsHistory, null, 2)}
 NOTAS REGISTADAS:
 ${JSON.stringify(context.notesHistory, null, 2)}
 
-Responde APENAS em JSON com a seguinte estrutura:
+Analisa o estado da relação com esta lead, o sentimento demonstrado e o que falta para avançar para a conversão.
+
+Responde APENAS em JSON válido, com EXATAMENTE esta estrutura (sem texto antes ou depois):
 {
-  "lead_quality_score": number (0-100),
-  "temperature_suggestion": "hot" | "warm" | "cold",
-  "next_action": "string descrevendo a próxima ação recomendada",
-  "key_insights": ["insight 1", "insight 2", "insight 3"],
-  "red_flags": ["flag 1", "flag 2"] ou [],
-  "opportunities": ["oportunidade 1", "oportunidade 2"] ou []
-}`;
+  "summary": "resumo curto (2-3 frases) do estado atual da lead e do seu potencial de conversão",
+  "sentiment": "positivo" | "neutro" | "negativo",
+  "temperature": "hot" | "warm" | "cold",
+  "next_best_action": "a próxima melhor ação concreta que o consultor deve tomar",
+  "pain_points": ["preocupação ou obstáculo 1", "preocupação 2"]
+}
+
+Regras:
+- "sentiment" reflete a atitude/recetividade da lead nas interações.
+- "temperature": "hot" se está perto de converter, "warm" se há interesse mas falta avançar, "cold" se está parada ou pouco recetiva.
+- "pain_points": lista as objeções, dúvidas ou obstáculos reais da lead (ou [] se não houver sinais).
+- Escreve em português de Portugal, de forma direta e útil para o consultor.`;
 }
