@@ -58,7 +58,7 @@ export function LeadAIInsightsPanel({ leadId }: { leadId: string }) {
         throw new Error("O servidor devolveu um formato inválido de análise.");
       }
 
-      setInsights(data);
+      setInsights(data.insights ?? data);
     } catch (err: any) {
       setError(err.message);
     } finally {
