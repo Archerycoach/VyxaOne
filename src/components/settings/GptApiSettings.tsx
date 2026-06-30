@@ -33,29 +33,26 @@ const PROVIDERS = {
   openai: {
     name: "OpenAI",
     models: [
-      { value: "gpt-4o", label: "GPT-4o (Recomendado)" },
-      { value: "gpt-4o-mini", label: "GPT-4o Mini (Económico)" },
-      { value: "gpt-4-turbo", label: "GPT-4 Turbo" },
-      { value: "gpt-4", label: "GPT-4" },
-      { value: "gpt-3.5-turbo", label: "GPT-3.5 Turbo" },
+      { value: "gpt-5.4", label: "GPT-5.4 (Recomendado)" },
+      { value: "gpt-5.5", label: "GPT-5.5 (Mais capaz)" },
+      { value: "gpt-5.4-mini", label: "GPT-5.4 Mini (Económico)" },
+      { value: "gpt-5.4-nano", label: "GPT-5.4 Nano (Mais rápido)" },
     ]
   },
   anthropic: {
     name: "Anthropic (Claude)",
     models: [
-      { value: "claude-3-5-sonnet-20241022", label: "Claude 3.5 Sonnet (Recomendado)" },
-      { value: "claude-3-5-haiku-20241022", label: "Claude 3.5 Haiku (Económico)" },
-      { value: "claude-3-opus-20240229", label: "Claude 3 Opus" },
-      { value: "claude-3-sonnet-20240229", label: "Claude 3 Sonnet" },
-      { value: "claude-3-haiku-20240307", label: "Claude 3 Haiku" },
+      { value: "claude-sonnet-4-6", label: "Claude Sonnet 4.6 (Recomendado)" },
+      { value: "claude-opus-4-8", label: "Claude Opus 4.8 (Mais capaz)" },
+      { value: "claude-haiku-4-5", label: "Claude Haiku 4.5 (Económico)" },
     ]
   },
   google: {
     name: "Google Gemini",
     models: [
-      { value: "gemini-1.5-pro", label: "Gemini 1.5 Pro (Recomendado)" },
-      { value: "gemini-1.5-flash", label: "Gemini 1.5 Flash (Económico)" },
-      { value: "gemini-1.0-pro", label: "Gemini 1.0 Pro" },
+      { value: "gemini-3.5-flash", label: "Gemini 3.5 Flash (Recomendado)" },
+      { value: "gemini-3.1-pro", label: "Gemini 3.1 Pro (Mais capaz)" },
+      { value: "gemini-3.1-flash-lite", label: "Gemini 3.1 Flash-Lite (Económico)" },
     ]
   }
 };
