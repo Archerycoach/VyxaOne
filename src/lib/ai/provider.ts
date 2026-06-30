@@ -4,10 +4,9 @@ import { calculateCost } from "./pricing";
 /**
  * Unified AI provider interface
  * Supports OpenAI, Anthropic (Claude), and Google Gemini
- * 
- * Last full verification: 2026-06-27T10:27:00Z
- * All AI routes confirmed to use runAI exclusively - no direct OPENAI_API_KEY reads
- * Repository: https://github.com/softgenai/sg-9d804bf8-0d80-4823-af0f-2c9bbddb5de7-1767085488
+ *
+ * Updated 2026: handles GPT-5.x (max_completion_tokens) and Gemini 3.x (systemInstruction),
+ * while remaining backward-compatible with older models.
  */
 
 export interface AIMessage {
@@ -92,7 +91,7 @@ export async function runAI(params: RunAIParams): Promise<AIResponse> {
 
   // Log usage automatically
   const estimatedCost = calculateCost(model, response.usage.inputTokens, response.usage.outputTokens);
-  
+
   await supabase.from("ai_usage_logs").insert({
     user_id: userId,
     task,
@@ -110,6 +109,10 @@ export async function runAI(params: RunAIParams): Promise<AIResponse> {
 
 /**
  * OpenAI API call
+ *
+ * GPT-5.x (and other newer reasoning models) require `max_completion_tokens`
+ * instead of `max_tokens`, and only accept the default temperature.
+ * Older models (gpt-4o, gpt-4o-mini, gpt-3.5-turbo) keep the legacy params.
  */
 async function callOpenAI(
   apiKey: string,
@@ -119,12 +122,21 @@ async function callOpenAI(
   temperature: number,
   maxTokens: number
 ): Promise<AIResponse> {
+  // Newer model families (gpt-5*, o1*, o3*, o4*) use the updated parameter names.
+  const isNewModelFamily = /^(gpt-5|o1|o3|o4)/i.test(model);
+
   const requestBody: any = {
     model,
     messages: messages.map(m => ({ role: m.role, content: m.content })),
-    temperature,
-    max_tokens: maxTokens,
   };
+
+  if (isNewModelFamily) {
+    // New families: token limit param renamed; temperature must be left at default.
+    requestBody.max_completion_tokens = maxTokens;
+  } else {
+    requestBody.max_tokens = maxTokens;
+    requestBody.temperature = temperature;
+  }
 
   if (jsonMode) {
     requestBody.response_format = { type: "json_object" };
@@ -145,9 +157,9 @@ async function callOpenAI(
   }
 
   const data = await response.json();
-  
+
   let text = data.choices[0]?.message?.content || "";
-  
+
   // Clean up potential markdown blocks that OpenAI sometimes returns
   if (jsonMode) {
     text = text.replace(/```json/gi, "").replace(/```/g, "").trim();
@@ -178,7 +190,7 @@ async function callAnthropic(
   const conversationMessages = messages.filter(m => m.role !== "system");
 
   let systemPrompt = systemMessage?.content || "";
-  
+
   if (jsonMode && !systemPrompt.includes("JSON")) {
     systemPrompt += "\n\nResponde APENAS em JSON válido. Não incluas markdown nem texto antes ou depois do JSON.";
   }
@@ -213,9 +225,9 @@ async function callAnthropic(
   }
 
   const data = await response.json();
-  
+
   let text = data.content[0]?.text || "";
-  
+
   // Clean up potential markdown blocks
   if (jsonMode) {
     text = text.replace(/```json/gi, "").replace(/```/g, "").trim();
@@ -232,6 +244,9 @@ async function callAnthropic(
 
 /**
  * Google Gemini API call
+ *
+ * Newer Gemini models expect the system instruction in a dedicated
+ * `systemInstruction` field rather than mixed into the content parts.
  */
 async function callGoogleGemini(
   apiKey: string,
@@ -241,26 +256,19 @@ async function callGoogleGemini(
   temperature: number,
   maxTokens: number
 ): Promise<AIResponse> {
-  // Gemini uses a different message format
   const systemMessage = messages.find(m => m.role === "system");
   const conversationMessages = messages.filter(m => m.role !== "system");
 
-  // Build the prompt parts
-  const parts: any[] = [];
-  
-  if (systemMessage) {
-    parts.push({ text: systemMessage.content });
-  }
-  
+  // Build the system instruction text (system message + optional JSON directive)
+  let systemText = systemMessage?.content || "";
   if (jsonMode) {
-    parts.push({ text: "\n\nResponde APENAS em JSON válido. Não incluas markdown nem texto antes ou depois do JSON." });
+    systemText += "\n\nResponde APENAS em JSON válido. Não incluas markdown nem texto antes ou depois do JSON.";
   }
 
-  conversationMessages.forEach(msg => {
-    parts.push({ text: msg.content });
-  });
+  // Conversation content goes into parts
+  const parts = conversationMessages.map(msg => ({ text: msg.content }));
 
-  const requestBody = {
+  const requestBody: any = {
     contents: [{ parts }],
     generationConfig: {
       temperature,
@@ -268,6 +276,10 @@ async function callGoogleGemini(
       ...(jsonMode && { responseMimeType: "application/json" }),
     },
   };
+
+  if (systemText.trim()) {
+    requestBody.systemInstruction = { parts: [{ text: systemText }] };
+  }
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
@@ -285,9 +297,9 @@ async function callGoogleGemini(
   }
 
   const data = await response.json();
-  
+
   let text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-  
+
   // Clean up potential markdown blocks
   if (jsonMode) {
     text = text.replace(/```json/gi, "").replace(/```/g, "").trim();
