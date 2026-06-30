@@ -100,15 +100,15 @@ export function LeadAIInsightsPanel({ leadId }: { leadId: string }) {
 
   if (!insights) return null;
 
-  const getTemperatureColor = (temp: string) => {
-    const t = temp.toLowerCase();
-    if (t.includes('quente')) return 'bg-red-50 text-red-700 border-red-200';
-    if (t.includes('morn')) return 'bg-orange-50 text-orange-700 border-orange-200';
+  const getTemperatureColor = (temp?: string) => {
+    const t = (temp || "").toLowerCase();
+    if (t.includes('hot') || t.includes('quente')) return 'bg-red-50 text-red-700 border-red-200';
+    if (t.includes('warm') || t.includes('morn')) return 'bg-orange-50 text-orange-700 border-orange-200';
     return 'bg-blue-50 text-blue-700 border-blue-200';
   };
 
-  const getSentimentColor = (sent: string) => {
-    const s = sent.toLowerCase();
+  const getSentimentColor = (sent?: string) => {
+    const s = (sent || "").toLowerCase();
     if (s.includes('positiv')) return 'bg-emerald-50 text-emerald-700 border-emerald-200';
     if (s.includes('negativ')) return 'bg-rose-50 text-rose-700 border-rose-200';
     return 'bg-gray-50 text-gray-700 border-gray-200';
