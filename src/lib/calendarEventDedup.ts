@@ -11,6 +11,16 @@ export interface CalendarEventDedupCandidate extends CalendarEventSignatureInput
   end_time: string;
 }
 
+/**
+ * Calendar Event Deduplication Logic
+ * Last verified: 2026-06-27T10:42:00Z
+ * 
+ * Rule: One event per lead per day (regardless of time)
+ * Signature format:
+ * - With lead: "lead_id::YYYY-MM-DD"
+ * - No lead: "no-lead::normalized-title::YYYY-MM-DD"
+ */
+
 function normalizeTitle(title?: string | null): string {
   return (title || "").trim().replace(/\s+/g, " ").toLowerCase();
 }

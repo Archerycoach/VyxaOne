@@ -149,6 +149,24 @@ export default async function handler(
       console.error("Failed to log email interaction, but email was sent:", logError);
     }
 
+    // ✅ Auto-create email interaction if sent to a lead
+    try {
+      // Try to find lead by email
+      const { data: lead } = await supabaseAdmin
+        .from("leads")
+        .select("id")
+        .eq("email", to)
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (lead) {
+        await createEmailInteraction(lead.id, user.id, subject, html || text, supabaseAdmin);
+      }
+    } catch (interactionError) {
+      console.error("Failed to create email interaction:", interactionError);
+      // Don't fail the email send if interaction creation fails
+    }
+
     return res.status(200).json({
       success: true,
       message: "Email sent successfully",
@@ -161,4 +179,67 @@ export default async function handler(
       message: error instanceof Error ? error.message : "Failed to send email",
     });
   }
+}
+
+/**
+ * Helper: Create email interaction and update lead last_contact_date
+ * Includes duplicate check to prevent duplicate entries
+ */
+async function createEmailInteraction(
+  leadId: string,
+  userId: string,
+  subject: string,
+  content: string,
+  supabaseClient: any
+): Promise<void> {
+  // Check for duplicate interaction in the last 10 seconds
+  const tenSecondsAgo = new Date(Date.now() - 10000).toISOString();
+  
+  const { data: recentInteractions } = await supabaseClient
+    .from("interactions")
+    .select("id")
+    .eq("lead_id", leadId)
+    .eq("interaction_type", "email")
+    .gte("created_at", tenSecondsAgo)
+    .limit(1);
+
+  if (recentInteractions && recentInteractions.length > 0) {
+    console.log("Skipping duplicate email interaction creation");
+    return;
+  }
+
+  // Create interaction with subject in the content
+  const interactionContent = `${subject}\n\n${content}`;
+  
+  const { error: interactionError } = await supabaseClient
+    .from("interactions")
+    .insert({
+      lead_id: leadId,
+      user_id: userId,
+      interaction_type: "email",
+      content: interactionContent,
+      subject: subject,
+      interaction_date: new Date().toISOString(),
+      outcome: "sent"
+    });
+
+  if (interactionError) {
+    console.error("Error creating email interaction:", interactionError);
+    throw interactionError;
+  }
+
+  // Update lead's last_contact_date
+  const { error: leadUpdateError } = await supabaseClient
+    .from("leads")
+    .update({ 
+      last_contact_date: new Date().toISOString(),
+      last_contact_outcome: "sent"
+    })
+    .eq("id", leadId);
+
+  if (leadUpdateError) {
+    console.error("Error updating lead last_contact_date:", leadUpdateError);
+  }
+
+  console.log("✅ Email interaction auto-created and lead updated");
 }

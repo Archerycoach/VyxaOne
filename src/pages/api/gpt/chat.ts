@@ -6,6 +6,7 @@ import {
   searchIdealistaProperties,
   type IdealistaProperty,
 } from "@/services/idealistaService";
+import { getIdealistaCredentials } from "@/lib/server/idealistaCredentials";
 
 interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -1374,7 +1375,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         });
       }
 
-      const properties = await searchIdealistaProperties({ ...searchParams, maxItems: 5 }, user.id);
+      // Get Idealista credentials (server-side only)
+      const credentials = await getIdealistaCredentials();
+
+      const properties = await searchIdealistaProperties({ ...searchParams, maxItems: 5 }, credentials, user.id);
       return res.status(200).json({ reply: formatIdealistaReply(targetLead.name, properties) });
     }
 

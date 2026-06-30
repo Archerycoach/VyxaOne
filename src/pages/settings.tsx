@@ -46,20 +46,16 @@ export default function Settings() {
   const [settings, setSettings] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [idealistaApiKey, setIdealistaApiKey] = useState("");
-  const [idealistaApiKeyInput, setIdealistaApiKeyInput] = useState("");
-  const [idealistaKeyConfigured, setIdealistaKeyConfigured] = useState(false);
-  const [idealistaAutoSuggest, setIdealistaAutoSuggest] = useState(false);
-  const [idealistaAgencyFilter, setIdealistaAgencyFilter] = useState("");
-  const [idealistaApiHost, setIdealistaApiHost] = useState("idealista2.p.rapidapi.com");
-  const [idealistaListEndpoint, setIdealistaListEndpoint] = useState("/properties/list");
-  const [isLoadingIdealistaKey, setIsLoadingIdealistaKey] = useState(true);
   const [loading, setLoading] = useState(false);
   const [notifications, setNotifications] = useState({
     email: true,
     push: false,
     marketing: false,
   });
+  
+  // Daily Digest Settings
+  const [digestSettings, setDigestSettings] = useState<any>(null);
+  const [loadingDigest, setLoadingDigest] = useState(false);
   
   // Auth check
   const [authChecking, setAuthChecking] = useState(true);
@@ -90,215 +86,82 @@ export default function Settings() {
 
   useEffect(() => {
     checkAuth();
-    loadIdealistaKey();
+    loadDigestSettings();
   }, []);
 
-  const loadIdealistaKey = async () => {
+  const loadDigestSettings = async () => {
     try {
-      setIsLoadingIdealistaKey(true);
-      
-      const { data } = await supabase
-        .from("system_settings" as any)
-        .select("value")
-        .eq("key", "idealista_rapidapi_key")
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data, error } = await supabase
+        .from("daily_digest_settings" as any)
+        .select("*")
+        .eq("user_id", user.id)
         .maybeSingle();
 
-      const { data: autoData } = await supabase
-        .from("system_settings" as any)
-        .select("value")
-        .eq("key", "idealista_auto_suggest_enabled")
-        .maybeSingle();
+      if (error && error.code !== "PGRST116") {
+        console.error("Error loading digest settings:", error);
+        return;
+      }
 
-      const { data: agencyData } = await supabase
-        .from("system_settings" as any)
-        .select("value")
-        .eq("key", "idealista_agency_filter")
-        .maybeSingle();
-
-      const { data: hostData } = await supabase
-        .from("system_settings" as any)
-        .select("value")
-        .eq("key", "idealista_rapidapi_host")
-        .maybeSingle();
-
-      const { data: listEndpointData } = await supabase
-        .from("system_settings" as any)
-        .select("value")
-        .eq("key", "idealista_rapidapi_list_endpoint")
-        .maybeSingle();
-
-      const autoSetting = autoData as any;
-      setIdealistaAutoSuggest(autoSetting?.value === "true");
-      
-      const agencySetting = agencyData as any;
-      setIdealistaAgencyFilter(agencySetting?.value || "");
-
-      const hostSetting = hostData as any;
-      setIdealistaApiHost(hostSetting?.value || "idealista2.p.rapidapi.com");
-
-      const listSetting = listEndpointData as any;
-      setIdealistaListEndpoint(listSetting?.value || "/properties/list");
-
-      const setting = data as any;
-
-      if (setting?.value) {
-        setIdealistaKeyConfigured(true);
-        // Mostrar parte da chave com asteriscos para confirmação
-        const key = setting.value as string;
-        setIdealistaApiKey(key.substring(0, 8) + "..." + key.substring(key.length - 4));
-        setIdealistaApiKeyInput(""); // Limpar o input
+      if (data) {
+        setDigestSettings(data);
       } else {
-        setIdealistaKeyConfigured(false);
-        setIdealistaApiKey("");
-        setIdealistaApiKeyInput("");
+        // Create default settings
+        const defaultSettings = {
+          user_id: user.id,
+          enabled: true,
+          delivery_time: "08:00:00",
+          send_notification: true,
+          send_email: true,
+          send_whatsapp: false,
+          include_hot_leads: true,
+          include_tasks: true,
+          include_events: true,
+          include_overdue_proposals: true
+        };
+        
+        const { data: newSettings, error: insertError } = await supabase
+          .from("daily_digest_settings" as any)
+          .insert(defaultSettings)
+          .select()
+          .single();
+
+        if (!insertError && newSettings) {
+          setDigestSettings(newSettings);
+        }
       }
     } catch (error) {
-      console.error("Erro ao carregar chave do Idealista:", error);
-    } finally {
-      setIsLoadingIdealistaKey(false);
+      console.error("Error in loadDigestSettings:", error);
     }
   };
 
-  const handleSaveIdealistaKey = async (newKey: string) => {
-    if (!newKey || newKey.trim() === "") {
-      toast({
-        title: "Erro",
-        description: "Por favor, insira uma chave válida.",
-        variant: "destructive",
-      });
-      return;
-    }
-
+  const handleSaveDigestSettings = async () => {
+    if (!digestSettings) return;
+    
+    setLoadingDigest(true);
     try {
-      setIsSaving(true);
-      
-      // Checking admin role is ideal here, but for now we'll allow save 
-      // if user has access to settings page
-      await supabase
-        .from("system_settings" as any)
-        .upsert({
-          key: "idealista_rapidapi_key",
-          value: newKey.trim(),
-          updated_at: new Date().toISOString()
-        }, { onConflict: "key" });
+      const { error } = await supabase
+        .from("daily_digest_settings" as any)
+        .update(digestSettings)
+        .eq("user_id", digestSettings.user_id);
 
-      toast({
-        title: "Chave da API Global guardada",
-        description: "A integração do Idealista está agora ativa para toda a equipa.",
-      });
-
-      setIdealistaApiKeyInput(""); // Limpar o input após guardar
-      // Recarregar o estado
-      await loadIdealistaKey();
-    } catch (error) {
-      console.error("Erro ao guardar chave global:", error);
-      toast({
-        title: "Erro",
-        description: "Não foi possível guardar a chave da API global.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const handleSaveIdealistaConfig = async () => {
-    try {
-      setIsSaving(true);
-      
-      if (idealistaApiKeyInput.trim()) {
-        await supabase
-          .from("system_settings" as any)
-          .upsert({
-            key: "idealista_rapidapi_key",
-            value: idealistaApiKeyInput.trim(),
-            updated_at: new Date().toISOString()
-          }, { onConflict: "key" });
-      }
-
-      await supabase
-        .from("system_settings" as any)
-        .upsert({
-          key: "idealista_rapidapi_host",
-          value: idealistaApiHost.trim() || "idealista2.p.rapidapi.com",
-          updated_at: new Date().toISOString()
-        }, { onConflict: "key" });
-
-      await supabase
-        .from("system_settings" as any)
-        .upsert({
-          key: "idealista_rapidapi_list_endpoint",
-          value: idealistaListEndpoint.trim().startsWith('/') ? idealistaListEndpoint.trim() : `/${idealistaListEndpoint.trim()}`,
-          updated_at: new Date().toISOString()
-        }, { onConflict: "key" });
+      if (error) throw error;
 
       toast({
         title: "Configurações guardadas",
-        description: "As definições da API do Idealista foram atualizadas para toda a equipa.",
+        description: "As suas preferências de resumo diário foram atualizadas.",
       });
-
-      setIdealistaApiKeyInput(""); 
-      await loadIdealistaKey();
     } catch (error) {
-      console.error("Erro ao guardar definições:", error);
+      console.error("Error saving digest settings:", error);
       toast({
         title: "Erro",
         description: "Não foi possível guardar as configurações.",
         variant: "destructive",
       });
     } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const handleToggleAutoSuggest = async (checked: boolean) => {
-    try {
-      setIdealistaAutoSuggest(checked);
-
-      await supabase
-        .from("system_settings" as any)
-        .upsert({
-          key: "idealista_auto_suggest_enabled",
-          value: checked ? "true" : "false",
-          updated_at: new Date().toISOString()
-        }, { onConflict: "key" });
-
-      toast({
-        title: "Preferência Global guardada",
-        description: checked ? "Sugestões automáticas ativadas para toda a agência." : "Sugestões automáticas desativadas.",
-      });
-    } catch (error) {
-      console.error("Erro ao guardar preferência:", error);
-      setIdealistaAutoSuggest(!checked);
-      toast({
-        title: "Erro",
-        description: "Não foi possível guardar a preferência global.",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleSaveAgencyFilter = async (agency: string) => {
-    try {
-      await supabase
-        .from("system_settings" as any)
-        .upsert({
-          key: "idealista_agency_filter",
-          value: agency.trim(),
-          updated_at: new Date().toISOString()
-        }, { onConflict: "key" });
-
-      toast({
-        title: "Filtro de Agência guardado",
-        description: "As sugestões automáticas vão agora filtrar por esta agência.",
-      });
-    } catch (error) {
-      console.error("Erro ao guardar filtro de agência:", error);
-      toast({
-        title: "Erro",
-        description: "Não foi possível guardar o filtro de agência.",
-        variant: "destructive",
-      });
+      setLoadingDigest(false);
     }
   };
 
@@ -547,9 +410,9 @@ export default function Settings() {
               <FileText className="h-4 w-4 mr-2" />
               Notion
             </TabsTrigger>
-            <TabsTrigger value="idealista">
-              <Sparkles className="h-4 w-4 mr-2" />
-              Idealista
+            <TabsTrigger value="daily-digest">
+              <Bell className="h-4 w-4 mr-2" />
+              Resumo Diário
             </TabsTrigger>
           </TabsList>
 
@@ -602,6 +465,21 @@ export default function Settings() {
                     onChange={e => setProfile(prev => prev ? {...prev, phone: e.target.value} : null)}
                     placeholder="Ex: +351 912 345 678"
                   />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Alerta de Resposta Rápida (minutos)</Label>
+                  <Input 
+                    type="number"
+                    min="1"
+                    max="1440"
+                    value={profile?.first_contact_alert_minutes || 15} 
+                    onChange={e => setProfile(prev => prev ? {...prev, first_contact_alert_minutes: parseInt(e.target.value) || 15} : null)}
+                    placeholder="15"
+                  />
+                  <p className="text-xs text-slate-500">
+                    🚨 Você será alertado (notificação + WhatsApp opcional) se uma lead nova não for contactada dentro deste tempo. Default: 15 minutos.
+                  </p>
                 </div>
 
                 <Button onClick={updateProfile} disabled={loading}>
@@ -1053,191 +931,6 @@ export default function Settings() {
 
           <TabsContent value="notion" className="space-y-6">
             <NotionAccountConnection />
-          </TabsContent>
-
-          <TabsContent value="idealista" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>
-                  <div className="flex items-center gap-2">
-                    <Sparkles className="h-6 w-6 text-purple-600" />
-                    Integração Idealista (API Global da Equipa)
-                  </div>
-                </CardTitle>
-                <CardDescription>
-                  Configure a chave da API do Idealista (via RapidAPI). Esta configuração aplica-se globalmente a todos os membros da sua agência.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                {/* Estado da Configuração */}
-                <div className={`flex items-center space-x-3 p-4 rounded-lg border ${
-                  isLoadingIdealistaKey ? "bg-gray-50 border-gray-200" :
-                  idealistaKeyConfigured ? "bg-green-50 border-green-200" : "bg-amber-50 border-amber-200"
-                }`}>
-                  {isLoadingIdealistaKey ? (
-                    <>
-                      <div className="animate-spin rounded-full h-5 w-5 border-2 border-purple-600 border-t-transparent" />
-                      <span className="text-sm text-gray-600">A verificar configuração...</span>
-                    </>
-                  ) : idealistaKeyConfigured ? (
-                    <>
-                      <CheckCircle2 className="h-5 w-5 text-green-600" />
-                      <div>
-                        <p className="text-sm font-medium text-green-900">API Configurada</p>
-                        <p className="text-xs text-green-700">A integração do Idealista está ativa</p>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <XCircle className="h-5 w-5 text-amber-600" />
-                      <div>
-                        <p className="text-sm font-medium text-amber-900">API Não Configurada</p>
-                        <p className="text-xs text-amber-700">Configure a chave abaixo para ativar</p>
-                      </div>
-                    </>
-                  )}
-                </div>
-
-                <div className="flex items-start space-x-4 rounded-lg border p-4 bg-purple-50 border-purple-200">
-                  <Sparkles className="h-6 w-6 text-purple-600 mt-1" />
-                  <div className="flex-1 space-y-1">
-                    <p className="text-sm font-medium leading-none text-purple-900">
-                      Sugestões Automáticas de Imóveis
-                    </p>
-                    <p className="text-sm text-purple-800">
-                      Quando uma lead entra no sistema, o agente IA pesquisa automaticamente até 3 imóveis no Idealista que correspondam ao perfil da lead e inclui-os na resposta automática (sem links visíveis). Os links são guardados como nota privada na lead.
-                    </p>
-                    
-                    <div className="flex items-center space-x-2 mt-4 bg-white/60 p-3 rounded-md border border-purple-100">
-                      <Switch 
-                        id="idealista-auto-suggest" 
-                        checked={idealistaAutoSuggest}
-                        onCheckedChange={handleToggleAutoSuggest}
-                        disabled={!idealistaKeyConfigured}
-                      />
-                      <Label htmlFor="idealista-auto-suggest" className={`cursor-pointer font-medium ${!idealistaKeyConfigured ? 'text-gray-400' : 'text-purple-900'}`}>
-                        Ativar sugestões automáticas para novas leads
-                      </Label>
-                    </div>
-                    {!idealistaKeyConfigured && (
-                      <p className="text-xs text-amber-600 mt-1">Configure a chave da API abaixo primeiro para poder ativar esta funcionalidade.</p>
-                    )}
-
-                    {idealistaAutoSuggest && (
-                      <div className="mt-4 p-4 border border-purple-100 bg-white rounded-md space-y-2">
-                        <Label htmlFor="agencyFilter">Exclusividade de Agência (Opcional)</Label>
-                        <div className="flex gap-2">
-                          <Input 
-                            id="agencyFilter"
-                            placeholder="Ex: Remax, Century 21..." 
-                            value={idealistaAgencyFilter}
-                            onChange={(e) => setIdealistaAgencyFilter(e.target.value)}
-                          />
-                          <Button 
-                            variant="secondary"
-                            onClick={() => handleSaveAgencyFilter(idealistaAgencyFilter)}
-                          >
-                            Guardar
-                          </Button>
-                        </div>
-                        <p className="text-xs text-gray-500">
-                          Se preenchido, a IA apenas sugerirá às leads novos imóveis desta imobiliária.
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="idealistaApiKey">
-                      Chave da API (RapidAPI)
-                      {idealistaKeyConfigured && (
-                        <span className="ml-2 text-xs text-green-600 font-normal">✓ Configurada</span>
-                      )}
-                    </Label>
-                    <Input
-                      id="idealistaApiKey"
-                      type="text"
-                      placeholder={idealistaKeyConfigured 
-                        ? `Chave atual: ${idealistaApiKey} (insira nova para substituir)` 
-                        : "Insira a sua chave da API do RapidAPI"
-                      }
-                      value={idealistaApiKeyInput}
-                      onChange={(e) => setIdealistaApiKeyInput(e.target.value)}
-                      disabled={isLoadingIdealistaKey}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="idealistaApiHost">
-                      Host da API (Opcional - Ex: idealista2.p.rapidapi.com)
-                    </Label>
-                    <Input
-                      id="idealistaApiHost"
-                      type="text"
-                      placeholder="idealista2.p.rapidapi.com"
-                      value={idealistaApiHost}
-                      onChange={(e) => setIdealistaApiHost(e.target.value)}
-                      disabled={isLoadingIdealistaKey}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="idealistaListEndpoint">
-                      Caminho de Pesquisa (Endpoint - Ex: /properties/list)
-                    </Label>
-                    <Input
-                      id="idealistaListEndpoint"
-                      type="text"
-                      placeholder="/properties/list"
-                      value={idealistaListEndpoint}
-                      onChange={(e) => setIdealistaListEndpoint(e.target.value)}
-                      disabled={isLoadingIdealistaKey}
-                    />
-                  </div>
-
-                  <div className="pt-2">
-                    <Button 
-                      onClick={handleSaveIdealistaConfig}
-                      disabled={isSaving || isLoadingIdealistaKey || (!idealistaKeyConfigured && !idealistaApiKeyInput.trim())}
-                      className="w-full sm:w-auto"
-                    >
-                      {isSaving ? (
-                        <>
-                          <div className="animate-spin rounded-full h-4 w-4 mr-2 border-2 border-white border-t-transparent" />
-                          A guardar...
-                        </>
-                      ) : (
-                        "Guardar Configurações API"
-                      )}
-                    </Button>
-                    <p className="text-xs text-muted-foreground mt-2">
-                      Obtenha a sua chave em{" "}
-                      <a
-                        href="https://rapidapi.com/apidojo/api/idealista2"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-purple-600 hover:underline"
-                      >
-                        RapidAPI - Idealista2
-                      </a>
-                    </p>
-                  </div>
-
-                  <div className="space-y-2 p-4 bg-blue-50 rounded-lg border border-blue-200 mt-6">
-                    <h4 className="text-sm font-semibold text-blue-900">ℹ️ Como funciona:</h4>
-                    <ul className="text-xs text-blue-800 space-y-1 list-disc list-inside">
-                      <li>Quando uma lead entra, o agente IA analisa o perfil (tipologia, localização, orçamento)</li>
-                      <li>Pesquisa automaticamente até 3 imóveis no Idealista que correspondam</li>
-                      <li>Inclui os detalhes dos imóveis na resposta automática (sem links)</li>
-                      <li>Adiciona os links como nota privada na lead para consulta do agente</li>
-                      <li>Também pode pesquisar manualmente dentro de cada lead através do botão "Procurar Imóveis"</li>
-                    </ul>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
           </TabsContent>
         </Tabs>
 

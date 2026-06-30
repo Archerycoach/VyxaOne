@@ -1,25 +1,27 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/router";
 import { Layout } from "@/components/Layout";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import SEO from "@/components/SEO";
-import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Sparkles, Search, Loader2, Home, MapPin, Bed, Maximize, ExternalLink, Settings } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import type { IdealistaProperty } from "@/services/idealistaService";
-import Link from "next/link";
+import { Search, Home, MapPin, Bed, Maximize, ExternalLink, Loader2, Sparkles } from "lucide-react";
+import { IdealistaProperty } from "@/services/idealistaService";
+import { useToast } from "@/hooks/use-toast";
 
 export default function IdealistaPage() {
-  const [loading, setLoading] = useState(false);
-  const [properties, setProperties] = useState<IdealistaProperty[]>([]);
-  const [searched, setSearched] = useState(false);
+  const router = useRouter();
   const { toast } = useToast();
-
+  const [loading, setLoading] = useState(false);
+  const [authorized, setAuthorized] = useState(false);
+  const [searched, setSearched] = useState(false);
+  
+  // Search parameters
   const [searchParams, setSearchParams] = useState({
     operation: "sale",
     formPropertyType: "flat",
@@ -30,6 +32,27 @@ export default function IdealistaPage() {
     bedrooms: "any",
     agencyName: "",
   });
+  
+  // Results
+  const [properties, setProperties] = useState<IdealistaProperty[]>([]);
+
+  useEffect(() => {
+    checkAuth();
+  }, []);
+
+  const checkAuth = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        router.push("/login");
+        return;
+      }
+      setAuthorized(true);
+    } catch (error) {
+      console.error("Auth error:", error);
+      router.push("/login");
+    }
+  };
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -107,22 +130,14 @@ export default function IdealistaPage() {
       <SEO title="Idealista | Vyxa" description="Pesquisa de imóveis no Idealista" />
       <Layout>
         <div className="p-6 max-w-7xl mx-auto space-y-6">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div>
-              <h1 className="text-3xl font-bold flex items-center gap-2">
-                <Sparkles className="h-8 w-8 text-purple-600" />
-                Idealista Search
-              </h1>
-              <p className="text-muted-foreground mt-1">
-                Pesquise imóveis no mercado diretamente da sua plataforma.
-              </p>
-            </div>
-            <Link href="/settings?tab=idealista">
-              <Button variant="outline" className="text-purple-700 border-purple-200">
-                <Settings className="w-4 h-4 mr-2" />
-                Configurar API
-              </Button>
-            </Link>
+          <div className="flex flex-col gap-2">
+            <h1 className="text-3xl font-bold flex items-center gap-2">
+              <Sparkles className="h-8 w-8 text-purple-600" />
+              Idealista Search
+            </h1>
+            <p className="text-muted-foreground">
+              Pesquise imóveis no mercado diretamente da sua plataforma.
+            </p>
           </div>
 
           <Card className="border-purple-100 shadow-sm">

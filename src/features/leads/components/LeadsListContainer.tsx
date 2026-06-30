@@ -7,7 +7,7 @@ import { LeadDetailsDialog } from "@/components/leads/LeadDetailsDialog";
 import { AssignLeadDialog } from "@/components/leads/AssignLeadDialog";
 import { QuickContactDialog } from "@/components/leads/QuickContactDialog";
 import { Button } from "@/components/ui/button";
-import { LayoutGrid, List, Edit, MoreVertical, Eye, Mail, MessageSquare, MessageCircle, CalendarDays, StickyNote, UserCheck, Phone, Trash2, Users, ArrowDownAZ, ArrowUpZA } from "lucide-react";
+import { LayoutGrid, List, Edit, MoreVertical, Eye, Mail, MessageSquare, MessageCircle, CalendarDays, StickyNote, UserCheck, Phone, Trash2, Users, ArrowDownAZ, ArrowUpZA, Download } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -25,6 +25,7 @@ import {
 } from "../hooks";
 import { getLeadColumnsConfig, type LeadColumnConfig } from "@/services/leadColumnsService";
 import type { LeadWithContacts } from "@/services/leadsService";
+import { exportLeadsToExcel } from "@/services/excelService";
 import { supabase } from "@/integrations/supabase/client";
 import { getLeadRecentInteractionState } from "@/lib/leadInteractionHighlight";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -672,6 +673,16 @@ export function LeadsListContainer({
               title={sortOrder === "asc" ? "Crescente" : "Decrescente"}
             >
               {sortOrder === "asc" ? <ArrowDownAZ className="h-4 w-4" /> : <ArrowUpZA className="h-4 w-4" />}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => exportLeadsToExcel(sortedLeads)}
+              className="bg-white shrink-0 h-9 gap-2"
+              title="Exportar para Excel"
+            >
+              <Download className="h-4 w-4" />
+              <span className="hidden sm:inline">Exportar</span>
             </Button>
           </div>
 

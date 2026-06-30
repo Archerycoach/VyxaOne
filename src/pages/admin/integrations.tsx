@@ -46,6 +46,15 @@ export default function Integrations() {
   });
   const [isWhatsappConfigured, setIsWhatsappConfigured] = useState(false);
 
+  // Idealista Settings
+  const [idealistaConfigured, setIdealistaConfigured] = useState(false);
+  const [idealistaKey, setIdealistaKey] = useState("");
+  const [idealistaMaskedKey, setIdealistaMaskedKey] = useState("");
+  const [idealistaHost, setIdealistaHost] = useState("idealista2.p.rapidapi.com");
+  const [idealistaEndpoint, setIdealistaEndpoint] = useState("/properties/list");
+  const [idealistaAutoSuggest, setIdealistaAutoSuggest] = useState(false);
+  const [idealistaAgencyFilter, setIdealistaAgencyFilter] = useState("");
+
   // Helper para fetch seguro
   const adminFetch = async (url: string, options: RequestInit = {}) => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -61,14 +70,86 @@ export default function Integrations() {
 
   useEffect(() => {
     loadIntegrationSettings();
+    loadIdealistaSettings();
   }, []);
+
+  const loadIdealistaSettings = async () => {
+    try {
+      const res = await adminFetch("/api/admin/system-settings?keys=idealista");
+      if (!res.ok) return;
+      
+      const data = await res.json();
+      
+      setIdealistaConfigured(data.idealista_configured || false);
+      setIdealistaMaskedKey(data.idealista_key_masked || "");
+      setIdealistaHost(data.idealista_rapidapi_host || "idealista2.p.rapidapi.com");
+      setIdealistaEndpoint(data.idealista_rapidapi_list_endpoint || "/properties/list");
+      setIdealistaAutoSuggest(data.idealista_auto_suggest_enabled === "true");
+      setIdealistaAgencyFilter(data.idealista_agency_filter || "");
+    } catch (error) {
+      console.error("Error loading Idealista settings:", error);
+    }
+  };
+
+  const handleSaveIdealista = async () => {
+    try {
+      if (!idealistaKey && !idealistaConfigured) {
+        toast({
+          title: "Chave obrigatória",
+          description: "Por favor, insira a chave RapidAPI.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setSaving(true);
+
+      const payload: any = {
+        idealista_rapidapi_host: idealistaHost.trim() || "idealista2.p.rapidapi.com",
+        idealista_rapidapi_list_endpoint: idealistaEndpoint.trim().startsWith('/') ? idealistaEndpoint.trim() : `/${idealistaEndpoint.trim()}`,
+        idealista_auto_suggest_enabled: idealistaAutoSuggest ? "true" : "false",
+        idealista_agency_filter: idealistaAgencyFilter.trim()
+      };
+
+      // Only include key if user typed a new one
+      if (idealistaKey.trim()) {
+        payload.idealista_rapidapi_key = idealistaKey.trim();
+      }
+
+      const res = await adminFetch("/api/admin/system-settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      if (!res.ok) throw new Error("Erro ao guardar");
+
+      toast({
+        title: "✅ Sucesso",
+        description: "Configurações do Idealista guardadas de forma segura!",
+      });
+
+      setIdealistaKey(""); // Clear input
+      await loadIdealistaSettings();
+    } catch (error: any) {
+      console.error("Error saving Idealista settings:", error);
+      toast({ title: "Erro", description: "Falha ao guardar configurações.", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const loadIntegrationSettings = async () => {
     try {
       setLoading(true);
 
       const res = await adminFetch("/api/admin/integrations");
-      if (!res.ok) throw new Error("Falha ao carregar integrações");
+      
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+        console.error("Integration settings load error:", errorData);
+        throw new Error(errorData.error || "Falha ao carregar integrações");
+      }
       
       const data = await res.json();
 
@@ -114,8 +195,8 @@ export default function Integrations() {
     } catch (error: any) {
       console.error("Error loading integration settings:", error);
       toast({
-        title: "Erro",
-        description: "Falha ao carregar configurações de integrações.",
+        title: "Erro ao carregar integrações",
+        description: error.message || "Falha ao carregar configurações de integrações.",
         variant: "destructive",
       });
     } finally {
@@ -604,6 +685,111 @@ export default function Integrations() {
           <div id="external-portals">
             <ExternalPortalsSettings />
           </div>
+
+          {/* Idealista Global API */}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+              <div className="flex items-center gap-2">
+                <Settings className="h-5 w-5" />
+                <CardTitle>Idealista (RapidAPI)</CardTitle>
+              </div>
+              {idealistaConfigured && (
+                <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
+                  <CheckCircle2 className="h-4 w-4" /> Configurado
+                </div>
+              )}
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <CardDescription>
+                Configure a chave global da API do Idealista. Esta configuração aplica-se a todos os utilizadores da instância.
+              </CardDescription>
+
+              <Alert>
+                <InfoIcon className="h-4 w-4" />
+                <AlertDescription>
+                  <p className="font-semibold mb-1">Configuração Global</p>
+                  <p className="text-sm">A chave é partilhada por toda a equipa. Obtenha-a em{" "}
+                    <a
+                      href="https://rapidapi.com/apidojo/api/idealista2"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:underline inline-flex items-center gap-1"
+                    >
+                      RapidAPI <ExternalLink className="h-3 w-3" />
+                    </a>
+                  </p>
+                </AlertDescription>
+              </Alert>
+
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Chave da API (RapidAPI)</Label>
+                  <Input
+                    type="password"
+                    placeholder={idealistaConfigured ? "••••••••" : "Insira a chave RapidAPI"}
+                    value={idealistaKey}
+                    onChange={(e) => setIdealistaKey(e.target.value)}
+                  />
+                  {idealistaConfigured && idealistaMaskedKey && (
+                    <p className="text-xs text-muted-foreground">
+                      Chave atual: {idealistaMaskedKey}
+                    </p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Host da API</Label>
+                  <Input
+                    value={idealistaHost}
+                    onChange={(e) => setIdealistaHost(e.target.value)}
+                    placeholder="idealista2.p.rapidapi.com"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Endpoint de Listagem</Label>
+                  <Input
+                    value={idealistaEndpoint}
+                    onChange={(e) => setIdealistaEndpoint(e.target.value)}
+                    placeholder="/properties/list"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label>Sugestões Automáticas</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Pesquisa automática de imóveis para novas leads
+                    </p>
+                  </div>
+                  <Switch
+                    checked={idealistaAutoSuggest}
+                    onCheckedChange={(checked) => setIdealistaAutoSuggest(checked)}
+                  />
+                </div>
+
+                {idealistaAutoSuggest && (
+                  <div className="space-y-2 pl-4 border-l-2">
+                    <Label>Filtro de Agência (Opcional)</Label>
+                    <Input
+                      value={idealistaAgencyFilter}
+                      onChange={(e) => setIdealistaAgencyFilter(e.target.value)}
+                      placeholder="Ex: Remax, Century 21..."
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Filtrar sugestões apenas desta imobiliária
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-3">
+                <Button onClick={handleSaveIdealista} disabled={saving}>
+                  {saving ? "A guardar..." : "Guardar Configurações"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
 
           <MetaAppSettings />
         </div>

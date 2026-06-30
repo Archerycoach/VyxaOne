@@ -83,7 +83,7 @@ export default function PerformancePage() {
       }
 
       setCurrentUserId(user.id);
-      setUserRole(profile.role || "agent");
+      setUserRole(profile.role || "consultant");
 
       // Load agents based on role
       let agentsData: Profile[] = [];
@@ -91,16 +91,16 @@ export default function PerformancePage() {
         const { data } = await supabase
           .from("profiles")
           .select("*")
-          .in("role", ["agent", "team_lead"]);
+          .in("role", ["consultant", "team_lead"]);
         agentsData = data || [];
       } else if (profile.role === "team_lead") {
         const { data } = await supabase
           .from("profiles")
           .select("*")
-          .eq("role", "agent");
+          .eq("role", "consultant");
         agentsData = data || [];
-      } else if (profile.role === "agent") {
-        // For agents, only show their own data
+      } else if (profile.role === "consultant") {
+        // Para consultants, o único agente é o próprio utilizador
         agentsData = [profile];
         setSelectedAgent(user.id);
       }
@@ -259,7 +259,7 @@ export default function PerformancePage() {
 
   if (loading) {
     return (
-      <ProtectedRoute allowedRoles={["admin", "team_lead", "agent"]}>
+      <ProtectedRoute allowedRoles={["admin", "team_lead", "consultant"]}>
         <Layout>
           <div className="container mx-auto p-6">
             <p>A carregar...</p>
@@ -270,15 +270,15 @@ export default function PerformancePage() {
   }
 
   return (
-    <ProtectedRoute allowedRoles={["admin", "team_lead", "agent"]}>
+    <ProtectedRoute allowedRoles={["admin", "team_lead", "consultant"]}>
       <Layout>
         <div className="container mx-auto p-6 max-w-7xl">
           <div className="mb-6">
             <h1 className="text-3xl font-bold mb-2">
-              {userRole === "agent" ? "Meu Desempenho" : "Performance da Equipa"}
+              {userRole === "consultant" ? "Meu Desempenho" : "Performance da Equipa"}
             </h1>
             <p className="text-muted-foreground">
-              {userRole === "agent" 
+              {userRole === "consultant"
                 ? "Métricas e estatísticas do seu desempenho pessoal"
                 : "Métricas e estatísticas de desempenho da sua equipa"
               }
@@ -323,7 +323,7 @@ export default function PerformancePage() {
           </Card>
 
           {/* Period and Agent Filters - Only show for team_lead and admin */}
-          {userRole !== "agent" && (
+          {userRole !== "consultant" && (
             <Card className="p-4 mb-6">
               <div className="flex gap-4 items-center">
                 <div className="flex-1">
@@ -361,7 +361,7 @@ export default function PerformancePage() {
           )}
 
           {/* Period Filter for Agents - Simplified */}
-          {userRole === "agent" && (
+          {userRole === "consultant" && (
             <Card className="p-4 mb-6">
               <div className="flex items-center gap-4">
                 <label className="text-sm font-medium">Período de Análise:</label>
@@ -453,9 +453,86 @@ export default function PerformancePage() {
           {/* Agent Performance Cards */}
           <div className="space-y-4">
             <h2 className="text-xl font-semibold">
-              {userRole === "agent" ? "Minhas Estatísticas Detalhadas" : "Desempenho por Agente"}
+              {userRole === "consultant" ? "Minhas Estatísticas Detalhadas" : "Desempenho por Agente"}
             </h2>
             <div className="grid gap-4">
+              {userRole === "consultant" && (
+                <Card key={metrics[0]?.agentId} className="p-6 hover:shadow-lg transition-shadow">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
+                        <span className="text-lg font-semibold text-primary">
+                          {metrics[0]?.agentName.charAt(0).toUpperCase()}
+                        </span>
+                      </div>
+                      <div>
+                        <h3 className="font-semibold text-lg">{metrics[0]?.agentName}</h3>
+                        <p className="text-sm text-muted-foreground">
+                          {metrics[0]?.acquisitions} angariações • {metrics[0]?.wonLeads} conversões
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Award className="h-5 w-5 text-yellow-600" />
+                      <span className="text-2xl font-bold text-yellow-600">
+                        {metrics[0]?.conversionRate.toFixed(1)}%
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Buyer vs Seller Stats */}
+                  {leadTypeFilter === "all" && (
+                    <div className="grid grid-cols-2 gap-4 mb-4 p-4 bg-muted/30 rounded-lg">
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground mb-2">🏠 Compradores</p>
+                        <div className="space-y-1">
+                          <p className="text-sm">
+                            <span className="font-semibold">{metrics[0]?.buyerLeads}</span> leads
+                          </p>
+                          <p className="text-sm">
+                            Taxa: <span className="font-semibold text-green-600">{metrics[0]?.buyerConversionRate.toFixed(1)}%</span>
+                          </p>
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground mb-2">🏷️ Vendedores</p>
+                        <div className="space-y-1">
+                          <p className="text-sm">
+                            <span className="font-semibold">{metrics[0]?.sellerLeads}</span> leads
+                          </p>
+                          <p className="text-sm">
+                            Taxa: <span className="font-semibold text-blue-600">{metrics[0]?.sellerConversionRate.toFixed(1)}%</span>
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Interaction Stats */}
+                  <div className="grid grid-cols-4 gap-4">
+                    <div className="text-center p-3 bg-blue-50 rounded-lg">
+                      <Phone className="h-5 w-5 text-blue-600 mx-auto mb-1" />
+                      <p className="text-2xl font-bold text-blue-600">{metrics[0]?.callInteractions}</p>
+                      <p className="text-xs text-muted-foreground">Chamadas</p>
+                    </div>
+                    <div className="text-center p-3 bg-green-50 rounded-lg">
+                      <Mail className="h-5 w-5 text-green-600 mx-auto mb-1" />
+                      <p className="text-2xl font-bold text-green-600">{metrics[0]?.emailInteractions}</p>
+                      <p className="text-xs text-muted-foreground">Emails</p>
+                    </div>
+                    <div className="text-center p-3 bg-purple-50 rounded-lg">
+                      <Calendar className="h-5 w-5 text-purple-600 mx-auto mb-1" />
+                      <p className="text-2xl font-bold text-purple-600">{metrics[0]?.meetingInteractions}</p>
+                      <p className="text-xs text-muted-foreground">Reuniões</p>
+                    </div>
+                    <div className="text-center p-3 bg-orange-50 rounded-lg">
+                      <TrendingUp className="h-5 w-5 text-orange-600 mx-auto mb-1" />
+                      <p className="text-2xl font-bold text-orange-600">{metrics[0]?.activeLeads}</p>
+                      <p className="text-xs text-muted-foreground">Ativos</p>
+                    </div>
+                  </div>
+                </Card>
+              )}
               {metrics.map((metric) => (
                 <Card key={metric.agentId} className="p-6 hover:shadow-lg transition-shadow">
                   <div className="flex items-center justify-between mb-4">

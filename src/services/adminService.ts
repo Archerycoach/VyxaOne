@@ -13,7 +13,7 @@ export interface CreateUserData {
   password: string;
   fullName: string;
   phone?: string;
-  role: "admin" | "team_lead" | "agent";
+  role: "admin" | "team_lead" | "consultant";
   isActive: boolean;
   teamLeadId?: string;
 }
@@ -131,7 +131,7 @@ export const updateUserRole = async (userId: string, role: string) => {
     const { data, error } = await supabase
       .from("profiles")
       .update({ 
-        role: role as "admin" | "team_lead" | "agent" 
+        role: role as "admin" | "team_lead" | "consultant" 
       })
       .eq("id", userId)
       .select()
@@ -401,17 +401,35 @@ export const getPaymentSettings = async () => {
 
 // Update payment settings
 export const updatePaymentSettings = async (key: string, value: any) => {
-  const { error } = await supabase
-    .from("system_settings")
-    .upsert({
-      key,
-      value,
-      updated_at: new Date().toISOString(),
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+
+    if (!token) {
+      throw new Error("Sessão inválida");
+    }
+
+    const res = await fetch("/api/admin/system-settings", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        [key]: JSON.stringify(value)
+      })
     });
 
-  if (error) throw error;
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error || "Erro ao guardar");
+    }
 
-  await logActivity("update_payment_settings", "system_settings", key, value);
+    return res.json();
+  } catch (error: any) {
+    console.error("Error updating payment settings:", error);
+    throw error;
+  }
 };
 
 /**
@@ -555,7 +573,7 @@ export const getTeamLeadAgents = async (teamLeadId: string): Promise<Profile[]> 
     .from("profiles")
     .select("*")
     .eq("team_lead_id", teamLeadId)
-    .eq("role", "agent")
+    .eq("role", "consultant")
     .order("full_name", { ascending: true });
 
   if (error) throw error;
@@ -567,7 +585,7 @@ export const getAvailableAgents = async (teamLeadId?: string): Promise<Profile[]
   let query = supabase
     .from("profiles")
     .select("*")
-    .eq("role", "agent")
+    .eq("role", "consultant")
     .eq("is_active", true);
 
   if (teamLeadId) {
@@ -629,19 +647,33 @@ export const getSystemSettings = async (key: string) => {
 
 // Update setting
 export const updateSystemSetting = async (key: string, value: any) => {
-  const { error } = await supabase
-    .from("system_settings")
-    .upsert({ 
-      key, 
-      value,
-      updated_at: new Date().toISOString() 
-    } as any)
-    .select();
-    
-  if (error) throw error;
-  
-  const { data: { user } } = await supabase.auth.getUser();
-  if (user) {
-    await logActivity(user.id, "update_setting", "system_settings", key, { value });
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+
+    if (!token) {
+      throw new Error("Sessão inválida");
+    }
+
+    const res = await fetch("/api/admin/system-settings", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        [key]: typeof value === 'string' ? value : JSON.stringify(value)
+      })
+    });
+
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error || "Erro ao guardar");
+    }
+
+    return res.json();
+  } catch (error: any) {
+    console.error("Error updating system setting:", error);
+    throw error;
   }
 };

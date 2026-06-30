@@ -95,7 +95,7 @@ export function WorkflowsDialog({ open, onOpenChange, leadId, leadName }: Workfl
           type: "email",
           action: "send_email",
           config: {
-            to: ["agent"],
+            to: ["consultant"],
             subject: `🔔 Follow-up necessário: ${name}`,
             body: `Olá,\n\nPassaram ${days} dias sem contacto com a lead ${name}.\n\nPor favor verifique o estado e tente retomar o contacto.`
           },
@@ -111,7 +111,7 @@ export function WorkflowsDialog({ open, onOpenChange, leadId, leadName }: Workfl
           type: "email",
           action: "send_email",
           config: {
-            to: ["agent"],
+            to: ["consultant"],
             subject: `📅 Visita Agendada: ${name}`,
             body: `Lembrete: Tens uma visita agendada com ${name} para ${new Date(date).toLocaleString('pt-PT')}.`
           },

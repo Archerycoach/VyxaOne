@@ -56,25 +56,39 @@ export function LeadSourceSettings() {
   const handleSave = async (updatedSources: string[]) => {
     setIsSaving(true);
     try {
-      const { error } = await supabase
-        .from("system_settings")
-        .upsert({
-          key: "lead_sources",
-          value: updatedSources as unknown as any, // Cast specific for string array to Json
-          updated_at: new Date().toISOString()
-        }, { onConflict: "key" });
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
 
-      if (error) throw error;
+      if (!token) {
+        throw new Error("Sessão inválida");
+      }
+
+      const res = await fetch("/api/admin/system-settings", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          lead_sources: JSON.stringify(updatedSources)
+        })
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || "Erro ao guardar");
+      }
 
       setSources(updatedSources);
       toast({
         title: "Configurações guardadas",
         description: "As origens das leads foram atualizadas.",
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error saving lead sources:", error);
       toast({
         title: "Erro ao guardar",
+        description: error.message || "Falha ao guardar configurações.",
         variant: "destructive",
       });
     } finally {

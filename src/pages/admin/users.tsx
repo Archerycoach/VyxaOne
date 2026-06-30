@@ -44,6 +44,16 @@ interface Profile {
   whatsapp_module_enabled?: boolean;
 }
 
+interface NewUserForm {
+  name: string;
+  email: string;
+  password: string;
+  phone: string;
+  role: "admin" | "team_lead" | "consultant";
+  team_lead_id: string | null;
+  is_active: boolean;
+}
+
 export default function UsersManagement() {
   const [users, setUsers] = useState<Profile[]>([]);
   const [filteredUsers, setFilteredUsers] = useState<Profile[]>([]);
@@ -53,17 +63,18 @@ export default function UsersManagement() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
-  const [selectedUser, setSelectedUser] = useState<any>(null); // Changed to any to support joined fields
+  const [selectedUser, setSelectedUser] = useState<any>(null);
   const [isProcessingRelogin, setIsProcessingRelogin] = useState(false);
   const { toast } = useToast();
 
-  const [newUser, setNewUser] = useState({
+  const [newUser, setNewUser] = useState<NewUserForm>({
+    name: "",
     email: "",
     password: "",
-    full_name: "",
     phone: "",
-    role: "agent" as "admin" | "team_lead" | "agent",
-    teamLeadId: undefined as string | undefined,
+    role: "consultant",
+    team_lead_id: null,
+    is_active: true,
   });
 
   useEffect(() => {
@@ -118,11 +129,11 @@ export default function UsersManagement() {
       const result = await createUser({
         email: newUser.email,
         password: newUser.password,
-        fullName: newUser.full_name,
+        fullName: newUser.name,
         phone: newUser.phone,
         role: newUser.role,
         isActive: true,
-        teamLeadId: newUser.role === 'agent' ? newUser.teamLeadId : undefined,
+        teamLeadId: newUser.role === 'consultant' ? newUser.team_lead_id : undefined,
       });
       
       if (result.error) {
@@ -141,12 +152,13 @@ export default function UsersManagement() {
 
       setIsCreateDialogOpen(false);
       setNewUser({
+        name: "",
         email: "",
         password: "",
-        full_name: "",
         phone: "",
-        role: "agent",
-        teamLeadId: undefined,
+        role: "consultant",
+        team_lead_id: null,
+        is_active: true,
       });
 
       // Refresh users list
@@ -332,7 +344,7 @@ export default function UsersManagement() {
     const variants: Record<string, "default" | "secondary" | "destructive"> = {
       admin: "destructive",
       team_lead: "default",
-      agent: "secondary",
+      consultant: "secondary",
     };
     return <Badge variant={variants[role] || "secondary"}>{role}</Badge>;
   };
@@ -466,12 +478,12 @@ export default function UsersManagement() {
               </DialogHeader>
               <div className="space-y-4">
                 <div>
-                  <Label htmlFor="full_name">Nome Completo</Label>
+                  <Label htmlFor="name">Nome Completo</Label>
                   <Input
-                    id="full_name"
-                    value={newUser.full_name}
+                    id="name"
+                    value={newUser.name}
                     onChange={(e) =>
-                      setNewUser({ ...newUser, full_name: e.target.value })
+                      setNewUser({ ...newUser, name: e.target.value })
                     }
                   />
                 </div>
@@ -511,7 +523,7 @@ export default function UsersManagement() {
                   <Label htmlFor="role">Role</Label>
                   <Select
                     value={newUser.role}
-                    onValueChange={(value: any) =>
+                    onValueChange={(value: "admin" | "team_lead" | "consultant") =>
                       setNewUser({ ...newUser, role: value })
                     }
                   >
@@ -519,20 +531,20 @@ export default function UsersManagement() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="agent">Agent</SelectItem>
+                      <SelectItem value="consultant">Consultant</SelectItem>
                       <SelectItem value="team_lead">Team Lead</SelectItem>
                       <SelectItem value="admin">Admin</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
 
-                {newUser.role === 'agent' && (
+                {newUser.role === 'consultant' && (
                   <div>
                     <Label htmlFor="team-lead">Team Lead (Opcional)</Label>
                     <Select
-                      value={newUser.teamLeadId || "none"}
+                      value={newUser.team_lead_id || "none"}
                       onValueChange={(value) =>
-                        setNewUser({ ...newUser, teamLeadId: value === "none" ? undefined : value })
+                        setNewUser({ ...newUser, team_lead_id: value === "none" ? null : value })
                       }
                     >
                       <SelectTrigger>
@@ -549,22 +561,6 @@ export default function UsersManagement() {
                     </Select>
                   </div>
                 )}
-
-                <div className="flex items-center justify-between border rounded-md p-4 mt-4 bg-slate-50">
-                  <div className="space-y-0.5 pr-4">
-                    <Label className="text-base flex items-center gap-2">
-                      <MessageCircle className="h-4 w-4 text-green-600" />
-                      Módulo WhatsApp IA
-                    </Label>
-                    <p className="text-sm text-muted-foreground">
-                      Permitir que este utilizador aceda ao envio de templates e Agente IA via WhatsApp.
-                    </p>
-                  </div>
-                  <Switch
-                    checked={selectedUser?.whatsapp_module_enabled || false}
-                    onCheckedChange={handleToggleWhatsapp}
-                  />
-                </div>
               </div>
               <DialogFooter>
                 <Button
@@ -598,14 +594,14 @@ export default function UsersManagement() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="agent">Agent</SelectItem>
+                      <SelectItem value="consultant">Consultant</SelectItem>
                       <SelectItem value="team_lead">Team Lead</SelectItem>
                       <SelectItem value="admin">Admin</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
 
-                {selectedUser?.role === 'agent' && (
+                {selectedUser?.role === 'consultant' && (
                   <div>
                     <Label htmlFor="edit-team-lead">Team Lead</Label>
                     <Select

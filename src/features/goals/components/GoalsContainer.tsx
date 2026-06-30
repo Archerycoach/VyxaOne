@@ -114,10 +114,10 @@ export function GoalsContainer() {
 
       if (role === "team_lead") {
         // Team leads see only their agents
-        query = query.eq("team_lead_id", uid).eq("role", "agent");
+        query = query.eq("team_lead_id", uid).eq("role", "consultant");
       } else if (role === "admin") {
         // Admins see all agents and team leads
-        query = query.in("role", ["agent", "team_lead"]);
+        query = query.in("role", ["consultant", "team_lead"]);
       }
 
       const { data, error } = await query.order("full_name");

@@ -3,6 +3,15 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { runAI } from "@/lib/ai/provider";
 import { getLeadInsightsPrompt } from "@/lib/ai/prompts/leadInsights";
 
+// Temporary type until lead_notes is added to database.types.ts
+interface LeadNote {
+  id: string;
+  lead_id: string;
+  note: string;
+  created_by: string;
+  created_at: string;
+}
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "GET") {
     return res.status(405).json({ error: "Method not allowed" });
@@ -41,12 +50,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         .eq("lead_id", leadId)
         .order("interaction_date", { ascending: false })
         .limit(10),
-      (supabaseAdmin
-        .from("lead_notes" as any)
+      supabaseAdmin
+        .from("lead_notes")
         .select("*")
         .eq("lead_id", leadId)
         .order("created_at", { ascending: false })
-        .limit(10) as any)
+        .limit(10)
+        .returns<LeadNote[]>()
     ]);
 
     const prompt = getLeadInsightsPrompt({

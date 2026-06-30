@@ -1,8 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Cake, FileDown, Plus, Upload } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Cake, FileDown, Plus, Upload, Camera, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 import { ContactsTable } from "./ContactsTable";
 import { ContactFilters } from "./ContactFilters";
 import { ContactDialogs } from "./ContactDialogs";
@@ -78,6 +83,12 @@ export function ContactsContainer() {
 
   // Import state
   const [importing, setImporting] = useState(false);
+  
+  // Business card state
+  const [cardImage, setCardImage] = useState<string | null>(null);
+  const [extractedContact, setExtractedContact] = useState<any>(null);
+  const [showCardDialog, setShowCardDialog] = useState(false);
+  const [extracting, setExtracting] = useState(false);
 
   // Handlers
   const handleNewContact = () => {
@@ -231,6 +242,64 @@ export function ContactsContainer() {
     }
   };
 
+  const handleCardImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validar tipo de arquivo
+    if (!file.type.startsWith('image/')) {
+      toast({ title: "Erro", description: "Por favor selecione uma imagem", variant: "destructive" });
+      return;
+    }
+
+    // Converter para base64
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setCardImage(reader.result as string);
+      extractContactFromCard(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+    
+    // Reset input
+    e.target.value = "";
+  };
+
+  const extractContactFromCard = async (imageBase64: string) => {
+    setExtracting(true);
+    setShowCardDialog(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch("/api/gpt/contacts/extract-from-card", {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json", 
+          "Authorization": `Bearer ${session?.access_token}` 
+        },
+        body: JSON.stringify({ imageBase64 })
+      });
+      
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      
+      setExtractedContact(data.contact);
+      toast({ title: "Dados extraídos", description: "Reveja os dados antes de guardar" });
+    } catch (err: any) {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+      setShowCardDialog(false);
+      setCardImage(null);
+    } finally {
+      setExtracting(false);
+    }
+  };
+
+  const handleSaveExtractedContact = async () => {
+    if (!extractedContact) return;
+    await handleCreate(extractedContact);
+    setShowCardDialog(false);
+    setCardImage(null);
+    setExtractedContact(null);
+  };
+
   if (error) {
     return (
       <div className="container mx-auto p-6">
@@ -267,6 +336,18 @@ export function ContactsContainer() {
                 className="hidden"
                 onChange={handleImport}
                 disabled={importing}
+              />
+            </label>
+          </Button>
+          <Button variant="outline" asChild className="bg-purple-50 text-purple-700 hover:bg-purple-100 border-purple-200">
+            <label className="cursor-pointer">
+              <Camera className="h-4 w-4 mr-2" />
+              Foto de Cartão
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleCardImageUpload}
               />
             </label>
           </Button>
@@ -336,6 +417,112 @@ export function ContactsContainer() {
       </Card>
 
       {/* Dialogs */}
+      <Dialog open={showCardDialog} onOpenChange={setShowCardDialog}>
+        <DialogContent className="sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Camera className="h-5 w-5 text-purple-600" />
+              Contacto Extraído do Cartão
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-4">
+            {cardImage && (
+              <div className="border rounded-lg overflow-hidden bg-gray-50 mb-4">
+                <img 
+                  src={cardImage} 
+                  alt="Cartão de visita" 
+                  className="w-full h-auto max-h-[200px] object-contain"
+                />
+              </div>
+            )}
+            
+            {extracting ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-8 w-8 animate-spin text-purple-600" />
+                <span className="ml-3 text-muted-foreground">A analisar cartão...</span>
+              </div>
+            ) : extractedContact ? (
+              <>
+                <p className="text-sm text-muted-foreground bg-purple-50 p-3 rounded border border-purple-200">
+                  ℹ️ Reveja os dados extraídos e corrija se necessário antes de guardar.
+                </p>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Nome *</Label>
+                    <Input
+                      value={extractedContact.name}
+                      onChange={(e) => setExtractedContact({ ...extractedContact, name: e.target.value })}
+                      placeholder="Nome completo"
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label>Email</Label>
+                    <Input
+                      type="email"
+                      value={extractedContact.email}
+                      onChange={(e) => setExtractedContact({ ...extractedContact, email: e.target.value })}
+                      placeholder="email@exemplo.com"
+                    />
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Telefone</Label>
+                    <Input
+                      value={extractedContact.phone}
+                      onChange={(e) => setExtractedContact({ ...extractedContact, phone: e.target.value })}
+                      placeholder="+351 ..."
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label>Empresa</Label>
+                    <Input
+                      value={extractedContact.company || ""}
+                      onChange={(e) => setExtractedContact({ ...extractedContact, company: e.target.value })}
+                      placeholder="Nome da empresa"
+                    />
+                  </div>
+                </div>
+                
+                <div className="space-y-2">
+                  <Label>Notas</Label>
+                  <Textarea
+                    value={extractedContact.notes}
+                    onChange={(e) => setExtractedContact({ ...extractedContact, notes: e.target.value })}
+                    placeholder="Informações adicionais..."
+                    rows={3}
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2 pt-4">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setShowCardDialog(false);
+                      setCardImage(null);
+                      setExtractedContact(null);
+                    }}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    onClick={handleSaveExtractedContact}
+                    disabled={!extractedContact.name}
+                    className="bg-purple-600 hover:bg-purple-700 text-white"
+                  >
+                    Guardar Contacto
+                  </Button>
+                </div>
+              </>
+            ) : null}
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <ContactDialogs
         dialogOpen={dialogOpen}
         onDialogOpenChange={setDialogOpen}

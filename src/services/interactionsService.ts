@@ -2,6 +2,7 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
 import { deleteGoogleCalendarEvent } from "@/lib/googleCalendar";
 import { CacheManager } from "@/lib/cacheInvalidation";
+import { recalculateScoreAfterInteraction } from "@/services/leadScoringService";
 
 export type Interaction = Database["public"]["Tables"]["interactions"]["Row"];
 export type InteractionInsert = Database["public"]["Tables"]["interactions"]["Insert"];
@@ -185,12 +186,31 @@ export async function createInteraction(
     const leadUpdate: {
       last_contact_date: string;
       last_contact_outcome?: string | null;
+      first_contact_at?: string;
     } = {
       last_contact_date: interactionTimestamp,
     };
 
     if (interaction.outcome !== undefined) {
       leadUpdate.last_contact_outcome = interaction.outcome;
+    }
+
+    // Check if this is the first outbound interaction (first contact)
+    const isOutbound = ["email", "call", "whatsapp_outbound", "sms", "meeting"].includes(interaction.interaction_type || "");
+    
+    if (isOutbound) {
+      // Check if lead already has first_contact_at set
+      const { data: leadData } = await (supabase
+        .from("leads")
+        .select("first_contact_at")
+        .eq("id", interaction.lead_id)
+        .single() as any);
+      
+      // If first_contact_at is null, this is the first contact
+      if (leadData && !leadData.first_contact_at) {
+        leadUpdate.first_contact_at = interactionTimestamp;
+        console.log(`✅ Marking first contact for lead ${interaction.lead_id}`);
+      }
     }
 
     const { error: leadUpdateError } = await supabase
@@ -202,6 +222,9 @@ export async function createInteraction(
       console.error("Error updating lead last contact date:", leadUpdateError);
     } else {
       CacheManager.invalidateLeadsRelated();
+      
+      // ✅ Recalculate lead score after interaction
+      await recalculateScoreAfterInteraction(interaction.lead_id, supabase);
     }
   }
 

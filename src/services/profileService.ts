@@ -32,14 +32,14 @@ export const getUsersForAssignment = async (): Promise<Profile[]> => {
 
   if (profile.role === "admin") {
     // Admins can assign to anyone (agents and team_leads)
-    query = query.in("role", ["agent", "team_lead"]);
+    query = query.in("role", ["consultant", "team_lead"]);
   } else if (profile.role === "team_lead") {
     // Team leads can assign to themselves or their team members
     const { data: teamMembers } = await supabase
       .from("profiles")
       .select("id")
       .eq("team_lead_id", profile.id)
-      .eq("role", "agent");
+      .eq("role", "consultant");
     
     const teamMemberIds = teamMembers?.map(m => m.id) || [];
     const assignableIds = [profile.id, ...teamMemberIds];

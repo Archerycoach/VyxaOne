@@ -96,25 +96,38 @@ export default function SystemSettings() {
   const saveModuleSettings = async () => {
     setSaving(true);
     try {
-      const { error } = await supabase
-        .from("system_settings")
-        .upsert({
-          key: "active_modules",
-          value: JSON.stringify(modules),
-          updated_at: new Date().toISOString(),
-        });
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
 
-      if (error) throw error;
+      if (!token) {
+        throw new Error("Sessão inválida");
+      }
+
+      const res = await fetch("/api/admin/system-settings", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          active_modules: JSON.stringify(modules)
+        })
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || "Erro ao guardar");
+      }
 
       toast({
         title: "✅ Módulos guardados",
         description: "As configurações dos módulos foram atualizadas com sucesso.",
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error saving module settings:", error);
       toast({
         title: "Erro ao guardar",
-        description: "Não foi possível guardar as configurações dos módulos.",
+        description: error.message || "Não foi possível guardar as configurações dos módulos.",
         variant: "destructive",
       });
     } finally {

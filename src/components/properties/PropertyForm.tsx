@@ -83,6 +83,8 @@ export function PropertyForm({
   const [generatingDesc, setGeneratingDesc] = useState(false);
   const [descKeywords, setDescKeywords] = useState("");
   const [showAiDialog, setShowAiDialog] = useState(false);
+  const [propertyImage, setPropertyImage] = useState<string | null>(null);
+  const [showImageDialog, setShowImageDialog] = useState(false);
 
   // Fetch leads and contacts whenever modal opens
   useEffect(() => {
@@ -272,6 +274,58 @@ export function PropertyForm({
       setShowAiDialog(false);
       setDescKeywords("");
       toast({ title: "Sucesso", description: "Descrição gerada pela IA!" });
+    } catch (err: any) {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    } finally {
+      setGeneratingDesc(false);
+    }
+  };
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validar tipo de arquivo
+    if (!file.type.startsWith('image/')) {
+      toast({ title: "Erro", description: "Por favor selecione uma imagem", variant: "destructive" });
+      return;
+    }
+
+    // Converter para base64
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setPropertyImage(reader.result as string);
+      setShowImageDialog(true);
+    };
+    reader.readAsDataURL(file);
+    
+    // Reset input
+    e.target.value = "";
+  };
+
+  const handleGenerateFromPhoto = async () => {
+    if (!propertyImage) return;
+    
+    setGeneratingDesc(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch("/api/gpt/properties/generate-description", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ 
+          imageBase64: propertyImage,
+          keywords: descKeywords, 
+          propertyDetails: formData 
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      
+      setFormData(prev => ({ ...prev, description: data.description }));
+      setShowImageDialog(false);
+      setPropertyImage(null);
+      setDescKeywords("");
+      toast({ title: "Sucesso", description: "Descrição gerada a partir da foto!" });
     } catch (err: any) {
       toast({ title: "Erro", description: err.message, variant: "destructive" });
     } finally {
@@ -506,10 +560,24 @@ export function PropertyForm({
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <Label htmlFor="description">Descrição</Label>
-              <Button type="button" variant="outline" size="sm" onClick={() => setShowAiDialog(true)} className="h-7 text-xs bg-indigo-50 text-indigo-700 hover:bg-indigo-100 hover:text-indigo-800 border-indigo-200">
-                <Wand2 className="h-3 w-3 mr-1" />
-                Gerar com IA
-              </Button>
+              <div className="flex gap-2">
+                <Button type="button" variant="outline" size="sm" asChild className="h-7 text-xs bg-purple-50 text-purple-700 hover:bg-purple-100 hover:text-purple-800 border-purple-200">
+                  <label className="cursor-pointer">
+                    <Wand2 className="h-3 w-3 mr-1" />
+                    Gerar de Foto
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleImageUpload}
+                    />
+                  </label>
+                </Button>
+                <Button type="button" variant="outline" size="sm" onClick={() => setShowAiDialog(true)} className="h-7 text-xs bg-indigo-50 text-indigo-700 hover:bg-indigo-100 hover:text-indigo-800 border-indigo-200">
+                  <Wand2 className="h-3 w-3 mr-1" />
+                  Gerar com Texto
+                </Button>
+              </div>
             </div>
             <Textarea
               id="description"
@@ -534,6 +602,45 @@ export function PropertyForm({
             </Button>
           </div>
         </form>
+      </DialogContent>
+    </Dialog>
+
+    <Dialog open={showImageDialog} onOpenChange={setShowImageDialog}>
+      <DialogContent className="sm:max-w-[600px] z-[100]">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2"><Wand2 className="h-5 w-5 text-purple-600" /> Gerar Descrição a partir de Foto</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 pt-4">
+          {propertyImage && (
+            <div className="border rounded-lg overflow-hidden bg-gray-50">
+              <img 
+                src={propertyImage} 
+                alt="Preview do imóvel" 
+                className="w-full h-auto max-h-[300px] object-contain"
+              />
+            </div>
+          )}
+          <div className="space-y-2">
+            <Label>Palavras-chave ou Destaques (opcional)</Label>
+            <Textarea 
+              placeholder="Ex: remodelado recentemente, vista privilegiada, acabamentos premium..." 
+              value={descKeywords}
+              onChange={e => setDescKeywords(e.target.value)}
+              rows={2}
+            />
+            <p className="text-xs text-muted-foreground">A IA vai analisar a foto e combinar com os dados do formulário.</p>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => {
+              setShowImageDialog(false);
+              setPropertyImage(null);
+              setDescKeywords("");
+            }} disabled={generatingDesc}>Cancelar</Button>
+            <Button onClick={handleGenerateFromPhoto} disabled={generatingDesc} className="bg-purple-600 hover:bg-purple-700 text-white">
+              {generatingDesc ? "A analisar..." : "Gerar Descrição"}
+            </Button>
+          </div>
+        </div>
       </DialogContent>
     </Dialog>
 

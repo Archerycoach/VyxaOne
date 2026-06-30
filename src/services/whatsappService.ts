@@ -112,6 +112,16 @@ export async function sendWhatsAppMessage(
       return { success: false, error: data.error?.message || "Erro na API do WhatsApp" };
     }
 
+    // ✅ Auto-create interaction after successful send
+    if (leadId) {
+      try {
+        await createWhatsAppInteraction(leadId, userId, message, "whatsapp_outbound", supabaseClient);
+      } catch (interactionError) {
+        console.error("Failed to create WhatsApp interaction:", interactionError);
+        // Don't fail the send if interaction creation fails
+      }
+    }
+
     return { 
       success: true, 
       messageId: data.messages?.[0]?.id 
@@ -195,6 +205,22 @@ export async function sendWhatsAppTemplate(
       return { success: false, error: data.error?.message || "Erro na API do WhatsApp" };
     }
 
+    // ✅ Auto-create interaction after successful template send
+    if (leadId) {
+      try {
+        await createWhatsAppInteraction(
+          leadId, 
+          userId, 
+          `Template: ${templateName}`, 
+          "whatsapp_outbound",
+          supabaseClient
+        );
+      } catch (interactionError) {
+        console.error("Failed to create WhatsApp template interaction:", interactionError);
+        // Don't fail the send if interaction creation fails
+      }
+    }
+
     return { 
       success: true, 
       messageId: data.messages?.[0]?.id 
@@ -204,4 +230,64 @@ export async function sendWhatsAppTemplate(
     console.error("Failed to send WhatsApp template:", error);
     return { success: false, error: error.message };
   }
+}
+
+/**
+ * Helper: Create WhatsApp interaction and update lead last_contact_date
+ * Includes duplicate check to prevent duplicate entries
+ */
+async function createWhatsAppInteraction(
+  leadId: string,
+  userId: string,
+  content: string,
+  interactionType: string,
+  supabaseClient = supabase
+): Promise<void> {
+  // Check for duplicate interaction in the last 10 seconds
+  const tenSecondsAgo = new Date(Date.now() - 10000).toISOString();
+  
+  const { data: recentInteractions } = await supabaseClient
+    .from("interactions")
+    .select("id")
+    .eq("lead_id", leadId)
+    .eq("interaction_type", interactionType)
+    .gte("created_at", tenSecondsAgo)
+    .limit(1);
+
+  if (recentInteractions && recentInteractions.length > 0) {
+    console.log("Skipping duplicate WhatsApp interaction creation");
+    return;
+  }
+
+  // Create interaction
+  const { error: interactionError } = await supabaseClient
+    .from("interactions")
+    .insert({
+      lead_id: leadId,
+      user_id: userId,
+      interaction_type: interactionType,
+      content: content,
+      interaction_date: new Date().toISOString(),
+      outcome: "sent"
+    });
+
+  if (interactionError) {
+    console.error("Error creating WhatsApp interaction:", interactionError);
+    throw interactionError;
+  }
+
+  // Update lead's last_contact_date
+  const { error: leadUpdateError } = await supabaseClient
+    .from("leads")
+    .update({ 
+      last_contact_date: new Date().toISOString(),
+      last_contact_outcome: "sent"
+    })
+    .eq("id", leadId);
+
+  if (leadUpdateError) {
+    console.error("Error updating lead last_contact_date:", leadUpdateError);
+  }
+
+  console.log("✅ WhatsApp interaction auto-created and lead updated");
 }

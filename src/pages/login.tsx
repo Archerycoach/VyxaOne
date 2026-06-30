@@ -95,7 +95,7 @@ export default function Login() {
               id: session.user.id,
               email: session.user.email,
               full_name: session.user.email?.split("@")[0] || "",
-              role: "agent",
+              role: "consultant",
             },
           ]);
 

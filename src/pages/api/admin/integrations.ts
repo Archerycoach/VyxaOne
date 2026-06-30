@@ -18,6 +18,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // 1. Verificar Autenticação do Administrador
     const authHeader = req.headers.authorization;
     if (!authHeader) {
+      console.error("Integration settings: Missing authorization header");
       return res.status(401).json({ error: "Não autorizado: Header ausente" });
     }
 
@@ -25,24 +26,35 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
     
     if (authError || !user) {
+      console.error("Integration settings: Invalid token", authError);
       return res.status(401).json({ error: "Não autorizado: Token inválido" });
     }
 
     // Verificar se é Admin
-    const { data: profile } = await supabaseAdmin
+    const { data: profile, error: profileError } = await supabaseAdmin
       .from("profiles")
       .select("role")
       .eq("id", user.id)
       .single();
 
-    if (profile?.role !== "admin") {
+    if (profileError) {
+      console.error("Integration settings: Profile fetch error", profileError);
+      return res.status(500).json({ error: "Erro ao verificar permissões" });
+    }
+
+    if (profile?.role !== "admin" && profile?.role !== "broker") {
+      console.error("Integration settings: User is not admin/broker", profile?.role);
       return res.status(403).json({ error: "Acesso negado: Apenas administradores" });
     }
 
     // 2. Método GET: Devolver configurações com segredos censurados
     if (req.method === "GET") {
       const { data, error } = await supabaseAdmin.from("integration_settings").select("*");
-      if (error) throw error;
+      
+      if (error) {
+        console.error("Integration settings: Database error on GET", error);
+        throw error;
+      }
 
       const sanitizedData = data.map((item) => {
         const settings = (item.settings as any) || {};

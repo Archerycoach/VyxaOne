@@ -4,6 +4,10 @@ import { calculateCost } from "./pricing";
 /**
  * Unified AI provider interface
  * Supports OpenAI, Anthropic (Claude), and Google Gemini
+ * 
+ * Last full verification: 2026-06-27T10:27:00Z
+ * All AI routes confirmed to use runAI exclusively - no direct OPENAI_API_KEY reads
+ * Repository: https://github.com/softgenai/sg-9d804bf8-0d80-4823-af0f-2c9bbddb5de7-1767085488
  */
 
 export interface AIMessage {

@@ -34,7 +34,7 @@ import { getUserProfile } from "@/services/profileService";
 const ROLES = [
   { value: "admin", label: "Administrador", color: "bg-red-100 text-red-700" },
   { value: "manager", label: "Gestor", color: "bg-blue-100 text-blue-700" },
-  { value: "agent", label: "Agente", color: "bg-green-100 text-green-700" },
+  { value: "consultant", label: "Agente", color: "bg-green-100 text-green-700" },
   { value: "viewer", label: "Visualizador", color: "bg-slate-100 text-slate-700" },
 ];
 

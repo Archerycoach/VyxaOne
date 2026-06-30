@@ -63,88 +63,68 @@ export const deleteWorkflowRule = async (id: string) => {
 export const processLeadWorkflows = async (leadId: string, triggerType: string) => {
   console.log(`Processing workflows for lead ${leadId} with trigger ${triggerType}`);
   
-  // Supported trigger types:
-  // - lead_created: When any lead is created manually
-  // - meta_lead_created: When lead is created via Meta (Facebook/Instagram)
-  // - no_contact_5_days: No contact for 5+ days (automatic check)
-  // - visit_scheduled: Visit scheduled - reminder sent day before (automatic)
-  // - no_activity_7_days: No activity for 7+ days
-  // - birthday: Lead's birthday
-  // - custom_date: Custom date trigger
+  // ✅ Unified workflow engine - calls server-side motor via endpoint
+  // This is now a thin wrapper for backward compatibility
   
   try {
-    // Get current user
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      console.log("No authenticated user, skipping workflow processing");
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      console.log("No authenticated session, skipping workflow processing");
       return false;
     }
 
-    // Get lead data
-    const { data: lead, error: leadError } = await supabase
-      .from("leads")
-      .select("*")
-      .eq("id", leadId)
-      .single();
+    const response = await fetch("/api/leads/run-automations", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({
+        leadId,
+        triggerType,
+      }),
+    });
 
-    if (leadError || !lead) {
-      console.error("Failed to fetch lead:", leadError);
-      return false;
-    }
+    const result = await response.json();
 
-    // Get active workflows for this trigger type and user
-    // Cast supabase to any to avoid TS2589 (excessively deep type instantiation)
-    const query = (supabase as any)
-      .from("lead_workflow_rules")
-      .select("*")
-      .eq("trigger_status", triggerType)
-      .eq("enabled", true)
-      .eq("user_id", user.id);
-
-    const { data: workflows, error: workflowsError } = await query;
-
-    if (workflowsError) {
-      console.error("Failed to fetch workflows:", workflowsError);
-      return false;
-    }
-
-    if (!workflows || workflows.length === 0) {
-      console.log(`No active workflows found for trigger: ${triggerType}`);
-      return true;
-    }
-
-    console.log(`Found ${workflows.length} active workflows for trigger: ${triggerType}`);
-
-    // Execute each workflow
-    for (const workflow of workflows) {
-      try {
-        // Check if workflow was already executed recently (avoid duplicates)
-        const { data: recentExecution } = await supabase
-          .from("workflow_executions")
-          .select("id")
-          .eq("workflow_id", workflow.id)
-          .eq("lead_id", leadId)
-          .gte("executed_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
-          .limit(1)
-          .maybeSingle();
-
-        if (recentExecution) {
-          console.log(`Skipping workflow ${workflow.id} - already executed in last 24h`);
-          continue;
-        }
-
-        // Execute workflow
-        await executeWorkflowForLead(workflow.id, leadId, user.id);
-        console.log(`✅ Successfully executed workflow ${workflow.id} for lead ${leadId}`);
-      } catch (error) {
-        console.error(`Failed to execute workflow ${workflow.id}:`, error);
-        // Continue with next workflow
+    if (!result.success) {
+      console.error("Workflow execution errors:", result.errors);
+      
+      // Create visible notification for errors
+      if (result.errors && result.errors.length > 0) {
+        await supabase.from("notifications").insert({
+          user_id: session.user.id,
+          title: "⚠️ Falha em Automações",
+          message: `Algumas automações falharam: ${result.errors.join(", ")}`,
+          notification_type: "warning",
+          is_read: false,
+          related_entity_id: leadId,
+          related_entity_type: "lead",
+        });
       }
+      
+      return false;
     }
 
+    console.log("✅ Workflows executed successfully via unified engine");
     return true;
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error in processLeadWorkflows:", error);
+    
+    // Create visible notification for complete failure
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session) {
+      await supabase.from("notifications").insert({
+        user_id: session.user.id,
+        title: "❌ Erro em Automações",
+        message: `Falha ao executar automações: ${error.message}`,
+        notification_type: "error",
+        is_read: false,
+        related_entity_id: leadId,
+        related_entity_type: "lead",
+      });
+    }
+    
     return false;
   }
 };
@@ -262,6 +242,9 @@ async function executeWorkflowAction(action: any, lead: any, userId: string) {
       console.warn(`Unknown action type: ${action.type}`);
   }
 }
+
+// Export for use in cadence cron
+export { executeWorkflowAction };
 
 // Send email via SMTP
 async function sendEmailAction(action: any, lead: any, content: string, userId: string) {
@@ -381,7 +364,7 @@ async function createTaskAction(action: any, lead: any, content: string, userId:
     const dueDate = new Date();
     dueDate.setDate(dueDate.getDate() + (config.daysOffset || 1));
 
-    const { error } = await supabase
+    const { error } = await (supabase as any)
       .from("tasks")
       .insert({
         title,
@@ -408,21 +391,6 @@ async function createCalendarEventAction(action: any, lead: any, content: string
     const config = action.config || action;
     const title = personalizeContent(config.subject || action.title || "Evento automático", lead);
 
-    // Deduplication check
-    const { data: existingEvent } = await supabase
-      .from("calendar_events")
-      .select("id")
-      .eq("title", title)
-      .eq("lead_id", lead.id)
-      .gte("created_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
-      .limit(1)
-      .maybeSingle();
-
-    if (existingEvent) {
-      console.log(`✅ Skipped duplicate event creation: ${title}`);
-      return;
-    }
-
     const startTime = new Date();
     startTime.setDate(startTime.getDate() + (config.daysOffset || 1));
     
@@ -437,21 +405,21 @@ async function createCalendarEventAction(action: any, lead: any, content: string
       throw new Error("Invalid date/time values for calendar event");
     }
 
-    const { error } = await supabase
-      .from("calendar_events")
-      .insert({
-        title,
-        description: content,
-        start_time: startTimeISO,
-        end_time: endTimeISO,
-        lead_id: lead.id,
-        user_id: userId,
-        event_type: config.eventType || "meeting",
-      });
+    // ✅ Use unified createCalendarEvent service with built-in deduplication
+    // This replaces manual dedup check + direct .insert()
+    const { createCalendarEvent } = await import("./calendarService");
+    
+    const event = await createCalendarEvent({
+      title,
+      description: content,
+      start_time: startTimeISO,
+      end_time: endTimeISO,
+      lead_id: lead.id,
+      user_id: userId,
+      event_type: config.eventType || "meeting",
+    });
 
-    if (error) throw error;
-
-    console.log("✅ Calendar event created for lead:", lead.name);
+    console.log("✅ Calendar event created for lead:", lead.name, "- Event ID:", event.id);
   } catch (error) {
     console.error("❌ Failed to create calendar event:", error);
     throw error;

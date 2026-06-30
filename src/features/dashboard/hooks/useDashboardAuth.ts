@@ -46,7 +46,7 @@ export function useDashboardAuth() {
         const { data: profiles } = await supabase
           .from("profiles")
           .select("*")
-          .in("role", ["agent", "team_lead"])
+          .in("role", ["consultant", "team_lead"])
           .order("full_name");
 
         setAgents(profiles || []);
@@ -54,7 +54,7 @@ export function useDashboardAuth() {
         const { data: profiles } = await supabase
           .from("profiles")
           .select("*")
-          .eq("role", "agent")
+          .eq("role", "consultant")
           .eq("team_lead_id", currentUserId)
           .order("full_name");
 

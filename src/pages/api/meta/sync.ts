@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { createClient } from "@supabase/supabase-js";
+import { runNewLeadPipeline } from "@/lib/server/leadPipeline";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL || "",
@@ -213,7 +214,7 @@ export default async function handler(
         }
 
         // Create new lead without creating a contact
-        const { error: createError } = await supabase
+        const { data: createdLead, error: createError } = await supabase
           .from("leads")
           .insert({
             ...leadData,
@@ -226,14 +227,44 @@ export default async function handler(
             meta_ad_id: metaLead.ad_id || null,
             source: formConfig?.default_lead_source || `Meta - ${integration.page_name}`,
             status: formConfig?.default_pipeline_stage || "new",
-          });
+          })
+          .select()
+          .single();
 
-        if (createError) {
+        if (createError || !createdLead) {
           console.error("Error creating lead:", createError);
           continue;
         }
 
         leadsCreated++;
+
+        // ✅ Run unified pipeline for manually synced lead
+        const protocol = req.headers['x-forwarded-proto'] || 'https';
+        const host = req.headers.host;
+        const appUrl = host ? `${protocol}://${host}` : (process.env.NEXT_PUBLIC_APP_URL || "https://www.vyxa.pt");
+
+        // Convert field_data to leadFields for email display
+        const leadFields: Record<string, string> = {};
+        if (metaLead.field_data) {
+          metaLead.field_data.forEach((field: any) => {
+            leadFields[field.name] = field.values?.[0] || "";
+          });
+        }
+
+        await runNewLeadPipeline({
+          supabase: supabase as any,
+          userId: user.id,
+          lead: {
+            id: createdLead.id,
+            name: createdLead.name,
+            email: createdLead.email,
+            phone: createdLead.phone,
+            lead_type: createdLead.lead_type,
+          },
+          appUrl,
+          leadFields,
+          isExistingLead: false,
+        });
       }
 
       // Update sync history

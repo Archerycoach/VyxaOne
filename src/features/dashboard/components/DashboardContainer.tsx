@@ -23,12 +23,7 @@ import { useDashboardAuth } from "../hooks/useDashboardAuth";
 import { useDashboardData } from "../hooks/useDashboardData";
 import { useDashboardFilters } from "../hooks/useDashboardFilters";
 import { useRouter } from "next/router";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { ScopeSelector } from "@/components/ScopeSelector";
 import { supabase } from "@/integrations/supabase/client";
 
 interface TeamMember {
@@ -49,44 +44,22 @@ export function DashboardContainer() {
     leadTypeFilter,
   });
 
-  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
-  const [loadingTeam, setLoadingTeam] = useState(false);
+  const [scopeFilter, setScopeFilter] = useState<string>("all");
 
-  const isAdminOrTeamLead = userRole === "admin" || userRole === "team_lead";
-
-  // Load team members if admin or team lead
+  // Consultant always sees only their own data - initialize to their ID
   useEffect(() => {
-    if (!isAdminOrTeamLead) return;
-
-    const loadTeamMembers = async () => {
-      setLoadingTeam(true);
-      try {
-        const { data, error } = await supabase
-          .from("profiles")
-          .select("id, full_name, email, role")
-          .in("role", ["agent", "team_lead", "admin"])
-          .order("full_name");
-
-        if (error) throw error;
-        setTeamMembers(data || []);
-      } catch (err) {
-        console.error("Error loading team members:", err);
-      } finally {
-        setLoadingTeam(false);
-      }
-    };
-
-    loadTeamMembers();
-  }, [isAdminOrTeamLead]);
+    if (userRole === "consultant" && currentUserId) {
+      setScopeFilter(currentUserId);
+    } else {
+      setScopeFilter("all");
+    }
+  }, [userRole, currentUserId]);
 
   const getLeadTypeLabel = () => {
     if (leadTypeFilter === "buyer") return "Compradores";
     if (leadTypeFilter === "seller") return "Vendedores";
     return "Todos os leads";
   };
-
-  const selectedMember = teamMembers.find(m => m.id === selectedAgent);
-  const agentName = selectedAgent === "all" ? "Equipa Toda" : selectedMember?.full_name || "Agente";
 
   if (authLoading || dataLoading) {
     return (
@@ -124,39 +97,12 @@ export function DashboardContainer() {
           
           {/* Filters */}
           <div className="flex gap-3">
-            {/* Agent Selector - Only for Admin/Team Lead */}
-            {isAdminOrTeamLead && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" className="justify-between min-w-[180px]">
-                    <div className="flex items-center gap-2">
-                      <UserCircle className="h-4 w-4" />
-                      <span className="max-w-[120px] truncate">{agentName}</span>
-                    </div>
-                    <ChevronDown className="h-4 w-4 ml-2" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-[200px]">
-                  <DropdownMenuItem
-                    onClick={() => setSelectedAgent("all")}
-                    className="cursor-pointer"
-                  >
-                    <Users className="h-4 w-4 mr-2" />
-                    Equipa Toda
-                  </DropdownMenuItem>
-                  {teamMembers.map((member) => (
-                    <DropdownMenuItem
-                      key={member.id}
-                      onClick={() => setSelectedAgent(member.id)}
-                      className="cursor-pointer"
-                    >
-                      <UserCircle className="h-4 w-4 mr-2" />
-                      <span className="truncate">{member.full_name}</span>
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
+            {/* Scope Selector - Hierarchical (hidden for consultant) */}
+            <ScopeSelector 
+              value={scopeFilter}
+              onChange={setScopeFilter}
+              label="Âmbito"
+            />
 
             {/* Lead Type Filter Buttons */}
             <div className="flex gap-2">

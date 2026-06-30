@@ -21,7 +21,7 @@ import {
   PortalIntegration
 } from "@/types";
 
-export type UserRole = "admin" | "manager" | "agent";
+export type UserRole = "admin" | "manager" | "consultant";
 export type LeadStatus = "new" | "contacted" | "qualified" | "proposal" | "negotiation" | "won" | "lost";
 
 // User interface defined locally

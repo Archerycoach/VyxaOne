@@ -24,7 +24,7 @@ export class AuthError extends Error {
 /**
  * Tipos de roles disponíveis no sistema
  */
-export type UserRole = "admin" | "team_lead" | "agent";
+export type UserRole = "admin" | "team_lead" | "consultant";
 
 /**
  * Interface para dados do perfil do utilizador
@@ -218,7 +218,7 @@ export const hasRole = async (requiredRole: UserRole): Promise<boolean> => {
     const roleHierarchy: Record<UserRole, number> = {
       admin: 3,
       team_lead: 2,
-      agent: 1,
+      consultant: 1,
     };
 
     const currentRoleLevel = roleHierarchy[role];

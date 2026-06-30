@@ -1,5 +1,6 @@
-import type { NextApiRequest, NextApiResponse } from "next";
+import { NextApiRequest, NextApiResponse } from "next";
 import { searchIdealistaProperties } from "@/services/idealistaService";
+import { getIdealistaCredentials } from "@/lib/server/idealistaCredentials";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") {
@@ -7,19 +8,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    const { params, userId } = req.body;
-    
-    if (!userId) {
-      return res.status(401).json({ error: "Utilizador não autenticado" });
-    }
+    // Get global Idealista credentials (server-side only)
+    const credentials = await getIdealistaCredentials();
 
-    const properties = await searchIdealistaProperties(params, userId);
-    
-    return res.status(200).json({ properties });
+    const results = await searchIdealistaProperties(req.body, credentials);
+    return res.status(200).json(results);
   } catch (error: any) {
     console.error("Idealista search error:", error);
     return res.status(500).json({ 
-      error: error.message || "Erro ao pesquisar imóveis no Idealista" 
+      error: error.message || "Erro ao pesquisar no Idealista"
     });
   }
 }

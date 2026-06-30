@@ -18,6 +18,12 @@ interface IdealistaSearchParams {
   agencyName?: string;
 }
 
+interface IdealistaCredentials {
+  apiKey: string;
+  host: string;
+  listEndpoint: string;
+}
+
 export interface IdealistaProperty {
   propertyCode: string;
   thumbnail: string;
@@ -81,9 +87,14 @@ interface IdealistaSearchResponse {
 
 /**
  * Pesquisa imóveis no Idealista através da API do RapidAPI
+ * 
+ * @param params Search parameters
+ * @param credentials API credentials (must be obtained from server-side using getIdealistaCredentials)
+ * @param explicitUserId Optional user ID for logging
  */
 export async function searchIdealistaProperties(
   params: IdealistaSearchParams,
+  credentials: IdealistaCredentials,
   explicitUserId?: string
 ): Promise<IdealistaProperty[]> {
   try {
@@ -96,30 +107,7 @@ export async function searchIdealistaProperties(
       userId = user.id;
     }
 
-    // A chave agora é GLOBAL (system_settings) em vez de por utilizador
-    const { data: apiKeysData, error: apiKeyError } = await supabase
-      .from("system_settings" as any)
-      .select("key, value")
-      .in("key", ["idealista_rapidapi_key", "idealista_rapidapi_host", "idealista_rapidapi_list_endpoint"]);
-      
-    if (apiKeyError) {
-      console.error("Error fetching Global API settings:", apiKeyError);
-    }
-
-    const settingsArray = (apiKeysData as any[]) || [];
-    
-    const keySetting = settingsArray.find(s => s.key === "idealista_rapidapi_key");
-    const hostSetting = settingsArray.find(s => s.key === "idealista_rapidapi_host");
-    const listEndpointSetting = settingsArray.find(s => s.key === "idealista_rapidapi_list_endpoint");
-
-    if (!keySetting?.value) {
-      throw new Error("Chave Global da API do Idealista não configurada");
-    }
-
-    const rapidApiKey = keySetting.value as string;
-    const rapidApiHost = (hostSetting?.value as string) || "idealista2.p.rapidapi.com";
-    const listEndpointRaw = (listEndpointSetting?.value as string) || "/properties/list";
-    const listEndpoint = listEndpointRaw.startsWith('/') ? listEndpointRaw : `/${listEndpointRaw}`;
+    const { apiKey: rapidApiKey, host: rapidApiHost, listEndpoint } = credentials;
 
     // 1. Resolver locationId a partir de texto (center) usando o endpoint auto-complete
     let resolvedLocationId = params.locationId;

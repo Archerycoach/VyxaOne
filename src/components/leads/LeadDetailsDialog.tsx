@@ -35,7 +35,8 @@ import {
   Paperclip,
   Loader2,
   MessageCircle,
-  Send
+  Send,
+  Mic
 } from "lucide-react";
 import { getLeadById } from "@/services/leadsService";
 import { getInteractionsByLead, createInteraction } from "@/services/interactionsService";
@@ -54,6 +55,8 @@ import { PropertyForm } from "@/components/properties/PropertyForm";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { LeadAIInsightsPanel } from "./LeadAIInsightsPanel";
+import { VoiceNoteRecorder } from "./VoiceNoteRecorder";
+import { LeadTimeline } from "@/components/LeadTimeline";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { updateLead } from "@/services/leadsService";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -80,10 +83,13 @@ export function LeadDetailsDialog({
   const [properties, setProperties] = useState<Property[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [quickContactOpen, setQuickContactOpen] = useState(false);
+  const [voiceNoteOpen, setVoiceNoteOpen] = useState(false);
   const [propertyFormOpen, setPropertyFormOpen] = useState(false);
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
   const [drafting, setDrafting] = useState<string | null>(null);
   const [generatedDraft, setGeneratedDraft] = useState<{text: string, channel: 'whatsapp'|'email'} | null>(null);
+  const [draftVariants, setDraftVariants] = useState<Array<{tone: string; text: string}> | null>(null);
+  const [selectedVariantIndex, setSelectedVariantIndex] = useState<number>(0);
   const [emailAttachments, setEmailAttachments] = useState<Array<{name: string, content: string, encoding: string}>>([]);
   const [isSending, setIsSending] = useState(false);
   const [newNoteText, setNewNoteText] = useState("");
@@ -93,6 +99,7 @@ export function LeadDetailsDialog({
   const [isSubmittingInteraction, setIsSubmittingInteraction] = useState(false);
   const [isUpdatingTemperature, setIsUpdatingTemperature] = useState(false);
   const [sendCopyToSelf, setSendCopyToSelf] = useState(false);
+  const [isRunningAutomations, setIsRunningAutomations] = useState(false);
   
   // WhatsApp State
   const [waMessage, setWaMessage] = useState("");
@@ -297,22 +304,48 @@ export function LeadDetailsDialog({
 
       if (!res.ok) throw new Error(data.error || `Erro HTTP ${res.status}`);
 
-      let initialText = data.draft;
-      if (channel === 'email') {
-        initialText = initialText.replace(/\n/g, "<br>");
-        if (userSignature.text || userSignature.image) {
-          initialText += '<br><br><div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #eaeaea;">';
-          if (userSignature.text) {
-            initialText += `<div style="color: #666; font-size: 14px;">${userSignature.text.replace(/\n/g, '<br>')}</div>`;
+      // Check if we got variants (new format) or single draft (old format)
+      if (data.variants && Array.isArray(data.variants) && data.variants.length > 0) {
+        setDraftVariants(data.variants);
+        setSelectedVariantIndex(0);
+        
+        let initialText = data.variants[0].text;
+        if (channel === 'email') {
+          initialText = initialText.replace(/\n/g, "<br>");
+          if (userSignature.text || userSignature.image) {
+            initialText += '<br><br><div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #eaeaea;">';
+            if (userSignature.text) {
+              initialText += `<div style="color: #666; font-size: 14px;">${userSignature.text.replace(/\n/g, '<br>')}</div>`;
+            }
+            if (userSignature.image) {
+              initialText += `<br><img src="${userSignature.image}" alt="Assinatura" style="max-width: 250px; height: auto;" />`;
+            }
+            initialText += '</div>';
           }
-          if (userSignature.image) {
-            initialText += `<br><img src="${userSignature.image}" alt="Assinatura" style="max-width: 250px; height: auto;" />`;
-          }
-          initialText += '</div>';
         }
+        
+        setGeneratedDraft({ text: initialText, channel });
+      } else {
+        // Fallback to old single draft format
+        let initialText = data.draft;
+        if (channel === 'email') {
+          initialText = initialText.replace(/\n/g, "<br>");
+          if (userSignature.text || userSignature.image) {
+            initialText += '<br><br><div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #eaeaea;">';
+            if (userSignature.text) {
+              initialText += `<div style="color: #666; font-size: 14px;">${userSignature.text.replace(/\n/g, '<br>')}</div>`;
+            }
+            if (userSignature.image) {
+              initialText += `<br><img src="${userSignature.image}" alt="Assinatura" style="max-width: 250px; height: auto;" />`;
+            }
+            initialText += '</div>';
+          }
+        }
+        
+        setGeneratedDraft({ text: initialText, channel });
+        setDraftVariants(null);
       }
-
-      setGeneratedDraft({ text: initialText, channel });
+      
       toast({ title: "Rascunho Gerado", description: "Pode rever a mensagem antes de a enviar." });
     } catch (err: any) {
       toast({ title: "Erro ao gerar rascunho", description: err.message, variant: "destructive" });
@@ -377,6 +410,50 @@ export function LeadDetailsDialog({
     }
   };
 
+  const handleRunAutomations = async () => {
+    if (!leadId) return;
+    setIsRunningAutomations(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      if (!token) {
+        throw new Error("Sessão expirada");
+      }
+
+      const res = await fetch("/api/leads/run-automations", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ leadId })
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || "Erro ao executar automações");
+      }
+
+      toast({ 
+        title: "✅ Automações Executadas", 
+        description: "Pipeline de automações Meta executado com sucesso (email notificação + auto-responder + AI matcher + Notion)."
+      });
+
+      // Refresh interactions
+      const interData = await getInteractionsByLead(leadId);
+      setInteractions(interData);
+    } catch (err: any) {
+      toast({ 
+        title: "Erro ao executar automações", 
+        description: err.message, 
+        variant: "destructive" 
+      });
+    } finally {
+      setIsRunningAutomations(false);
+    }
+  };
+
   const handleSendWhatsApp = async (type: 'text' | 'template') => {
     if (!leadId) return;
     const content = type === 'text' ? waMessage : waTemplate;
@@ -431,6 +508,15 @@ export function LeadDetailsDialog({
             <div className="flex items-center gap-2">
               {lead && (
                 <>
+                  <Button 
+                    size="sm" 
+                    variant="outline" 
+                    onClick={() => setVoiceNoteOpen(true)}
+                    className="text-purple-700 border-purple-200 hover:bg-purple-50"
+                  >
+                    <Mic className="h-4 w-4 mr-2" />
+                    Nota de Voz
+                  </Button>
                   <Button size="sm" variant="outline" onClick={() => handleGenerateDraft("email")} disabled={drafting === "email"} className="text-blue-700 border-blue-200 hover:bg-blue-50">
                     {drafting === "email" ? <div className="animate-spin h-4 w-4 mr-2 border-2 border-blue-700 border-t-transparent rounded-full" /> : <Mail className="h-4 w-4 mr-2" />}
                     E-mail IA
@@ -442,6 +528,20 @@ export function LeadDetailsDialog({
                   <Button size="sm" variant="outline" onClick={() => setQuickContactOpen(true)}>
                     <Phone className="h-4 w-4 mr-2" />
                     Registar Contacto
+                  </Button>
+                  <Button 
+                    size="sm" 
+                    variant="outline" 
+                    onClick={handleRunAutomations} 
+                    disabled={isRunningAutomations}
+                    className="text-indigo-700 border-indigo-200 hover:bg-indigo-50"
+                  >
+                    {isRunningAutomations ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Sparkles className="h-4 w-4 mr-2" />
+                    )}
+                    Executar Automações
                   </Button>
                 </>
               )}
@@ -579,6 +679,49 @@ export function LeadDetailsDialog({
                       </div>
                     </div>
                   )}
+                  
+                  {/* First Contact Time Indicator */}
+                  <div className="flex items-center gap-2">
+                    <Clock className="h-4 w-4 text-gray-400" />
+                    <div>
+                      <p className="text-sm text-gray-500">Tempo até Primeiro Contacto</p>
+                      {(lead as any).first_contact_at ? (
+                        <p className="font-medium text-green-600">
+                          {(() => {
+                            const created = new Date((lead as any).created_at);
+                            const firstContact = new Date((lead as any).first_contact_at);
+                            const diffMinutes = Math.floor((firstContact.getTime() - created.getTime()) / (1000 * 60));
+                            
+                            if (diffMinutes < 60) {
+                              return `${diffMinutes} minutos ✅`;
+                            } else if (diffMinutes < 1440) {
+                              const hours = Math.floor(diffMinutes / 60);
+                              const mins = diffMinutes % 60;
+                              return `${hours}h ${mins}min ${diffMinutes < 120 ? '✅' : '⚠️'}`;
+                            } else {
+                              const days = Math.floor(diffMinutes / 1440);
+                              return `${days} ${days === 1 ? 'dia' : 'dias'} ⚠️`;
+                            }
+                          })()}
+                        </p>
+                      ) : (
+                        <p className="font-medium text-amber-600 flex items-center gap-1">
+                          <span>Ainda não contactado</span>
+                          {(() => {
+                            const created = new Date((lead as any).created_at);
+                            const now = new Date();
+                            const diffMinutes = Math.floor((now.getTime() - created.getTime()) / (1000 * 60));
+                            
+                            if (diffMinutes >= 15) {
+                              return <span className="text-red-600 font-bold">🚨 {diffMinutes} min</span>;
+                            } else {
+                              return <span className="text-gray-500">({diffMinutes} min)</span>;
+                            }
+                          })()}
+                        </p>
+                      )}
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
 
@@ -1016,84 +1159,11 @@ export function LeadDetailsDialog({
             </TabsContent>
 
             <TabsContent value="timeline" className="space-y-4 mt-4">
-              <div className="space-y-3">
-                {[...interactions, ...notes, ...events, ...tasks]
-                  .sort((a, b) => {
-                    const getDate = (item: any) => {
-                      if ("interaction_date" in item) return new Date(item.interaction_date);
-                      if ("note" in item && "created_at" in item) return new Date(item.created_at);
-                      if ("startTime" in item) return new Date(item.startTime);
-                      if ("dueDate" in item && item.dueDate) return new Date(item.dueDate);
-                      if ("createdAt" in item) return new Date(item.createdAt);
-                      return new Date();
-                    };
-                    return getDate(b).getTime() - getDate(a).getTime();
-                  })
-                  .map((item) => {
-                    const isInteraction = "interaction_type" in item;
-                    const isNote = "note" in item && "created_at" in item;
-                    const isEvent = "startTime" in item;
-                    const isTask = "status" in item && "priority" in item;
-
-                    let icon = <FileText className="h-5 w-5 text-gray-500" />;
-                    let badge = null;
-                    let date = "";
-                    let title = "";
-                    let content = "";
-                    let subBadge = null;
-
-                    if (isInteraction) {
-                      const interaction = item as InteractionWithDetails;
-                      icon = <MessageSquare className="h-5 w-5 text-green-500 mt-0.5" />;
-                      badge = <Badge className="bg-green-100 text-green-800 hover:bg-green-200 border-green-200">{interaction.interaction_type}</Badge>;
-                      date = formatDate(interaction.interaction_date);
-                      content = interaction.content;
-                    } else if (isNote) {
-                      const note = item as LeadNote;
-                      icon = <FileText className="h-5 w-5 text-yellow-500 mt-0.5" />;
-                      badge = <Badge variant="outline" className="text-yellow-700 border-yellow-300 bg-yellow-50">Nota</Badge>;
-                      date = formatDate(note.created_at);
-                      content = note.note;
-                    } else if (isEvent) {
-                      const event = item as CalendarEvent;
-                      icon = <Calendar className="h-5 w-5 text-purple-500 mt-0.5" />;
-                      badge = <Badge className="bg-purple-100 text-purple-800 hover:bg-purple-200 border-purple-200">Evento</Badge>;
-                      date = new Date(event.startTime).toLocaleString("pt-PT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
-                      title = event.title;
-                      content = event.description || "";
-                    } else if (isTask) {
-                      const task = item as Task;
-                      icon = <CheckSquare className="h-5 w-5 text-blue-500 mt-0.5" />;
-                      badge = <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-200 border-blue-200">Tarefa</Badge>;
-                      subBadge = <Badge variant="outline" className="ml-2 text-xs">{task.status === "completed" ? "Concluída" : "Pendente"}</Badge>;
-                      date = task.dueDate ? new Date(task.dueDate).toLocaleDateString("pt-PT") : formatDate(task.createdAt);
-                      title = task.title;
-                      content = task.description || "";
-                    }
-
-                    return (
-                      <Card key={(item as any).id}>
-                        <CardContent className="pt-4">
-                          <div className="flex items-start gap-3">
-                            {icon}
-                            <div className="flex-1">
-                              <div className="flex items-center flex-wrap gap-2 mb-2">
-                                {badge}
-                                {subBadge}
-                                <span className="text-sm text-gray-500 flex items-center gap-1">
-                                  <Clock className="h-3 w-3" />
-                                  {date}
-                                </span>
-                              </div>
-                              {title && <p className="text-sm font-semibold mb-1">{title}</p>}
-                              {content && <p className="text-sm text-gray-700 whitespace-pre-wrap">{content}</p>}
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    );
-                  })}
-              </div>
+              <LeadTimeline 
+                interactions={interactions}
+                notes={notes}
+                tasks={tasks}
+              />
             </TabsContent>
           </Tabs>
         ) : (
@@ -1105,19 +1175,69 @@ export function LeadDetailsDialog({
     </Dialog>
 
     {lead && (
-      <QuickContactDialog
-        leadId={lead.id}
-        leadName={lead.name}
-        open={quickContactOpen}
-        onOpenChange={setQuickContactOpen}
-        onSuccess={() => {
-          // Refresh interactions and lead info
-          if (leadId) {
-            getInteractionsByLead(leadId).then(setInteractions);
-            getLeadById(leadId).then(setLead);
-          }
-        }}
-      />
+      <>
+        <QuickContactDialog
+          leadId={lead.id}
+          leadName={lead.name}
+          open={quickContactOpen}
+          onOpenChange={setQuickContactOpen}
+          onSuccess={() => {
+            // Refresh interactions and lead info
+            if (leadId) {
+              getInteractionsByLead(leadId).then(setInteractions);
+              getLeadById(leadId).then(setLead);
+            }
+          }}
+        />
+
+        <Dialog open={voiceNoteOpen} onOpenChange={setVoiceNoteOpen}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Mic className="h-5 w-5 text-purple-600" />
+                Nota de Voz - {lead.name}
+              </DialogTitle>
+            </DialogHeader>
+            <VoiceNoteRecorder
+              leadId={lead.id}
+              leadName={lead.name}
+              currentStatus={lead.status || "new"}
+              currentTemperature={lead.temperature || "warm"}
+              onSuccess={async () => {
+                setVoiceNoteOpen(false);
+                // Refresh all lead data after voice note is processed
+                if (leadId) {
+                  const [updatedLead, updatedInteractions, updatedNotes, updatedTasks] = await Promise.all([
+                    getLeadById(leadId),
+                    getInteractionsByLead(leadId),
+                    getNotesByLead(leadId),
+                    getTasksByLead(leadId),
+                  ]);
+                  setLead(updatedLead);
+                  setInteractions(updatedInteractions);
+                  setNotes(updatedNotes);
+                  const mappedTasks = updatedTasks.map((t: any) => ({
+                    id: t.id,
+                    title: t.title || "",
+                    description: t.description || "",
+                    status: t.status || "pending",
+                    priority: t.priority || "medium",
+                    dueDate: t.due_date,
+                    createdAt: t.created_at,
+                    userId: t.user_id,
+                    assignedTo: t.assigned_to,
+                    completed: t.status === "completed",
+                    leadId: t.related_lead_id,
+                    relatedLeadId: t.related_lead_id,
+                  }));
+                  setTasks(mappedTasks);
+                }
+              }}
+              onCancel={() => setVoiceNoteOpen(false)}
+            />
+          </DialogContent>
+        </Dialog>
+      </>
     )}
 
     {propertyFormOpen && lead && (
@@ -1133,12 +1253,57 @@ export function LeadDetailsDialog({
     )}
 
     {/* Modal de Revisão do Rascunho */}
-    <Dialog open={!!generatedDraft} onOpenChange={(open) => !open && setGeneratedDraft(null)}>
-      <DialogContent className="sm:max-w-[500px] z-[100]">
+    <Dialog open={!!generatedDraft} onOpenChange={(open) => { 
+      if (!open) {
+        setGeneratedDraft(null);
+        setDraftVariants(null);
+        setSelectedVariantIndex(0);
+      }
+    }}>
+      <DialogContent className="sm:max-w-[600px] z-[100]">
         <DialogHeader>
           <DialogTitle>Rever Mensagem ({generatedDraft?.channel === 'whatsapp' ? 'WhatsApp' : 'E-mail'})</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 pt-4">
+          {/* Variant Selector */}
+          {draftVariants && draftVariants.length > 1 && (
+            <div className="bg-gray-50 p-3 rounded-lg border">
+              <p className="text-xs font-medium text-gray-600 mb-2">Escolha o tom da mensagem:</p>
+              <div className="flex gap-2">
+                {draftVariants.map((variant, index) => (
+                  <Button
+                    key={index}
+                    size="sm"
+                    variant={selectedVariantIndex === index ? "default" : "outline"}
+                    onClick={() => {
+                      setSelectedVariantIndex(index);
+                      let text = variant.text;
+                      if (generatedDraft?.channel === 'email') {
+                        text = text.replace(/\n/g, "<br>");
+                        if (userSignature.text || userSignature.image) {
+                          text += '<br><br><div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #eaeaea;">';
+                          if (userSignature.text) {
+                            text += `<div style="color: #666; font-size: 14px;">${userSignature.text.replace(/\n/g, '<br>')}</div>`;
+                          }
+                          if (userSignature.image) {
+                            text += `<br><img src="${userSignature.image}" alt="Assinatura" style="max-width: 250px; height: auto;" />`;
+                          }
+                          text += '</div>';
+                        }
+                      }
+                      setGeneratedDraft(prev => prev ? {...prev, text} : null);
+                    }}
+                    className="flex-1"
+                  >
+                    {variant.tone === 'formal' && '👔 Formal'}
+                    {variant.tone === 'próximo' && '😊 Próximo'}
+                    {variant.tone === 'direto' && '🎯 Direto'}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          )}
+          
           {generatedDraft?.channel === 'email' ? (
             <div className="border rounded-md overflow-hidden">
               <RichTextEditor 

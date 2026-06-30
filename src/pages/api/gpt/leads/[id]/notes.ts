@@ -2,6 +2,15 @@ import { NextApiRequest, NextApiResponse } from "next";
 import { validateGptRequest, logGptAction } from "@/lib/gptAuth";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
+// Temporary type until lead_notes is added to database.types.ts
+interface LeadNote {
+  id: string;
+  lead_id: string;
+  note: string;
+  created_by: string;
+  created_at: string;
+}
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") {
     res.setHeader("Allow", ["POST"]);
@@ -12,9 +21,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (!userId) return;
 
   const { id } = req.query;
-  const { note } = req.body;
+  const { note: noteText } = req.body;
 
-  if (!note) {
+  if (!noteText) {
     return res.status(400).json({ error: "Note is required" });
   }
 
@@ -31,21 +40,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const newNote = {
       lead_id: id as string,
-      note: note,
+      note: noteText,
       created_by: userId
     };
 
-    const { data: createdNote, error } = await (supabaseAdmin
-      .from("lead_notes" as any)
+    const { data: createdNote, error } = await supabaseAdmin
+      .from("lead_notes")
       .insert(newNote)
       .select()
-      .single() as unknown as Promise<any>);
+      .single();
 
-    if (error) throw error;
+    if (error || !createdNote) {
+      throw error || new Error("Failed to create note");
+    }
 
-    await logGptAction(userId, "gpt_create_note", "lead_notes", createdNote.id, { lead_id: id });
+    // Type assertion needed because lead_notes is manually defined in database.types.ts
+    const note = createdNote as LeadNote;
 
-    return res.status(201).json({ note: createdNote, message: "Note added successfully" });
+    await logGptAction(userId, "gpt_create_note", "lead_notes", note.id, { lead_id: id });
+
+    return res.status(201).json({ note, message: "Note added successfully" });
   } catch (error: any) {
     console.error("GPT API Error:", error);
     return res.status(500).json({ error: error.message });

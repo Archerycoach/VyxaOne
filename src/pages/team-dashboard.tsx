@@ -89,11 +89,17 @@ export default function TeamDashboard() {
 
   const loadAgents = async () => {
     try {
-      const { data } = await supabase
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      
+      const agentsQuery = supabase
         .from("profiles")
-        .select("id, full_name")
-        .eq("role", "agent")
-        .order("full_name");
+        .select("*")
+        .eq("team_lead_id", user.id)
+        .eq("role", "consultant")
+        .eq("is_active", true);
+      
+      const { data } = await agentsQuery;
       
       if (data) {
         setAgents(data.map(a => ({ id: a.id, name: a.full_name || "Agente" })));
@@ -107,11 +113,14 @@ export default function TeamDashboard() {
     try {
       setLoading(true);
       
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      
       const { data: agentsData } = await supabase
         .from("profiles")
-        .select("id, full_name, email")
-        .eq("role", "agent")
-        .eq("is_active", true);
+        .select("*")
+        .eq("team_lead_id", user.id)
+        .eq("role", "consultant");
 
       if (!agentsData || agentsData.length === 0) {
         setMetrics([]);

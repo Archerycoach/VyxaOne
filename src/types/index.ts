@@ -6,7 +6,7 @@ export type LeadStatus = "new" | "contacted" | "qualified" | "proposal" | "negot
 export type LeadSource = string;
 
 // User/Agent Types
-export type UserRole = "admin" | "team_lead" | "agent";
+export type UserRole = "admin" | "team_lead" | "consultant";
 
 export interface User {
   id: string;

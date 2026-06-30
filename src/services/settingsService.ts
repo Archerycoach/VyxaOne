@@ -33,27 +33,36 @@ export const updateSetting = async (
   key: string,
   value: any,
   description?: string
-): Promise<SystemSetting> => {
-  const { data: { user } } = await supabase.auth.getUser();
-  
-  if (!user) throw new Error("User not authenticated");
+): Promise<{ success: boolean; message: string }> => {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
 
-  const settingData = {
-    key: key,
-    value: value,
-    description: description,
-    updated_by: user.id,
-    updated_at: new Date().toISOString(),
-  };
+    if (!token) {
+      throw new Error("Sessão inválida");
+    }
 
-  const { data, error } = await supabase
-    .from("system_settings")
-    .upsert(settingData as any, { onConflict: "key" })
-    .select()
-    .single();
+    const res = await fetch("/api/admin/system-settings", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        [key]: typeof value === 'string' ? value : JSON.stringify(value)
+      })
+    });
 
-  if (error) throw error;
-  return data;
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error || "Erro ao guardar");
+    }
+
+    return await res.json();
+  } catch (error: any) {
+    console.error("Error updating setting:", error);
+    throw error;
+  }
 };
 
 // Get modules configuration

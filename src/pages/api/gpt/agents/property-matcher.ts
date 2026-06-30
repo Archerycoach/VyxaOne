@@ -1,6 +1,7 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import { createClient } from "@supabase/supabase-js";
 import { runAI } from "@/lib/ai/provider";
+import { findMatchesForLead } from "@/services/matchingService";
 import nodemailer from "nodemailer";
 
 const supabase = createClient(
@@ -42,72 +43,120 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     if (!smtpSettings) return res.status(200).json({ message: "No SMTP settings" });
 
-    // 4. Fetch portals configured for this user
-    const { data: portals } = await supabase
-      .from("external_property_portals")
-      .select("*")
-      .eq("user_id", userId)
-      .eq("is_enabled", true);
-
-    if (!portals || portals.length === 0) {
-      return res.status(200).json({ message: "No external portals enabled" });
+    // 4. Find real property matches (internal DB + Idealista)
+    console.log(`[Property Matcher] Finding matches for lead ${leadId}...`);
+    const matches = await findMatchesForLead(leadId);
+    
+    if (matches.length === 0) {
+      console.log(`[Property Matcher] No matches found for lead ${leadId}`);
+      return res.status(200).json({ message: "No matching properties found" });
     }
 
-    // 5. Mocked generic search (Will use real API data when Casa Yes docs arrive)
-    // Simulating finding 3 matches based on lead preferences
-    const properties = [
-      {
-        title: "Fantástico Apartamento Renovado",
-        price: lead.budget_max ? (lead.budget_max * 0.9) : 250000,
-        location: lead.location_preference || "Sua zona de preferência",
-        url: "#",
-        main_image: "https://images.unsplash.com/photo-1560518883-ce09059eeffa?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80"
-      },
-      {
-        title: "Imóvel Moderno com Varanda",
-        price: lead.budget_max ? (lead.budget_max * 0.95) : 275000,
-        location: lead.location_preference || "Sua zona de preferência",
-        url: "#",
-        main_image: "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80"
-      },
-      {
-        title: "Excelente Oportunidade com Vista",
-        price: lead.budget_max ? (lead.budget_max * 0.85) : 230000,
-        location: lead.location_preference || "Sua zona de preferência",
-        url: "#",
-        main_image: "https://images.unsplash.com/photo-1484154218962-a197022b5858?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80"
-      }
-    ];
+    // Take top 5 matches
+    const topMatches = matches.slice(0, 5);
+    console.log(`[Property Matcher] Found ${topMatches.length} top matches`);
 
-    // 6. Generate Email with AI
-    const prompt = `Escreve um email persuasivo, profissional e empático em português de Portugal para o cliente "${lead.name}".
-O cliente procura um imóvel com as seguintes características:
-- Tipologia: ${lead.typology || "Não especificado"}
-- Orçamento máximo: ${lead.budget_max ? lead.budget_max + "€" : "Não especificado"}
-- Zona: ${lead.location_preference || "Não especificado"}
+    // 5. Generate personalized pitch for each property
+    const enrichedProperties = await Promise.all(
+      topMatches.map(async (match) => {
+        const pitchPrompt = `Escreve 2-3 frases de argumentário personalizado para apresentar este imóvel a "${lead.name}".
 
-Abaixo estão 3 imóveis que encontrámos na nossa base de dados em tempo real (Portais de parceiros) que correspondem a este perfil:
-${properties.map((p, i) => `Imóvel ${i+1}: ${p.title} - ${p.price}€ - ${p.location}`).join('\n')}
+Perfil da lead:
+- Tipo: ${lead.lead_type === 'buyer' ? 'Comprador' : lead.lead_type === 'renter' ? 'Arrendatário' : 'Investidor'}
+- Orçamento: ${lead.budget_min ? lead.budget_min + '€' : 'N/A'} - ${lead.budget_max ? lead.budget_max + '€' : 'N/A'}
+- Preferências: ${lead.location_preference || 'N/A'}, ${lead.bedrooms ? lead.bedrooms + ' quartos' : ''}, ${lead.min_area ? lead.min_area + 'm²' : ''}
 
-O email DEVE ser escrito em formato HTML válido (podes usar <b>, <p>, <ul>, <li>, <br> e cores suaves para os preços).
-NÃO incluas as tags <html>, <head> ou <body>, devolve apenas o conteúdo interior da mensagem em HTML.
-Para cada imóvel, inclui uma estrutura visual atraente. Usa este template de imagem para cada um dos 3 imóveis, usando o link correto:
-<img src="URL_DA_IMAGEM" alt="Imóvel" style="width:100%; max-width:400px; border-radius:8px; margin-top:10px; margin-bottom:10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);"/>
+Imóvel:
+- Título: ${match.property.title}
+- Preço: ${match.property.price}€
+- Localização: ${match.property.location || match.property.city}
+- Quartos: ${match.property.bedrooms || match.property.rooms || 'N/A'}
+- Área: ${match.property.area || match.property.size || 'N/A'}m²
+- Match Score: ${match.match_score}%
+- Razões: ${match.match_reasons.join(', ')}
 
-Usa os URLs de imagem fornecidos abaixo pela respetiva ordem:
-${properties.map((p, i) => `Imagem ${i+1}: ${p.main_image}`).join('\n')}
+${lead.lead_type === 'investor' ? 'Foca em rentabilidade, potencial de valorização e ROI.' : ''}
+${lead.lead_type === 'buyer' ? 'Foca em conforto, qualidade de vida, zona familiar.' : ''}
+${lead.lead_type === 'renter' ? 'Foca em acessibilidade, comodidades e flexibilidade.' : ''}
 
-Despede-te de forma profissional e com uma call-to-action (ex: agendar visita ou chamada).`;
+Responde APENAS com o texto do argumentário (2-3 frases), sem introdução ou conclusão.`;
+
+        try {
+          const pitchResponse = await runAI({
+            userId,
+            task: "property_pitch",
+            messages: [{ role: "user", content: pitchPrompt }],
+            temperature: 0.8,
+          });
+
+          return {
+            ...match.property,
+            match_score: match.match_score,
+            match_reasons: match.match_reasons,
+            source: match.source,
+            pitch: pitchResponse.text.trim(),
+          };
+        } catch (error) {
+          console.error("Error generating pitch:", error);
+          return {
+            ...match.property,
+            match_score: match.match_score,
+            match_reasons: match.match_reasons,
+            source: match.source,
+            pitch: "Imóvel que corresponde ao seu perfil de pesquisa.",
+          };
+        }
+      })
+    );
+
+    // 6. Generate email with AI
+    const propertiesContext = enrichedProperties.map((p, i) => 
+      `Imóvel ${i+1} (${p.match_score}% match, fonte: ${p.source === 'idealista' ? 'Idealista' : 'Base de dados interna'}):
+- Título: ${p.title}
+- Preço: ${p.price}€
+- Localização: ${p.location || p.city}
+- Características: ${p.bedrooms || p.rooms || 'N/A'} quartos, ${p.area || p.size || 'N/A'}m²
+- Razões do match: ${p.match_reasons.join(', ')}
+- Argumentário: ${p.pitch}
+- Imagem: ${p.thumbnail || 'N/A'}
+${p.url ? `- URL: ${p.url}` : ''}`
+    ).join('\n\n');
+
+    const emailPrompt = `Escreve um email persuasivo, profissional e empático em português de Portugal para o cliente "${lead.name}".
+
+O cliente procura:
+- Tipo: ${lead.lead_type === 'buyer' ? 'Comprar' : lead.lead_type === 'renter' ? 'Arrendar' : 'Investir'}
+- Tipologia: ${lead.typology || lead.bedrooms ? lead.bedrooms + ' quartos' : 'Não especificado'}
+- Orçamento: ${lead.budget_max ? lead.budget_max + '€' : 'Não especificado'}
+- Zona: ${lead.location_preference || 'Não especificado'}
+
+Encontrámos ${enrichedProperties.length} imóveis que correspondem ao perfil (com scores de 40% a 100%):
+
+${propertiesContext}
+
+O email DEVE:
+1. Ser escrito em HTML válido (podes usar <b>, <p>, <ul>, <li>, <br>, <div> e cores suaves)
+2. NÃO incluir as tags <html>, <head> ou <body>, apenas o conteúdo interior
+3. Para cada imóvel, criar uma estrutura visual atraente com:
+   - Imagem (se disponível) com: <img src="URL" style="width:100%; max-width:400px; border-radius:8px; margin:10px 0; box-shadow: 0 4px 6px rgba(0,0,0,0.1);"/>
+   - Título, preço, localização, características
+   - O argumentário personalizado gerado pela IA
+   - Score de match e razões principais
+4. Destacar os pontos fortes de cada imóvel baseado no argumentário
+5. Call-to-action clara (agendar visita ou chamada)
+6. Tom profissional mas caloroso
+
+Responde EXCLUSIVAMENTE com o HTML da mensagem.`;
 
     const aiResponse = await runAI({
       userId,
-      task: "property_matcher",
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.7
+      task: "property_matcher_email",
+      messages: [{ role: "user", content: emailPrompt }],
+      temperature: 0.7,
     });
 
     let emailHtml = aiResponse.text.trim();
-    // Clean up potential markdown formatting that AI sometimes includes
+    // Clean up potential markdown formatting
     emailHtml = emailHtml.replace(/```html/g, "").replace(/```/g, "").trim();
 
     // 7. Send the email via SMTP
@@ -129,19 +178,26 @@ Despede-te de forma profissional e com uma call-to-action (ex: agendar visita ou
         ? `"${smtpSettings.from_name}" <${smtpSettings.from_email}>`
         : smtpSettings.from_email,
       to: lead.email,
-      subject: `Encontrámos as propriedades ideais para si, ${lead.name}`,
+      subject: `${enrichedProperties.length} imóveis ideais para si, ${lead.name}`,
       html: emailHtml,
     });
 
-    // 8. Log interaction in the CRM so the agent knows it was sent
+    // 8. Log interaction in the CRM
     await supabase.from("interactions").insert({
       lead_id: leadId,
       user_id: userId,
       type: "email",
-      notes: "Email Automático IA: Enviada seleção de 3 imóveis com base no perfil (Casa Yes / Portais).",
+      notes: `Email Automático IA: Enviados ${enrichedProperties.length} imóveis com match real (scores: ${enrichedProperties.map(p => p.match_score + '%').join(', ')}). Fontes: ${enrichedProperties.filter(p => p.source === 'internal').length} BD interna + ${enrichedProperties.filter(p => p.source === 'idealista').length} Idealista.`,
     });
 
-    return res.status(200).json({ success: true, messageId: info.messageId });
+    console.log(`[Property Matcher] Email sent successfully to ${lead.email}`);
+
+    return res.status(200).json({ 
+      success: true, 
+      messageId: info.messageId,
+      propertiesCount: enrichedProperties.length,
+      topScore: enrichedProperties[0]?.match_score,
+    });
 
   } catch (error: any) {
     console.error("Property Matcher error:", error);

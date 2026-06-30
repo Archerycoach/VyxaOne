@@ -370,6 +370,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                 interaction_date: new Date().toISOString()
               });
 
+              // ✅ Recalculate lead score after inbound message
+              await calculateLeadScore(lead.id, supabaseAdmin, "whatsapp_inbound");
+
               // 5. Trigger the GPT agent to respond and qualify (Using Claude)
               const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
               

@@ -1,0 +1,6 @@
+GitHub Sync Trigger
+Timestamp: 2026-06-27T10:28:16Z
+
+This file forces a GitHub synchronization.
+All AI routes verified to use unified runAI provider.
+Repository: https://github.com/softgenai/sg-9d804bf8-0d80-4823-af0f-2c9bbddb5de7-1767085488

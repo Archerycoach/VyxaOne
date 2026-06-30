@@ -37,7 +37,14 @@ import {
   Home,
   GitMerge,
   BrainCircuit,
+  Plug,
+  GitBranch,
+  Mail,
+  Palette,
+  Banknote,
 } from "lucide-react";
+import Link from "next/link";
+import { cn } from "@/lib/utils";
 
 interface NavItem {
   icon: any;
@@ -73,8 +80,20 @@ export function Navigation() {
     router.push("/login");
   };
 
+  // Check role with hierarchy
   const isAdmin = profile?.role === "admin";
+  const isBroker = profile?.role === "broker";
   const isTeamLead = profile?.role === "team_lead";
+  const isConsultant = profile?.role === "consultant";
+
+  // Admin sees system config menus
+  const canAccessSystemConfig = isAdmin;
+  
+  // Broker and above can see team/all users
+  const canSeeAllUsers = isAdmin || isBroker;
+  
+  // Team lead and above can see team features
+  const canSeeTeamFeatures = isAdmin || isBroker || isTeamLead;
 
   const toggleGroup = (label: string) => {
     setExpandedGroups(prev => prev.includes(label) ? prev.filter(g => g !== label) : [...prev, label]);
@@ -140,6 +159,11 @@ export function Navigation() {
         { icon: Brain, label: "Coach de Performance", path: "/ai-performance-coach" },
       ]
     },
+
+    // Team Management (broker, admin, team_lead only)
+    ...(canSeeTeamFeatures
+      ? [{ icon: Users, label: "Equipa", path: "/team" }]
+      : []),
     
     // Settings
     { icon: CreditCard, label: "Subscrição", path: "/subscription" },

@@ -2,6 +2,7 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
 import type { CalendarEvent } from "@/types";
 import { syncEventToGoogle, deleteGoogleCalendarEvent } from "@/lib/googleCalendar";
+import { buildCalendarEventSignature } from "@/lib/calendarEventDedup";
 
 type DbCalendarEvent = Database["public"]["Tables"]["calendar_events"]["Row"];
 type CalendarEventInsert = Database["public"]["Tables"]["calendar_events"]["Insert"];
@@ -141,6 +142,68 @@ export const createCalendarEvent = async (event: CalendarEventInsert & { contact
   // Validate dates only if end_time is provided
   if (event.end_time && new Date(event.end_time) <= new Date(event.start_time)) {
     throw new Error("A data de fim deve ser posterior à data de início");
+  }
+
+  // ✅ DEDUPLICATION CHECK: Block duplicate events for same lead on same day
+  const { data: { user } } = await supabase.auth.getUser();
+  
+  if (!user) {
+    throw new Error("User not authenticated");
+  }
+
+  // Build signature for incoming event
+  const incomingSignature = buildCalendarEventSignature({
+    title: event.title,
+    lead_id: event.lead_id || null,
+    start_time: event.start_time,
+    end_time: event.end_time,
+  });
+
+  if (incomingSignature) {
+    // Extract date only from start_time for same-day query
+    const dateOnly = new Date(event.start_time).toISOString().split('T')[0];
+    const startOfDay = `${dateOnly}T00:00:00.000Z`;
+    const endOfDay = `${dateOnly}T23:59:59.999Z`;
+
+    // Query existing events on the same day
+    let query = supabase
+      .from("calendar_events")
+      .select("id, title, start_time, end_time, lead_id")
+      .eq("user_id", user.id)
+      .gte("start_time", startOfDay)
+      .lte("start_time", endOfDay);
+
+    // If lead_id is provided, filter by lead
+    if (event.lead_id) {
+      query = query.eq("lead_id", event.lead_id);
+    } else {
+      query = query.is("lead_id", null);
+    }
+
+    const { data: candidateMatches, error: duplicateError } = await query;
+
+    if (duplicateError) {
+      console.error("[calendarService] ❌ Error checking for duplicates:", duplicateError);
+      throw duplicateError;
+    }
+
+    // Check if any existing event has the same signature
+    const existingEvent = (candidateMatches || []).find((existing) => {
+      const existingSignature = buildCalendarEventSignature(existing);
+      return existingSignature === incomingSignature;
+    });
+
+    if (existingEvent) {
+      console.log("[calendarService] ⚠️ Duplicate event detected, skipping:", {
+        title: event.title,
+        lead_id: event.lead_id,
+        date: dateOnly,
+        existing_id: existingEvent.id
+      });
+      
+      // Return existing event instead of creating duplicate
+      return mapDbEventToFrontend(existingEvent as any);
+    }
   }
 
   // Create event in local database first

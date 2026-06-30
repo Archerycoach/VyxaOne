@@ -33,15 +33,6 @@ export interface LeadWithDetails extends Lead {
     email: string;
   };
   interaction_count?: number;
-  // Explicitly include fields that may not be in base Lead type yet
-  purchase_timeline?: string | null;
-  has_property_to_sell?: boolean | null;
-  buy_purpose?: string | null;
-  is_development?: boolean | null;
-  development_name?: string | null;
-  last_contact_outcome?: string | null;
-  buyer_status?: string | null;
-  seller_status?: string | null;
 }
 
 export type LeadWithContacts = LeadWithDetails;
@@ -68,7 +59,7 @@ const getTeamMemberIds = async (teamLeadId: string): Promise<string[]> => {
     .from("profiles")
     .select("id")
     .eq("team_lead_id", teamLeadId)
-    .eq("role", "agent");
+    .eq("role", "consultant");
 
   if (error) throw error;
   return (data || []).map(p => p.id);
@@ -170,10 +161,9 @@ export const getLeadById = getLead;
 // Create new lead
 export const createLead = async (lead: LeadInsert): Promise<Lead> => {
   console.log("[leadsService] createLead called with:", lead);
-  
   const { data, error } = await supabase
     .from("leads")
-    .insert(lead as any)
+    .insert(lead)
     .select()
     .single();
 
@@ -181,7 +171,7 @@ export const createLead = async (lead: LeadInsert): Promise<Lead> => {
     console.error("[leadsService] createLead error:", error);
     throw error;
   }
-  
+
   if (!data) {
     console.error("[leadsService] createLead failed: no data returned");
     throw new Error("Failed to create lead");
@@ -189,70 +179,51 @@ export const createLead = async (lead: LeadInsert): Promise<Lead> => {
 
   console.log("[leadsService] Lead created successfully:", data.id);
 
-  // Invalidar caches relacionados
-  CacheManager.invalidateLeadsRelated();
-  console.log("[leadsService] Cache invalidated");
-
-  // ✅ Process workflows automatically for new lead
-  try {
-    await processLeadWorkflows(data.id, "lead_created");
-    console.log("[leadsService] Workflows processed for new lead:", data.id);
-  } catch (workflowError) {
-    console.error("[leadsService] Error processing workflows:", workflowError);
-    // Don't throw - workflow errors shouldn't block lead creation
-  }
-
-  // ✅ Trigger AI Property Matcher automatically for buyers
-  if (data.lead_type === "buyer" || data.lead_type === "both") {
-    try {
-      const profile = await getCurrentUserProfile();
-      fetch("/api/gpt/agents/property-matcher", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ leadId: data.id, userId: data.user_id || profile.id })
-      }).catch(e => console.error("[leadsService] Async AI Property Matcher failed:", e));
-      console.log("[leadsService] Triggered AI Property Matcher for new lead");
-    } catch (aiError) {
-      console.error("[leadsService] Error triggering AI Property Matcher:", aiError);
-    }
-  }
-
-  // ✅ Trigger Notion Sync automatically and report back
-  try {
-    const profile = await getCurrentUserProfile();
-    // We don't block the return of the lead, we let it run in the background but await it in an IIFE to show toast
-    (async () => {
-      try {
-        const syncRes = await fetch("/api/notion/sync-lead", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ leadId: data.id, userId: data.user_id || profile.id })
-        });
-        
-        const { toast } = await import("@/hooks/use-toast");
-        
-        if (syncRes.ok) {
-          const syncData = await syncRes.json();
-          if (syncData.status === "success") {
-            toast({
-              title: "Sincronizado com o Notion",
-              description: "A nova Lead foi enviada para o Notion com sucesso.",
-            });
-          }
-        } else {
-          const errorData = await syncRes.json();
-          toast({
-            title: "Erro ao Sincronizar com Notion",
-            description: errorData.error || "A base de dados do Notion recusou a gravação.",
-            variant: "destructive"
+  // ✅ Run workflows via server-side unified engine (async, non-blocking)
+  const { data: { session } } = await supabase.auth.getSession();
+  if (session?.access_token) {
+    fetch("/api/leads/run-automations", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({
+        leadId: data.id,
+        triggerType: "lead_created",
+      }),
+    })
+      .then(async (res) => {
+        const result = await res.json();
+        if (!result.success && result.errors) {
+          console.error("[leadsService] Workflow errors:", result.errors);
+          // Create visible notification for errors
+          await supabase.from("notifications").insert({
+            user_id: session.user.id,
+            title: "⚠️ Falha em Automações",
+            message: `Algumas automações falharam para a lead ${data.name}: ${result.errors.join(", ")}`,
+            notification_type: "warning",
+            is_read: false,
+            related_entity_id: data.id,
+            related_entity_type: "lead",
           });
+        } else {
+          console.log("[leadsService] ✅ Workflows executed successfully");
         }
-      } catch (err) {
-        console.error("Notion sync failed:", err);
-      }
-    })();
-  } catch (syncError) {
-    console.error("[leadsService] Error triggering Notion sync:", syncError);
+      })
+      .catch((error) => {
+        console.error("[leadsService] Failed to trigger workflows:", error);
+        // Create visible notification for complete failure
+        supabase.from("notifications").insert({
+          user_id: session.user.id,
+          title: "❌ Erro em Automações",
+          message: `Falha ao executar automações para a lead ${data.name}: ${error.message}`,
+          notification_type: "error",
+          is_read: false,
+          related_entity_id: data.id,
+          related_entity_type: "lead",
+        });
+      });
   }
 
   return data as Lead;

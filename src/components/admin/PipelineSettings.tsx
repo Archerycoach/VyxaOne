@@ -209,36 +209,39 @@ export function PipelineSettings() {
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      // Save buyer stages
-      const { error: buyerError } = await supabase
-        .from("system_settings")
-        .upsert({
-          key: "pipeline_stages_buyers",
-          value: buyerStages as any,
-          updated_at: new Date().toISOString()
-        }, { onConflict: "key" });
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
 
-      if (buyerError) throw buyerError;
+      if (!token) {
+        throw new Error("Sessão inválida");
+      }
 
-      // Save seller stages
-      const { error: sellerError } = await supabase
-        .from("system_settings")
-        .upsert({
-          key: "pipeline_stages_sellers",
-          value: sellerStages as any,
-          updated_at: new Date().toISOString()
-        }, { onConflict: "key" });
+      const res = await fetch("/api/admin/system-settings", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          pipeline_stages_buyers: JSON.stringify(buyerStages),
+          pipeline_stages_sellers: JSON.stringify(sellerStages)
+        })
+      });
 
-      if (sellerError) throw sellerError;
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || "Erro ao guardar");
+      }
 
       toast({
         title: "✅ Configurações guardadas",
         description: "Os pipelines de compradores e vendedores foram atualizados.",
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error saving pipeline settings:", error);
       toast({
         title: "Erro ao guardar",
+        description: error.message || "Falha ao guardar configurações.",
         variant: "destructive",
       });
     } finally {

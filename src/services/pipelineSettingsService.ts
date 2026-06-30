@@ -59,25 +59,61 @@ export async function getSellerStages(): Promise<PipelineStage[]> {
 }
 
 export async function saveBuyerStages(stages: PipelineStage[]): Promise<void> {
-  const { error } = await supabase
-    .from("system_settings")
-    .upsert({
-      key: "pipeline_stages_buyers",
-      value: stages as any,
-      updated_at: new Date().toISOString()
-    }, { onConflict: "key" });
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
 
-  if (error) throw error;
+    if (!token) {
+      throw new Error("Sessão inválida");
+    }
+
+    const res = await fetch("/api/admin/system-settings", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        pipeline_stages_buyers: JSON.stringify(stages)
+      })
+    });
+
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error || "Erro ao guardar");
+    }
+  } catch (error: any) {
+    console.error("Error saving buyer stages:", error);
+    throw error;
+  }
 }
 
 export async function saveSellerStages(stages: PipelineStage[]): Promise<void> {
-  const { error } = await supabase
-    .from("system_settings")
-    .upsert({
-      key: "pipeline_stages_sellers",
-      value: stages as any,
-      updated_at: new Date().toISOString()
-    }, { onConflict: "key" });
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
 
-  if (error) throw error;
+    if (!token) {
+      throw new Error("Sessão inválida");
+    }
+
+    const res = await fetch("/api/admin/system-settings", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        pipeline_stages_sellers: JSON.stringify(stages)
+      })
+    });
+
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error || "Erro ao guardar");
+    }
+  } catch (error: any) {
+    console.error("Error saving seller stages:", error);
+    throw error;
+  }
 }
