@@ -1,5 +1,8 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import type { Database } from "@/integrations/supabase/database.types";
+
+type IntegrationSettingsInsert = Database["public"]["Tables"]["integration_settings"]["Insert"];
 
 // Função para censurar chaves visualmente
 const censorSecret = (secret?: string) => {
@@ -106,7 +109,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // sítios: nas colunas (fonte de verdade lida pelo código) e em settings
       // (para o ecrã de administração continuar a mostrar). Sem isto, guardar
       // pela interface não tinha efeito real na ligação ao Google.
-      const row: Record<string, any> = {
+      const row: IntegrationSettingsInsert = {
         integration_name,
         settings: newSettings,
         is_active,
