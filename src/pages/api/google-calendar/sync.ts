@@ -275,6 +275,10 @@ async function syncEventsToGoogle(
         try {
           console.log("[syncEventsToGoogle] Syncing event (attempt", 4 - retries, "/3):", event.title);
           
+          // Deterministic id makes creation idempotent: a repeated POST with the
+          // same id returns 409 (already exists) instead of creating a duplicate.
+          const googleEventId = deterministicGoogleEventId("vyxa", event.id);
+
           const googleEvent: GoogleCalendarEvent = {
             summary: event.title,
             description: event.description || "",
@@ -296,19 +300,23 @@ async function syncEventsToGoogle(
                 Authorization: `Bearer ${accessToken}`,
                 "Content-Type": "application/json",
               },
-              body: JSON.stringify(googleEvent),
+              body: JSON.stringify({ ...googleEvent, id: googleEventId }),
             }
           );
 
-          if (response.ok) {
-            const createdEvent = await response.json();
-            console.log("[syncEventsToGoogle] ✅ Created in Google, ID:", createdEvent.id);
+          // 409 = event with this id already exists in Google → not an error,
+          // it means a previous attempt/run already created it. Treat as success.
+          if (response.ok || response.status === 409) {
+            const resolvedId = response.ok
+              ? (await response.json()).id
+              : googleEventId;
+            console.log("[syncEventsToGoogle] ✅ Synced in Google, ID:", resolvedId);
             
             // Update local event with Google event ID
             await supabaseAdmin
               .from("calendar_events")
               .update({ 
-                google_event_id: createdEvent.id,
+                google_event_id: resolvedId,
                 is_synced: true 
               })
               .eq("id", event.id);
@@ -346,6 +354,17 @@ async function syncEventsToGoogle(
     console.error("[syncEventsToGoogle] ❌ Fatal error:", error);
     return 0; 
   }
+}
+
+/**
+ * Builds a deterministic Google Calendar event id from a local record id.
+ * Google requires ids to be base32hex (chars a-v and 0-9), 5-1024 chars.
+ * A UUID's hex digits (0-9, a-f) are all valid base32hex characters, so we
+ * strip the dashes and prefix it. Using the SAME id every time makes the
+ * "create" call idempotent: re-creating returns HTTP 409 instead of a duplicate.
+ */
+function deterministicGoogleEventId(prefix: string, localId: string): string {
+  return `${prefix}${localId.replace(/[^a-v0-9]/gi, "").toLowerCase()}`;
 }
 
 /**
@@ -387,6 +406,9 @@ async function syncTasksToGoogle(
           const dueDate = new Date(task.due_date!);
           const endDate = new Date(dueDate.getTime() + 60 * 60 * 1000); // 1 hour duration
 
+          // Deterministic id makes creation idempotent (see events sync above).
+          const googleEventId = deterministicGoogleEventId("vyxatask", task.id);
+
           const googleEvent: GoogleCalendarEvent = {
             summary: `[Tarefa] ${task.title}`,
             description: task.description || "",
@@ -408,19 +430,22 @@ async function syncTasksToGoogle(
                 Authorization: `Bearer ${accessToken}`,
                 "Content-Type": "application/json",
               },
-              body: JSON.stringify(googleEvent),
+              body: JSON.stringify({ ...googleEvent, id: googleEventId }),
             }
           );
 
-          if (response.ok) {
-            const createdEvent = await response.json();
-            console.log("[syncTasksToGoogle] ✅ Created in Google, ID:", createdEvent.id);
+          // 409 = already exists in Google → treat as success (no duplicate).
+          if (response.ok || response.status === 409) {
+            const resolvedId = response.ok
+              ? (await response.json()).id
+              : googleEventId;
+            console.log("[syncTasksToGoogle] ✅ Synced in Google, ID:", resolvedId);
             
             // Update local task with Google event ID
             await supabaseAdmin
               .from("tasks")
               .update({ 
-                google_event_id: createdEvent.id,
+                google_event_id: resolvedId,
                 is_synced: true 
               })
               .eq("id", task.id);
