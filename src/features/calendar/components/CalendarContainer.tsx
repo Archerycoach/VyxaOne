@@ -32,6 +32,58 @@ export function CalendarContainer() {
     disconnectGoogle,
   } = useGoogleCalendarSync();
 
+  // --- Sincronização automática (auto_sync) ---
+  // Estado partilhado com o CalendarHeader (o interruptor) e usado para decidir
+  // se a sincronização automática (polling de 5 min) deve ou não correr.
+  const [autoSyncEnabled, setAutoSyncEnabled] = useState<boolean | null>(null);
+
+  const loadAutoSync = React.useCallback(async () => {
+    try {
+      const { supabase } = await import("@/integrations/supabase/client");
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      const res = await fetch("/api/google-calendar/auto-sync", {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      setAutoSyncEnabled(!!data.autoSync);
+    } catch {
+      /* silencioso: se falhar, não mostramos o interruptor */
+    }
+  }, []);
+
+  const handleToggleAutoSync = async (next: boolean) => {
+    const previous = autoSyncEnabled;
+    setAutoSyncEnabled(next); // atualização otimista
+    try {
+      const { supabase } = await import("@/integrations/supabase/client");
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("sem sessão");
+      const res = await fetch("/api/google-calendar/auto-sync", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ enabled: next }),
+      });
+      if (!res.ok) throw new Error("falha ao guardar");
+      const data = await res.json();
+      setAutoSyncEnabled(!!data.autoSync);
+      toast({
+        title: next ? "Sincronização automática ativada" : "Sincronização automática desativada",
+        duration: 2500,
+      });
+    } catch {
+      setAutoSyncEnabled(previous ?? false); // reverte em caso de erro
+      toast({
+        title: "Não foi possível alterar a sincronização automática",
+        variant: "destructive",
+      });
+    }
+  };
+
   // Hooks for filters and navigation
   const {
     viewMode,
@@ -86,6 +138,15 @@ export function CalendarContainer() {
   useEffect(() => {
     checkConnection();
   }, [checkConnection]);
+
+  // Carregar o estado da sincronização automática quando liga/desliga
+  useEffect(() => {
+    if (isConnected) {
+      loadAutoSync();
+    } else {
+      setAutoSyncEnabled(null);
+    }
+  }, [isConnected, loadAutoSync]);
 
   // Handle successful Google connection and auto-sync
   useEffect(() => {
@@ -151,6 +212,13 @@ export function CalendarContainer() {
       return;
     }
 
+    // Respeitar a definição do utilizador: só faz polling se a sincronização
+    // automática estiver ligada. (null = ainda a carregar -> não arranca.)
+    if (autoSyncEnabled !== true) {
+      console.log("[CalendarContainer] Sincronização automática desligada, sem polling");
+      return;
+    }
+
     console.log("[CalendarContainer] 🔄 Setting up automatic sync (every 5 minutes)");
 
     // Setup polling with callback to refresh data
@@ -176,7 +244,7 @@ export function CalendarContainer() {
       console.log("[CalendarContainer] 🛑 Cleaning up automatic sync");
       cleanup();
     };
-  }, [isConnected, refetchEvents, refetchTasks, toast]);
+  }, [isConnected, autoSyncEnabled, refetchEvents, refetchTasks, toast]);
 
   // Helpers
   const formatDate = (date: Date) => {
@@ -576,6 +644,8 @@ export function CalendarContainer() {
         onGoogleConnect={connectGoogle}
         onGoogleSync={syncWithGoogle}
         onGoogleDisconnect={disconnectGoogle}
+        autoSyncEnabled={autoSyncEnabled}
+        onToggleAutoSync={handleToggleAutoSync}
       />
 
       <CalendarGrid

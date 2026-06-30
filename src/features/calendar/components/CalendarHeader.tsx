@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight, Plus, Calendar as CalendarIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 
 interface CalendarHeaderProps {
   viewMode: "day" | "week" | "month";
@@ -17,6 +18,9 @@ interface CalendarHeaderProps {
   onGoogleDisconnect: () => void;
   onRefreshEvents?: () => void;
   onRefreshTasks?: () => void;
+  // Sincronização automática (estado gerido pelo container)
+  autoSyncEnabled?: boolean | null;
+  onToggleAutoSync?: (next: boolean) => void;
 }
 
 export function CalendarHeader({
@@ -34,6 +38,8 @@ export function CalendarHeader({
   onGoogleDisconnect,
   onRefreshEvents,
   onRefreshTasks,
+  autoSyncEnabled,
+  onToggleAutoSync,
 }: CalendarHeaderProps) {
   const handleSync = async () => {
     await onGoogleSync();
@@ -82,14 +88,14 @@ export function CalendarHeader({
         </div>
       </div>
 
-      <div className="flex gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Button onClick={onNewEvent}>
           <Plus className="mr-2 h-4 w-4" />
           Novo Evento
         </Button>
 
         {googleConfigured && (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {googleConnected ? (
               <>
                 <Button
@@ -100,6 +106,19 @@ export function CalendarHeader({
                   <CalendarIcon className="mr-2 h-4 w-4" />
                   {isSyncing ? "A sincronizar..." : "Sincronizar"}
                 </Button>
+
+                {/* Interruptor de sincronização automática */}
+                {autoSyncEnabled !== null && autoSyncEnabled !== undefined && onToggleAutoSync && (
+                  <label className="flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm">
+                    <Switch
+                      checked={autoSyncEnabled}
+                      onCheckedChange={onToggleAutoSync}
+                      aria-label="Sincronização automática"
+                    />
+                    <span className="text-muted-foreground">Sync automática</span>
+                  </label>
+                )}
+
                 <Button
                   variant="ghost"
                   size="sm"
