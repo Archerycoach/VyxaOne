@@ -70,9 +70,11 @@ export default async function handler(
 
     const { to, subject, html, text, cc, bcc, attachments, sendCopyToSender } = req.body;
     const { leadId, contactId } = req.body;
-    // Por defeito o endpoint acrescenta a assinatura das definições. Os
-    // chamadores que já incluem a assinatura no corpo (ex.: ecrãs com
-    // pré-visualização) passam appendSignature: false.
+    // Por defeito o endpoint acrescenta a assinatura das definições — fonte
+    // única, usada por todos os canais (Email IA, mensagens em massa,
+    // automações, crons, property-matcher). Nenhum chamador deve embutir a
+    // assinatura no corpo; se algum caso excecional precisar de o fazer, pode
+    // passar appendSignature: false para evitar duplicação.
     const shouldAppendSignature = req.body.appendSignature !== false;
 
     if (!to || !subject || (!html && !text)) {

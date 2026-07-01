@@ -63,6 +63,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
+import { collapseEmptyBlocks } from "@/lib/emailSignatureFormat";
 
 interface LeadDetailsDialogProps {
   leadId: string | null;
@@ -90,6 +91,7 @@ export function LeadDetailsDialog({
   const [generatedDraft, setGeneratedDraft] = useState<{text: string, channel: 'whatsapp'|'email'} | null>(null);
   const [draftVariants, setDraftVariants] = useState<Array<{tone: string; text: string}> | null>(null);
   const [selectedVariantIndex, setSelectedVariantIndex] = useState<number>(0);
+  const [emailSubject, setEmailSubject] = useState<string>("");
   const [emailAttachments, setEmailAttachments] = useState<Array<{name: string, content: string, encoding: string}>>([]);
   const [isSending, setIsSending] = useState(false);
   const [newNoteText, setNewNoteText] = useState("");
@@ -264,6 +266,59 @@ export function LeadDetailsDialog({
     return typeMap[type || ""] || "-";
   };
 
+  // Constrói o HTML da assinatura para pré-visualização. A assinatura
+  // (email_signature_text) já é HTML feito no editor de assinatura, por isso
+  // é usada TAL COMO ESTÁ, sem transformações — só sem parágrafos vazios que
+  // criam espaço em branco antes da fotografia. Esta pré-visualização é só
+  // para o utilizador ver; a assinatura real é sempre acrescentada pelo
+  // servidor no momento do envio (fonte única, sem duplicação).
+  const buildSignatureHtml = (): string => {
+    if (!userSignature.text && !userSignature.image) return "";
+    let html = '<div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #eaeaea;">';
+    if (userSignature.text) {
+      html += collapseEmptyBlocks(userSignature.text);
+    }
+    if (userSignature.image) {
+      html += `<br><img src="${userSignature.image}" alt="Assinatura" style="max-width: 250px; height: auto;" />`;
+    }
+    html += "</div>";
+    return html;
+  };
+
+  // Separa a linha "Assunto:" (primeira linha útil) do corpo do texto gerado
+  // pela IA. Se não existir, o assunto fica vazio e o corpo é devolvido intacto.
+  const splitSubjectFromText = (raw: string): { subject: string; body: string } => {
+    const lines = raw.split(/\r?\n/);
+    let subject = "";
+    let bodyStart = 0;
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].trim() === "") continue;
+      const match = lines[i].match(/^\s*Assunto\s*:\s*(.*)$/i);
+      if (match) {
+        subject = match[1].trim();
+        bodyStart = i + 1;
+      }
+      break;
+    }
+    const body = lines.slice(bodyStart).join("\n").replace(/^\s+/, "");
+    return { subject, body };
+  };
+
+  // Converte o texto simples da IA (parágrafos separados por linhas em branco)
+  // em HTML com parágrafos limpos. Evita o espaçamento excessivo que resultava
+  // de transformar cada "\n" em "<br>" (linhas em branco viravam <br><br> e o
+  // editor amplificava-as em parágrafos vazios).
+  const plainTextToHtml = (raw: string): string => {
+    const trimmed = (raw || "").trim();
+    if (!trimmed) return "";
+    return trimmed
+      .split(/\n\s*\n+/)
+      .map((paragraph) => paragraph.trim())
+      .filter((paragraph) => paragraph.length > 0)
+      .map((paragraph) => `<p>${paragraph.replace(/\n/g, "<br>")}</p>`)
+      .join("");
+  };
+
   const handleGenerateDraft = async (channel: 'email' | 'whatsapp') => {
     if (!leadId) return;
     setDrafting(channel);
@@ -311,17 +366,9 @@ export function LeadDetailsDialog({
         
         let initialText = data.variants[0].text;
         if (channel === 'email') {
-          initialText = initialText.replace(/\n/g, "<br>");
-          if (userSignature.text || userSignature.image) {
-            initialText += '<br><br><div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #eaeaea;">';
-            if (userSignature.text) {
-              initialText += `<div style="color: #666; font-size: 14px;">${userSignature.text.replace(/\n/g, '<br>')}</div>`;
-            }
-            if (userSignature.image) {
-              initialText += `<br><img src="${userSignature.image}" alt="Assinatura" style="max-width: 250px; height: auto;" />`;
-            }
-            initialText += '</div>';
-          }
+          const { subject, body } = splitSubjectFromText(initialText);
+          setEmailSubject(subject);
+          initialText = plainTextToHtml(body);
         }
         
         setGeneratedDraft({ text: initialText, channel });
@@ -329,17 +376,9 @@ export function LeadDetailsDialog({
         // Fallback to old single draft format
         let initialText = data.draft;
         if (channel === 'email') {
-          initialText = initialText.replace(/\n/g, "<br>");
-          if (userSignature.text || userSignature.image) {
-            initialText += '<br><br><div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #eaeaea;">';
-            if (userSignature.text) {
-              initialText += `<div style="color: #666; font-size: 14px;">${userSignature.text.replace(/\n/g, '<br>')}</div>`;
-            }
-            if (userSignature.image) {
-              initialText += `<br><img src="${userSignature.image}" alt="Assinatura" style="max-width: 250px; height: auto;" />`;
-            }
-            initialText += '</div>';
-          }
+          const { subject, body } = splitSubjectFromText(initialText);
+          setEmailSubject(subject);
+          initialText = plainTextToHtml(body);
         }
         
         setGeneratedDraft({ text: initialText, channel });
@@ -1258,9 +1297,10 @@ export function LeadDetailsDialog({
         setGeneratedDraft(null);
         setDraftVariants(null);
         setSelectedVariantIndex(0);
+        setEmailSubject("");
       }
     }}>
-      <DialogContent className="sm:max-w-[600px] z-[100]">
+      <DialogContent className="sm:max-w-[600px] z-[100] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Rever Mensagem ({generatedDraft?.channel === 'whatsapp' ? 'WhatsApp' : 'E-mail'})</DialogTitle>
         </DialogHeader>
@@ -1279,17 +1319,9 @@ export function LeadDetailsDialog({
                       setSelectedVariantIndex(index);
                       let text = variant.text;
                       if (generatedDraft?.channel === 'email') {
-                        text = text.replace(/\n/g, "<br>");
-                        if (userSignature.text || userSignature.image) {
-                          text += '<br><br><div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #eaeaea;">';
-                          if (userSignature.text) {
-                            text += `<div style="color: #666; font-size: 14px;">${userSignature.text.replace(/\n/g, '<br>')}</div>`;
-                          }
-                          if (userSignature.image) {
-                            text += `<br><img src="${userSignature.image}" alt="Assinatura" style="max-width: 250px; height: auto;" />`;
-                          }
-                          text += '</div>';
-                        }
+                        const { subject, body } = splitSubjectFromText(variant.text);
+                        setEmailSubject(subject);
+                        text = plainTextToHtml(body);
                       }
                       setGeneratedDraft(prev => prev ? {...prev, text} : null);
                     }}
@@ -1304,6 +1336,18 @@ export function LeadDetailsDialog({
             </div>
           )}
           
+          {generatedDraft?.channel === 'email' && (
+            <div className="space-y-1">
+              <Label htmlFor="email-subject" className="text-sm font-medium">Assunto</Label>
+              <Input
+                id="email-subject"
+                value={emailSubject}
+                onChange={(e) => setEmailSubject(e.target.value)}
+                placeholder="Assunto do e-mail"
+              />
+            </div>
+          )}
+
           {generatedDraft?.channel === 'email' ? (
             <div className="border rounded-md overflow-hidden">
               <RichTextEditor 
@@ -1326,24 +1370,14 @@ export function LeadDetailsDialog({
           {generatedDraft?.channel === 'email' && (
             <div className="space-y-4 mt-4 border-t pt-4">
               {(userSignature.text || userSignature.image) && (
-                <div className="flex justify-end">
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    onClick={() => {
-                      let sigHtml = '<br><br><div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #eaeaea;">';
-                      if (userSignature.text) {
-                        sigHtml += `<div style="color: #666; font-size: 14px;">${userSignature.text.replace(/\n/g, '<br>')}</div>`;
-                      }
-                      if (userSignature.image) {
-                        sigHtml += `<br><img src="${userSignature.image}" alt="Assinatura" style="max-width: 250px; height: auto;" />`;
-                      }
-                      sigHtml += '</div>';
-                      setGeneratedDraft(prev => prev ? {...prev, text: prev.text + sigHtml} : null);
-                    }}
-                  >
-                    Inserir Assinatura no Editor
-                  </Button>
+                <div className="rounded-md border bg-gray-50 p-3">
+                  <p className="text-xs font-medium text-gray-500 mb-2">
+                    A sua assinatura será adicionada automaticamente ao enviar:
+                  </p>
+                  <div
+                    className="text-sm prose prose-sm max-w-none pointer-events-none select-none opacity-90"
+                    dangerouslySetInnerHTML={{ __html: buildSignatureHtml() }}
+                  />
                 </div>
               )}
 
@@ -1404,7 +1438,7 @@ export function LeadDetailsDialog({
           )}
         </div>
         <DialogFooter>
-          <Button variant="outline" disabled={isSending} onClick={() => { setGeneratedDraft(null); setEmailAttachments([]); }}>Cancelar</Button>
+          <Button variant="outline" disabled={isSending} onClick={() => { setGeneratedDraft(null); setEmailAttachments([]); setEmailSubject(""); }}>Cancelar</Button>
           <Button disabled={isSending} onClick={async () => {
             if (!generatedDraft) return;
             if (generatedDraft.channel === 'whatsapp') {
@@ -1425,21 +1459,14 @@ export function LeadDetailsDialog({
               try {
                 setIsSending(true);
                 
-                // Extract subject properly from HTML
-                const tempDiv = document.createElement("div");
-                tempDiv.innerHTML = generatedDraft.text;
-                const plainText = tempDiv.textContent || tempDiv.innerText || "";
-                const subjectMatch = plainText.match(/^Assunto:\s*(.*)/mi);
-                let subject = subjectMatch ? subjectMatch[1].trim() : "Follow-up";
+                // O assunto vem do campo dedicado acima da mensagem.
+                let subject = (emailSubject || "Follow-up").trim();
+                subject = subject.replace(/\{empreendimento\}/g, lead.development_name || "").replace(/<[^>]*>?/gm, '').trim() || "Follow-up";
                 
-                let body = generatedDraft.text.replace(/<p>\s*Assunto:.*?<\/p>/i, "").replace(/Assunto:.*?<br>/i, "").trim();
-                
-                // Replace variables
-                subject = subject.replace(/\{empreendimento\}/g, lead.development_name || "").replace(/<[^>]*>?/gm, '');
-                body = body.replace(/\{empreendimento\}/g, lead.development_name || "");
-                
-                // Content is already HTML from RichTextEditor
-                const htmlBody = body;
+                // O corpo já é HTML do editor. A assinatura é acrescentada
+                // pelo servidor no momento do envio (fonte única — a mesma
+                // usada nas automações), por isso não a embutimos aqui.
+                const htmlBody = generatedDraft.text.replace(/\{empreendimento\}/g, lead.development_name || "");
                 
                 const { data: { session } } = await supabase.auth.getSession();
                 
@@ -1471,6 +1498,7 @@ export function LeadDetailsDialog({
                 toast({ title: "E-mail Enviado!", description: "O seu e-mail e anexos foram enviados com sucesso." });
                 setGeneratedDraft(null);
                 setEmailAttachments([]);
+                setEmailSubject("");
               } catch (err: any) {
                 toast({ title: "Erro de Envio", description: err.message, variant: "destructive" });
               } finally {
