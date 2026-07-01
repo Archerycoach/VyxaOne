@@ -1,7 +1,7 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { runAI } from "@/lib/ai/provider";
-import { getLeadDraftMessagePrompt } from "@/lib/ai/prompts/leadDraftMessage";
+import { getLeadDraftMessagePrompt, stripAiClosing } from "@/lib/ai/prompts/leadDraftMessage";
 import { getLeadContext } from "@/lib/ai/embeddings";
 
 // Temporary type until lead_notes is added to database.types.ts
@@ -118,11 +118,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     if (variants.length < 3) {
       console.warn("IA não retornou 3 variantes completas. Retornando texto cru.");
+      const fallbackText = stripAiClosing(generatedText);
       return res.status(200).json({ 
         success: true, 
-        draft: generatedText, // Fallback para compatibilidade com versão antiga
+        draft: fallbackText, // Fallback para compatibilidade com versão antiga
         variants: [
-          { tone: "formal", text: generatedText },
+          { tone: "formal", text: fallbackText },
         ]
       });
     }
@@ -151,21 +152,21 @@ function parseVariants(text: string): Array<{ tone: string; text: string }> {
   if (variant1Match) {
     variants.push({
       tone: "formal",
-      text: variant1Match[1].trim(),
+      text: stripAiClosing(variant1Match[1].trim()),
     });
   }
 
   if (variant2Match) {
     variants.push({
       tone: "próximo",
-      text: variant2Match[1].trim(),
+      text: stripAiClosing(variant2Match[1].trim()),
     });
   }
 
   if (variant3Match) {
     variants.push({
       tone: "direto",
-      text: variant3Match[1].trim(),
+      text: stripAiClosing(variant3Match[1].trim()),
     });
   }
 
