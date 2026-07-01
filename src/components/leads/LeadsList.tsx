@@ -38,6 +38,7 @@ import { convertLeadToContact } from "@/services/contactsService";
 import { createInteraction, getInteractionsByLead } from "@/services/interactionsService";
 import type { InteractionWithDetails } from "@/services/interactionsService";
 import { getLeadRecentInteractionState } from "@/lib/leadInteractionHighlight";
+import { getLeadQualification } from "@/lib/leadQualification";
 import { useToast } from "@/hooks/use-toast";
 import { getUserProfile, getUsersForAssignment } from "@/services/profileService";
 import { QuickTaskDialog } from "@/components/QuickTaskDialog";
@@ -684,13 +685,26 @@ export function LeadsList({ leads, onEdit, onDelete, isLoading, onRefresh, onVie
                   )}
                 </h3>
 
-                <div className="flex gap-2 mb-4">
+                <div className="flex gap-2 mb-4 flex-wrap items-center">
                   <Badge variant="outline" className={getTypeColor(lead.lead_type)}>
                     {getTypeLabel(lead.lead_type)}
                   </Badge>
                   <Badge variant="outline" className={getStatusColor(lead.status)}>
                     {getStatusLabel(lead.status)}
                   </Badge>
+                  {(() => {
+                    const qualification = getLeadQualification(lead);
+                    if (qualification.missing.length === 0) return null;
+                    return (
+                      <Badge
+                        variant="outline"
+                        className="bg-amber-50 text-amber-700 border-amber-200 text-[10px] font-semibold"
+                        title={qualification.missing.map((m) => m.label).join(", ")}
+                      >
+                        {qualification.missing.length} {qualification.missing.length === 1 ? "dado em falta" : "dados em falta"}
+                      </Badge>
+                    );
+                  })()}
                 </div>
 
                 <div className="space-y-3 mb-4 text-sm text-gray-600">
