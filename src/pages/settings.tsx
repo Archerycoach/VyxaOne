@@ -291,7 +291,7 @@ export default function Settings() {
   };
 
   const handleReactivationToggle = async (checked: boolean) => {
-    if (!profile || !user) return;
+    if (!profile?.id) return;
     setSavingReactivationToggle(true);
     try {
       // NOTA: "reactivation_automation_enabled" só existe em profiles depois
@@ -304,7 +304,7 @@ export default function Settings() {
       const { error } = await (supabase
         .from("profiles" as any)
         .update({ reactivation_automation_enabled: checked })
-        .eq("id", user.id) as any);
+        .eq("id", profile.id) as any);
 
       if (error) throw error;
 
