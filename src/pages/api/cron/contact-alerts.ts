@@ -1,7 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { createClient } from "@supabase/supabase-js";
-import nodemailer from "nodemailer";
-import { appendSignature } from "@/lib/server/emailSignature";
+import { sendClientEmail } from "@/lib/server/sendClientEmail";
 import {
   isRecentOpportunity,
   scoreDevelopmentAgainstRequest,
@@ -121,23 +120,6 @@ async function maybeSendMatchEmail(
   if (!request.auto_send_email || !entity.email) return;
 
   try {
-    const { data: smtpSettings } = await (supabase
-      .from("user_smtp_settings" as any)
-      .select("*")
-      .eq("user_id", request.user_id)
-      .eq("is_active", true)
-      .single() as any);
-
-    if (!smtpSettings) return;
-
-    const transporter = nodemailer.createTransport({
-      host: smtpSettings.smtp_host,
-      port: smtpSettings.smtp_port,
-      secure: smtpSettings.smtp_secure,
-      auth: { user: smtpSettings.smtp_username, pass: smtpSettings.smtp_password },
-      tls: { rejectUnauthorized: smtpSettings.reject_unauthorized ?? true },
-    });
-
     let subject = request.email_subject || "Nova Oportunidade Encontrada";
     let body = request.email_body || "Encontrámos uma nova oportunidade que corresponde ao seu pedido.";
 
@@ -150,21 +132,25 @@ async function maybeSendMatchEmail(
     subject = replacer(subject);
     body = replacer(body);
 
-    const mailOptions: any = {
-      from: `"${smtpSettings.from_name}" <${smtpSettings.from_email}>`,
-      to: entity.email,
-      subject,
-      html: await appendSignature(body.replace(/\n/g, "<br>"), supabase, request.user_id)
-    };
-
+    let cc: string | undefined;
     if (request.send_cc) {
       const { data: userProfile } = await supabase.from("profiles").select("email").eq("id", request.user_id).single();
       if (userProfile?.email) {
-        mailOptions.cc = userProfile.email;
+        cc = userProfile.email;
       }
     }
 
-    await transporter.sendMail(mailOptions);
+    await sendClientEmail({
+      supabaseAdmin: supabase,
+      userId: request.user_id,
+      leadId: request.lead_id || null,
+      leadName: entity.name,
+      source: "contact_alerts",
+      to: entity.email,
+      cc,
+      subject,
+      html: body.replace(/\s+$/, "").replace(/\n/g, "<br>"),
+    });
   } catch (error) {
     console.error("Failed to send auto match email from cron:", error);
   }

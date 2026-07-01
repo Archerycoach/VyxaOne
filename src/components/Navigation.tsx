@@ -143,6 +143,7 @@ export function Navigation() {
       label: "Ferramentas", 
       subItems: [
         { icon: Send, label: "Mensagens", path: "/bulk-messages" },
+        { icon: Mail, label: "Emails Automáticos", path: "/automated-emails" },
         { icon: Calculator, label: "Financiamento", path: "/financing" },
         { icon: FolderOpen, label: "Documentos", path: "/documents" },
       ]

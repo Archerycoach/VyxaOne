@@ -12,6 +12,11 @@ export interface SMTPSettings {
   from_name?: string;
   is_active: boolean;
   reject_unauthorized?: boolean;
+  /** Opcional: gravar uma cópia de cada email enviado na pasta "Sent" desta caixa via IMAP. */
+  imap_host?: string | null;
+  imap_port?: number;
+  imap_secure?: boolean;
+  imap_sent_folder?: string;
 }
 
 export interface EmailData {

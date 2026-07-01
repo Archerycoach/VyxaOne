@@ -43,6 +43,10 @@ export function SMTPSettingsDialog({ open, onOpenChange }: SMTPSettingsDialogPro
     from_name: "",
     is_active: true,
     reject_unauthorized: true,
+    imap_host: "",
+    imap_port: 993,
+    imap_secure: true,
+    imap_sent_folder: "Sent",
   });
 
   useEffect(() => {
@@ -66,6 +70,10 @@ export function SMTPSettingsDialog({ open, onOpenChange }: SMTPSettingsDialogPro
           from_name: data.from_name || "",
           is_active: data.is_active,
           reject_unauthorized: data.reject_unauthorized ?? true,
+          imap_host: data.imap_host || "",
+          imap_port: data.imap_port ?? 993,
+          imap_secure: data.imap_secure ?? true,
+          imap_sent_folder: data.imap_sent_folder || "Sent",
         });
       }
     } catch (error) {
@@ -186,6 +194,10 @@ export function SMTPSettingsDialog({ open, onOpenChange }: SMTPSettingsDialogPro
         from_email: "",
         from_name: "",
         is_active: true,
+        imap_host: "",
+        imap_port: 993,
+        imap_secure: true,
+        imap_sent_folder: "Sent",
       });
 
       onOpenChange(false);
@@ -358,6 +370,70 @@ export function SMTPSettingsDialog({ open, onOpenChange }: SMTPSettingsDialogPro
                     onChange={(e) => setSettings({ ...settings, from_name: e.target.value })}
                   />
                 </div>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <Server className="h-4 w-4" />
+                Cópia na pasta "Enviados" (IMAP) — opcional
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Se preencher, cada email enviado pela aplicação fica também gravado na pasta de
+                enviados da sua caixa de correio, tal como se o tivesse enviado a partir do seu
+                próprio email. Usa o mesmo utilizador e password definidos acima. Se deixar o
+                servidor em branco, esta cópia não é feita (o email continua a ser enviado
+                normalmente).
+              </p>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="imap_host">Servidor IMAP</Label>
+                  <Input
+                    id="imap_host"
+                    placeholder="imap.gmail.com"
+                    value={settings.imap_host || ""}
+                    onChange={(e) => setSettings({ ...settings, imap_host: e.target.value })}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="imap_port">Porta</Label>
+                  <Input
+                    id="imap_port"
+                    type="number"
+                    placeholder="993"
+                    value={settings.imap_port ?? 993}
+                    onChange={(e) => setSettings({ ...settings, imap_port: parseInt(e.target.value) || 993 })}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="imap_sent_folder">Nome da pasta de enviados</Label>
+                <Input
+                  id="imap_sent_folder"
+                  placeholder="Sent"
+                  value={settings.imap_sent_folder || ""}
+                  onChange={(e) => setSettings({ ...settings, imap_sent_folder: e.target.value })}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Varia por fornecedor: <code className="bg-gray-100 px-1 rounded">Sent</code> (genérico),{" "}
+                  <code className="bg-gray-100 px-1 rounded">Sent Items</code> (Outlook/Exchange),{" "}
+                  <code className="bg-gray-100 px-1 rounded">[Gmail]/Sent Mail</code> (Gmail).
+                </p>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="imap_secure"
+                  checked={settings.imap_secure ?? true}
+                  onCheckedChange={(checked) => setSettings({ ...settings, imap_secure: checked })}
+                />
+                <Label htmlFor="imap_secure" className="flex items-center gap-2">
+                  <Shield className="h-4 w-4" />
+                  Usar SSL/TLS (porta 993)
+                </Label>
               </div>
             </div>
 
