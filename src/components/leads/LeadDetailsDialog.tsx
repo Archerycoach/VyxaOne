@@ -87,7 +87,7 @@ export function LeadDetailsDialog({
   const [propertyFormOpen, setPropertyFormOpen] = useState(false);
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
   const [drafting, setDrafting] = useState<string | null>(null);
-  const [generatedDraft, setGeneratedDraft] = useState<{text: string, channel: 'whatsapp'|'email'} | null>(null);
+  const [generatedDraft, setGeneratedDraft] = useState<{text: string, channel: 'whatsapp'|'email', subject: string} | null>(null);
   const [draftVariants, setDraftVariants] = useState<Array<{tone: string; text: string}> | null>(null);
   const [selectedVariantIndex, setSelectedVariantIndex] = useState<number>(0);
   const [emailAttachments, setEmailAttachments] = useState<Array<{name: string, content: string, encoding: string}>>([]);
@@ -264,6 +264,42 @@ export function LeadDetailsDialog({
     return typeMap[type || ""] || "-";
   };
 
+  // Separa o "Assunto:" do corpo e constrói o HTML do email (corpo + assinatura).
+  // O assunto passa a ser guardado à parte (campo próprio), nunca no corpo.
+  const buildEmailDraft = (rawText: string): { subject: string; text: string } => {
+    const lines = rawText.split(/\r?\n/);
+    let subject = "Follow-up";
+    const subjectLineIndex = lines.findIndex((l) => /^\s*Assunto:\s*/i.test(l));
+    if (subjectLineIndex !== -1) {
+      subject = lines[subjectLineIndex].replace(/^\s*Assunto:\s*/i, "").trim() || "Follow-up";
+      lines.splice(subjectLineIndex, 1);
+    }
+    const body = lines.join("\n").replace(/^\s+/, "").trim();
+
+    // Converter o corpo em parágrafos: cada bloco separado por linha(s) em branco
+    // vira um <p> com margem FIXA (0 em cima, 1em em baixo). As quebras simples
+    // dentro do mesmo bloco viram <br>. A margem explícita impede que o Outlook e
+    // o Gmail acrescentem espaçamento próprio (a causa do "espaço a dobrar").
+    const paragraphs = body
+      .split(/\n\s*\n/)                    // separar por linha(s) em branco
+      .map((p) => p.trim())
+      .filter((p) => p.length > 0)
+      .map((p) => `<p style="margin:0 0 1em 0;">${p.replace(/\n/g, "<br>")}</p>`);
+    let html = paragraphs.join("");
+
+    if (userSignature.text || userSignature.image) {
+      html += '<div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #eaeaea;">';
+      if (userSignature.text) {
+        html += `<div style="color: #666; font-size: 14px;">${userSignature.text.replace(/\n/g, "<br>")}</div>`;
+      }
+      if (userSignature.image) {
+        html += `<br><img src="${userSignature.image}" alt="Assinatura" style="max-width: 250px; height: auto;" />`;
+      }
+      html += "</div>";
+    }
+    return { subject, text: html };
+  };
+
   const handleGenerateDraft = async (channel: 'email' | 'whatsapp') => {
     if (!leadId) return;
     setDrafting(channel);
@@ -308,41 +344,21 @@ export function LeadDetailsDialog({
       if (data.variants && Array.isArray(data.variants) && data.variants.length > 0) {
         setDraftVariants(data.variants);
         setSelectedVariantIndex(0);
-        
-        let initialText = data.variants[0].text;
+
         if (channel === 'email') {
-          initialText = initialText.replace(/\n/g, "<br>");
-          if (userSignature.text || userSignature.image) {
-            initialText += '<br><br><div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #eaeaea;">';
-            if (userSignature.text) {
-              initialText += `<div style="color: #666; font-size: 14px;">${userSignature.text.replace(/\n/g, '<br>')}</div>`;
-            }
-            if (userSignature.image) {
-              initialText += `<br><img src="${userSignature.image}" alt="Assinatura" style="max-width: 250px; height: auto;" />`;
-            }
-            initialText += '</div>';
-          }
+          const { subject, text } = buildEmailDraft(data.variants[0].text);
+          setGeneratedDraft({ text, channel, subject });
+        } else {
+          setGeneratedDraft({ text: data.variants[0].text, channel, subject: "" });
         }
-        
-        setGeneratedDraft({ text: initialText, channel });
       } else {
         // Fallback to old single draft format
-        let initialText = data.draft;
         if (channel === 'email') {
-          initialText = initialText.replace(/\n/g, "<br>");
-          if (userSignature.text || userSignature.image) {
-            initialText += '<br><br><div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #eaeaea;">';
-            if (userSignature.text) {
-              initialText += `<div style="color: #666; font-size: 14px;">${userSignature.text.replace(/\n/g, '<br>')}</div>`;
-            }
-            if (userSignature.image) {
-              initialText += `<br><img src="${userSignature.image}" alt="Assinatura" style="max-width: 250px; height: auto;" />`;
-            }
-            initialText += '</div>';
-          }
+          const { subject, text } = buildEmailDraft(data.draft);
+          setGeneratedDraft({ text, channel, subject });
+        } else {
+          setGeneratedDraft({ text: data.draft, channel, subject: "" });
         }
-        
-        setGeneratedDraft({ text: initialText, channel });
         setDraftVariants(null);
       }
       
@@ -1277,21 +1293,12 @@ export function LeadDetailsDialog({
                     variant={selectedVariantIndex === index ? "default" : "outline"}
                     onClick={() => {
                       setSelectedVariantIndex(index);
-                      let text = variant.text;
                       if (generatedDraft?.channel === 'email') {
-                        text = text.replace(/\n/g, "<br>");
-                        if (userSignature.text || userSignature.image) {
-                          text += '<br><br><div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #eaeaea;">';
-                          if (userSignature.text) {
-                            text += `<div style="color: #666; font-size: 14px;">${userSignature.text.replace(/\n/g, '<br>')}</div>`;
-                          }
-                          if (userSignature.image) {
-                            text += `<br><img src="${userSignature.image}" alt="Assinatura" style="max-width: 250px; height: auto;" />`;
-                          }
-                          text += '</div>';
-                        }
+                        const { subject, text } = buildEmailDraft(variant.text);
+                        setGeneratedDraft(prev => prev ? {...prev, text, subject} : null);
+                      } else {
+                        setGeneratedDraft(prev => prev ? {...prev, text: variant.text} : null);
                       }
-                      setGeneratedDraft(prev => prev ? {...prev, text} : null);
                     }}
                     className="flex-1"
                   >
@@ -1304,6 +1311,17 @@ export function LeadDetailsDialog({
             </div>
           )}
           
+          {generatedDraft?.channel === 'email' && (
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-gray-700">Assunto</label>
+              <Input
+                value={generatedDraft.subject}
+                onChange={(e) => setGeneratedDraft(prev => prev ? {...prev, subject: e.target.value} : null)}
+                placeholder="Assunto do email"
+              />
+            </div>
+          )}
+
           {generatedDraft?.channel === 'email' ? (
             <div className="border rounded-md overflow-hidden">
               <RichTextEditor 
@@ -1424,31 +1442,22 @@ export function LeadDetailsDialog({
               
               try {
                 setIsSending(true);
-                
-                // Extract subject and remove it from the body robustly.
-                // Em vez de adivinhar o HTML exato ("<p>Assunto:...</p>" ou
-                // "Assunto:...<br>"), interpretamos o HTML e removemos o primeiro
-                // elemento/linha que contenha "Assunto:". Isto evita que o assunto
-                // fique colado ao corpo quando a formatação é diferente.
-                const tempDiv = document.createElement("div");
-                tempDiv.innerHTML = generatedDraft.text;
-                const plainText = tempDiv.textContent || tempDiv.innerText || "";
-                const subjectMatch = plainText.match(/^\s*Assunto:\s*(.*)/mi);
-                let subject = subjectMatch ? subjectMatch[1].trim() : "Follow-up";
 
-                // Remover o assunto do corpo (versão HTML), tolerante ao formato:
-                let body = generatedDraft.text;
-                // 1) tenta remover um elemento de bloco que só contenha "Assunto: ..."
-                body = body
-                  .replace(/<(p|div|h[1-6])[^>]*>\s*Assunto:.*?<\/\1>/is, "")
-                  // 2) ou "Assunto: ..." seguido de uma quebra (<br>) ou nova linha
-                  .replace(/Assunto:.*?(<br\s*\/?>|\n|$)/i, "")
+                // O assunto vem agora do campo próprio (não do corpo).
+                let subject = (generatedDraft.subject || "Follow-up")
+                  .replace(/\{empreendimento\}/g, lead.development_name || "")
+                  .replace(/<[^>]*>?/gm, "")
                   .trim();
-                
-                // Replace variables
-                subject = subject.replace(/\{empreendimento\}/g, lead.development_name || "").replace(/<[^>]*>?/gm, '');
-                body = body.replace(/\{empreendimento\}/g, lead.development_name || "");
-                
+
+                let body = generatedDraft.text.replace(/\{empreendimento\}/g, lead.development_name || "");
+
+                // Normalizar espaçamento para clientes como o Outlook (que ampliam
+                // margens de <p> e transformam linhas vazias em grandes espaços).
+                body = body
+                  .replace(/<p>\s*(<br\s*\/?>)?\s*<\/p>/gi, "")
+                  .replace(/<p(?![^>]*style=)/gi, '<p style="margin:0 0 1em 0;"')
+                  .replace(/(\s*<br\s*\/?>\s*){3,}/gi, "<br><br>");
+
                 // Content is already HTML from RichTextEditor
                 const htmlBody = body;
                 
