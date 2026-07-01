@@ -29,6 +29,7 @@ import { getWorkflowRules } from "@/services/workflowService";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
+import { collapseEmptyBlocks } from "@/lib/emailSignatureFormat";
 import { getTemplates, createTemplate, deleteTemplate } from "@/services/templateService";
 
 function normalizeText(value: string): string {
@@ -318,19 +319,6 @@ export default function BulkMessages() {
           text: profile.email_signature_text,
           image: profile.email_signature_image_url
         });
-        
-        if (!message && messageType === "email") {
-          let sigHtml = '<br><br><div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #eaeaea;">';
-          if (profile.email_signature_text) {
-            // Assinatura já é HTML — inserir tal como está.
-            sigHtml += profile.email_signature_text;
-          }
-          if (profile.email_signature_image_url) {
-            sigHtml += `<br><img src="${profile.email_signature_image_url}" alt="Assinatura" style="max-width: 250px; height: auto;" />`;
-          }
-          sigHtml += '</div>';
-          setMessage(sigHtml);
-        }
       }
     } catch (error) {
       console.error("Error loading signature:", error);
@@ -861,18 +849,22 @@ export default function BulkMessages() {
     setAttachments((prev) => prev.filter((_, i) => i !== index));
   };
   
-  const insertSignatureIntoEditor = () => {
-    if (!userSignature.text && !userSignature.image) return;
-    let sigHtml = '<br><br><div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #eaeaea;">';
+  // Constrói o HTML da assinatura para pré-visualização (a assinatura real é
+  // sempre acrescentada pelo servidor no momento do envio — fonte única, sem
+  // duplicação). A assinatura já é HTML feito no editor de assinatura, por
+  // isso é usada tal como está, só sem parágrafos vazios que criam espaço em
+  // branco antes da fotografia.
+  const buildSignaturePreviewHtml = () => {
+    if (!userSignature.text && !userSignature.image) return "";
+    let sigHtml = '<div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #eaeaea;">';
     if (userSignature.text) {
-      // Assinatura já é HTML — inserir tal como está.
-      sigHtml += userSignature.text;
+      sigHtml += collapseEmptyBlocks(userSignature.text);
     }
     if (userSignature.image) {
       sigHtml += `<br><img src="${userSignature.image}" alt="Assinatura" style="max-width: 250px; height: auto;" />`;
     }
     sigHtml += '</div>';
-    setMessage(prev => prev + sigHtml);
+    return sigHtml;
   };
 
   const handleSend = async () => {
@@ -969,8 +961,6 @@ export default function BulkMessages() {
                 sendCopyToSender: sendCopyToSelf && Boolean(copyEmail),
                 leadId: recipient.type === "lead" ? recipient.id.replace("lead-", "") : undefined,
                 contactId: recipient.type === "contact" ? recipient.id.replace("contact-", "") : undefined,
-                // A assinatura já está no corpo (pré-visualização); não duplicar.
-                appendSignature: false,
               }),
             });
 
@@ -1485,16 +1475,16 @@ export default function BulkMessages() {
                         </p>
                       </div>
 
-                      {/* Signature Option */}
+                      {/* Signature Preview */}
                       {(userSignature.text || userSignature.image) && (
-                        <div className="flex justify-end">
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={insertSignatureIntoEditor}
-                          >
-                            Inserir Assinatura no Editor
-                          </Button>
+                        <div className="rounded-md border bg-gray-50 p-3">
+                          <p className="text-xs font-medium text-gray-500 mb-2">
+                            A sua assinatura será adicionada automaticamente ao enviar:
+                          </p>
+                          <div
+                            className="text-sm prose prose-sm max-w-none pointer-events-none select-none opacity-90"
+                            dangerouslySetInnerHTML={{ __html: buildSignaturePreviewHtml() }}
+                          />
                         </div>
                       )}
 

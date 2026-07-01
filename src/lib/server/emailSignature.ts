@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { collapseEmptyBlocks } from "@/lib/emailSignatureFormat";
 
 /**
  * FONTE DE VERDADE DA ASSINATURA DE EMAIL.
@@ -34,10 +35,11 @@ export async function getSignatureHtml(
 
     if (!sigText && !sigImage) return "";
 
-    let html = '<br><br><div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #eaeaea;">';
+    let html = '<div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #eaeaea;">';
     if (sigText) {
-      // Já é HTML — inserir tal como está.
-      html += sigText;
+      // Já é HTML — inserir tal como está, apenas sem parágrafos vazios
+      // (que criam espaço em branco excessivo antes da fotografia).
+      html += collapseEmptyBlocks(sigText);
     }
     if (sigImage) {
       html += `<br><img src="${sigImage}" alt="Assinatura" style="max-width: 250px; height: auto;" />`;
