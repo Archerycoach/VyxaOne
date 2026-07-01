@@ -1425,14 +1425,25 @@ export function LeadDetailsDialog({
               try {
                 setIsSending(true);
                 
-                // Extract subject properly from HTML
+                // Extract subject and remove it from the body robustly.
+                // Em vez de adivinhar o HTML exato ("<p>Assunto:...</p>" ou
+                // "Assunto:...<br>"), interpretamos o HTML e removemos o primeiro
+                // elemento/linha que contenha "Assunto:". Isto evita que o assunto
+                // fique colado ao corpo quando a formatação é diferente.
                 const tempDiv = document.createElement("div");
                 tempDiv.innerHTML = generatedDraft.text;
                 const plainText = tempDiv.textContent || tempDiv.innerText || "";
-                const subjectMatch = plainText.match(/^Assunto:\s*(.*)/mi);
+                const subjectMatch = plainText.match(/^\s*Assunto:\s*(.*)/mi);
                 let subject = subjectMatch ? subjectMatch[1].trim() : "Follow-up";
-                
-                let body = generatedDraft.text.replace(/<p>\s*Assunto:.*?<\/p>/i, "").replace(/Assunto:.*?<br>/i, "").trim();
+
+                // Remover o assunto do corpo (versão HTML), tolerante ao formato:
+                let body = generatedDraft.text;
+                // 1) tenta remover um elemento de bloco que só contenha "Assunto: ..."
+                body = body
+                  .replace(/<(p|div|h[1-6])[^>]*>\s*Assunto:.*?<\/\1>/is, "")
+                  // 2) ou "Assunto: ..." seguido de uma quebra (<br>) ou nova linha
+                  .replace(/Assunto:.*?(<br\s*\/?>|\n|$)/i, "")
+                  .trim();
                 
                 // Replace variables
                 subject = subject.replace(/\{empreendimento\}/g, lead.development_name || "").replace(/<[^>]*>?/gm, '');
