@@ -28,6 +28,7 @@ import type { LeadWithContacts } from "@/services/leadsService";
 import { exportLeadsToExcel } from "@/services/excelService";
 import { supabase } from "@/integrations/supabase/client";
 import { getLeadRecentInteractionState } from "@/lib/leadInteractionHighlight";
+import { getLeadQualification } from "@/lib/leadQualification";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 // Default columns configuration for fallback
@@ -774,20 +775,47 @@ export function LeadsListContainer({
                       : "bg-gray-50";
                   return (
                     <tr key={lead.id} className={`${bgClass} hover:bg-blue-50 transition-colors`}>
-                      {columnsConfig.map((column, columnIndex) => (
-                        <td key={column.column_key} className="px-4 py-3 text-sm text-gray-700">
-                          {columnIndex === 0 && recentInteractionState.isHighlighted && recentInteractionState.badgeLabel ? (
-                            <div className="space-y-1">
-                              <div>{getCellValue(lead, column.column_key)}</div>
-                              <Badge variant="default" className="w-fit bg-blue-600 text-white">
-                                {recentInteractionState.badgeLabel}
-                              </Badge>
-                            </div>
-                          ) : (
-                            getCellValue(lead, column.column_key)
-                          )}
-                        </td>
-                      ))}
+                      {columnsConfig.map((column, columnIndex) => {
+                        if (columnIndex !== 0) {
+                          return (
+                            <td key={column.column_key} className="px-4 py-3 text-sm text-gray-700">
+                              {getCellValue(lead, column.column_key)}
+                            </td>
+                          );
+                        }
+
+                        const qualification = getLeadQualification(lead);
+                        const showHighlightBadge = recentInteractionState.isHighlighted && recentInteractionState.badgeLabel;
+                        const showQualificationBadge = qualification.missing.length > 0;
+
+                        return (
+                          <td key={column.column_key} className="px-4 py-3 text-sm text-gray-700">
+                            {showHighlightBadge || showQualificationBadge ? (
+                              <div className="space-y-1">
+                                <div>{getCellValue(lead, column.column_key)}</div>
+                                <div className="flex flex-wrap gap-1">
+                                  {showHighlightBadge && (
+                                    <Badge variant="default" className="w-fit bg-blue-600 text-white">
+                                      {recentInteractionState.badgeLabel}
+                                    </Badge>
+                                  )}
+                                  {showQualificationBadge && (
+                                    <Badge
+                                      variant="outline"
+                                      className="w-fit bg-amber-50 text-amber-700 border-amber-200 text-xs"
+                                      title={qualification.missing.map((m) => m.label).join(", ")}
+                                    >
+                                      {qualification.missing.length} {qualification.missing.length === 1 ? "dado em falta" : "dados em falta"}
+                                    </Badge>
+                                  )}
+                                </div>
+                              </div>
+                            ) : (
+                              getCellValue(lead, column.column_key)
+                            )}
+                          </td>
+                        );
+                      })}
                       <td className="px-4 py-3">
                         <div className="flex gap-1">
                           <button

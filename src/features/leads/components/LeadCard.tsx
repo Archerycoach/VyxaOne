@@ -9,6 +9,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
+import { getLeadQualification } from "@/lib/leadQualification";
 import {
   Mail,
   Phone,
@@ -375,6 +376,19 @@ export function LeadCard({
                '❄️ Fria'}
             </Badge>
           )}
+          {(() => {
+            const qualification = getLeadQualification(lead);
+            if (qualification.missing.length === 0) return null;
+            return (
+              <Badge
+                variant="outline"
+                className="text-xs bg-amber-50 text-amber-700 border-amber-200"
+                title={qualification.missing.map((m) => m.label).join(", ")}
+              >
+                {qualification.missing.length} {qualification.missing.length === 1 ? "dado em falta" : "dados em falta"}
+              </Badge>
+            );
+          })()}
         </div>
 
         {activitiesCount && (activitiesCount.events > 0 || activitiesCount.tasks > 0) && (
@@ -628,6 +642,19 @@ export function LeadCard({
              '❄️ Fria'}
           </Badge>
         )}
+        {(() => {
+          const qualification = getLeadQualification(lead);
+          if (qualification.missing.length === 0) return null;
+          return (
+            <Badge
+              variant="outline"
+              className="bg-amber-50 text-amber-700 border-amber-200"
+              title={qualification.missing.map((m) => m.label).join(", ")}
+            >
+              {qualification.missing.length} {qualification.missing.length === 1 ? "dado em falta" : "dados em falta"}
+            </Badge>
+          );
+        })()}
       </div>
 
       {activitiesCount && (activitiesCount.events > 0 || activitiesCount.tasks > 0) && (
