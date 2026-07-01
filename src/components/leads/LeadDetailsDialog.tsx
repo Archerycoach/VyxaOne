@@ -1444,7 +1444,7 @@ export function LeadDetailsDialog({
                 setIsSending(true);
 
                 // O assunto vem agora do campo próprio (não do corpo).
-                let subject = (generatedDraft.subject || "Follow-up")
+                const subject = (generatedDraft.subject || "Follow-up")
                   .replace(/\{empreendimento\}/g, lead.development_name || "")
                   .replace(/<[^>]*>?/gm, "")
                   .trim();
