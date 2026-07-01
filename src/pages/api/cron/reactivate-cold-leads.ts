@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { sendWhatsAppTemplate } from "@/services/whatsappService";
 import { hasValidWhatsAppConsent } from "@/services/consentService";
 import nodemailer from "nodemailer";
+import { appendSignature } from "@/lib/server/emailSignature";
 import crypto from "crypto";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -185,7 +186,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                   from: smtpSettings.from_name ? `"${smtpSettings.from_name}" <${smtpSettings.from_email}>` : smtpSettings.from_email,
                   to: lead.email,
                   subject: subject,
-                  html,
+                  html: await appendSignature(html, supabaseAdmin, lead.user_id),
                 });
 
                 await supabaseAdmin.from("leads").update({ 

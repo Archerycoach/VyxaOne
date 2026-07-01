@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { createClient } from "@supabase/supabase-js";
 import nodemailer from "nodemailer";
+import { appendSignature } from "@/lib/server/emailSignature";
 import {
   isRecentOpportunity,
   scoreDevelopmentAgainstRequest,
@@ -153,7 +154,7 @@ async function maybeSendMatchEmail(
       from: `"${smtpSettings.from_name}" <${smtpSettings.from_email}>`,
       to: entity.email,
       subject,
-      html: body.replace(/\n/g, "<br>")
+      html: await appendSignature(body.replace(/\n/g, "<br>"), supabase, request.user_id)
     };
 
     if (request.send_cc) {

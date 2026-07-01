@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { runAI } from "@/lib/ai/provider";
 import { findMatchesForLead } from "@/services/matchingService";
 import nodemailer from "nodemailer";
+import { appendSignature } from "@/lib/server/emailSignature";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -179,7 +180,7 @@ Responde EXCLUSIVAMENTE com o HTML da mensagem.`;
         : smtpSettings.from_email,
       to: lead.email,
       subject: `${enrichedProperties.length} imóveis ideais para si, ${lead.name}`,
-      html: emailHtml,
+      html: await appendSignature(emailHtml, supabase, userId),
     });
 
     // 8. Log interaction in the CRM
