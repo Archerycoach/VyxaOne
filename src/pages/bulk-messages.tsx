@@ -322,7 +322,8 @@ export default function BulkMessages() {
         if (!message && messageType === "email") {
           let sigHtml = '<br><br><div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #eaeaea;">';
           if (profile.email_signature_text) {
-            sigHtml += `<div style="color: #666; font-size: 14px;">${profile.email_signature_text.replace(/\n/g, '<br>')}</div>`;
+            // Assinatura já é HTML — inserir tal como está.
+            sigHtml += profile.email_signature_text;
           }
           if (profile.email_signature_image_url) {
             sigHtml += `<br><img src="${profile.email_signature_image_url}" alt="Assinatura" style="max-width: 250px; height: auto;" />`;
@@ -864,7 +865,8 @@ export default function BulkMessages() {
     if (!userSignature.text && !userSignature.image) return;
     let sigHtml = '<br><br><div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #eaeaea;">';
     if (userSignature.text) {
-      sigHtml += `<div style="color: #666; font-size: 14px;">${userSignature.text.replace(/\n/g, '<br>')}</div>`;
+      // Assinatura já é HTML — inserir tal como está.
+      sigHtml += userSignature.text;
     }
     if (userSignature.image) {
       sigHtml += `<br><img src="${userSignature.image}" alt="Assinatura" style="max-width: 250px; height: auto;" />`;
@@ -967,6 +969,8 @@ export default function BulkMessages() {
                 sendCopyToSender: sendCopyToSelf && Boolean(copyEmail),
                 leadId: recipient.type === "lead" ? recipient.id.replace("lead-", "") : undefined,
                 contactId: recipient.type === "contact" ? recipient.id.replace("contact-", "") : undefined,
+                // A assinatura já está no corpo (pré-visualização); não duplicar.
+                appendSignature: false,
               }),
             });
 

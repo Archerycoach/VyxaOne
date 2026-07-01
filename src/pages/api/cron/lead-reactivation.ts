@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { sendWhatsAppTemplate } from "@/services/whatsappService";
 import { hasValidWhatsAppConsent } from "@/services/consentService";
 import nodemailer from "nodemailer";
+import { appendSignature } from "@/lib/server/emailSignature";
 import crypto from "crypto";
 
 /**
@@ -356,7 +357,7 @@ async function sendEmailReactivation(
       : smtpSettings.from_email,
     to: lead.email,
     subject: subject,
-    html,
+    html: await appendSignature(html, supabaseAdmin, lead.user_id),
   });
 
   // Update lead state

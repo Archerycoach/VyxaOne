@@ -8,6 +8,7 @@ import { createClient } from "@supabase/supabase-js";
 import { SupabaseClient } from "@supabase/supabase-js";
 import nodemailer from "nodemailer";
 import { logEmailInteractionServer } from "@/lib/emailInteractionLogger";
+import { appendSignature } from "@/lib/server/emailSignature";
 import type { Database } from "@/integrations/supabase/database.types";
 
 type TaskInsert = Database["public"]["Tables"]["tasks"]["Insert"];
@@ -269,7 +270,7 @@ async function sendEmailAction(
       : smtpSettings.from_email,
     to: lead.email,
     subject: subject,
-    html: body.replace(/\n/g, "<br>"),
+    html: await appendSignature(body.replace(/\n/g, "<br>"), supabase, userId),
     text: body,
     attachments,
   });

@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import nodemailer from "nodemailer";
 import { createClient } from "@supabase/supabase-js";
 import { logEmailInteractionServer } from "@/lib/emailInteractionLogger";
+import { appendSignature } from "@/lib/server/emailSignature";
 
 export const config = {
   api: {
@@ -69,6 +70,10 @@ export default async function handler(
 
     const { to, subject, html, text, cc, bcc, attachments, sendCopyToSender } = req.body;
     const { leadId, contactId } = req.body;
+    // Por defeito o endpoint acrescenta a assinatura das definições. Os
+    // chamadores que já incluem a assinatura no corpo (ex.: ecrãs com
+    // pré-visualização) passam appendSignature: false.
+    const shouldAppendSignature = req.body.appendSignature !== false;
 
     if (!to || !subject || (!html && !text)) {
       return res.status(400).json({
@@ -115,6 +120,11 @@ export default async function handler(
       },
     });
 
+    // Acrescentar a assinatura (fonte de verdade: definições) salvo indicação em contrário.
+    const finalHtml = (shouldAppendSignature && html)
+      ? await appendSignature(html, supabase, user.id)
+      : html;
+
     // Send email
     const info = await transporter.sendMail({
       from: smtpSettings.from_name
@@ -123,7 +133,7 @@ export default async function handler(
       to,
       subject,
       text,
-      html,
+      html: finalHtml,
       cc: normalizedCc.length > 0 ? normalizedCc : undefined,
       bcc: finalBcc.length > 0 ? finalBcc : undefined,
       attachments: formattedAttachments.length > 0 ? formattedAttachments : undefined,
