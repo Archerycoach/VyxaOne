@@ -55,6 +55,7 @@ import { PropertyForm } from "@/components/properties/PropertyForm";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { LeadAIInsightsPanel } from "./LeadAIInsightsPanel";
+import { LeadQualificationPanel } from "./LeadQualificationPanel";
 import { VoiceNoteRecorder } from "./VoiceNoteRecorder";
 import { LeadTimeline } from "@/components/LeadTimeline";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -317,6 +318,24 @@ export function LeadDetailsDialog({
       .filter((paragraph) => paragraph.length > 0)
       .map((paragraph) => `<p>${paragraph.replace(/\n/g, "<br>")}</p>`)
       .join("");
+  };
+
+  // Insere as perguntas de qualificação no rascunho atual (email ou
+  // WhatsApp). Se já houver um rascunho aberto do mesmo canal, acrescenta;
+  // caso contrário, abre o modal de revisão com um novo rascunho.
+  const handleInsertQualificationIntoDraft = (text: string, channel: "email" | "whatsapp") => {
+    setGeneratedDraft((prev) => {
+      if (prev && prev.channel === channel) {
+        const appended = channel === "email"
+          ? prev.text + plainTextToHtml(text)
+          : `${prev.text}\n\n${text}`;
+        return { ...prev, text: appended };
+      }
+      return {
+        channel,
+        text: channel === "email" ? plainTextToHtml(text) : text,
+      };
+    });
   };
 
   const handleGenerateDraft = async (channel: 'email' | 'whatsapp') => {
@@ -879,7 +898,8 @@ export function LeadDetailsDialog({
               )}
             </TabsContent>
 
-            <TabsContent value="ai-assistant" className="mt-0">
+            <TabsContent value="ai-assistant" className="mt-0 space-y-4">
+              <LeadQualificationPanel leadId={lead.id} onInsertIntoDraft={handleInsertQualificationIntoDraft} />
               <LeadAIInsightsPanel leadId={lead.id} />
             </TabsContent>
 
