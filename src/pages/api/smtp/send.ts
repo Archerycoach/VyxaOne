@@ -69,6 +69,9 @@ export default async function handler(
 
     const { to, subject, html, text, cc, bcc, attachments, sendCopyToSender } = req.body;
     const { leadId, contactId } = req.body;
+    // Por defeito, o endpoint acrescenta a assinatura configurada nas definições.
+    // Só não a acrescenta se o chamador passar appendSignature: false.
+    const appendSignature = req.body.appendSignature !== false;
 
     if (!to || !subject || (!html && !text)) {
       return res.status(400).json({
@@ -115,6 +118,23 @@ export default async function handler(
       },
     });
 
+    // Montar o HTML final com a assinatura (uma só fonte: as definições).
+    // A assinatura (email_signature_text) já é HTML formatado — inserimo-la tal
+    // como está, sem lhe mexer. Assim TODOS os emails que passam por aqui
+    // (manuais, IA, automações, crons) usam a mesma assinatura, de forma consistente.
+    let finalHtml = html;
+    if (appendSignature && finalHtml && profile && (profile.email_signature_text || profile.email_signature_image_url)) {
+      let sigHtml = '<br><br><div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #eaeaea;">';
+      if (profile.email_signature_text) {
+        sigHtml += profile.email_signature_text;
+      }
+      if (profile.email_signature_image_url) {
+        sigHtml += `<br><img src="${profile.email_signature_image_url}" alt="Assinatura" style="max-width: 250px; height: auto;" />`;
+      }
+      sigHtml += "</div>";
+      finalHtml = finalHtml + sigHtml;
+    }
+
     // Send email
     const info = await transporter.sendMail({
       from: smtpSettings.from_name
@@ -123,7 +143,7 @@ export default async function handler(
       to,
       subject,
       text,
-      html,
+      html: finalHtml,
       cc: normalizedCc.length > 0 ? normalizedCc : undefined,
       bcc: finalBcc.length > 0 ? finalBcc : undefined,
       attachments: formattedAttachments.length > 0 ? formattedAttachments : undefined,

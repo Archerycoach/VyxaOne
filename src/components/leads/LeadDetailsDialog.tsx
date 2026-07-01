@@ -290,7 +290,11 @@ export function LeadDetailsDialog({
     if (userSignature.text || userSignature.image) {
       html += '<div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #eaeaea;">';
       if (userSignature.text) {
-        html += `<div style="color: #666; font-size: 14px;">${userSignature.text.replace(/\n/g, "<br>")}</div>`;
+        // A assinatura já é HTML formatado (feito no editor de assinatura).
+        // Inserimo-la tal como está — sem trocar \n por <br> (isso desarruma o
+        // HTML) e sem a embrulhar num div com estilo próprio (que lhe altera a
+        // formatação e desloca os elementos em relação à imagem).
+        html += userSignature.text;
       }
       if (userSignature.image) {
         html += `<br><img src="${userSignature.image}" alt="Assinatura" style="max-width: 250px; height: auto;" />`;
@@ -1351,7 +1355,8 @@ export function LeadDetailsDialog({
                     onClick={() => {
                       let sigHtml = '<br><br><div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #eaeaea;">';
                       if (userSignature.text) {
-                        sigHtml += `<div style="color: #666; font-size: 14px;">${userSignature.text.replace(/\n/g, '<br>')}</div>`;
+                        // Assinatura já é HTML — inserir tal como está.
+                        sigHtml += userSignature.text;
                       }
                       if (userSignature.image) {
                         sigHtml += `<br><img src="${userSignature.image}" alt="Assinatura" style="max-width: 250px; height: auto;" />`;
@@ -1472,7 +1477,10 @@ export function LeadDetailsDialog({
                     html: htmlBody,
                     attachments: emailAttachments.map(att => ({ filename: att.name, content: att.content, encoding: att.encoding })),
                     sendCopyToSender: sendCopyToSelf,
-                    leadId: leadId
+                    leadId: leadId,
+                    // A assinatura já está incluída no corpo revisto (o que vês é o
+                    // que é enviado), por isso o endpoint não a deve acrescentar.
+                    appendSignature: false
                   })
                 });
                 
