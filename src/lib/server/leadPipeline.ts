@@ -69,7 +69,10 @@ export async function runNewLeadPipeline({
     } as any);
   }
 
-  // 3. AI Property Matcher (only for buyers)
+  // 3. AI Property Matcher (only for buyers). O próprio endpoint
+  // /api/gpt/agents/property-matcher já verifica o interruptor existente
+  // (gpt_api_keys.property_matcher_enabled, desligado por defeito) antes de
+  // enviar qualquer email — ver Definições > IA.
   if (lead.lead_type === "buyer" || lead.lead_type === "both") {
     try {
       fetch(`${appUrl}/api/gpt/agents/property-matcher`, {

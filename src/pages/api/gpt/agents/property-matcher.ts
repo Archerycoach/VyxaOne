@@ -2,8 +2,7 @@ import { NextApiRequest, NextApiResponse } from "next";
 import { createClient } from "@supabase/supabase-js";
 import { runAI } from "@/lib/ai/provider";
 import { findMatchesForLead } from "@/services/matchingService";
-import nodemailer from "nodemailer";
-import { appendSignature } from "@/lib/server/emailSignature";
+import { sendClientEmail } from "@/lib/server/sendClientEmail";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -160,28 +159,23 @@ Responde EXCLUSIVAMENTE com o HTML da mensagem.`;
     // Clean up potential markdown formatting
     emailHtml = emailHtml.replace(/```html/g, "").replace(/```/g, "").trim();
 
-    // 7. Send the email via SMTP
-    const transporter = nodemailer.createTransport({
-      host: smtpSettings.smtp_host,
-      port: smtpSettings.smtp_port,
-      secure: smtpSettings.smtp_secure,
-      auth: {
-        user: smtpSettings.smtp_username,
-        pass: smtpSettings.smtp_password,
-      },
-      tls: {
-        rejectUnauthorized: smtpSettings.reject_unauthorized ?? true,
-      },
-    });
-
-    const info = await transporter.sendMail({
-      from: smtpSettings.from_name
-        ? `"${smtpSettings.from_name}" <${smtpSettings.from_email}>`
-        : smtpSettings.from_email,
+    // 7. Send the email via the centralized client-email service (SMTP +
+    // cópia best-effort no IMAP + registo em automated_email_log).
+    const sendResult = await sendClientEmail({
+      supabaseAdmin: supabase,
+      userId,
+      leadId,
+      leadName: lead.name,
+      source: "property_matcher",
       to: lead.email,
       subject: `${enrichedProperties.length} imóveis ideais para si, ${lead.name}`,
-      html: await appendSignature(emailHtml, supabase, userId),
+      html: emailHtml,
     });
+
+    if (!sendResult.success) {
+      console.error(`[Property Matcher] Falha ao enviar email:`, sendResult.error);
+      return res.status(200).json({ success: false, message: sendResult.error });
+    }
 
     // 8. Log interaction in the CRM
     await supabase.from("interactions").insert({
@@ -195,7 +189,6 @@ Responde EXCLUSIVAMENTE com o HTML da mensagem.`;
 
     return res.status(200).json({ 
       success: true, 
-      messageId: info.messageId,
       propertiesCount: enrichedProperties.length,
       topScore: enrichedProperties[0]?.match_score,
     });

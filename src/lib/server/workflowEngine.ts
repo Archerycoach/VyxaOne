@@ -1,14 +1,13 @@
 /**
  * Server-only unified workflow engine
  * Supports ALL workflow actions (email, WhatsApp, tasks, calendar, notifications)
- * NEVER import this in browser code - uses service-role, nodemailer, and server-only APIs
+ * NEVER import this in browser code - uses service-role and server-only APIs
  */
 
 import { createClient } from "@supabase/supabase-js";
 import { SupabaseClient } from "@supabase/supabase-js";
-import nodemailer from "nodemailer";
+import { sendClientEmail } from "@/lib/server/sendClientEmail";
 import { logEmailInteractionServer } from "@/lib/emailInteractionLogger";
-import { appendSignature } from "@/lib/server/emailSignature";
 import type { Database } from "@/integrations/supabase/database.types";
 
 type TaskInsert = Database["public"]["Tables"]["tasks"]["Insert"];
@@ -218,7 +217,8 @@ async function executeWorkflow(
 }
 
 /**
- * Send email via SMTP (server-side with nodemailer)
+ * Send email via the centralized client-email service (SMTP + cópia
+ * best-effort no IMAP + registo em automated_email_log)
  */
 async function sendEmailAction(
   supabase: ReturnType<typeof createClient>,
@@ -231,49 +231,27 @@ async function sendEmailAction(
     return;
   }
 
-  // Get SMTP settings
-  const { data: smtpData } = await supabase
-    .from("user_smtp_settings")
-    .select("*")
-    .eq("user_id", userId)
-    .eq("is_active", true)
-    .single();
-
-  const smtpSettings = smtpData as any;
-
-  if (!smtpSettings) {
-    throw new Error("SMTP not configured for user");
-  }
-
   // Personalize content
   const subject = personalizeContent(config.subject || "Mensagem automática", lead);
   const body = personalizeContent(config.body || "", lead);
   const attachments = formatWorkflowAttachments(config.attachments);
 
-  // Send email via nodemailer
-  const transporter = nodemailer.createTransport({
-    host: smtpSettings.smtp_host,
-    port: smtpSettings.smtp_port,
-    secure: smtpSettings.smtp_secure,
-    auth: {
-      user: smtpSettings.smtp_username,
-      pass: smtpSettings.smtp_password,
-    },
-    tls: {
-      rejectUnauthorized: smtpSettings.reject_unauthorized ?? true,
-    },
-  });
-
-  await transporter.sendMail({
-    from: smtpSettings.from_name
-      ? `"${smtpSettings.from_name}" <${smtpSettings.from_email}>`
-      : smtpSettings.from_email,
+  const sendResult = await sendClientEmail({
+    supabaseAdmin: supabase,
+    userId,
+    leadId: lead.id,
+    leadName: lead.name,
+    source: "workflow_automation",
     to: lead.email,
-    subject: subject,
-    html: await appendSignature(body.replace(/\n/g, "<br>"), supabase, userId),
+    subject,
+    html: body.replace(/\s+$/, "").replace(/\n/g, "<br>"),
     text: body,
     attachments,
   });
+
+  if (!sendResult.success) {
+    throw new Error(sendResult.error || "Falha ao enviar email do workflow");
+  }
 
   // Log the email as an interaction
   await logEmailInteractionServer(supabase, {

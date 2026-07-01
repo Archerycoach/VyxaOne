@@ -47,6 +47,7 @@ export default function Settings() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [savingReactivationToggle, setSavingReactivationToggle] = useState(false);
   const [notifications, setNotifications] = useState({
     email: true,
     push: false,
@@ -289,6 +290,43 @@ export default function Settings() {
     }
   };
 
+  const handleReactivationToggle = async (checked: boolean) => {
+    if (!profile || !user) return;
+    setSavingReactivationToggle(true);
+    try {
+      // NOTA: "reactivation_automation_enabled" só existe em profiles depois
+      // de correr a migração supabase/migrations/20260701170000_*.sql e
+      // regenerar database.types.ts. Até lá, o campo não existe no tipo
+      // gerado, por isso usamos "as any" no nome da tabela aqui — o mesmo
+      // padrão já usado no resto do código para tabelas/colunas recentes
+      // (ex.: user_smtp_settings em smtpService.ts). Pode ser removido assim
+      // que os tipos forem regenerados.
+      const { error } = await (supabase
+        .from("profiles" as any)
+        .update({ reactivation_automation_enabled: checked })
+        .eq("id", user.id) as any);
+
+      if (error) throw error;
+
+      setProfile((prev: any) => prev ? { ...prev, reactivation_automation_enabled: checked } : prev);
+      toast({
+        title: checked ? "Automação ativada" : "Automação desativada",
+        description: checked
+          ? "A reativação automática de leads (email + WhatsApp) vai voltar a correr diariamente."
+          : "A reativação automática de leads (email + WhatsApp) foi desligada.",
+      });
+    } catch (error) {
+      console.error("Error updating reactivation automation toggle:", error);
+      toast({
+        title: "Erro",
+        description: "Não foi possível atualizar esta definição.",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingReactivationToggle(false);
+    }
+  };
+
   const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -401,6 +439,10 @@ export default function Settings() {
             <TabsTrigger value="workflows">
               <Zap className="h-4 w-4 mr-2" />
               Automação
+            </TabsTrigger>
+            <TabsTrigger value="send-automations">
+              <Mail className="h-4 w-4 mr-2" />
+              Envios Automáticos
             </TabsTrigger>
             <TabsTrigger value="portals">
               <Globe className="h-4 w-4 mr-2" />
@@ -927,6 +969,52 @@ export default function Settings() {
             <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
               <WorkflowsManagement />
             </div>
+          </TabsContent>
+
+          <TabsContent value="send-automations" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Reativação Automática de Leads</CardTitle>
+                <CardDescription>
+                  Todos os dias, a plataforma pode contactar automaticamente leads frias (sem
+                  contacto há 30+ dias) até 3 vezes, por email ou WhatsApp, a pedir autorização
+                  para continuar em contacto. Esta automação está desligada por defeito — só
+                  corre depois de a ativar aqui.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center justify-between rounded-lg border p-4">
+                  <div className="space-y-1 pr-4">
+                    <Label htmlFor="reactivation_automation_enabled" className="text-base font-medium">
+                      Ativar reativação automática de leads
+                    </Label>
+                    <p className="text-sm text-muted-foreground">
+                      Quando desligado, nenhuma lead recebe emails ou mensagens de reativação automaticamente.
+                    </p>
+                  </div>
+                  <Switch
+                    id="reactivation_automation_enabled"
+                    checked={Boolean(profile?.reactivation_automation_enabled)}
+                    disabled={savingReactivationToggle}
+                    onCheckedChange={handleReactivationToggle}
+                  />
+                </div>
+
+                <p className="text-xs text-muted-foreground mt-4">
+                  O envio automático de sugestões de imóveis a novas leads compradoras
+                  (Property Matcher) tem o seu próprio interruptor no separador{" "}
+                  <strong>GPT Agent</strong> — também desligado por defeito.
+                </p>
+
+                <p className="text-xs text-muted-foreground mt-2">
+                  Pode consultar todos os emails automáticos já enviados (independentemente de
+                  estarem ligados ou não) em{" "}
+                  <a href="/automated-emails" className="text-blue-600 hover:underline">
+                    Emails Automáticos
+                  </a>.
+                </p>
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="notion" className="space-y-6">

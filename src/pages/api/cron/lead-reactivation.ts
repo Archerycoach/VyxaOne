@@ -2,8 +2,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { createClient } from "@supabase/supabase-js";
 import { sendWhatsAppTemplate } from "@/services/whatsappService";
 import { hasValidWhatsAppConsent } from "@/services/consentService";
-import nodemailer from "nodemailer";
-import { appendSignature } from "@/lib/server/emailSignature";
+import { sendClientEmail } from "@/lib/server/sendClientEmail";
 import crypto from "crypto";
 
 /**
@@ -77,8 +76,32 @@ export default async function handler(
   };
 
   try {
+    // Autorização: só processa leads de consultores que ativaram
+    // explicitamente esta automação em Definições. Por defeito está
+    // desligada para todos — sem isto, nenhuma lead é processada.
+    const { data: enabledProfiles, error: profilesError } = await supabaseAdmin
+      .from("profiles")
+      .select("id")
+      .eq("reactivation_automation_enabled", true);
+
+    if (profilesError) {
+      throw profilesError;
+    }
+
+    const enabledUserIds = new Set((enabledProfiles || []).map((p: { id: string }) => p.id));
+
+    if (enabledUserIds.size === 0) {
+      console.log("[Lead Reactivation] Nenhum utilizador tem esta automação ativada. A terminar.");
+      return res.status(200).json({
+        success: true,
+        message: "Nenhum utilizador com a automação ativada",
+        results,
+        timestamp: new Date().toISOString(),
+      });
+    }
+
     // Select leads that need reactivation (not archived, opt_out, or in active conversation)
-    const { data: leadsToProcess, error } = await supabaseAdmin
+    const { data: leadsToProcessRaw, error } = await supabaseAdmin
       .from("leads")
       .select(`
         id, user_id, name, email, phone, follow_up_state, updated_at, 
@@ -91,10 +114,12 @@ export default async function handler(
       throw error;
     }
 
-    console.log(`[Lead Reactivation] Found ${leadsToProcess?.length || 0} leads to evaluate`);
+    const leadsToProcess = (leadsToProcessRaw || []).filter((lead: LeadToProcess) => enabledUserIds.has(lead.user_id));
+
+    console.log(`[Lead Reactivation] Found ${leadsToProcess.length} leads to evaluate (de ${leadsToProcessRaw?.length || 0} candidatas, filtradas por autorização)`);
 
     // Process each lead individually with error tolerance
-    for (const lead of leadsToProcess || []) {
+    for (const lead of leadsToProcess) {
       try {
         await processLead(lead as LeadToProcess, supabaseAdmin, results);
       } catch (leadError: any) {
@@ -264,30 +289,6 @@ async function sendEmailReactivation(
   supabaseAdmin: any,
   results: ProcessingResults
 ): Promise<void> {
-  // Get SMTP settings for this user
-  const { data: smtpSettings } = await supabaseAdmin
-    .from("user_smtp_settings")
-    .select("*")
-    .eq("user_id", lead.user_id)
-    .maybeSingle();
-
-  if (!smtpSettings?.smtp_host) {
-    console.log(`[Lead Reactivation] Lead ${lead.id} requires email but Agent ${lead.user_id} has no SMTP configured`);
-    results.skipped++;
-    return;
-  }
-
-  const transporter = nodemailer.createTransport({
-    host: smtpSettings.smtp_host,
-    port: smtpSettings.smtp_port,
-    secure: smtpSettings.smtp_secure,
-    auth: {
-      user: smtpSettings.smtp_username,
-      pass: smtpSettings.smtp_password,
-    },
-    tls: { rejectUnauthorized: smtpSettings.reject_unauthorized ?? true },
-  });
-
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://vyxa.pt";
   
   // Generate consent token if needed
@@ -350,15 +351,22 @@ async function sendEmailReactivation(
     .replace(/\{\{nome\}\}/g, lead.name || 'Cliente')
     .replace(/\{\{procura\}\}/g, procuraStr);
 
-  // Send email
-  await transporter.sendMail({
-    from: smtpSettings.from_name 
-      ? `"${smtpSettings.from_name}" <${smtpSettings.from_email}>` 
-      : smtpSettings.from_email,
-    to: lead.email,
-    subject: subject,
-    html: await appendSignature(html, supabaseAdmin, lead.user_id),
+  const sendResult = await sendClientEmail({
+    supabaseAdmin,
+    userId: lead.user_id,
+    leadId: lead.id,
+    leadName: lead.name,
+    source: "lead_reactivation",
+    to: lead.email!,
+    subject,
+    html,
   });
+
+  if (!sendResult.success) {
+    console.error(`[Lead Reactivation] Falha ao enviar email para lead ${lead.id}:`, sendResult.error);
+    results.skipped++;
+    return;
+  }
 
   // Update lead state
   await supabaseAdmin.from("leads").update({ 
