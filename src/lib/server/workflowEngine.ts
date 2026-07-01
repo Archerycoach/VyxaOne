@@ -270,7 +270,7 @@ async function sendEmailAction(
       : smtpSettings.from_email,
     to: lead.email,
     subject: subject,
-    html: await appendSignature(body.replace(/\n/g, "<br>"), supabase, userId),
+    html: await appendSignature(body.replace(/\s+$/, "").replace(/\n/g, "<br>"), supabase, userId),
     text: body,
     attachments,
   });

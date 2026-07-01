@@ -34,7 +34,7 @@ export async function getSignatureHtml(
 
     if (!sigText && !sigImage) return "";
 
-    let html = '<br><br><div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #eaeaea;">';
+    let html = '<div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #eaeaea;">';
     if (sigText) {
       // Já é HTML — inserir tal como está.
       html += sigText;

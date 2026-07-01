@@ -62,6 +62,6 @@ FORMATO DA RESPOSTA (OBRIGATÓRIO):
 ---VARIANTE-3---
 [texto da variante 3]
 
-Assina todas as variantes como a equipa comercial.
+IMPORTANTE: NÃO escrevas qualquer despedida, fecho ou assinatura (ex.: "Cumprimentos", "Atenciosamente", "A equipa comercial", nome do consultor, nome da empresa). A assinatura é acrescentada automaticamente pela plataforma, por isso termina o corpo da mensagem na última frase útil.
 Responde EXCLUSIVAMENTE com as 3 variantes no formato acima, sem explicações adicionais.`;
 }

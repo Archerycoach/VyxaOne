@@ -154,7 +154,7 @@ async function maybeSendMatchEmail(
       from: `"${smtpSettings.from_name}" <${smtpSettings.from_email}>`,
       to: entity.email,
       subject,
-      html: await appendSignature(body.replace(/\n/g, "<br>"), supabase, request.user_id)
+      html: await appendSignature(body.replace(/\s+$/, "").replace(/\n/g, "<br>"), supabase, request.user_id)
     };
 
     if (request.send_cc) {
