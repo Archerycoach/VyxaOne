@@ -300,6 +300,21 @@ export function LeadDetailsDialog({
     return { subject, body };
   };
 
+  // Converte o texto simples da IA (parágrafos separados por linhas em branco)
+  // em HTML com parágrafos limpos. Evita o espaçamento excessivo que resultava
+  // de transformar cada "\n" em "<br>" (linhas em branco viravam <br><br> e o
+  // editor amplificava-as em parágrafos vazios).
+  const plainTextToHtml = (raw: string): string => {
+    const trimmed = (raw || "").trim();
+    if (!trimmed) return "";
+    return trimmed
+      .split(/\n\s*\n+/)
+      .map((paragraph) => paragraph.trim())
+      .filter((paragraph) => paragraph.length > 0)
+      .map((paragraph) => `<p>${paragraph.replace(/\n/g, "<br>")}</p>`)
+      .join("");
+  };
+
   const handleGenerateDraft = async (channel: 'email' | 'whatsapp') => {
     if (!leadId) return;
     setDrafting(channel);
@@ -349,7 +364,7 @@ export function LeadDetailsDialog({
         if (channel === 'email') {
           const { subject, body } = splitSubjectFromText(initialText);
           setEmailSubject(subject);
-          initialText = body.replace(/\n/g, "<br>") + buildSignatureHtml();
+          initialText = plainTextToHtml(body) + buildSignatureHtml();
         }
         
         setGeneratedDraft({ text: initialText, channel });
@@ -359,7 +374,7 @@ export function LeadDetailsDialog({
         if (channel === 'email') {
           const { subject, body } = splitSubjectFromText(initialText);
           setEmailSubject(subject);
-          initialText = body.replace(/\n/g, "<br>") + buildSignatureHtml();
+          initialText = plainTextToHtml(body) + buildSignatureHtml();
         }
         
         setGeneratedDraft({ text: initialText, channel });
@@ -1302,7 +1317,7 @@ export function LeadDetailsDialog({
                       if (generatedDraft?.channel === 'email') {
                         const { subject, body } = splitSubjectFromText(variant.text);
                         setEmailSubject(subject);
-                        text = body.replace(/\n/g, "<br>") + buildSignatureHtml();
+                        text = plainTextToHtml(body) + buildSignatureHtml();
                       }
                       setGeneratedDraft(prev => prev ? {...prev, text} : null);
                     }}
