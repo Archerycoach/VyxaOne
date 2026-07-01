@@ -3,6 +3,7 @@ import { getCachedData, setCachedData } from "@/lib/cacheUtils";
 import { CacheManager, CacheKey } from "@/lib/cacheInvalidation";
 import type { Database } from "@/integrations/supabase/types";
 import { processLeadWorkflows } from "./workflowService";
+import { getLeadQualification } from "@/lib/leadQualification";
 
 const LEADS_CACHE_KEY = CacheKey.LEADS;
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutos
@@ -231,10 +232,11 @@ export const createLead = async (lead: LeadInsert): Promise<Lead> => {
 
 // Update lead
 export const updateLead = async (id: string, updates: Partial<LeadUpdate>) => {
-  // Get current lead to compare assigned_to
+  // Get current lead (linha completa) para comparar atribuição, estado do
+  // pipeline e qualificação antes/depois da atualização.
   const { data: currentLead } = await supabase
     .from("leads")
-    .select("assigned_to")
+    .select("*")
     .eq("id", id)
     .single();
 
@@ -263,6 +265,35 @@ export const updateLead = async (id: string, updates: Partial<LeadUpdate>) => {
       console.error("⚠️ Failed to send lead assignment notification:", notifError);
       // Don't throw - notification failure shouldn't block lead update
     }
+  }
+
+  // ✅ Dispara automações de "Mudança de Estado no Pipeline" quando o status
+  // (ou buyer_status/seller_status, usados na vista de Pipeline) muda.
+  // Fire-and-forget: não bloqueia a atualização nem a UI.
+  const PIPELINE_STATUS_FIELDS = ["status", "buyer_status", "seller_status"] as const;
+  const pipelineStatusChanged = PIPELINE_STATUS_FIELDS.some(
+    (field) => (updates as Record<string, unknown>)[field] !== undefined && currentLead?.[field] !== data?.[field]
+  );
+  if (pipelineStatusChanged) {
+    processLeadWorkflows(id, "pipeline_stage_changed").catch((err) =>
+      console.error("[leadsService] Failed to trigger pipeline_stage_changed workflows:", err)
+    );
+  }
+
+  // ✅ Dispara automações de "Lead Qualificada" quando a lead passa a ter
+  // todos os dados de qualificação relevantes preenchidos (ver
+  // src/lib/leadQualification.ts). Só dispara na transição — não repete em
+  // updates seguintes enquanto a lead se mantiver qualificada.
+  try {
+    const wasQualified = currentLead ? getLeadQualification(currentLead).missing.length === 0 : false;
+    const isQualifiedNow = data ? getLeadQualification(data).missing.length === 0 : false;
+    if (!wasQualified && isQualifiedNow) {
+      processLeadWorkflows(id, "lead_qualified").catch((err) =>
+        console.error("[leadsService] Failed to trigger lead_qualified workflows:", err)
+      );
+    }
+  } catch (qualificationError) {
+    console.error("[leadsService] Failed to evaluate qualification transition:", qualificationError);
   }
 
   // Invalidate cache
