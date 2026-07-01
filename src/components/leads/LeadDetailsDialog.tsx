@@ -1260,7 +1260,7 @@ export function LeadDetailsDialog({
         setSelectedVariantIndex(0);
       }
     }}>
-      <DialogContent className="sm:max-w-[600px] z-[100]">
+      <DialogContent className="sm:max-w-[600px] z-[100] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Rever Mensagem ({generatedDraft?.channel === 'whatsapp' ? 'WhatsApp' : 'E-mail'})</DialogTitle>
         </DialogHeader>

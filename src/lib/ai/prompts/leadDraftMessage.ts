@@ -62,6 +62,6 @@ FORMATO DA RESPOSTA (OBRIGATÓRIO):
 ---VARIANTE-3---
 [texto da variante 3]
 
-Assina todas as variantes como a equipa comercial.
+IMPORTANTE sobre a despedida/assinatura: NÃO escrevas nenhuma despedida final (ex.: "Com os melhores cumprimentos", "Atentamente", "A equipa comercial") nem qualquer assinatura. A assinatura do consultor é adicionada automaticamente pela aplicação a seguir. Termina a mensagem na última frase útil do conteúdo, sem fecho nem nome.
 Responde EXCLUSIVAMENTE com as 3 variantes no formato acima, sem explicações adicionais.`;
 }
