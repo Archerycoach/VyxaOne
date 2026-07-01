@@ -1,10 +1,24 @@
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Mic, Square, Loader2, CheckCircle2, AlertCircle, Play, Pause } from "lucide-react";
+import { Mic, Square, Loader2, CheckCircle2, AlertCircle, Play, Pause, ClipboardCheck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { QUALIFICATION_FIELDS } from "@/lib/leadQualification";
+
+const QUALIFICATION_FIELD_LABELS: Record<string, string> = Object.fromEntries(
+  QUALIFICATION_FIELDS.map((field) => [field.key, field.label])
+);
+
+function formatExtractedValue(key: string, value: unknown): string {
+  if (typeof value === "boolean") return value ? "Sim" : "Não";
+  if (key === "budget" || key === "desired_price") {
+    const n = typeof value === "number" ? value : Number(value);
+    return Number.isFinite(n) ? `€${n.toLocaleString("pt-PT")}` : String(value);
+  }
+  return String(value);
+}
 
 interface VoiceNoteRecorderProps {
   leadId: string;
@@ -26,6 +40,7 @@ interface AnalysisResult {
     priority: string;
   } | null;
   confidence: number;
+  extracted_data?: Record<string, unknown>;
 }
 
 export function VoiceNoteRecorder({
@@ -405,6 +420,30 @@ export function VoiceNoteRecorder({
                       </Badge>
                     </div>
                   </div>
+                </div>
+              </>
+            )}
+
+            {/* Extracted Qualification Data */}
+            {analysis.extracted_data && Object.keys(analysis.extracted_data).length > 0 && (
+              <>
+                <Separator />
+                <div>
+                  <h4 className="font-semibold mb-2 text-sm text-gray-700 flex items-center gap-1.5">
+                    <ClipboardCheck className="h-4 w-4 text-amber-600" />
+                    Dados de Qualificação Detetados
+                  </h4>
+                  <div className="bg-amber-50 border border-amber-100 rounded p-3 space-y-1.5">
+                    {Object.entries(analysis.extracted_data).map(([key, value]) => (
+                      <div key={key} className="flex items-center justify-between text-sm">
+                        <span className="text-gray-600">{QUALIFICATION_FIELD_LABELS[key] || key}</span>
+                        <Badge className="bg-amber-600">{formatExtractedValue(key, value)}</Badge>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1.5">
+                    Estes campos vão ser preenchidos/atualizados na ficha da lead ao confirmar.
+                  </p>
                 </div>
               </>
             )}

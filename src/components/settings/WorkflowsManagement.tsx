@@ -796,6 +796,8 @@ export function WorkflowsManagement() {
                   <SelectContent>
                     <SelectItem value="lead_created">🆕 Lead Criado</SelectItem>
                     <SelectItem value="meta_lead_created">📘 Lead Meta (Facebook/Instagram)</SelectItem>
+                    <SelectItem value="pipeline_stage_changed">🔀 Mudança de Estado no Pipeline</SelectItem>
+                    <SelectItem value="lead_qualified">✅ Lead Totalmente Qualificada</SelectItem>
                     <SelectItem value="no_contact_5_days">📧 Sem Contacto (5 dias)</SelectItem>
                     <SelectItem value="visit_scheduled">📅 Visita Agendada (Véspera)</SelectItem>
                     <SelectItem value="no_activity_7_days">💤 Sem Atividade (7 dias)</SelectItem>
