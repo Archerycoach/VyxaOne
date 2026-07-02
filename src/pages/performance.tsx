@@ -104,7 +104,12 @@ export default function PerformancePage() {
         agentsData = [profile];
         setSelectedAgent(user.id);
       }
-      setAgents(agentsData);
+      // Deduplicar por id — nunca deve haver o mesmo agente duas vezes,
+      // independentemente de como a lista foi construída acima.
+      const uniqueAgentsData = Array.from(
+        new Map(agentsData.map((a) => [a.id, a])).values()
+      );
+      setAgents(uniqueAgentsData);
 
       // Load leads
       const { data: leadsData } = await supabase
@@ -143,9 +148,15 @@ export default function PerformancePage() {
     startDate.setDate(startDate.getDate() - periodDays);
 
     // Filter agents based on selection
-    const agentsToAnalyze = selectedAgent === "all" 
+    const agentsToAnalyzeRaw = selectedAgent === "all" 
       ? agents 
       : agents.filter(a => a.id === selectedAgent);
+
+    // Segunda proteção: garantir que nunca há dois cartões para o mesmo
+    // agente, mesmo que "agents" ou o filtro acima produzam sobreposição.
+    const agentsToAnalyze = Array.from(
+      new Map(agentsToAnalyzeRaw.map((a) => [a.id, a])).values()
+    );
 
     agentsToAnalyze.forEach(agent => {
       // Filter leads by agent and period
