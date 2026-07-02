@@ -296,7 +296,10 @@ Aceda ao CRM: ${baseUrl}/dashboard
               settings.user_id,
               user.phone,
               whatsappMessage,
-              supabase
+              supabase,
+              undefined,
+              false,
+              "gpt_assistant_digest"
             );
             console.log(`✅ Daily digest WhatsApp sent to ${user.phone}`);
           } catch (whatsappError) {

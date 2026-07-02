@@ -266,7 +266,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                       from, 
                       `Perfeito! A nossa chamada está confirmada para ${confirmedTime}. Até breve! 👍`, 
                       supabaseAdmin, 
-                      lead.id
+                      lead.id,
+                      false,
+                      "whatsapp_auto_responder"
                     );
 
                     // Notify agent
@@ -329,7 +331,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                         from,
                         `Sem problema! Posso reagendar para ${newProposedTime}. Confirma se este horário te serve?`,
                         supabaseAdmin,
-                        lead.id
+                        lead.id,
+                        false,
+                        "whatsapp_auto_responder"
                       );
 
                       console.log(`[WhatsApp Webhook] Lead ${lead.id} requested reschedule, proposed: ${newProposedTime}`);
@@ -340,7 +344,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                         from,
                         `Neste momento não tenho disponibilidade imediata. Vou pedir ao consultor para entrar em contacto consigo para encontrarmos um horário que funcione para ambos.`,
                         supabaseAdmin,
-                        lead.id
+                        lead.id,
+                        false,
+                        "whatsapp_auto_responder"
                       );
 
                       // Create manual task
@@ -462,7 +468,7 @@ Formato OBRIGATÓRIO do JSON:
                     
                     if (result.reply && !automationPaused) {
                       // Send the reply back to the lead
-                      await sendWhatsAppMessage(lead.user_id, from, result.reply, supabaseAdmin, lead.id);
+                      await sendWhatsAppMessage(lead.user_id, from, result.reply, supabaseAdmin, lead.id, false, "whatsapp_auto_responder");
                       
                       // Save outbound interaction
                       await supabaseAdmin.from("interactions").insert({
@@ -496,7 +502,7 @@ Formato OBRIGATÓRIO do JSON:
                           const docLinks = documents.map(doc => `📄 ${doc.name}: ${appUrl}${doc.file_path}`).join('\n\n');
                           const docMessage = `Aqui estão os documentos que mencionei:\n\n${docLinks}`;
                           
-                          await sendWhatsAppMessage(lead.user_id, from, docMessage, supabaseAdmin, lead.id);
+                          await sendWhatsAppMessage(lead.user_id, from, docMessage, supabaseAdmin, lead.id, false, "whatsapp_auto_responder");
                           
                           await supabaseAdmin.from("interactions").insert({
                             lead_id: lead.id,
@@ -550,7 +556,7 @@ Formato OBRIGATÓRIO do JSON:
                         
                         const proposalMessage = `Perfeito! Tenho disponibilidade para falarmos ${proposedTime}. Confirma se te dá jeito este horário ou se preferes outro dia/hora?`;
                         
-                        await sendWhatsAppMessage(lead.user_id, from, proposalMessage, supabaseAdmin, lead.id);
+                        await sendWhatsAppMessage(lead.user_id, from, proposalMessage, supabaseAdmin, lead.id, false, "whatsapp_auto_responder");
                         
                         await supabaseAdmin.from("interactions").insert({
                           lead_id: lead.id,

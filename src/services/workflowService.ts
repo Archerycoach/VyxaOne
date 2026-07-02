@@ -318,7 +318,7 @@ async function sendWhatsappAction(action: any, lead: any, userId: string) {
       throw new Error("Nome do template não configurado na ação");
     }
 
-    const result = await sendWhatsAppTemplate(userId, lead.phone, templateName);
+    const result = await sendWhatsAppTemplate(userId, lead.phone, templateName, supabase, lead.id, false, "workflow_automation");
     
     if (!result.success) {
       throw new Error(result.error || "Falha ao enviar WhatsApp");

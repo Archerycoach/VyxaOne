@@ -507,7 +507,9 @@ export default async function handler(
                 finalPhone,
                 "primeiro_contacto", // This template must be approved in Meta Business Manager
                 supabase,
-                newLead.id
+                newLead.id,
+                false,
+                "meta_first_contact"
               );
 
               if (templateResult.success) {

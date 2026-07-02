@@ -40,7 +40,6 @@ import {
   Plug,
   GitBranch,
   Mail,
-  Inbox,
   Palette,
   Banknote,
 } from "lucide-react";
@@ -117,7 +116,6 @@ export function Navigation() {
     
     // Main items
     { icon: ListTodo, label: "O Meu Dia", path: "/ai-organizer" },
-    { icon: Inbox, label: "Caixa de Entrada", path: "/inbox" },
     { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
     { icon: Users, label: "Leads", path: "/leads" },
     { icon: Target, label: "Pipeline", path: "/pipeline" },
@@ -146,7 +144,7 @@ export function Navigation() {
       label: "Ferramentas", 
       subItems: [
         { icon: Send, label: "Mensagens", path: "/bulk-messages" },
-        { icon: Mail, label: "Emails Automáticos", path: "/automated-emails" },
+        { icon: Mail, label: "Registo de Envios Automáticos", path: "/automated-emails" },
         { icon: Calculator, label: "Financiamento", path: "/financing" },
         { icon: FolderOpen, label: "Documentos", path: "/documents" },
       ]

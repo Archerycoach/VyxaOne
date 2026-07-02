@@ -6,6 +6,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -14,7 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
-import { Mail, CheckCircle2, XCircle, RefreshCw } from "lucide-react";
+import { Mail, MessageCircle, CheckCircle2, XCircle, RefreshCw } from "lucide-react";
 
 interface AutomatedEmailLogRow {
   id: string;
@@ -23,40 +30,72 @@ interface AutomatedEmailLogRow {
   source: string;
   to_email: string;
   subject: string;
+  html_body: string | null;
   status: string;
   error_message: string | null;
   imap_saved: boolean;
   created_at: string;
 }
 
-const SOURCE_LABELS: Record<string, string> = {
+interface AutomatedWhatsAppLogRow {
+  id: string;
+  lead_id: string | null;
+  lead_name: string | null;
+  source: string;
+  to_phone: string;
+  message_type: string;
+  content_summary: string;
+  status: string;
+  error_message: string | null;
+  created_at: string;
+}
+
+const EMAIL_SOURCE_LABELS: Record<string, string> = {
   lead_reactivation: "Reativação de Leads",
   contact_alerts: "Alerta de Contacto/Oportunidade",
   property_matcher: "Property Matcher",
   workflow_automation: "Automação (Workflow)",
 };
 
+const WHATSAPP_SOURCE_LABELS: Record<string, string> = {
+  lead_reactivation: "Reativação de Leads",
+  reactivate_cold_leads: "Reativação de Leads Frias",
+  calendar_reminders: "Lembretes de Agenda",
+  workflow_automation: "Automação (Workflow)",
+  whatsapp_auto_responder: "Resposta Automática (IA)",
+  meta_first_contact: "Primeiro Contacto (Meta)",
+  optin_confirm: "Confirmação de Opt-in",
+  whatsapp_reactivate: "Reativação em Massa",
+  gpt_assistant_digest: "Resumo Diário (IA)",
+  unknown_automation: "Automação",
+};
+
 const PAGE_SIZE = 30;
 
-export default function AutomatedEmailsPage() {
-  const [rows, setRows] = useState<AutomatedEmailLogRow[]>([]);
+export default function AutomatedSendsLogPage() {
+  const [channel, setChannel] = useState<"email" | "whatsapp">("email");
+  const [emailRows, setEmailRows] = useState<AutomatedEmailLogRow[]>([]);
+  const [whatsappRows, setWhatsappRows] = useState<AutomatedWhatsAppLogRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [sourceFilter, setSourceFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
+  const [selectedRow, setSelectedRow] = useState<AutomatedEmailLogRow | AutomatedWhatsAppLogRow | null>(null);
+
+  const sourceLabels = channel === "email" ? EMAIL_SOURCE_LABELS : WHATSAPP_SOURCE_LABELS;
 
   const fetchPage = useCallback(async (offset: number, append: boolean) => {
     if (append) setLoadingMore(true); else setLoading(true);
 
     try {
-      // NOTA: "automated_email_log" só existe depois de correr a migração
-      // supabase/migrations/20260701170020_*.sql e regenerar
-      // database.types.ts. Até lá, usamos "as any" no nome da tabela — o
-      // mesmo padrão já usado no resto do código para tabelas recentes.
+      // NOTA: "automated_email_log" e "automated_whatsapp_log" só existem
+      // depois de correr as respetivas migrações e regenerar
+      // database.types.ts. Até lá, usamos "as any" no nome da tabela.
+      const tableName = channel === "email" ? "automated_email_log" : "automated_whatsapp_log";
       let query = (supabase
-        .from("automated_email_log" as any)
+        .from(tableName as any)
         .select("*")
         .order("created_at", { ascending: false })
         .range(offset, offset + PAGE_SIZE - 1) as any);
@@ -69,39 +108,53 @@ export default function AutomatedEmailsPage() {
       }
       if (search.trim()) {
         const term = `%${search.trim()}%`;
-        query = query.or(`lead_name.ilike.${term},to_email.ilike.${term},subject.ilike.${term}`);
+        query = channel === "email"
+          ? query.or(`lead_name.ilike.${term},to_email.ilike.${term},subject.ilike.${term}`)
+          : query.or(`lead_name.ilike.${term},to_phone.ilike.${term},content_summary.ilike.${term}`);
       }
 
       const { data, error } = await query;
       if (error) throw error;
 
-      const newRows = (data || []) as AutomatedEmailLogRow[];
-      setRows((prev) => (append ? [...prev, ...newRows] : newRows));
+      const newRows = data || [];
+      if (channel === "email") {
+        setEmailRows((prev) => (append ? [...prev, ...newRows] : newRows) as AutomatedEmailLogRow[]);
+      } else {
+        setWhatsappRows((prev) => (append ? [...prev, ...newRows] : newRows) as AutomatedWhatsAppLogRow[]);
+      }
       setHasMore(newRows.length === PAGE_SIZE);
     } catch (err) {
-      console.error("Error fetching automated email log:", err);
+      console.error("Error fetching automated sends log:", err);
     } finally {
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [sourceFilter, statusFilter, search]);
+  }, [channel, sourceFilter, statusFilter, search]);
 
   useEffect(() => {
     fetchPage(0, false);
   }, [fetchPage]);
 
+  // Ao trocar de canal, limpa os filtros de origem (as origens são
+  // diferentes por canal) e recomeça a pesquisa.
+  const handleChannelChange = (value: string) => {
+    setChannel(value as "email" | "whatsapp");
+    setSourceFilter("all");
+  };
+
+  const rows = channel === "email" ? emailRows : whatsappRows;
+
   return (
     <ProtectedRoute>
       <Layout>
         <div className="container mx-auto py-8">
-          <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center justify-between mb-8 flex-wrap gap-4">
             <div>
-              <h1 className="text-3xl font-bold tracking-tight">Emails Automáticos</h1>
+              <h1 className="text-3xl font-bold tracking-tight">Registo de Envios Automáticos</h1>
               <p className="text-muted-foreground mt-2">
-                Registo de todos os emails que a plataforma enviou automaticamente a leads/clientes
-                — sem ação manual direta sua — incluindo os que falharam. Emails que enviou você
-                próprio (Email IA, mensagens em massa) não aparecem aqui, pois já são visíveis na
-                cronologia de cada lead.
+                Todos os emails e mensagens de WhatsApp que a plataforma enviou automaticamente a
+                leads/clientes — sem ação manual sua — incluindo os que falharam. Mensagens que
+                enviou você próprio não aparecem aqui, pois já são visíveis na cronologia de cada lead.
               </p>
             </div>
             <Button variant="outline" onClick={() => fetchPage(0, false)} disabled={loading}>
@@ -110,14 +163,29 @@ export default function AutomatedEmailsPage() {
             </Button>
           </div>
 
+          <Tabs value={channel} onValueChange={handleChannelChange} className="mb-6">
+            <TabsList>
+              <TabsTrigger value="email">
+                <Mail className="h-4 w-4 mr-2" />
+                Email
+              </TabsTrigger>
+              <TabsTrigger value="whatsapp">
+                <MessageCircle className="h-4 w-4 mr-2" />
+                WhatsApp
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+
           <Card>
             <CardHeader>
               <CardTitle>Filtros</CardTitle>
-              <CardDescription>Filtre por origem, estado ou pesquise por lead/email/assunto.</CardDescription>
+              <CardDescription>
+                Filtre por origem, estado ou pesquise por lead{channel === "email" ? ", email ou assunto" : " ou telefone"}.
+              </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col sm:flex-row gap-3">
               <Input
-                placeholder="Pesquisar por lead, email ou assunto..."
+                placeholder={channel === "email" ? "Pesquisar por lead, email ou assunto..." : "Pesquisar por lead ou telefone..."}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="sm:max-w-xs"
@@ -128,7 +196,7 @@ export default function AutomatedEmailsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todas as origens</SelectItem>
-                  {Object.entries(SOURCE_LABELS).map(([key, label]) => (
+                  {Object.entries(sourceLabels).map(([key, label]) => (
                     <SelectItem key={key} value={key}>{label}</SelectItem>
                   ))}
                 </SelectContent>
@@ -154,10 +222,10 @@ export default function AutomatedEmailsPage() {
                     <TableHead>Data</TableHead>
                     <TableHead>Lead</TableHead>
                     <TableHead>Para</TableHead>
-                    <TableHead>Assunto</TableHead>
+                    <TableHead>{channel === "email" ? "Assunto" : "Mensagem"}</TableHead>
                     <TableHead>Origem</TableHead>
                     <TableHead>Estado</TableHead>
-                    <TableHead className="text-center">IMAP</TableHead>
+                    {channel === "email" ? <TableHead className="text-center">IMAP</TableHead> : <TableHead>Tipo</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -170,25 +238,23 @@ export default function AutomatedEmailsPage() {
                   ) : rows.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
-                        <Mail className="h-8 w-8 mx-auto mb-2 text-gray-300" />
-                        Ainda não há registos de emails automáticos.
+                        {channel === "email" ? <Mail className="h-8 w-8 mx-auto mb-2 text-gray-300" /> : <MessageCircle className="h-8 w-8 mx-auto mb-2 text-gray-300" />}
+                        Ainda não há registos de {channel === "email" ? "emails" : "mensagens de WhatsApp"} automáticos.
                       </TableCell>
                     </TableRow>
-                  ) : (
-                    rows.map((row) => (
-                      <TableRow key={row.id}>
+                  ) : channel === "email" ? (
+                    emailRows.map((row) => (
+                      <TableRow key={row.id} className="cursor-pointer hover:bg-gray-50" onClick={() => setSelectedRow(row)}>
                         <TableCell className="whitespace-nowrap text-sm">
                           {new Date(row.created_at).toLocaleString("pt-PT")}
                         </TableCell>
-                        <TableCell className="font-medium">
-                          {row.lead_name || "—"}
-                        </TableCell>
+                        <TableCell className="font-medium">{row.lead_name || "—"}</TableCell>
                         <TableCell className="text-sm">{row.to_email}</TableCell>
                         <TableCell className="text-sm max-w-xs truncate" title={row.subject}>
                           {row.subject}
                         </TableCell>
                         <TableCell>
-                          <Badge variant="outline">{SOURCE_LABELS[row.source] || row.source}</Badge>
+                          <Badge variant="outline">{EMAIL_SOURCE_LABELS[row.source] || row.source}</Badge>
                         </TableCell>
                         <TableCell>
                           {row.status === "sent" ? (
@@ -210,6 +276,38 @@ export default function AutomatedEmailsPage() {
                         </TableCell>
                       </TableRow>
                     ))
+                  ) : (
+                    whatsappRows.map((row) => (
+                      <TableRow key={row.id} className="cursor-pointer hover:bg-gray-50" onClick={() => setSelectedRow(row)}>
+                        <TableCell className="whitespace-nowrap text-sm">
+                          {new Date(row.created_at).toLocaleString("pt-PT")}
+                        </TableCell>
+                        <TableCell className="font-medium">{row.lead_name || "—"}</TableCell>
+                        <TableCell className="text-sm">{row.to_phone}</TableCell>
+                        <TableCell className="text-sm max-w-xs truncate" title={row.content_summary}>
+                          {row.content_summary}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{WHATSAPP_SOURCE_LABELS[row.source] || row.source}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          {row.status === "sent" ? (
+                            <Badge className="bg-green-100 text-green-700 border-green-200" variant="outline">
+                              <CheckCircle2 className="h-3 w-3 mr-1" /> Enviado
+                            </Badge>
+                          ) : (
+                            <Badge className="bg-red-100 text-red-700 border-red-200" variant="outline" title={row.error_message || undefined}>
+                              <XCircle className="h-3 w-3 mr-1" /> Falhou
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="text-[10px]">
+                            {row.message_type === "template" ? "Template" : "Texto Livre"}
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))
                   )}
                 </TableBody>
               </Table>
@@ -228,6 +326,52 @@ export default function AutomatedEmailsPage() {
             </CardContent>
           </Card>
         </div>
+
+        <Dialog open={!!selectedRow} onOpenChange={(open) => !open && setSelectedRow(null)}>
+          <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>
+                {selectedRow && "to_email" in selectedRow ? "Email Enviado" : "Mensagem de WhatsApp Enviada"}
+              </DialogTitle>
+            </DialogHeader>
+            {selectedRow && "to_email" in selectedRow ? (
+              <div className="space-y-3">
+                <div className="text-sm text-gray-500 space-y-1">
+                  <p><span className="font-medium text-gray-700">Para:</span> {selectedRow.to_email}</p>
+                  <p><span className="font-medium text-gray-700">Lead:</span> {selectedRow.lead_name || "—"}</p>
+                  <p><span className="font-medium text-gray-700">Assunto:</span> {selectedRow.subject}</p>
+                  <p><span className="font-medium text-gray-700">Data:</span> {new Date(selectedRow.created_at).toLocaleString("pt-PT")}</p>
+                </div>
+                <div className="border-t pt-3">
+                  {selectedRow.html_body ? (
+                    <div
+                      className="prose prose-sm max-w-none border rounded-lg p-4 bg-gray-50"
+                      dangerouslySetInnerHTML={{ __html: selectedRow.html_body }}
+                    />
+                  ) : (
+                    <p className="text-sm text-gray-400 italic">
+                      O texto deste email não ficou guardado (enviado antes desta funcionalidade existir).
+                    </p>
+                  )}
+                </div>
+              </div>
+            ) : selectedRow ? (
+              <div className="space-y-3">
+                <div className="text-sm text-gray-500 space-y-1">
+                  <p><span className="font-medium text-gray-700">Para:</span> {(selectedRow as AutomatedWhatsAppLogRow).to_phone}</p>
+                  <p><span className="font-medium text-gray-700">Lead:</span> {selectedRow.lead_name || "—"}</p>
+                  <p><span className="font-medium text-gray-700">Tipo:</span> {(selectedRow as AutomatedWhatsAppLogRow).message_type === "template" ? "Template" : "Texto Livre"}</p>
+                  <p><span className="font-medium text-gray-700">Data:</span> {new Date(selectedRow.created_at).toLocaleString("pt-PT")}</p>
+                </div>
+                <div className="border-t pt-3">
+                  <p className="text-sm text-gray-800 whitespace-pre-wrap bg-[#dcf8c6] rounded-lg p-3 inline-block max-w-full">
+                    {(selectedRow as AutomatedWhatsAppLogRow).content_summary}
+                  </p>
+                </div>
+              </div>
+            ) : null}
+          </DialogContent>
+        </Dialog>
       </Layout>
     </ProtectedRoute>
   );

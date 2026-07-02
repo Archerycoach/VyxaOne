@@ -1,5 +1,31 @@
 import { supabase } from "@/integrations/supabase/client";
 
+export type WhatsAppConsentStatus = "granted" | "revoked" | "none";
+
+/**
+ * Versão detalhada da verificação de consentimento — distingue "nunca deu
+ * consentimento" de "revogou um consentimento que tinha dado antes". A
+ * versão hasValidWhatsAppConsent (booleana) trata as duas situações da
+ * mesma forma (bloqueia o envio em ambas, corretamente), mas quem precisa
+ * de mostrar uma mensagem de erro exata ao consultor deve usar esta.
+ */
+export async function getWhatsAppConsentStatus(leadId: string, supabaseClient = supabase): Promise<WhatsAppConsentStatus> {
+  const { data, error } = await supabaseClient
+    .from("lead_consents" as any)
+    .select("status")
+    .eq("lead_id", leadId)
+    .eq("channel", "whatsapp")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error || !data) return "none";
+  const status = (data as any).status;
+  if (status === "granted") return "granted";
+  if (status === "revoked") return "revoked";
+  return "none";
+}
+
 export async function hasValidWhatsAppConsent(leadId: string, supabaseClient = supabase): Promise<boolean> {
   const { data, error } = await supabaseClient
     .from("lead_consents" as any)

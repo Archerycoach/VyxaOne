@@ -210,7 +210,10 @@ export function LeadCard({
   // Grid view - Compact card
   if (viewMode === "grid") {
     return (
-      <Card className={`p-4 transition-all hover:shadow-lg ${recentInteractionState.isHighlighted ? "border-blue-300 bg-blue-50 shadow-blue-200" : ""}`}>
+      <Card
+        className={`p-4 transition-all hover:shadow-lg cursor-pointer ${recentInteractionState.isHighlighted ? "border-blue-300 bg-blue-50 shadow-blue-200" : ""}`}
+        onClick={() => onViewDetails(lead)}
+      >
         <div className="flex items-start justify-between mb-3">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
@@ -235,7 +238,7 @@ export function LeadCard({
               <p className="text-xs text-gray-600 truncate">{lead.email}</p>
             )}
           </div>
-          <div className="flex gap-1 flex-shrink-0">
+          <div className="flex gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
             <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
               <DropdownMenuTrigger asChild>
                 <button className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-colors">
@@ -476,7 +479,10 @@ export function LeadCard({
 
   // List view - Full details card
   return (
-    <Card className={`p-6 transition-all hover:shadow-lg ${recentInteractionState.isHighlighted ? "border-blue-300 bg-blue-50 shadow-blue-200" : ""}`}>
+    <Card
+      className={`p-6 transition-all hover:shadow-lg cursor-pointer ${recentInteractionState.isHighlighted ? "border-blue-300 bg-blue-50 shadow-blue-200" : ""}`}
+      onClick={() => onViewDetails(lead)}
+    >
       <div className="flex items-start justify-between mb-4">
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-1">
@@ -501,7 +507,7 @@ export function LeadCard({
             <p className="text-sm text-gray-600">{lead.email}</p>
           )}
         </div>
-        <div className="flex gap-1">
+        <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
           <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
             <DropdownMenuTrigger asChild>
               <button className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-colors">

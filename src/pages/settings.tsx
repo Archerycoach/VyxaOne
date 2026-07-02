@@ -1013,10 +1013,10 @@ export default function Settings() {
                 </p>
 
                 <p className="text-xs text-muted-foreground mt-2">
-                  Pode consultar todos os emails automáticos já enviados (independentemente de
-                  estarem ligados ou não) em{" "}
+                  Pode consultar todos os emails e mensagens de WhatsApp automáticos já enviados
+                  (independentemente de estarem ligados ou não) em{" "}
                   <a href="/automated-emails" className="text-blue-600 hover:underline">
-                    Emails Automáticos
+                    Registo de Envios Automáticos
                   </a>.
                 </p>
               </CardContent>

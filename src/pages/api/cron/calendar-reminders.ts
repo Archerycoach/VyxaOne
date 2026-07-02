@@ -91,7 +91,9 @@ export default async function handler(
             lead.phone,
             "lembrete_24h", // Template must be approved in Meta Business Manager
             supabaseAdmin,
-            lead.id
+            lead.id,
+            false,
+            "calendar_reminders"
           );
 
           if (result.success) {
@@ -162,7 +164,9 @@ export default async function handler(
             lead.phone,
             "lembrete_2h", // Template must be approved in Meta Business Manager
             supabaseAdmin,
-            lead.id
+            lead.id,
+            false,
+            "calendar_reminders"
           );
 
           if (result.success) {
@@ -310,7 +314,9 @@ export default async function handler(
             lead.phone,
             "reagendar_slot", // Template must be approved
             supabaseAdmin,
-            lead.id
+            lead.id,
+            false,
+            "calendar_reminders"
           );
 
           if (result.success) {

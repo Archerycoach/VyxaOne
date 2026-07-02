@@ -795,7 +795,11 @@ export function LeadsListContainer({
                       ? "bg-white"
                       : "bg-gray-50";
                   return (
-                    <tr key={lead.id} className={`${bgClass} hover:bg-blue-50 transition-colors`}>
+                    <tr
+                      key={lead.id}
+                      className={`${bgClass} hover:bg-blue-50 transition-colors cursor-pointer`}
+                      onClick={() => handleViewDetails(lead)}
+                    >
                       {columnsConfig.map((column, columnIndex) => {
                         if (columnIndex !== 0) {
                           return (
@@ -837,7 +841,7 @@ export function LeadsListContainer({
                           </td>
                         );
                       })}
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                         <div className="flex gap-1">
                           <button
                             onClick={() => handleEdit(lead)}

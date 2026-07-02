@@ -287,7 +287,7 @@ async function sendWhatsappAction(
 
   // Import WhatsApp service
   const { sendWhatsAppTemplate } = await import("@/services/whatsappService");
-  const result = await sendWhatsAppTemplate(userId, lead.phone, templateName);
+  const result = await sendWhatsAppTemplate(userId, lead.phone, templateName, supabase as any, lead.id, false, "workflow_automation");
 
   if (!result.success) {
     throw new Error(result.error || "Failed to send WhatsApp");
