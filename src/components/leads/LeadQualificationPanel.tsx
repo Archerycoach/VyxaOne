@@ -186,35 +186,41 @@ export function LeadQualificationPanel({ leadId, onInsertIntoDraft }: LeadQualif
 
   if (!data) return null;
 
-  if (data.missing.length === 0) {
-    return (
-      <Card className="border-emerald-100 shadow-sm">
-        <CardContent className="p-4 flex items-center gap-3">
-          <CheckCircle2 className="h-6 w-6 text-emerald-500 shrink-0" />
-          <div>
-            <p className="text-sm font-semibold text-emerald-800">Lead totalmente qualificada</p>
-            <p className="text-xs text-emerald-600/80">Todos os dados relevantes para esta lead estão preenchidos.</p>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
+  const isFullyQualified = data.missing.length === 0;
 
   return (
-    <Card className="border-amber-100 shadow-sm overflow-hidden">
-      <div className="bg-gradient-to-r from-amber-50 to-orange-50 px-4 py-3 border-b border-amber-100 flex items-center justify-between flex-wrap gap-2">
+    <Card className={isFullyQualified ? "border-emerald-100 shadow-sm overflow-hidden" : "border-amber-100 shadow-sm overflow-hidden"}>
+      <div
+        className={
+          isFullyQualified
+            ? "bg-gradient-to-r from-emerald-50 to-teal-50 px-4 py-3 border-b border-emerald-100 flex items-center justify-between flex-wrap gap-2"
+            : "bg-gradient-to-r from-amber-50 to-orange-50 px-4 py-3 border-b border-amber-100 flex items-center justify-between flex-wrap gap-2"
+        }
+      >
         <div className="flex items-center gap-2">
-          <div className="bg-amber-100 p-1.5 rounded-full">
-            <ClipboardCheck className="h-4 w-4 text-amber-700" />
+          <div className={isFullyQualified ? "bg-emerald-100 p-1.5 rounded-full" : "bg-amber-100 p-1.5 rounded-full"}>
+            {isFullyQualified ? (
+              <CheckCircle2 className="h-4 w-4 text-emerald-700" />
+            ) : (
+              <ClipboardCheck className="h-4 w-4 text-amber-700" />
+            )}
           </div>
-          <h3 className="font-semibold text-sm text-amber-900">Qualificação da Lead</h3>
+          <h3 className={isFullyQualified ? "font-semibold text-sm text-emerald-900" : "font-semibold text-sm text-amber-900"}>
+            Qualificação da Lead
+          </h3>
         </div>
-        <Badge variant="outline" className="bg-white text-amber-700 border-amber-200">
-          {data.completeness}% preenchido · {data.missing.length} em falta
+        <Badge
+          variant="outline"
+          className={isFullyQualified ? "bg-white text-emerald-700 border-emerald-200" : "bg-white text-amber-700 border-amber-200"}
+        >
+          {isFullyQualified ? "100% preenchido" : `${data.completeness}% preenchido · ${data.missing.length} em falta`}
         </Badge>
       </div>
 
       <CardContent className="p-4 space-y-3">
+        {/* Analisar Notas com IA — sempre visível, mesmo com a lead já
+            totalmente qualificada (pode sempre haver dados a corrigir/
+            confirmar vindos de notas mais recentes). */}
         <div className="flex items-center justify-between gap-2 pb-1">
           <p className="text-xs text-gray-500">
             A IA pode procurar estes dados nas notas já guardadas (ex.: respostas de formulários).
@@ -262,45 +268,54 @@ export function LeadQualificationPanel({ leadId, onInsertIntoDraft }: LeadQualif
           </div>
         )}
 
-        {data.questions.map((q) => (
-          <div key={q.key} className="flex items-start justify-between gap-3 bg-amber-50/40 border border-amber-100 rounded-lg p-3">
-            <div>
-              <p className="text-xs font-medium text-amber-700/80 mb-0.5">{q.label}</p>
-              <p className="text-sm text-gray-800">{q.question}</p>
-            </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 shrink-0 text-amber-600 hover:text-amber-800 hover:bg-amber-100"
-              title="Copiar pergunta"
-              onClick={() => copyToClipboard(q.question)}
-            >
-              <Copy className="h-3.5 w-3.5" />
-            </Button>
+        {isFullyQualified ? (
+          <div className="flex items-center gap-3 bg-emerald-50/50 border border-emerald-100 rounded-lg p-3">
+            <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0" />
+            <p className="text-xs text-emerald-700">Todos os dados relevantes para esta lead estão preenchidos.</p>
           </div>
-        ))}
+        ) : (
+          <>
+            {data.questions.map((q) => (
+              <div key={q.key} className="flex items-start justify-between gap-3 bg-amber-50/40 border border-amber-100 rounded-lg p-3">
+                <div>
+                  <p className="text-xs font-medium text-amber-700/80 mb-0.5">{q.label}</p>
+                  <p className="text-sm text-gray-800">{q.question}</p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 shrink-0 text-amber-600 hover:text-amber-800 hover:bg-amber-100"
+                  title="Copiar pergunta"
+                  onClick={() => copyToClipboard(q.question)}
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            ))}
 
-        {onInsertIntoDraft && (
-          <div className="flex flex-wrap gap-2 pt-1">
-            <Button
-              variant="outline"
-              size="sm"
-              className="text-indigo-700 border-indigo-200 hover:bg-indigo-50"
-              onClick={() => onInsertIntoDraft(buildQuestionsText(data.questions), "email")}
-            >
-              <Mail className="h-3.5 w-3.5 mr-2" />
-              Adicionar ao rascunho de Email
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="text-green-700 border-green-200 hover:bg-green-50"
-              onClick={() => onInsertIntoDraft(buildQuestionsText(data.questions), "whatsapp")}
-            >
-              <MessageCircle className="h-3.5 w-3.5 mr-2" />
-              Adicionar ao rascunho de WhatsApp
-            </Button>
-          </div>
+            {onInsertIntoDraft && (
+              <div className="flex flex-wrap gap-2 pt-1">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-indigo-700 border-indigo-200 hover:bg-indigo-50"
+                  onClick={() => onInsertIntoDraft(buildQuestionsText(data.questions), "email")}
+                >
+                  <Mail className="h-3.5 w-3.5 mr-2" />
+                  Adicionar ao rascunho de Email
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-green-700 border-green-200 hover:bg-green-50"
+                  onClick={() => onInsertIntoDraft(buildQuestionsText(data.questions), "whatsapp")}
+                >
+                  <MessageCircle className="h-3.5 w-3.5 mr-2" />
+                  Adicionar ao rascunho de WhatsApp
+                </Button>
+              </div>
+            )}
+          </>
         )}
       </CardContent>
     </Card>
