@@ -801,6 +801,7 @@ export function WorkflowsManagement() {
                     <SelectItem value="no_contact_5_days">📧 Sem Contacto (5 dias)</SelectItem>
                     <SelectItem value="visit_scheduled">📅 Visita Agendada (Véspera)</SelectItem>
                     <SelectItem value="no_activity_7_days">💤 Sem Atividade (7 dias)</SelectItem>
+                    <SelectItem value="stage_stale_10_days">🐌 Parada na Mesma Fase (10 dias)</SelectItem>
                     <SelectItem value="birthday">🎂 Aniversário</SelectItem>
                     <SelectItem value="custom_date">📌 Data Personalizada</SelectItem>
                   </SelectContent>
