@@ -2,9 +2,9 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { RichTextEditor } from "@/components/ui/RichTextEditor";
 import { Loader2, RotateCcw, Save } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -149,14 +149,13 @@ export function ReactivationTemplatesManagement() {
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <Label htmlFor={`${name}-body`} className="text-xs">Corpo (HTML)</Label>
-                    <Textarea
-                      id={`${name}-body`}
-                      value={t.html_body}
-                      onChange={(e) => updateField(name, "html_body", e.target.value)}
-                      rows={8}
-                      className="font-mono text-xs"
-                    />
+                    <Label className="text-xs">Mensagem</Label>
+                    <div className="border rounded-md overflow-hidden">
+                      <RichTextEditor
+                        value={t.html_body}
+                        onChange={(val) => updateField(name, "html_body", val)}
+                      />
+                    </div>
                   </div>
                   <div className="flex gap-2">
                     <Button size="sm" disabled={t.saving} onClick={() => handleSave(name)}>
