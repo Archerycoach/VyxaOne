@@ -22,6 +22,29 @@ export const config = {
 };
 
 /**
+ * Lê e faz parse do corpo JSON manualmente. Necessário porque
+ * "bodyParser: false" está desligado para todo este ficheiro (exigido pelo
+ * POST, que lê um upload multipart de áudio com o formidable) — isso também
+ * desliga o parsing automático do corpo no PUT, que por sua vez espera JSON.
+ */
+async function readJsonBody(req: NextApiRequest): Promise<any> {
+  return new Promise((resolve, reject) => {
+    let raw = "";
+    req.on("data", (chunk) => {
+      raw += chunk;
+    });
+    req.on("end", () => {
+      try {
+        resolve(raw ? JSON.parse(raw) : {});
+      } catch (err) {
+        reject(new Error("Corpo do pedido inválido (JSON malformado)"));
+      }
+    });
+    req.on("error", reject);
+  });
+}
+
+/**
  * Formata o valor atual de um campo de qualificação para mostrar à IA (e,
  * indiretamente, ao consultor no ecrã de revisão). Usa os mesmos campos do
  * catálogo de qualificação (src/lib/leadQualification.ts).
@@ -243,7 +266,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // PUT: Apply changes from voice note analysis
   if (req.method === "PUT") {
     try {
-      const { transcription, analysis } = req.body;
+      const { transcription, analysis } = await readJsonBody(req);
 
       if (!transcription || !analysis) {
         return res.status(400).json({ error: "Dados incompletos" });

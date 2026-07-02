@@ -6,6 +6,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { QUALIFICATION_FIELDS } from "@/lib/leadQualification";
+import { supabase } from "@/integrations/supabase/client";
 
 const QUALIFICATION_FIELD_LABELS: Record<string, string> = Object.fromEntries(
   QUALIFICATION_FIELDS.map((field) => [field.key, field.label])
@@ -150,16 +151,21 @@ export function VoiceNoteRecorder({
     setIsProcessing(true);
 
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error("Sessão expirada. Inicie sessão novamente.");
+
       const formData = new FormData();
       formData.append("audio", audioBlob, "voice-note.webm");
 
       const response = await fetch(`/api/gpt/leads/${leadId}/voice-note`, {
         method: "POST",
+        headers: { Authorization: `Bearer ${session.access_token}` },
         body: formData,
       });
 
       if (!response.ok) {
-        throw new Error("Erro ao processar nota de voz");
+        const errBody = await response.json().catch(() => null);
+        throw new Error(errBody?.error || "Erro ao processar nota de voz");
       }
 
       const result = await response.json();
@@ -188,9 +194,15 @@ export function VoiceNoteRecorder({
     setIsConfirming(true);
 
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error("Sessão expirada. Inicie sessão novamente.");
+
       const response = await fetch(`/api/gpt/leads/${leadId}/voice-note`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
         body: JSON.stringify({
           transcription,
           analysis,
@@ -198,7 +210,8 @@ export function VoiceNoteRecorder({
       });
 
       if (!response.ok) {
-        throw new Error("Erro ao aplicar alterações");
+        const errBody = await response.json().catch(() => null);
+        throw new Error(errBody?.error || "Erro ao aplicar alterações");
       }
 
       toast({
