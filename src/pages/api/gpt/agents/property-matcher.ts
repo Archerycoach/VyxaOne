@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { runAI } from "@/lib/ai/provider";
 import { findMatchesForLead } from "@/services/matchingService";
 import { sendClientEmail } from "@/lib/server/sendClientEmail";
+import { logEmailInteractionServer } from "@/lib/emailInteractionLogger";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -161,6 +162,7 @@ Responde EXCLUSIVAMENTE com o HTML da mensagem.`;
 
     // 7. Send the email via the centralized client-email service (SMTP +
     // cópia best-effort no IMAP + registo em automated_email_log).
+    const emailSubject = `${enrichedProperties.length} imóveis ideais para si, ${lead.name}`;
     const sendResult = await sendClientEmail({
       supabaseAdmin: supabase,
       userId,
@@ -168,7 +170,7 @@ Responde EXCLUSIVAMENTE com o HTML da mensagem.`;
       leadName: lead.name,
       source: "property_matcher",
       to: lead.email,
-      subject: `${enrichedProperties.length} imóveis ideais para si, ${lead.name}`,
+      subject: emailSubject,
       html: emailHtml,
     });
 
@@ -177,12 +179,19 @@ Responde EXCLUSIVAMENTE com o HTML da mensagem.`;
       return res.status(200).json({ success: false, message: sendResult.error });
     }
 
-    // 8. Log interaction in the CRM
-    await supabase.from("interactions").insert({
-      lead_id: leadId,
-      user_id: userId,
-      type: "email",
-      notes: `Email Automático IA: Enviados ${enrichedProperties.length} imóveis com match real (scores: ${enrichedProperties.map(p => p.match_score + '%').join(', ')}). Fontes: ${enrichedProperties.filter(p => p.source === 'internal').length} BD interna + ${enrichedProperties.filter(p => p.source === 'idealista').length} Idealista.`,
+    // 8. Log interaction in the CRM — com o assunto e o texto reais do
+    // email enviado, para aparecer corretamente na Caixa de Entrada
+    // (a versão anterior usava nomes de colunas que não existem na tabela
+    // "interactions" — "type"/"notes" em vez de "interaction_type"/
+    // "content" —, por isso o registo falhava silenciosamente).
+    await logEmailInteractionServer(supabase, {
+      leadId,
+      userId,
+      to: lead.email,
+      subject: emailSubject,
+      body: emailHtml,
+      outcome: `Property Matcher: ${enrichedProperties.length} imóveis enviados (scores: ${enrichedProperties.map(p => p.match_score + '%').join(', ')})`,
+      updateLastContact: false,
     });
 
     console.log(`[Property Matcher] Email sent successfully to ${lead.email}`);

@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { sendWhatsAppTemplate } from "@/services/whatsappService";
 import { hasValidWhatsAppConsent } from "@/services/consentService";
 import { sendClientEmail } from "@/lib/server/sendClientEmail";
+import { logEmailInteractionServer } from "@/lib/emailInteractionLogger";
 import crypto from "crypto";
 
 /**
@@ -377,13 +378,19 @@ async function sendEmailReactivation(
     updated_at: new Date().toISOString()
   }).eq("id", lead.id);
 
-  // Log interaction
-  await supabaseAdmin.from("interactions").insert({
-    lead_id: lead.id,
-    user_id: lead.user_id,
-    interaction_type: "email",
-    content: `Email de reativação enviado (${templateName} - Tentativa ${attemptNumber}/3)`,
-    interaction_date: new Date().toISOString()
+  // Log interaction — regista o assunto e o texto reais que foram enviados
+  // (não só uma nota de estado interna), para aparecer correto na Caixa de
+  // Entrada. Não atualiza last_contact_date: um email de reativação
+  // automático não conta como um contacto genuíno, tal como já acontecia
+  // antes desta correção.
+  await logEmailInteractionServer(supabaseAdmin, {
+    leadId: lead.id,
+    userId: lead.user_id,
+    to: lead.email!,
+    subject,
+    body: html,
+    outcome: `Email de reativação enviado (${templateName} - Tentativa ${attemptNumber}/3)`,
+    updateLastContact: false,
   });
 
   results.email_sent++;

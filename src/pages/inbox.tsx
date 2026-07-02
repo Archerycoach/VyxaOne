@@ -4,7 +4,7 @@ import { Layout } from "@/components/Layout";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Loader2, MessageCircle, Mail, Search, Send, RefreshCw, Inbox as InboxIcon, ArrowLeft, MessageSquare } from "lucide-react";
+import { Loader2, MessageCircle, Mail, Search, Send, RefreshCw, Inbox as InboxIcon, ArrowLeft, MessageSquare, Pencil } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,6 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { getInteractionsByLead, type InteractionWithDetails } from "@/services/interactionsService";
 import { getMessageSnippets, personalizeSnippet, type MessageSnippet } from "@/services/messageSnippetsService";
+import { htmlToPlainText } from "@/lib/htmlToPlainText";
 
 interface ConversationLead {
   id: string;
@@ -39,6 +40,18 @@ interface ConversationSummary {
 function cleanContent(content: string | null): string {
   if (!content) return "";
   return content.replace(/^(Recebido: |Enviado \(IA\): |Enviado \(Automático\): |Enviado \(Manual[^)]*\): )/, "");
+}
+
+// O conteúdo de uma interação de email fica guardado como
+// "Para: X\nAssunto: Y\n\n{texto do email}" — extrai só a parte do texto,
+// já que o destinatário/assunto já aparecem separadamente na interface.
+// htmlToPlainText por segurança, para interações antigas que possam ainda
+// ter HTML por limpar.
+function extractEmailBody(content: string | null): string {
+  if (!content) return "";
+  const idx = content.indexOf("\n\n");
+  const raw = idx >= 0 ? content.slice(idx + 2) : content;
+  return htmlToPlainText(raw);
 }
 
 function relativeTime(iso: string): string {
@@ -216,6 +229,13 @@ export default function InboxPage() {
     setReplyText((prev) => (prev.trim() ? `${prev} ${personalized}` : personalized));
   };
 
+  // Coloca o texto de uma mensagem já enviada (email ou WhatsApp) na caixa
+  // de resposta, para o consultor poder corrigi-la e voltar a enviar.
+  const reuseMessageText = (text: string) => {
+    setReplyText(text);
+    toast({ title: "Texto colocado na caixa de resposta", description: "Pode corrigir antes de enviar." });
+  };
+
   const filteredConversations = useMemo(() => {
     if (!search.trim()) return conversations;
     const term = search.trim().toLowerCase();
@@ -335,27 +355,60 @@ export default function InboxPage() {
                       .sort((a, b) => new Date(a.interaction_date).getTime() - new Date(b.interaction_date).getTime())
                       .map((msg) => {
                         if (msg.interaction_type === "email") {
+                          const emailBody = extractEmailBody(msg.content);
                           return (
-                            <div key={msg.id} className="self-center bg-white border rounded-lg px-3 py-1.5 text-xs text-gray-600 flex items-center gap-1.5 my-1">
-                              <Mail className="h-3 w-3 text-blue-500" />
-                              Email: {msg.subject || cleanContent(msg.content).slice(0, 60)}
-                              <span className="text-gray-400">· {relativeTime(msg.interaction_date)}</span>
+                            <div key={msg.id} className="self-center w-full max-w-[85%] bg-white border rounded-lg p-3 my-1 group">
+                              <div className="flex items-center justify-between gap-2 mb-1.5">
+                                <div className="flex items-center gap-1.5 text-xs font-medium text-blue-700">
+                                  <Mail className="h-3.5 w-3.5" />
+                                  {msg.subject || "(sem assunto)"}
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <span className="text-[10px] text-gray-400">{relativeTime(msg.interaction_date)}</span>
+                                  {emailBody && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                                      title="Corrigir e reenviar por WhatsApp"
+                                      onClick={() => reuseMessageText(emailBody)}
+                                    >
+                                      <Pencil className="h-3 w-3 text-gray-500" />
+                                    </Button>
+                                  )}
+                                </div>
+                              </div>
+                              {emailBody && (
+                                <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{emailBody}</p>
+                              )}
                             </div>
                           );
                         }
                         const isInbound = msg.interaction_type === "whatsapp_inbound";
+                        const messageText = cleanContent(msg.content);
                         return (
                           <div
                             key={msg.id}
-                            className={`max-w-[75%] p-2.5 rounded-lg shadow-sm ${
+                            className={`group max-w-[75%] p-2.5 rounded-lg shadow-sm ${
                               isInbound ? "bg-white self-start rounded-tl-none" : "bg-[#dcf8c6] self-end rounded-tr-none"
                             }`}
                           >
-                            <p className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">{cleanContent(msg.content)}</p>
-                            <div className="flex items-center justify-end gap-1 mt-1">
+                            <p className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">{messageText}</p>
+                            <div className="flex items-center justify-end gap-1.5 mt-1">
                               <span className="text-[10px] text-gray-500">
                                 {new Date(msg.interaction_date).toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" })}
                               </span>
+                              {!isInbound && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity"
+                                  title="Corrigir e reenviar"
+                                  onClick={() => reuseMessageText(messageText)}
+                                >
+                                  <Pencil className="h-3 w-3 text-gray-500" />
+                                </Button>
+                              )}
                             </div>
                           </div>
                         );
