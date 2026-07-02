@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { createClient } from "@supabase/supabase-js";
 import { sendClientEmail } from "@/lib/server/sendClientEmail";
+import { logEmailInteractionServer } from "@/lib/emailInteractionLogger";
 import {
   isRecentOpportunity,
   scoreDevelopmentAgainstRequest,
@@ -140,7 +141,9 @@ async function maybeSendMatchEmail(
       }
     }
 
-    await sendClientEmail({
+    const htmlBody = body.replace(/\s+$/, "").replace(/\n/g, "<br>");
+
+    const sendResult = await sendClientEmail({
       supabaseAdmin: supabase,
       userId: request.user_id,
       leadId: request.lead_id || null,
@@ -149,8 +152,24 @@ async function maybeSendMatchEmail(
       to: entity.email,
       cc,
       subject,
-      html: body.replace(/\s+$/, "").replace(/\n/g, "<br>"),
+      html: htmlBody,
     });
+
+    if (sendResult.success) {
+      // Regista a interação com o assunto e o texto reais enviados — antes
+      // desta correção, este envio não ficava registado em lado nenhum, por
+      // isso nunca aparecia na Caixa de Entrada.
+      await logEmailInteractionServer(supabase, {
+        leadId: request.lead_id || undefined,
+        contactId: request.contact_id || undefined,
+        userId: request.user_id,
+        to: entity.email,
+        subject,
+        body: htmlBody,
+        outcome: `Alerta de oportunidade enviado: ${opportunityTitle}`,
+        updateLastContact: false,
+      });
+    }
   } catch (error) {
     console.error("Failed to send auto match email from cron:", error);
   }
