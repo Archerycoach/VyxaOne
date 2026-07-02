@@ -72,7 +72,7 @@ async function logAutomatedWhatsApp(params: {
       source: params.source,
       to_phone: params.toPhone,
       message_type: params.messageType,
-      content_summary: params.contentSummary.slice(0, 500),
+      content_summary: params.contentSummary,
       status: params.status,
       error_message: params.errorMessage || null,
     });

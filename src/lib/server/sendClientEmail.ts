@@ -98,7 +98,7 @@ export async function sendClientEmail(params: SendClientEmailParams): Promise<Se
 
   if (!smtpSettings?.smtp_host) {
     const error = "SMTP não configurado para este utilizador.";
-    await logAutomatedEmail(supabaseAdmin, { userId, leadId, leadName, source, to, subject, status: "failed", errorMessage: error, imapSaved: false });
+    await logAutomatedEmail(supabaseAdmin, { userId, leadId, leadName, source, to, subject, htmlBody: params.html, status: "failed", errorMessage: error, imapSaved: false });
     return { success: false, error, imapSaved: false };
   }
 
@@ -146,13 +146,13 @@ export async function sendClientEmail(params: SendClientEmailParams): Promise<Se
     await transporter.sendMail(mailOptions);
   } catch (sendError: any) {
     const errorMessage = sendError?.message || "Falha ao enviar email";
-    await logAutomatedEmail(supabaseAdmin, { userId, leadId, leadName, source, to, subject, status: "failed", errorMessage, imapSaved: false });
+    await logAutomatedEmail(supabaseAdmin, { userId, leadId, leadName, source, to, subject, htmlBody: html, status: "failed", errorMessage, imapSaved: false });
     return { success: false, error: errorMessage, imapSaved: false };
   }
 
   const imapSaved = await tryArchiveInSentFolder(settings, mailOptions);
 
-  await logAutomatedEmail(supabaseAdmin, { userId, leadId, leadName, source, to, subject, status: "sent", imapSaved });
+  await logAutomatedEmail(supabaseAdmin, { userId, leadId, leadName, source, to, subject, htmlBody: html, status: "sent", imapSaved });
 
   return { success: true, imapSaved };
 }
@@ -205,6 +205,7 @@ interface LogAutomatedEmailParams {
   source: AutomatedEmailSource;
   to: string;
   subject: string;
+  htmlBody?: string;
   status: "sent" | "failed";
   errorMessage?: string;
   imapSaved: boolean;
@@ -219,6 +220,7 @@ async function logAutomatedEmail(supabaseAdmin: any, params: LogAutomatedEmailPa
       source: params.source,
       to_email: params.to,
       subject: params.subject,
+      html_body: params.htmlBody || null,
       status: params.status,
       error_message: params.errorMessage || null,
       imap_saved: params.imapSaved,

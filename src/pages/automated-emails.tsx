@@ -8,6 +8,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -24,6 +30,7 @@ interface AutomatedEmailLogRow {
   source: string;
   to_email: string;
   subject: string;
+  html_body: string | null;
   status: string;
   error_message: string | null;
   imap_saved: boolean;
@@ -75,6 +82,7 @@ export default function AutomatedSendsLogPage() {
   const [sourceFilter, setSourceFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
+  const [selectedRow, setSelectedRow] = useState<AutomatedEmailLogRow | AutomatedWhatsAppLogRow | null>(null);
 
   const sourceLabels = channel === "email" ? EMAIL_SOURCE_LABELS : WHATSAPP_SOURCE_LABELS;
 
@@ -236,7 +244,7 @@ export default function AutomatedSendsLogPage() {
                     </TableRow>
                   ) : channel === "email" ? (
                     emailRows.map((row) => (
-                      <TableRow key={row.id}>
+                      <TableRow key={row.id} className="cursor-pointer hover:bg-gray-50" onClick={() => setSelectedRow(row)}>
                         <TableCell className="whitespace-nowrap text-sm">
                           {new Date(row.created_at).toLocaleString("pt-PT")}
                         </TableCell>
@@ -270,7 +278,7 @@ export default function AutomatedSendsLogPage() {
                     ))
                   ) : (
                     whatsappRows.map((row) => (
-                      <TableRow key={row.id}>
+                      <TableRow key={row.id} className="cursor-pointer hover:bg-gray-50" onClick={() => setSelectedRow(row)}>
                         <TableCell className="whitespace-nowrap text-sm">
                           {new Date(row.created_at).toLocaleString("pt-PT")}
                         </TableCell>
@@ -318,6 +326,52 @@ export default function AutomatedSendsLogPage() {
             </CardContent>
           </Card>
         </div>
+
+        <Dialog open={!!selectedRow} onOpenChange={(open) => !open && setSelectedRow(null)}>
+          <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>
+                {selectedRow && "to_email" in selectedRow ? "Email Enviado" : "Mensagem de WhatsApp Enviada"}
+              </DialogTitle>
+            </DialogHeader>
+            {selectedRow && "to_email" in selectedRow ? (
+              <div className="space-y-3">
+                <div className="text-sm text-gray-500 space-y-1">
+                  <p><span className="font-medium text-gray-700">Para:</span> {selectedRow.to_email}</p>
+                  <p><span className="font-medium text-gray-700">Lead:</span> {selectedRow.lead_name || "—"}</p>
+                  <p><span className="font-medium text-gray-700">Assunto:</span> {selectedRow.subject}</p>
+                  <p><span className="font-medium text-gray-700">Data:</span> {new Date(selectedRow.created_at).toLocaleString("pt-PT")}</p>
+                </div>
+                <div className="border-t pt-3">
+                  {selectedRow.html_body ? (
+                    <div
+                      className="prose prose-sm max-w-none border rounded-lg p-4 bg-gray-50"
+                      dangerouslySetInnerHTML={{ __html: selectedRow.html_body }}
+                    />
+                  ) : (
+                    <p className="text-sm text-gray-400 italic">
+                      O texto deste email não ficou guardado (enviado antes desta funcionalidade existir).
+                    </p>
+                  )}
+                </div>
+              </div>
+            ) : selectedRow ? (
+              <div className="space-y-3">
+                <div className="text-sm text-gray-500 space-y-1">
+                  <p><span className="font-medium text-gray-700">Para:</span> {(selectedRow as AutomatedWhatsAppLogRow).to_phone}</p>
+                  <p><span className="font-medium text-gray-700">Lead:</span> {selectedRow.lead_name || "—"}</p>
+                  <p><span className="font-medium text-gray-700">Tipo:</span> {(selectedRow as AutomatedWhatsAppLogRow).message_type === "template" ? "Template" : "Texto Livre"}</p>
+                  <p><span className="font-medium text-gray-700">Data:</span> {new Date(selectedRow.created_at).toLocaleString("pt-PT")}</p>
+                </div>
+                <div className="border-t pt-3">
+                  <p className="text-sm text-gray-800 whitespace-pre-wrap bg-[#dcf8c6] rounded-lg p-3 inline-block max-w-full">
+                    {(selectedRow as AutomatedWhatsAppLogRow).content_summary}
+                  </p>
+                </div>
+              </div>
+            ) : null}
+          </DialogContent>
+        </Dialog>
       </Layout>
     </ProtectedRoute>
   );
