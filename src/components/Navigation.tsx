@@ -40,6 +40,7 @@ import {
   Plug,
   GitBranch,
   Mail,
+  Inbox,
   Palette,
   Banknote,
 } from "lucide-react";
@@ -116,6 +117,7 @@ export function Navigation() {
     
     // Main items
     { icon: ListTodo, label: "O Meu Dia", path: "/ai-organizer" },
+    { icon: Inbox, label: "Caixa de Entrada", path: "/inbox" },
     { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
     { icon: Users, label: "Leads", path: "/leads" },
     { icon: Target, label: "Pipeline", path: "/pipeline" },
