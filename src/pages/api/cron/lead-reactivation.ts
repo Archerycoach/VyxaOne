@@ -327,12 +327,41 @@ async function sendEmailReactivation(
   const templateName = attemptNumber === 1 ? 'optin_inicial' : 
                        attemptNumber === 2 ? 'optin_lembrete_2' : 
                        'optin_lembrete_final';
-  
-  const { data: template } = await supabaseAdmin
+
+  // Procura, por esta ordem: 1) a versão personalizada deste consultor,
+  // 2) a versão partilhada por defeito (user_id vazio), 3) qualquer registo
+  // com este nome (compatibilidade com configurações anteriores a esta
+  // funcionalidade). Cada consultor pode agora ter o seu próprio texto —
+  // ver Definições > Envios Automáticos > Personalizar Textos de Reativação.
+  let template: { subject: string; html_body: string } | null = null;
+
+  const { data: ownTemplate } = await supabaseAdmin
     .from("email_templates")
     .select("subject, html_body")
     .eq("name", templateName)
+    .eq("user_id", lead.user_id)
     .maybeSingle();
+  template = ownTemplate;
+
+  if (!template) {
+    const { data: sharedTemplate } = await supabaseAdmin
+      .from("email_templates")
+      .select("subject, html_body")
+      .eq("name", templateName)
+      .is("user_id", null)
+      .maybeSingle();
+    template = sharedTemplate;
+  }
+
+  if (!template) {
+    const { data: anyTemplate } = await supabaseAdmin
+      .from("email_templates")
+      .select("subject, html_body")
+      .eq("name", templateName)
+      .limit(1)
+      .maybeSingle();
+    template = anyTemplate;
+  }
   
   if (!template) {
     console.error(`[Lead Reactivation] Email template ${templateName} not found`);

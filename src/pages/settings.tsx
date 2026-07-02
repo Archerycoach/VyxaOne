@@ -17,6 +17,7 @@ import { MetaFormsManagement } from "@/components/settings/MetaFormsManagement";
 import { GptApiSettings } from "@/components/settings/GptApiSettings";
 import { WorkflowsManagement } from "@/components/settings/WorkflowsManagement";
 import { MessageSnippetsManagement } from "@/components/settings/MessageSnippetsManagement";
+import { ReactivationTemplatesManagement } from "@/components/settings/ReactivationTemplatesManagement";
 import { NotionAccountConnection } from "@/components/settings/NotionAccountConnection";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
 
@@ -1020,6 +1021,8 @@ export default function Settings() {
                 </p>
               </CardContent>
             </Card>
+
+            <ReactivationTemplatesManagement />
           </TabsContent>
 
           <TabsContent value="snippets" className="space-y-6">
