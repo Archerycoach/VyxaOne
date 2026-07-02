@@ -127,6 +127,7 @@ export function LeadDetailsDialog({
   // Use ref to prevent multiple fetches
   const fetchingRef = useRef(false);
   const currentLeadIdRef = useRef<string | null>(null);
+  const dialogContentRef = useRef<HTMLDivElement>(null);
 
   // Respostas rápidas: carrega uma vez quando o diálogo abre (independente
   // do fluxo de fetch principal, que já está bastante complexo).
@@ -592,7 +593,7 @@ export function LeadDetailsDialog({
   return (
     <>
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogContent ref={dialogContentRef} className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center justify-between">
             <span className="flex items-center gap-2">
@@ -655,7 +656,19 @@ export function LeadDetailsDialog({
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
           </div>
         ) : lead ? (
-          <Tabs defaultValue="info" className="w-full">
+          <Tabs
+            defaultValue="info"
+            className="w-full"
+            onValueChange={() => {
+              // Ao mudar de aba, volta ao topo do modal — sem isto, se se
+              // vinha de uma aba mais longa (ex.: Informações) com scroll,
+              // a nova aba (ex.: Interações) ficava a mostrar só espaço
+              // vazio até o consultor fazer scroll manualmente.
+              if (dialogContentRef.current) {
+                dialogContentRef.current.scrollTop = 0;
+              }
+            }}
+          >
             <TabsList className="grid w-full grid-cols-6 h-auto">
               <TabsTrigger value="info">Informações</TabsTrigger>
               <TabsTrigger value="ai-assistant" className="text-indigo-700 bg-indigo-50/50 data-[state=active]:bg-indigo-100 data-[state=active]:text-indigo-900 border border-indigo-100/50">
