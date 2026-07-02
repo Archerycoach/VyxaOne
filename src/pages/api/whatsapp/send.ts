@@ -51,10 +51,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     let result;
+    // Envio manual, iniciado diretamente pelo consultor autenticado (Caixa
+    // de Entrada / ficha da lead) — por decisão de negócio, não bloqueia
+    // por falta de consentimento registado, ao contrário das automações
+    // (crons, webhooks), que continuam sempre a verificar.
     if (type === 'template') {
-      result = await sendWhatsAppTemplate(targetUserId, targetPhone, content, supabaseAdmin, lead_id);
+      result = await sendWhatsAppTemplate(targetUserId, targetPhone, content, supabaseAdmin, lead_id, true);
     } else {
-      result = await sendWhatsAppMessage(targetUserId, targetPhone, content, supabaseAdmin, lead_id);
+      result = await sendWhatsAppMessage(targetUserId, targetPhone, content, supabaseAdmin, lead_id, true);
     }
 
     if (!result.success) {

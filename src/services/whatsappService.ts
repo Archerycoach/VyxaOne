@@ -40,16 +40,24 @@ export async function checkWhatsAppModule(userId: string, supabaseClient = supab
 
 /**
  * Send a WhatsApp message using the Meta Cloud API
+ *
+ * skipConsentCheck: só deve ser usado por envios MANUAIS, iniciados
+ * diretamente por um consultor (Caixa de Entrada, ficha da lead) — nunca
+ * por crons, webhooks ou outras automações. Decisão de negócio: o
+ * consultor, como pessoa, pode decidir enviar mesmo sem consentimento
+ * digital registado (ex.: autorização verbal já dada); uma automação não
+ * tem esse critério humano, por isso continua sempre a verificar.
  */
 export async function sendWhatsAppMessage(
   userId: string, 
   to: string, 
   message: string,
   supabaseClient = supabase,
-  leadId?: string
+  leadId?: string,
+  skipConsentCheck: boolean = false
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
   try {
-    if (leadId) {
+    if (leadId && !skipConsentCheck) {
       const consentStatus = await getWhatsAppConsentStatus(leadId, supabaseClient);
       if (consentStatus !== "granted") {
         const error = consentStatus === "revoked"
@@ -57,7 +65,9 @@ export async function sendWhatsAppMessage(
           : "Esta lead ainda não deu consentimento para contacto via WhatsApp (é preciso obter opt-in primeiro).";
         return { success: false, error };
       }
-      
+    }
+
+    if (leadId) {
       const within24h = await isWithin24hWindow(leadId, supabaseClient);
       if (!within24h) {
         return { success: false, error: "Fora da janela de 24h da Meta. Tem de usar a função de envio de Template." };
@@ -145,10 +155,11 @@ export async function sendWhatsAppTemplate(
   to: string, 
   templateName: string,
   supabaseClient = supabase,
-  leadId?: string
+  leadId?: string,
+  skipConsentCheck: boolean = false
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
   try {
-    if (leadId) {
+    if (leadId && !skipConsentCheck) {
       const consentStatus = await getWhatsAppConsentStatus(leadId, supabaseClient);
       if (consentStatus !== "granted") {
         const error = consentStatus === "revoked"
