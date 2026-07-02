@@ -284,6 +284,32 @@ async function sendWhatsAppReactivation(
 /**
  * Send Email reactivation with opt-in link
  */
+const OPT_IN_BUTTON_STYLE =
+  "display:inline-block;padding:12px 24px;background-color:#2563eb;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:bold;";
+
+/**
+ * Garante que o link de autorização ({{link_optin}}) tem sempre o aspeto de
+ * botão, mesmo que o editor visual de texto (Definições > Envios
+ * Automáticos) tenha removido o estilo original ao guardar a mensagem — os
+ * editores de texto normais só preservam formatação básica (negrito, cor,
+ * links simples), não estilos personalizados como o de um botão.
+ * Aplica-se sempre no momento do envio, independentemente do que o
+ * consultor escreveu à volta do link.
+ */
+function styleOptInButton(html: string): string {
+  return html.replace(
+    /<a\s+([^>]*?)href="\{\{link_optin\}\}"([^>]*)>/gi,
+    (_match, before: string, after: string) => {
+      const cleanedBefore = before.replace(/style="[^"]*"/gi, "").trim();
+      const cleanedAfter = after.replace(/style="[^"]*"/gi, "").trim();
+      const attrs = [cleanedBefore, `href="{{link_optin}}"`, `style="${OPT_IN_BUTTON_STYLE}"`, cleanedAfter]
+        .filter(Boolean)
+        .join(" ");
+      return `<a ${attrs}>`;
+    }
+  );
+}
+
 async function sendEmailReactivation(
   lead: LeadToProcess,
   attemptNumber: number,
@@ -369,7 +395,7 @@ async function sendEmailReactivation(
   }
 
   // Render template variables
-  const html = template.html_body
+  const html = styleOptInButton(template.html_body)
     .replace(/\{\{nome\}\}/g, lead.name || 'Cliente')
     .replace(/\{\{procura\}\}/g, procuraStr)
     .replace(/\{\{consultor\}\}/g, consultor)
