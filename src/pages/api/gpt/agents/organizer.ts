@@ -1,103 +1,54 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { runAI } from "@/lib/ai/provider";
-import { getDailyOrganizerPrompt } from "@/lib/ai/prompts/dailyOrganizer";
+import { getDailySummaryPrompt } from "@/lib/ai/prompts/dailyOrganizer";
+import { getLeadQualification } from "@/lib/leadQualification";
 
-interface NeglectedLeadRecord {
+/**
+ * Hub "Hoje" — plano de ação diário do consultor.
+ *
+ * Ao contrário da versão anterior (que devolvia um bloco de texto livre
+ * gerado pela IA), este endpoint calcula as listas de ação de forma
+ * determinística (tarefas atrasadas, eventos de hoje, leads para retomar
+ * contacto, leads quentes a arrefecer, leads quase qualificadas) — rápido,
+ * sempre correto e sem custo de IA. A IA só é usada para um resumo curto e
+ * priorizado no topo, com base nas contagens já calculadas.
+ */
+
+interface TaskRecord {
+  id: string;
+  title: string;
+  due_date: string | null;
+  priority: string | null;
+  related_lead_id: string | null;
+}
+
+interface EventRecord {
+  id: string;
+  title: string;
+  start_time: string;
+  event_type: string | null;
+  lead_id: string | null;
+}
+
+interface FollowUpLeadRecord {
   id: string;
   name: string;
+  next_follow_up: string | null;
+  temperature: string | null;
   phone: string | null;
   email: string | null;
-  status: string | null;
-  temperature: string | null;
-  property_type: string | null;
-  location_preference: string | null;
-  budget_min: number | null;
-  budget_max: number | null;
-  min_area: number | null;
-  max_area: number | null;
-  bedrooms: number | null;
-  bathrooms: number | null;
-  source: string | null;
-  last_activity_date: string | null;
+}
+
+interface HotLeadRecord {
+  id: string;
+  name: string;
   last_contact_date: string | null;
-  next_follow_up: string | null;
-}
-
-interface OrganizerLeadNoteRecord {
-  lead_id: string;
-  note: string;
-  created_at: string | null;
-}
-
-interface OrganizerLeadInteractionRecord {
-  lead_id: string | null;
-  interaction_type: string;
-  subject: string | null;
-  content: string | null;
-  outcome: string | null;
-  interaction_date: string | null;
-  created_at: string | null;
-}
-
-interface NeglectedLeadContextRecord extends NeglectedLeadRecord {
-  notes_history: OrganizerLeadNoteRecord[];
-  interactions_history: OrganizerLeadInteractionRecord[];
-  historical_summary: {
-    notes_count: number;
-    interactions_count: number;
-    last_note_at: string | null;
-    last_interaction_at: string | null;
-  };
-}
-
-function buildNeglectedLeadContexts(
-  leads: NeglectedLeadRecord[],
-  notes: OrganizerLeadNoteRecord[],
-  interactions: OrganizerLeadInteractionRecord[],
-): NeglectedLeadContextRecord[] {
-  const notesByLead = notes.reduce<Record<string, OrganizerLeadNoteRecord[]>>((acc, note) => {
-    if (!acc[note.lead_id]) {
-      acc[note.lead_id] = [];
-    }
-
-    acc[note.lead_id].push(note);
-    return acc;
-  }, {});
-
-  const interactionsByLead = interactions.reduce<Record<string, OrganizerLeadInteractionRecord[]>>((acc, interaction) => {
-    if (!interaction.lead_id) {
-      return acc;
-    }
-
-    if (!acc[interaction.lead_id]) {
-      acc[interaction.lead_id] = [];
-    }
-
-    acc[interaction.lead_id].push(interaction);
-    return acc;
-  }, {});
-
-  return leads.map((lead) => {
-    const leadNotes = notesByLead[lead.id] || [];
-    const leadInteractions = interactionsByLead[lead.id] || [];
-
-    return {
-      ...lead,
-      notes_history: leadNotes,
-      interactions_history: leadInteractions,
-      historical_summary: {
-        notes_count: leadNotes.length,
-        interactions_count: leadInteractions.length,
-        last_note_at: leadNotes[0]?.created_at || null,
-        last_interaction_at: leadInteractions[0]?.interaction_date || leadInteractions[0]?.created_at || null,
-      },
-    };
-  });
+  phone: string | null;
+  email: string | null;
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  console.log("-> [ORGANIZER API] Iniciou o pedido POST");
   if (req.method !== "POST") return res.status(405).end();
 
   try {
@@ -105,106 +56,137 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const token = authHeader?.split(" ")[1];
     if (!token) return res.status(401).json({ error: "Não autorizado" });
 
-    console.log("-> [ORGANIZER API] A verificar token do utilizador...");
     const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
     if (userError || !user) return res.status(401).json({ error: "Não autorizado" });
-    console.log("-> [ORGANIZER API] Utilizador autenticado:", user.id);
 
-    // 1. Recolher contexto: Tarefas
-    console.log("-> [ORGANIZER API] A recolher Tarefas...");
-    const { data: tasks, error: tasksError } = await (supabaseAdmin
-      .from("tasks" as any)
-      .select("title, status, due_date, priority")
-      .eq("user_id", user.id)
-      .in("status", ["pending", "in_progress"])
-      .order("due_date", { ascending: true })
-      .limit(10) as any);
-      
-    if (tasksError) console.error("Erro tasks:", tasksError);
+    const now = new Date();
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+    const todayEnd = new Date(todayStart);
+    todayEnd.setDate(todayEnd.getDate() + 1);
+    const todayStartISO = todayStart.toISOString();
+    const todayEndISO = todayEnd.toISOString();
 
-    // 2. Recolher contexto: Leads sem contacto recente
-    console.log("-> [ORGANIZER API] A recolher Leads Negligenciados...");
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    const { data: neglectedLeads, error: neglectedError } = await (supabaseAdmin
-      .from("leads" as any)
-      .select("id, name, phone, email, status, temperature, property_type, location_preference, budget_min, budget_max, min_area, max_area, bedrooms, bathrooms, source, last_activity_date, last_contact_date, next_follow_up")
-      .eq("user_id", user.id)
-      .in("status", ["new", "contacted", "qualified"])
-      .lt("last_activity_date", thirtyDaysAgo.toISOString())
-      .limit(5) as any);
-      
-    if (neglectedError) console.error("Erro neglected leads:", neglectedError);
+    const threeDaysAgo = new Date(now);
+    threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
 
-    const neglectedLeadIds = ((neglectedLeads || []) as NeglectedLeadRecord[]).map((lead) => lead.id);
-    let neglectedLeadNotes: OrganizerLeadNoteRecord[] = [];
-    let neglectedLeadInteractions: OrganizerLeadInteractionRecord[] = [];
+    const [tasksResult, eventsResult, followUpResult, hotLeadsResult, recentLeadsResult, profileResult] = await Promise.all([
+      supabaseAdmin
+        .from("tasks")
+        .select("id, title, due_date, priority, related_lead_id")
+        .eq("user_id", user.id)
+        .in("status", ["pending", "in_progress"])
+        .order("due_date", { ascending: true })
+        .limit(50),
+      supabaseAdmin
+        .from("calendar_events")
+        .select("id, title, start_time, event_type, lead_id")
+        .eq("user_id", user.id)
+        .gte("start_time", todayStartISO)
+        .lt("start_time", todayEndISO)
+        .order("start_time", { ascending: true }),
+      supabaseAdmin
+        .from("leads")
+        .select("id, name, next_follow_up, temperature, phone, email")
+        .eq("user_id", user.id)
+        .not("follow_up_state", "in", '("archived","opt_out")')
+        .not("next_follow_up", "is", null)
+        .lte("next_follow_up", todayEndISO)
+        .order("next_follow_up", { ascending: true })
+        .limit(15),
+      supabaseAdmin
+        .from("leads")
+        .select("id, name, last_contact_date, phone, email")
+        .eq("user_id", user.id)
+        .eq("temperature", "hot")
+        .not("follow_up_state", "in", '("archived","opt_out")')
+        .limit(30),
+      supabaseAdmin
+        .from("leads")
+        .select("*")
+        .eq("user_id", user.id)
+        .not("follow_up_state", "in", '("archived","opt_out")')
+        .order("updated_at", { ascending: false })
+        .limit(40),
+      supabaseAdmin.from("profiles").select("full_name").eq("id", user.id).maybeSingle(),
+    ]);
 
-    if (neglectedLeadIds.length > 0) {
-      const { data: notes, error: notesError } = await (supabaseAdmin
-        .from("lead_notes" as any)
-        .select("lead_id, note, created_at")
-        .in("lead_id", neglectedLeadIds)
-        .order("created_at", { ascending: false }) as any);
+    const allTasks = (tasksResult.data || []) as TaskRecord[];
+    const overdueTasks = allTasks.filter((t) => t.due_date && t.due_date < todayStartISO);
+    const todayTasks = allTasks.filter((t) => t.due_date && t.due_date >= todayStartISO && t.due_date < todayEndISO);
 
-      if (notesError) console.error("Erro lead notes:", notesError);
-      neglectedLeadNotes = (notes || []) as OrganizerLeadNoteRecord[];
+    const todayEvents = (eventsResult.data || []) as EventRecord[];
+    const followUpDueLeads = (followUpResult.data || []) as FollowUpLeadRecord[];
 
-      const { data: interactions, error: interactionsError } = await (supabaseAdmin
-        .from("interactions" as any)
-        .select("lead_id, interaction_type, subject, content, outcome, interaction_date, created_at")
-        .in("lead_id", neglectedLeadIds)
-        .order("interaction_date", { ascending: false }) as any);
-
-      if (interactionsError) console.error("Erro lead interactions:", interactionsError);
-      neglectedLeadInteractions = (interactions || []) as OrganizerLeadInteractionRecord[];
-    }
-
-    const enrichedNeglectedLeads = buildNeglectedLeadContexts(
-      (neglectedLeads || []) as NeglectedLeadRecord[],
-      neglectedLeadNotes,
-      neglectedLeadInteractions,
+    const hotLeadsStale = ((hotLeadsResult.data || []) as HotLeadRecord[]).filter(
+      (lead) => !lead.last_contact_date || new Date(lead.last_contact_date) < threeDaysAgo
     );
 
-    // 3. Recolher contexto: Eventos de Hoje
-    console.log("-> [ORGANIZER API] A recolher Eventos...");
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    const qualificationGaps = (recentLeadsResult.data || [])
+      .map((lead: any) => {
+        const qualification = getLeadQualification(lead);
+        return {
+          id: lead.id as string,
+          name: lead.name as string,
+          missing: qualification.missing,
+          total: qualification.total,
+          filled: qualification.filled,
+        };
+      })
+      .filter((entry) => entry.total > 0 && entry.missing.length > 0)
+      .sort((a, b) => a.missing.length - b.missing.length)
+      .slice(0, 8);
 
-    const { data: events, error: eventsError } = await (supabaseAdmin
-      .from("calendar_events" as any)
-      .select("title, start_time, event_type")
-      .eq("user_id", user.id)
-      .gte("start_time", today.toISOString())
-      .lt("start_time", tomorrow.toISOString()) as any);
-      
-    if (eventsError) console.error("Erro events:", eventsError);
+    const highlights: string[] = [];
+    if (todayEvents.length > 0) {
+      highlights.push(
+        `Primeiro compromisso: ${todayEvents[0].title} às ${new Date(todayEvents[0].start_time).toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" })}`
+      );
+    }
+    if (overdueTasks.length > 0) {
+      highlights.push(`Tarefa mais atrasada: ${overdueTasks[0].title}`);
+    }
+    if (hotLeadsStale.length > 0) {
+      highlights.push(`Lead quente a arrefecer: ${hotLeadsStale[0].name}`);
+    }
 
-    // 4. Construir Prompt
-    const prompts = getDailyOrganizerPrompt({
-      tasks: tasks || [],
-      enrichedNeglectedLeads,
-      events: events || []
+    const consultantName = (profileResult.data as { full_name?: string } | null)?.full_name?.split(" ")[0] || "Consultor";
+
+    let summary = "";
+    try {
+      const prompt = getDailySummaryPrompt({
+        consultantName,
+        overdueTasksCount: overdueTasks.length,
+        todayTasksCount: todayTasks.length,
+        todayEventsCount: todayEvents.length,
+        followUpDueCount: followUpDueLeads.length,
+        hotLeadsStaleCount: hotLeadsStale.length,
+        qualificationGapsCount: qualificationGaps.length,
+        highlights,
+      });
+
+      const aiResponse = await runAI({
+        userId: user.id,
+        task: "daily_summary",
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.6,
+        maxTokens: 200,
+      });
+
+      summary = aiResponse.text.trim();
+    } catch (aiError) {
+      console.error("[Organizer] Falha ao gerar resumo IA (não bloqueante):", aiError);
+    }
+
+    return res.status(200).json({
+      summary,
+      overdueTasks,
+      todayTasks,
+      todayEvents,
+      followUpDueLeads,
+      hotLeadsStale,
+      qualificationGaps,
     });
-
-    // 5. Chamar IA
-    console.log("-> [ORGANIZER API] A chamar IA...");
-    
-    const aiResponse = await runAI({
-      userId: user.id,
-      task: "daily_organizer",
-      messages: [
-        { role: "system", content: prompts.system },
-        { role: "user", content: prompts.user }
-      ],
-      temperature: 0.7
-    });
-
-    console.log("-> [ORGANIZER API] Resposta IA recebida com sucesso!");
-    return res.status(200).json({ advice: aiResponse.text });
-
   } catch (error: any) {
     console.error("Organizer Agent Error:", error);
     return res.status(500).json({ error: error.message || "Internal server error" });

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
+import { useRouter } from "next/router";
 import { LeadCard } from "./LeadCard";
 import { LeadFilters } from "./LeadFilters";
 import { LeadDialogs } from "./LeadDialogs";
@@ -53,6 +54,7 @@ export function LeadsListContainer({
   canAssignLeads,
   teamMembers,
 }: LeadsListContainerProps) {
+  const router = useRouter();
   // User ID state
   const [userId, setUserId] = useState<string>("");
 
@@ -273,6 +275,25 @@ export function LeadsListContainer({
       }, 300);
     }, 0);
   };
+
+  // Deep-link: se a página foi aberta com ?leadId=..., abre a ficha dessa
+  // lead automaticamente assim que as leads estiverem carregadas. Usado por
+  // ex. pelo hub "Hoje" para levar diretamente a uma lead específica.
+  const deepLinkHandledRef = useRef(false);
+  useEffect(() => {
+    if (deepLinkHandledRef.current) return;
+    const queryLeadId = router.query.leadId;
+    if (typeof queryLeadId !== "string" || leads.length === 0) return;
+
+    const targetLead = leads.find((lead) => lead.id === queryLeadId);
+    if (targetLead) {
+      deepLinkHandledRef.current = true;
+      handleViewDetails(targetLead);
+      // Remove o parâmetro do URL para não reabrir ao navegar/atualizar.
+      const { leadId: _leadId, ...restQuery } = router.query;
+      router.replace({ pathname: router.pathname, query: restQuery }, undefined, { shallow: true });
+    }
+  }, [router.query.leadId, leads]);
 
   const handleAssign = (lead: LeadWithContacts) => {
     if (openingAssignRef.current) {
