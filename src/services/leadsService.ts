@@ -240,9 +240,20 @@ export const updateLead = async (id: string, updates: Partial<LeadUpdate>) => {
     .eq("id", id)
     .single();
 
+  // Deteta a PRIMEIRA transição para "won" (negócio fechado) e fixa
+  // "won_at" nesse preciso momento, incluído na mesma atualização. Nunca
+  // sobrescreve won_at numa edição posterior — é a âncora estável para as
+  // automações de pós-venda (aniversário da compra, pedido de indicação).
+  const isBecomingWonFirstTime =
+    updates.status === "won" && currentLead?.status !== "won" && !(currentLead as any)?.won_at;
+
+  const finalUpdates = isBecomingWonFirstTime
+    ? ({ ...updates, won_at: new Date().toISOString() } as Partial<LeadUpdate>)
+    : updates;
+
   const { data, error } = await supabase
     .from("leads")
-    .update(updates as any)
+    .update(finalUpdates as any)
     .eq("id", id)
     .select()
     .single();
@@ -277,6 +288,15 @@ export const updateLead = async (id: string, updates: Partial<LeadUpdate>) => {
   if (pipelineStatusChanged) {
     processLeadWorkflows(id, "pipeline_stage_changed").catch((err) =>
       console.error("[leadsService] Failed to trigger pipeline_stage_changed workflows:", err)
+    );
+  }
+
+  // ✅ Dispara automações de "Negócio Fechado" (programa de pós-venda) na
+  // primeira vez que a lead passa a "won" — nunca repete numa lead que já
+  // estava won.
+  if (isBecomingWonFirstTime) {
+    processLeadWorkflows(id, "deal_won").catch((err) =>
+      console.error("[leadsService] Failed to trigger deal_won workflows:", err)
     );
   }
 

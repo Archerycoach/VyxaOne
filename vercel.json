@@ -27,6 +27,10 @@
       "schedule": "45 8 * * *"
     },
     {
+      "path": "/api/cron/post-sale-checks",
+      "schedule": "0 10 * * *"
+    },
+    {
       "path": "/api/cron/reverse-match",
       "schedule": "30 9 * * *"
     },
