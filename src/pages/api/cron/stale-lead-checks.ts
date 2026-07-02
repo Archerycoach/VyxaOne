@@ -148,8 +148,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             continue;
           }
 
+          // NOTA: cast necessário por um conflito de tipos genéricos entre
+          // instâncias de SupabaseClient (mesmo package, geração de tipos
+          // ligeiramente diferente) — o mesmo problema já existia dentro de
+          // workflowEngine.ts (ver "const db = supabase as unknown as
+          // SupabaseClient" em executeWorkflow), resolvido da mesma forma.
           const workflowResult = await runLeadWorkflows({
-            supabase: supabaseAdmin,
+            supabase: supabaseAdmin as any,
             userId: lead.user_id,
             leadId: lead.id,
             triggerType: check.triggerType,
