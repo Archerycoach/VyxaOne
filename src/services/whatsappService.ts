@@ -1,5 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
-import { hasValidWhatsAppConsent, isWithin24hWindow } from "./consentService";
+import { getWhatsAppConsentStatus, isWithin24hWindow } from "./consentService";
 
 export interface WhatsAppSettings {
   phone_number?: string;
@@ -50,9 +50,12 @@ export async function sendWhatsAppMessage(
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
   try {
     if (leadId) {
-      const hasConsent = await hasValidWhatsAppConsent(leadId, supabaseClient);
-      if (!hasConsent) {
-        return { success: false, error: "A lead revogou o consentimento (Opt-out) para contacto via WhatsApp." };
+      const consentStatus = await getWhatsAppConsentStatus(leadId, supabaseClient);
+      if (consentStatus !== "granted") {
+        const error = consentStatus === "revoked"
+          ? "A lead revogou o consentimento (Opt-out) para contacto via WhatsApp."
+          : "Esta lead ainda não deu consentimento para contacto via WhatsApp (é preciso obter opt-in primeiro).";
+        return { success: false, error };
       }
       
       const within24h = await isWithin24hWindow(leadId, supabaseClient);
@@ -146,9 +149,12 @@ export async function sendWhatsAppTemplate(
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
   try {
     if (leadId) {
-      const hasConsent = await hasValidWhatsAppConsent(leadId, supabaseClient);
-      if (!hasConsent) {
-        return { success: false, error: "A lead revogou o consentimento (Opt-out) para contacto via WhatsApp." };
+      const consentStatus = await getWhatsAppConsentStatus(leadId, supabaseClient);
+      if (consentStatus !== "granted") {
+        const error = consentStatus === "revoked"
+          ? "A lead revogou o consentimento (Opt-out) para contacto via WhatsApp."
+          : "Esta lead ainda não deu consentimento para contacto via WhatsApp (é preciso obter opt-in primeiro).";
+        return { success: false, error };
       }
       // Note: Templates bypass the 24h window constraint
     }
