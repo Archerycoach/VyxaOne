@@ -2,7 +2,7 @@ import { NextApiRequest, NextApiResponse } from "next";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { runAI } from "@/lib/ai/provider";
 import { getVoiceNoteAnalysisPrompt, type QualificationFieldContext } from "@/lib/ai/prompts/voiceNoteAnalysis";
-import { getLeadQualification } from "@/lib/leadQualification";
+import { getLeadQualification, formatCurrentQualificationValue, mapExtractedDataToLeadUpdate } from "@/lib/leadQualification";
 import { storeMemory } from "@/lib/ai/embeddings";
 import formidable from "formidable";
 import fs from "fs";
@@ -42,78 +42,6 @@ async function readJsonBody(req: NextApiRequest): Promise<any> {
     });
     req.on("error", reject);
   });
-}
-
-/**
- * Formata o valor atual de um campo de qualificação para mostrar à IA (e,
- * indiretamente, ao consultor no ecrã de revisão). Usa os mesmos campos do
- * catálogo de qualificação (src/lib/leadQualification.ts).
- */
-function formatCurrentQualificationValue(lead: any, key: string): string {
-  switch (key) {
-    case "property_type":
-      return lead.property_type || "—";
-    case "buy_purpose":
-      return lead.buy_purpose || "—";
-    case "purchase_timeline":
-      return lead.purchase_timeline || "—";
-    case "budget":
-      return lead.budget || lead.budget_max || lead.budget_min ? String(lead.budget || lead.budget_max || lead.budget_min) : "—";
-    case "needs_financing":
-      return lead.needs_financing === null || lead.needs_financing === undefined ? "—" : lead.needs_financing ? "Sim" : "Não";
-    case "has_property_to_sell":
-      return lead.has_property_to_sell === null || lead.has_property_to_sell === undefined ? "—" : lead.has_property_to_sell ? "Sim" : "Não";
-    case "bathrooms":
-      return lead.bathrooms !== null && lead.bathrooms !== undefined ? String(lead.bathrooms) : "—";
-    case "property_area":
-      return lead.property_area !== null && lead.property_area !== undefined ? String(lead.property_area) : "—";
-    case "desired_price":
-      return lead.desired_price !== null && lead.desired_price !== undefined ? String(lead.desired_price) : "—";
-    case "typology":
-      return lead.typology || (lead.bedrooms ? `T${lead.bedrooms}` : "—");
-    case "location_preference":
-      return lead.location_preference || "—";
-    default:
-      return "—";
-  }
-}
-
-/**
- * Converte o "extracted_data" devolvido pela IA (chaves do catálogo de
- * qualificação) num payload pronto para o .update() da tabela leads.
- * Ignora chaves desconhecidas e valida tipos de forma conservadora — em caso
- * de dúvida, não aplica o campo em vez de gravar dados errados.
- */
-function mapExtractedDataToLeadUpdate(extracted: Record<string, unknown> | undefined | null): Record<string, unknown> {
-  const update: Record<string, unknown> = {};
-  if (!extracted || typeof extracted !== "object") return update;
-
-  const asNumber = (v: unknown): number | null => {
-    const n = typeof v === "number" ? v : typeof v === "string" ? Number(v.replace(/[^\d.-]/g, "")) : NaN;
-    return Number.isFinite(n) ? n : null;
-  };
-  const asBoolean = (v: unknown): boolean | null => (typeof v === "boolean" ? v : null);
-  const asString = (v: unknown): string | null => (typeof v === "string" && v.trim() !== "" ? v.trim() : null);
-
-  if (asString(extracted.property_type)) update.property_type = asString(extracted.property_type);
-  if (asString(extracted.buy_purpose)) update.buy_purpose = asString(extracted.buy_purpose);
-  if (asString(extracted.purchase_timeline)) update.purchase_timeline = asString(extracted.purchase_timeline);
-  if (asNumber(extracted.budget) !== null) update.budget = asNumber(extracted.budget);
-  if (asBoolean(extracted.needs_financing) !== null) update.needs_financing = asBoolean(extracted.needs_financing);
-  if (asBoolean(extracted.has_property_to_sell) !== null) update.has_property_to_sell = asBoolean(extracted.has_property_to_sell);
-  if (asNumber(extracted.bathrooms) !== null) update.bathrooms = asNumber(extracted.bathrooms);
-  if (asNumber(extracted.property_area) !== null) update.property_area = asNumber(extracted.property_area);
-  if (asNumber(extracted.desired_price) !== null) update.desired_price = asNumber(extracted.desired_price);
-  if (asString(extracted.location_preference)) update.location_preference = asString(extracted.location_preference);
-
-  const typology = asString(extracted.typology);
-  if (typology && /^T(0|1|2|3|4|5\+?)$/i.test(typology)) {
-    update.typology = typology.toUpperCase();
-    const bedrooms = parseInt(typology.replace(/\D/g, ""), 10);
-    if (Number.isFinite(bedrooms)) update.bedrooms = bedrooms;
-  }
-
-  return update;
 }
 
 async function transcribeAudio(audioBuffer: Buffer, userId: string): Promise<string> {

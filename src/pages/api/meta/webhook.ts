@@ -211,7 +211,7 @@ export default async function handler(
               } else if (fieldName.includes("property") || fieldName.includes("imovel") || fieldName === "tipo" || fieldName.includes("tipo de im")) {
                 mappedData.property_type = value;
               } else if (fieldName.includes("crédito") || fieldName.includes("credito") || fieldName.includes("financiamento")) {
-                mappedData.need_financing = value;
+                mappedData.needs_financing = value;
               } else if (fieldName.includes("vender") || fieldName.includes("retoma") || fieldName.includes("venda")) {
                 mappedData.has_property_to_sell = value;
               } else if (fieldName.includes("objetivo") || fieldName.includes("objectivo") || fieldName.includes("procura")) {
@@ -318,7 +318,7 @@ export default async function handler(
           if (finalEmail) {
             const { data } = await supabase
               .from("leads")
-              .select("id, name, custom_fields")
+              .select("*")
               .eq("user_id", integration.user_id)
               .eq("email", finalEmail)
               .limit(1);
@@ -328,7 +328,7 @@ export default async function handler(
           if (!existingLead && finalPhone) {
             const { data } = await supabase
               .from("leads")
-              .select("id, name, custom_fields")
+              .select("*")
               .eq("user_id", integration.user_id)
               .eq("phone", finalPhone)
               .limit(1);
@@ -353,9 +353,41 @@ export default async function handler(
               created_by: integration.user_id
             });
 
+            // ✅ CORREÇÃO: além da nota, preenche também os campos reais da
+            // lead com os dados mapeados deste formulário — antes disto, só
+            // ficavam guardados como texto na nota, nunca na ficha. Só
+            // preenche campos que a lead ainda tem vazios, para nunca
+            // sobrescrever uma correção manual já feita pelo consultor.
+            const fieldsToFill: Record<string, unknown> = {};
+            for (const [key, value] of Object.entries(mappedData)) {
+              if (key === "notes") continue;
+              if (value === undefined || value === null || value === "") continue;
+              const currentValue = (existingLead as Record<string, unknown>)[key];
+              if (currentValue === undefined || currentValue === null || currentValue === "") {
+                fieldsToFill[key] = value;
+              }
+            }
+
+            if (Object.keys(fieldsToFill).length > 0) {
+              const { error: updateError } = await supabase
+                .from("leads")
+                .update({ ...fieldsToFill, updated_at: new Date().toISOString() })
+                .eq("id", existingLead.id);
+
+              if (updateError) {
+                console.error("❌ Erro ao atualizar campos da lead existente:", updateError);
+              } else {
+                console.log(`✅ Campos preenchidos na lead existente ${existingLead.id}:`, Object.keys(fieldsToFill));
+              }
+            }
+
             await applyMetaFormAssociation(existingLead.id, formAssociation, existingLead.custom_fields);
             
             console.log("✅ Note added to existing lead:", existingLead.id);
+
+            // Apanha, em segundo plano, qualquer dado de qualificação que
+            // não bateu com nenhuma regra fixa de mapeamento acima.
+            triggerAutoNotesAnalysis(appUrl, integration.user_id, existingLead.id);
             
             // ✅ Run pipeline for existing lead (notification + auto-responder with anti-duplication)
             await runNewLeadPipeline({
@@ -418,6 +450,11 @@ export default async function handler(
           }
 
           console.log("✅ Lead created:", newLead.id);
+
+          // Apanha, em segundo plano, qualquer dado de qualificação que não
+          // bateu com nenhuma regra fixa de mapeamento (fica só no campo
+          // "notes" da lead com as respostas originais do formulário).
+          triggerAutoNotesAnalysis(appUrl, integration.user_id, newLead.id);
 
           await applyMetaFormAssociation(newLead.id, formAssociation, newLead.custom_fields);
 
@@ -543,6 +580,25 @@ export default async function handler(
 
   console.log("[Meta Webhook] Method not allowed:", req.method);
   return res.status(405).json({ error: "Method not allowed" });
+}
+
+/**
+ * Dispara (sem esperar) a análise automática de notas por IA — apanha
+ * respostas do formulário da Meta que não bateram com nenhuma regra fixa de
+ * mapeamento e, se possível, preenche os campos de qualificação ainda
+ * vazios da lead. Nunca sobrescreve um campo já preenchido (ver modo "auto"
+ * em src/pages/api/gpt/leads/[id]/analyze-notes.ts). Não bloqueia nem falha
+ * o processamento do webhook se der erro.
+ */
+function triggerAutoNotesAnalysis(appUrl: string, userId: string, leadId: string): void {
+  fetch(`${appUrl}/api/gpt/leads/${leadId}/analyze-notes`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${process.env.CRON_SECRET}`,
+    },
+    body: JSON.stringify({ mode: "auto", userId }),
+  }).catch((err) => console.error("[Meta Webhook] Falha ao disparar análise automática de notas:", err));
 }
 
 async function logWebhook(

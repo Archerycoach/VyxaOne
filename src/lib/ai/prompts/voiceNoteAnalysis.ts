@@ -1,8 +1,6 @@
-export interface QualificationFieldContext {
-  key: string;
-  label: string;
-  currentValue: string;
-}
+import { QUALIFICATION_FIELD_VALUE_HINTS, type QualificationFieldContext } from "@/lib/leadQualification";
+
+export type { QualificationFieldContext };
 
 interface VoiceNoteAnalysisContext {
   transcription: string;
@@ -19,23 +17,6 @@ interface VoiceNoteAnalysisContext {
   qualificationFields: QualificationFieldContext[];
 }
 
-// Indica à IA o tipo/formato de valor esperado para cada campo de
-// qualificação, para que o "extracted_data" saia já pronto a gravar na base
-// de dados sem conversões adicionais.
-const FIELD_VALUE_HINTS: Record<string, string> = {
-  property_type: 'string — um destes valores exatos: "apartment", "house", "land", "commercial", "store", "office", "warehouse"',
-  buy_purpose: 'string — um destes valores exatos: "housing" (habitação própria), "investment" (investimento), "secondary" (habitação secundária)',
-  purchase_timeline: 'string curta em português, ex: "imediato", "3-6 meses", "1 ano"',
-  budget: "número inteiro em euros (sem símbolos nem pontos), o valor máximo que a lead mencionou poder gastar",
-  needs_financing: "true ou false (boolean)",
-  has_property_to_sell: "true ou false (boolean)",
-  bathrooms: "número inteiro de casas de banho do imóvel a vender",
-  property_area: "número em m² do imóvel a vender",
-  desired_price: "número inteiro em euros, preço pretendido na venda",
-  typology: 'string — um destes valores exatos: "T0", "T1", "T2", "T3", "T4", "T5+"',
-  location_preference: "string curta com a localização mencionada (zona/cidade)",
-};
-
 export function getVoiceNoteAnalysisPrompt(context: VoiceNoteAnalysisContext): string {
   const { transcription, leadData, recentInteractions, qualificationFields } = context;
 
@@ -47,7 +28,7 @@ export function getVoiceNoteAnalysisPrompt(context: VoiceNoteAnalysisContext): s
 
   const qualificationContext = qualificationFields.length > 0
     ? qualificationFields
-        .map((f) => `- ${f.key}: "${f.label}" — valor atual no CRM: ${f.currentValue}. Formato esperado: ${FIELD_VALUE_HINTS[f.key] || "texto livre"}.`)
+        .map((f) => `- ${f.key}: "${f.label}" — valor atual no CRM: ${f.currentValue}. Formato esperado: ${QUALIFICATION_FIELD_VALUE_HINTS[f.key] || "texto livre"}.`)
         .join("\n")
     : "Nenhum campo de qualificação aplicável a esta lead.";
 
