@@ -137,6 +137,23 @@ export interface Lead {
   email_opt_out?: boolean;
   email_opted_out_at?: string | null;
   email_unsub_token?: string | null;
+  // Campos de comprador/vendedor (ver database.types.ts para a lista completa)
+  property_type?: string | null;
+  bedrooms?: number | null;
+  bathrooms?: number | null;
+  typology?: string | null;
+  min_area?: number | null;
+  max_area?: number | null;
+  property_area?: number | null;
+  desired_price?: number | null;
+  needs_financing?: boolean | null;
+  budget_min?: number | null;
+  budget_max?: number | null;
+  buyer_status?: string | null;
+  seller_status?: string | null;
+  next_follow_up?: string | null;
+  last_contact_date?: string | null;
+  won_at?: string | null;
 }
 
 // Property Types

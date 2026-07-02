@@ -140,7 +140,9 @@ export function LeadFormContainer({ initialData, onSuccess, onCancel }: LeadForm
         status: initialData.status || "new",
         lead_type: initialData.lead_type || "buyer",
         notes: initialData.notes || "",
-        budget: initialData.budget ? initialData.budget.toString() : "",
+        budget: initialData.budget_max
+          ? initialData.budget_max.toString()
+          : (initialData.budget ? initialData.budget.toString() : ""),
         location_preference: initialData.location_preference || "",
         source: initialData.source || "website",
         property_type: initialData.property_type || "",
@@ -229,9 +231,12 @@ export function LeadFormContainer({ initialData, onSuccess, onCancel }: LeadForm
         is_development: formData.is_development,
         development_id: formData.development_id || null,
         development_name: formData.development_name || null,
-        // Orçamento (usado pelo cartão)
+        // Orçamento (usado pelo cartão). "budget_max" é o campo
+        // autoritativo — é o que o cartão e o resto da aplicação (webhook
+        // da Meta, qualificação) usam. Não tocamos em "budget_min" aqui:
+        // este formulário não tem campo para isso, por isso não o
+        // sobrescrevemos com 0 sempre que se grava a lead.
         budget: parsedBudget,
-        budget_min: 0,
         budget_max: parsedBudget,
         // Campos genéricos já existentes
         contact_id: null,
