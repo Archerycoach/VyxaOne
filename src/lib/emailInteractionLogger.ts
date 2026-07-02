@@ -4,6 +4,7 @@
  */
 
 import { supabase } from "@/integrations/supabase/client";
+import { htmlToPlainText } from "@/lib/htmlToPlainText";
 
 interface EmailInteractionData {
   leadId?: string;
@@ -34,7 +35,7 @@ export async function logEmailInteraction(data: EmailInteractionData): Promise<v
       interaction_date: now,
       outcome: outcome,
       subject: data.subject,
-      content: `Para: ${toRecipients}\nAssunto: ${data.subject}${data.body ? `\n\n${data.body.substring(0, 500)}` : ""}`,
+      content: `Para: ${toRecipients}\nAssunto: ${data.subject}${data.body ? `\n\n${htmlToPlainText(data.body)}` : ""}`,
       user_id: data.userId,
     };
 
@@ -95,7 +96,7 @@ export async function logEmailInteractionServer(
       interaction_date: now,
       outcome: outcome,
       subject: data.subject,
-      content: `Para: ${toRecipients}\nAssunto: ${data.subject}${data.body ? `\n\n${data.body.substring(0, 500)}` : ""}`,
+      content: `Para: ${toRecipients}\nAssunto: ${data.subject}${data.body ? `\n\n${htmlToPlainText(data.body)}` : ""}`,
       user_id: data.userId,
     };
 
