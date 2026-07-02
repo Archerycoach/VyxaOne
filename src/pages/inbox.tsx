@@ -4,10 +4,19 @@ import { Layout } from "@/components/Layout";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Loader2, MessageCircle, Mail, Search, Send, RefreshCw, Inbox as InboxIcon, ArrowLeft } from "lucide-react";
+import { Loader2, MessageCircle, Mail, Search, Send, RefreshCw, Inbox as InboxIcon, ArrowLeft, MessageSquare } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { getInteractionsByLead, type InteractionWithDetails } from "@/services/interactionsService";
+import { getMessageSnippets, personalizeSnippet, type MessageSnippet } from "@/services/messageSnippetsService";
 
 interface ConversationLead {
   id: string;
@@ -57,6 +66,7 @@ export default function InboxPage() {
   const [loadingThread, setLoadingThread] = useState(false);
   const [replyText, setReplyText] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [snippets, setSnippets] = useState<MessageSnippet[]>([]);
 
   const loadConversations = useCallback(async () => {
     setLoadingConversations(true);
@@ -131,6 +141,10 @@ export default function InboxPage() {
     loadConversations();
   }, [loadConversations]);
 
+  useEffect(() => {
+    getMessageSnippets("whatsapp").then(setSnippets).catch((err) => console.error("[Inbox] Erro ao carregar respostas rápidas:", err));
+  }, []);
+
   const openConversation = useCallback(async (lead: ConversationLead) => {
     setSelectedLead(lead);
     setLoadingThread(true);
@@ -190,6 +204,16 @@ export default function InboxPage() {
     } finally {
       setIsSending(false);
     }
+  };
+
+  const insertSnippet = (snippet: MessageSnippet) => {
+    if (!selectedLead) return;
+    const personalized = personalizeSnippet(snippet.content, {
+      name: selectedLead.name,
+      email: selectedLead.email,
+      phone: selectedLead.phone,
+    });
+    setReplyText((prev) => (prev.trim() ? `${prev} ${personalized}` : personalized));
   };
 
   const filteredConversations = useMemo(() => {
@@ -340,6 +364,24 @@ export default function InboxPage() {
                 </div>
 
                 <div className="p-3 bg-white border-t flex gap-2">
+                  {snippets.length > 0 && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" size="icon" disabled={isSending} title="Inserir resposta rápida">
+                          <MessageSquare className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" className="w-64">
+                        <DropdownMenuLabel>Respostas rápidas</DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        {snippets.map((snippet) => (
+                          <DropdownMenuItem key={snippet.id} onClick={() => insertSnippet(snippet)}>
+                            {snippet.title}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
                   <Input
                     value={replyText}
                     onChange={(e) => setReplyText(e.target.value)}
