@@ -81,7 +81,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
         // 1. HAS CONSENT: Fire the WhatsApp Re-engagement Template
         if (hasOptIn && lead.phone) {
-          const result = await sendWhatsAppTemplate(lead.user_id, lead.phone, "voltar_ao_radar", supabaseAdmin, lead.id);
+          const result = await sendWhatsAppTemplate(lead.user_id, lead.phone, "voltar_ao_radar", supabaseAdmin, lead.id, false, "reactivate_cold_leads");
           
           if (result.success) {
             await supabaseAdmin.from("leads").update({ 

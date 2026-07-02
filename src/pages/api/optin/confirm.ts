@@ -90,7 +90,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         lead.phone,
         "primeiro_contacto",
         supabaseAdmin,
-        lead.id
+        lead.id,
+        false,
+        "optin_confirm"
       );
 
       if (result.success) {

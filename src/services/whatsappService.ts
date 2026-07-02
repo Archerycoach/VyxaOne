@@ -39,6 +39,49 @@ export async function checkWhatsAppModule(userId: string, supabaseClient = supab
 }
 
 /**
+ * Regista um envio automático de WhatsApp em automated_whatsapp_log — nunca
+ * bloqueia nem falha o envio em si (best-effort). Só deve ser chamado para
+ * envios automáticos (skipConsentCheck=false), nunca para envios manuais.
+ */
+async function logAutomatedWhatsApp(params: {
+  supabaseClient: typeof supabase;
+  userId: string;
+  leadId?: string;
+  toPhone: string;
+  source: string;
+  messageType: "template" | "text";
+  contentSummary: string;
+  status: "sent" | "failed";
+  errorMessage?: string;
+}): Promise<void> {
+  try {
+    let leadName: string | null = null;
+    if (params.leadId) {
+      const { data: lead } = await params.supabaseClient
+        .from("leads")
+        .select("name")
+        .eq("id", params.leadId)
+        .maybeSingle();
+      leadName = lead?.name || null;
+    }
+
+    await params.supabaseClient.from("automated_whatsapp_log" as any).insert({
+      user_id: params.userId,
+      lead_id: params.leadId || null,
+      lead_name: leadName,
+      source: params.source,
+      to_phone: params.toPhone,
+      message_type: params.messageType,
+      content_summary: params.contentSummary.slice(0, 500),
+      status: params.status,
+      error_message: params.errorMessage || null,
+    });
+  } catch (logError) {
+    console.error("[whatsappService] Falha ao registar em automated_whatsapp_log (não bloqueante):", logError);
+  }
+}
+
+/**
  * Send a WhatsApp message using the Meta Cloud API
  *
  * skipConsentCheck: só deve ser usado por envios MANUAIS, iniciados
@@ -47,6 +90,11 @@ export async function checkWhatsAppModule(userId: string, supabaseClient = supab
  * consultor, como pessoa, pode decidir enviar mesmo sem consentimento
  * digital registado (ex.: autorização verbal já dada); uma automação não
  * tem esse critério humano, por isso continua sempre a verificar.
+ *
+ * source: identifica qual automação está a enviar (ex.: "lead_reactivation",
+ * "workflow_automation") — obrigatório para envios automáticos, para
+ * aparecer corretamente no Registo de Envios Automáticos. Ignorado quando
+ * skipConsentCheck é true (envios manuais não são registados aqui).
  */
 export async function sendWhatsAppMessage(
   userId: string, 
@@ -54,7 +102,8 @@ export async function sendWhatsAppMessage(
   message: string,
   supabaseClient = supabase,
   leadId?: string,
-  skipConsentCheck: boolean = false
+  skipConsentCheck: boolean = false,
+  source: string = "unknown_automation"
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
   try {
     if (leadId && !skipConsentCheck) {
@@ -122,6 +171,13 @@ export async function sendWhatsAppMessage(
 
     if (!response.ok) {
       console.error("WhatsApp API Error:", data);
+      if (!skipConsentCheck) {
+        await logAutomatedWhatsApp({
+          supabaseClient, userId, leadId, toPhone: to, source,
+          messageType: "text", contentSummary: message,
+          status: "failed", errorMessage: data.error?.message || "Erro na API do WhatsApp",
+        });
+      }
       return { success: false, error: data.error?.message || "Erro na API do WhatsApp" };
     }
 
@@ -133,6 +189,13 @@ export async function sendWhatsAppMessage(
         console.error("Failed to create WhatsApp interaction:", interactionError);
         // Don't fail the send if interaction creation fails
       }
+    }
+
+    if (!skipConsentCheck) {
+      await logAutomatedWhatsApp({
+        supabaseClient, userId, leadId, toPhone: to, source,
+        messageType: "text", contentSummary: message, status: "sent",
+      });
     }
 
     return { 
@@ -149,6 +212,8 @@ export async function sendWhatsAppMessage(
 /**
  * Send a WhatsApp Template message using the Meta Cloud API
  * Required for initiating conversations with users
+ *
+ * source: identifica qual automação está a enviar — ver sendWhatsAppMessage.
  */
 export async function sendWhatsAppTemplate(
   userId: string, 
@@ -156,7 +221,8 @@ export async function sendWhatsAppTemplate(
   templateName: string,
   supabaseClient = supabase,
   leadId?: string,
-  skipConsentCheck: boolean = false
+  skipConsentCheck: boolean = false,
+  source: string = "unknown_automation"
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
   try {
     if (leadId && !skipConsentCheck) {
@@ -219,6 +285,13 @@ export async function sendWhatsAppTemplate(
 
     if (!response.ok) {
       console.error("WhatsApp API Error:", data);
+      if (!skipConsentCheck) {
+        await logAutomatedWhatsApp({
+          supabaseClient, userId, leadId, toPhone: to, source,
+          messageType: "template", contentSummary: templateName,
+          status: "failed", errorMessage: data.error?.message || "Erro na API do WhatsApp",
+        });
+      }
       return { success: false, error: data.error?.message || "Erro na API do WhatsApp" };
     }
 
@@ -236,6 +309,13 @@ export async function sendWhatsAppTemplate(
         console.error("Failed to create WhatsApp template interaction:", interactionError);
         // Don't fail the send if interaction creation fails
       }
+    }
+
+    if (!skipConsentCheck) {
+      await logAutomatedWhatsApp({
+        supabaseClient, userId, leadId, toPhone: to, source,
+        messageType: "template", contentSummary: templateName, status: "sent",
+      });
     }
 
     return { 

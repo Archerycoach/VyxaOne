@@ -254,7 +254,9 @@ async function sendWhatsAppReactivation(
     lead.phone!, 
     "voltar_ao_radar", 
     supabaseAdmin, 
-    lead.id
+    lead.id,
+    false,
+    "lead_reactivation"
   );
   
   if (result.success) {

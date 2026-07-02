@@ -56,7 +56,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
 
       // Send the reactivation template
-      const result = await sendWhatsAppTemplate(user.id, lead.phone, templateName, supabaseAdmin, leadId);
+      const result = await sendWhatsAppTemplate(user.id, lead.phone, templateName, supabaseAdmin, leadId, false, "whatsapp_reactivate");
 
       if (result.success) {
         results.success++;
