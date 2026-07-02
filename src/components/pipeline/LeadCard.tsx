@@ -65,6 +65,7 @@ import { LeadDetailsDialog } from "@/components/leads/LeadDetailsDialog";
 import { getUserProfile } from "@/services/profileService";
 import { supabase } from "@/integrations/supabase/client";
 import { getLeadRecentInteractionState } from "@/lib/leadInteractionHighlight";
+import { getLeadQualification } from "@/lib/leadQualification";
 
 interface LeadCardProps {
   lead: LeadWithContacts;
@@ -479,6 +480,22 @@ export function LeadCard({ lead, onClick, onDelete, onConvertSuccess }: LeadCard
             </Badge>
           </div>
         )}
+
+        {(() => {
+          const qualification = getLeadQualification(lead);
+          if (qualification.missing.length === 0) return null;
+          return (
+            <div className="mb-3">
+              <Badge
+                variant="outline"
+                className="bg-amber-50 text-amber-700 border-amber-200"
+                title={qualification.missing.map((m) => m.label).join(", ")}
+              >
+                {qualification.missing.length} {qualification.missing.length === 1 ? "dado em falta" : "dados em falta"}
+              </Badge>
+            </div>
+          );
+        })()}
 
         {/* Contact Information */}
         <div className="mb-4 space-y-1">

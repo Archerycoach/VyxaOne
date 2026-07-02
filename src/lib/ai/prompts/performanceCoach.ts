@@ -1,29 +1,29 @@
-interface PerformanceCoachContext {
-  funnelCounts: Record<string, number>;
-  totalLeads: number;
-  wonDealsCount: number;
-  conversionRate: string;
+interface PerformanceCoachSummaryContext {
+  consultantName: string;
+  annualRevenuePercentage: number | null;
+  semesterRevenuePercentage: number | null;
+  conversionRate: number;
+  totalActiveLeads: number;
+  bottleneckStageLabel: string | null;
+  bottleneckStageCount: number;
+  leadsNeededPerWeek: number | null;
 }
 
-export function getPerformanceCoachPrompt(context: PerformanceCoachContext): {
-  system: string;
-  user: string;
-} {
-  const systemPrompt = `És um 'Coach de Performance' implacável e experiente em imobiliário.
-Analisa os dados do consultor.
-Regras:
-1. Faz uma avaliação rápida da taxa de conversão (Leads totais vs Negócios fechados).
-2. Se a taxa for baixa (<3%), alerta para o facto de não estar a qualificar bem os leads. Se for >10%, elogia o fecho.
-3. Dá 2 ou 3 conselhos muito matemáticos e preditivos. Exemplo: "Com base no teu funil (onde tens muitos em 'proposta'), deves focar-te em fazer 5 chamadas de fecho hoje."
-4. Mantém a resposta concisa, agressivamente focada em resultados e produtividade. Não divagues.
-5. Formata com parágrafos claros.`;
+/**
+ * Prompt leve para o Coach de Performance: todas as métricas (progresso de
+ * metas, taxa de conversão, gargalo do funil, ritmo necessário) já vêm
+ * calculadas de forma determinística pelo endpoint — a IA só traduz isso num
+ * conselho curto, direto e acionável, sem inventar números.
+ */
+export function getPerformanceCoachSummaryPrompt(context: PerformanceCoachSummaryContext): string {
+  return `És um coach de performance direto e experiente, especializado em consultores imobiliários. Aqui estão os números reais de ${context.consultantName} este período:
 
-  const userPrompt = `O meu funil atual: ${JSON.stringify(context.funnelCounts)}
-Leads Totais no sistema: ${context.totalLeads}
-Negócios ganhos: ${context.wonDealsCount}
-Taxa de conversão atual calculada: ${context.conversionRate}%
+- Progresso da meta de faturação (semestre): ${context.semesterRevenuePercentage !== null ? `${context.semesterRevenuePercentage}%` : "sem meta definida"}
+- Progresso da meta de faturação (ano): ${context.annualRevenuePercentage !== null ? `${context.annualRevenuePercentage}%` : "sem meta definida"}
+- Taxa de conversão (leads → negócio fechado): ${context.conversionRate}%
+- Leads ativas no funil: ${context.totalActiveLeads}
+- Fase com mais leads paradas: ${context.bottleneckStageLabel ? `${context.bottleneckStageLabel} (${context.bottleneckStageCount} leads)` : "sem gargalo evidente"}
+- Ritmo necessário para bater a meta: ${context.leadsNeededPerWeek !== null ? `aproximadamente ${context.leadsNeededPerWeek} novas leads qualificadas por semana` : "sem meta definida para calcular"}
 
-Diz-me a verdade sobre o meu funil e onde preciso de focar esforços esta semana.`;
-
-  return { system: systemPrompt, user: userPrompt };
+Escreve um conselho de 2-3 frases, direto, honesto e sem rodeios (nem elogios vazios nem alarmismo), em português de Portugal. Aponta CLARAMENTE a UMA coisa em que se deve focar esta semana com base nestes números — não repitas todos os números, escolhe o mais importante. Responde APENAS com o texto do conselho, sem markdown nem aspas.`;
 }
