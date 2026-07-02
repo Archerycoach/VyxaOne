@@ -16,6 +16,7 @@ import { MetaAccountConnection } from "@/components/settings/MetaAccountConnecti
 import { MetaFormsManagement } from "@/components/settings/MetaFormsManagement";
 import { GptApiSettings } from "@/components/settings/GptApiSettings";
 import { WorkflowsManagement } from "@/components/settings/WorkflowsManagement";
+import { MessageSnippetsManagement } from "@/components/settings/MessageSnippetsManagement";
 import { NotionAccountConnection } from "@/components/settings/NotionAccountConnection";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
 
@@ -443,6 +444,10 @@ export default function Settings() {
             <TabsTrigger value="send-automations">
               <Mail className="h-4 w-4 mr-2" />
               Envios Automáticos
+            </TabsTrigger>
+            <TabsTrigger value="snippets">
+              <MessageCircle className="h-4 w-4 mr-2" />
+              Respostas Rápidas
             </TabsTrigger>
             <TabsTrigger value="portals">
               <Globe className="h-4 w-4 mr-2" />
@@ -1015,6 +1020,10 @@ export default function Settings() {
                 </p>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="snippets" className="space-y-6">
+            <MessageSnippetsManagement />
           </TabsContent>
 
           <TabsContent value="notion" className="space-y-6">

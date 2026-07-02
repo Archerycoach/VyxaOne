@@ -65,6 +65,15 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
 import { collapseEmptyBlocks } from "@/lib/emailSignatureFormat";
+import { getMessageSnippets, personalizeSnippet, type MessageSnippet } from "@/services/messageSnippetsService";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface LeadDetailsDialogProps {
   leadId: string | null;
@@ -111,12 +120,20 @@ export function LeadDetailsDialog({
 
   // User signature state
   const [userSignature, setUserSignature] = useState<{text: string | null, image: string | null}>({text: null, image: null});
+  const [snippets, setSnippets] = useState<MessageSnippet[]>([]);
 
   const { toast } = useToast();
   
   // Use ref to prevent multiple fetches
   const fetchingRef = useRef(false);
   const currentLeadIdRef = useRef<string | null>(null);
+
+  // Respostas rápidas: carrega uma vez quando o diálogo abre (independente
+  // do fluxo de fetch principal, que já está bastante complexo).
+  useEffect(() => {
+    if (!open) return;
+    getMessageSnippets().then(setSnippets).catch((err) => console.error("[LeadDetailsDialog] Erro ao carregar respostas rápidas:", err));
+  }, [open]);
 
   useEffect(() => {
     // Only fetch if dialog is open, we have a leadId, and we're not already fetching
@@ -335,6 +352,25 @@ export function LeadDetailsDialog({
         channel,
         text: channel === "email" ? plainTextToHtml(text) : text,
       };
+    });
+  };
+
+  // Insere uma resposta rápida (Definições > Respostas Rápidas) no rascunho
+  // atualmente aberto, personalizada com os dados desta lead.
+  const insertSnippetIntoDraft = (snippet: MessageSnippet) => {
+    if (!generatedDraft) return;
+    const personalized = personalizeSnippet(snippet.content, {
+      name: lead.name,
+      email: lead.email,
+      phone: lead.phone,
+      development_name: lead.development_name,
+    });
+    setGeneratedDraft((prev) => {
+      if (!prev) return prev;
+      const appended = prev.channel === "email"
+        ? prev.text + plainTextToHtml(personalized)
+        : (prev.text ? `${prev.text}\n\n${personalized}` : personalized);
+      return { ...prev, text: appended };
     });
   };
 
@@ -1365,6 +1401,30 @@ export function LeadDetailsDialog({
                 onChange={(e) => setEmailSubject(e.target.value)}
                 placeholder="Assunto do e-mail"
               />
+            </div>
+          )}
+
+          {snippets.length > 0 && (
+            <div className="flex justify-end">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm">
+                    <MessageSquare className="h-3.5 w-3.5 mr-2" />
+                    Inserir Resposta Rápida
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-64">
+                  <DropdownMenuLabel>Respostas rápidas</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  {snippets
+                    .filter((s) => s.channel === "both" || s.channel === generatedDraft?.channel)
+                    .map((snippet) => (
+                      <DropdownMenuItem key={snippet.id} onClick={() => insertSnippetIntoDraft(snippet)}>
+                        {snippet.title}
+                      </DropdownMenuItem>
+                    ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           )}
 
