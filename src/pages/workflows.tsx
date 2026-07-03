@@ -16,6 +16,7 @@ import {
   XCircle
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { executeWorkflowForLead } from "@/services/workflowService";
 import { Layout } from "@/components/Layout";
 import {
   Dialog,
@@ -495,15 +496,18 @@ export default function WorkflowsPage() {
 
       // Se foi selecionado um lead/contacto, executar imediatamente (só
       // para essa lead — a automação continua desativada para as outras)
+      let executionResult: any = null;
       if (formState.target_id && workflow) {
-        await executeWorkflow(workflow.id, formState.target_id);
+        executionResult = await executeWorkflow(workflow.id, formState.target_id);
       }
 
       toast({
         title: "✅ Workflow criado (desativado)",
-        description: formState.target_id 
-          ? `${formState.name} foi criado e testado com ${formState.target_type === "lead" ? "essa lead" : "esse contacto"}. Reveja o resultado e ligue o interruptor quando estiver pronto.`
-          : `${formState.name} foi criado, mas está desativado. Use "Executar" para testar antes de ligar o interruptor para todas as leads.`,
+        description: executionResult?.noUpcomingVisitFound
+          ? `${formState.name} foi criado e testado, mas essa lead não tem nenhuma visita futura no calendário — as variáveis de visita ficaram por preencher. Marque uma visita e teste outra vez.`
+          : formState.target_id 
+            ? `${formState.name} foi criado e testado com ${formState.target_type === "lead" ? "essa lead" : "esse contacto"}. Reveja o resultado e ligue o interruptor quando estiver pronto.`
+            : `${formState.name} foi criado, mas está desativado. Use "Executar" para testar antes de ligar o interruptor para todas as leads.`,
       });
 
       setIsNewWorkflowOpen(false);
@@ -541,32 +545,9 @@ export default function WorkflowsPage() {
 
   const executeWorkflow = async (workflowId: string, targetId: string) => {
     try {
-      const { error } = await supabase
-        .from("workflow_executions")
-        .insert({
-          workflow_id: workflowId,
-          lead_id: targetId,
-          user_id: userId,
-          status: "pending",
-          executed_at: new Date().toISOString()
-        } as any);
-
-      if (error) throw error;
-
-      // Simular processamento
-      setTimeout(async () => {
-        await supabase
-          .from("workflow_executions")
-          .update({
-            status: "completed",
-            completed_at: new Date().toISOString()
-          } as any)
-          .eq("workflow_id", workflowId)
-          .eq("lead_id", targetId);
-
-        await loadWorkflowExecutions(userId);
-      }, 2000);
-
+      const result = await executeWorkflowForLead(workflowId, targetId, userId);
+      await loadWorkflowExecutions(userId);
+      return result;
     } catch (error) {
       console.error("Error executing workflow:", error);
       throw error;
@@ -584,12 +565,19 @@ export default function WorkflowsPage() {
         return;
       }
 
-      await executeWorkflow(selectedWorkflowForExecution.id, executeFormState.target_id);
+      const result = await executeWorkflow(selectedWorkflowForExecution.id, executeFormState.target_id);
 
-      toast({
-        title: "✅ Workflow executado",
-        description: `${selectedWorkflowForExecution.name} foi executado com sucesso.`,
-      });
+      if ((result as any)?.noUpcomingVisitFound) {
+        toast({
+          title: "⚠️ Workflow executado, mas sem visita agendada",
+          description: `Esta lead não tem nenhuma visita futura no calendário — as variáveis {data_visita}, {hora_visita} e {local_visita} ficaram por preencher neste teste.`,
+        });
+      } else {
+        toast({
+          title: "✅ Workflow executado",
+          description: `${selectedWorkflowForExecution.name} foi executado com sucesso.`,
+        });
+      }
 
       setIsExecuteWorkflowOpen(false);
       setSelectedWorkflowForExecution(null);

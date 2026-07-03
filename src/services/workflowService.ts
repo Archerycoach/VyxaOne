@@ -173,6 +173,34 @@ export const executeWorkflowForLead = async (
   }
 
   try {
+    // Para o gatilho "visit_scheduled", vai buscar a próxima visita
+    // agendada desta lead, para as variáveis {data_visita}/{hora_visita}/
+    // {local_visita} refletirem a visita real, mesmo quando testado
+    // manualmente com "Executar" (não só quando disparado pelo cron).
+    let eventContext: { title: string; startTime: string; location: string | null } | undefined;
+    let noUpcomingVisitFound = false;
+    if ((workflow as any).trigger_status === "visit_scheduled") {
+      const { data: nextEvent } = await supabase
+        .from("calendar_events")
+        .select("title, start_time, location")
+        .eq("lead_id", leadId)
+        .gte("start_time", new Date().toISOString())
+        .order("start_time", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      if (nextEvent) {
+        eventContext = {
+          title: (nextEvent as any).title,
+          startTime: (nextEvent as any).start_time,
+          location: (nextEvent as any).location,
+        };
+      } else {
+        noUpcomingVisitFound = true;
+        console.warn("[Workflow] Lead sem visita agendada — as variáveis {data_visita}/{hora_visita}/{local_visita} não serão substituídas neste teste.");
+      }
+    }
+
     // Execute workflow actions
     let actions = (workflow as any).actions || [];
     
@@ -185,7 +213,7 @@ export const executeWorkflowForLead = async (
     }
     
     for (const action of actions) {
-      await executeWorkflowAction(action, lead, userId);
+      await executeWorkflowAction(action, lead, userId, eventContext);
     }
 
     // Update execution status to completed
@@ -197,7 +225,10 @@ export const executeWorkflowForLead = async (
       })
       .eq("id", execution.id);
 
-    return execution;
+    // noUpcomingVisitFound avisa quem chamou (ex.: o botão "Executar") que
+    // esta lead não tinha nenhuma visita futura — as variáveis de visita
+    // ({data_visita}, etc.) não foram substituídas neste teste em concreto.
+    return { ...execution, noUpcomingVisitFound };
   } catch (error) {
     // Update execution status to failed
     await supabase
@@ -214,16 +245,21 @@ export const executeWorkflowForLead = async (
 };
 
 // Execute individual workflow action
-async function executeWorkflowAction(action: any, lead: any, userId: string) {
-  const personalizedContent = personalizeContent(action.content || action.config?.body || "", lead);
+async function executeWorkflowAction(
+  action: any,
+  lead: any,
+  userId: string,
+  eventContext?: { title: string; startTime: string; location: string | null }
+) {
+  const personalizedContent = personalizeContent(action.content || action.config?.body || "", lead, eventContext);
   
   switch (action.type) {
     case "send_email":
-      await sendEmailAction(action, lead, personalizedContent, userId);
+      await sendEmailAction(action, lead, personalizedContent, userId, eventContext);
       break;
       
     case "send_whatsapp":
-      await sendWhatsappAction(action, lead, userId);
+      await sendWhatsappAction(action, lead, userId, eventContext);
       break;
       
     case "create_task":
@@ -247,7 +283,13 @@ async function executeWorkflowAction(action: any, lead: any, userId: string) {
 export { executeWorkflowAction };
 
 // Send email via SMTP
-async function sendEmailAction(action: any, lead: any, content: string, userId: string) {
+async function sendEmailAction(
+  action: any,
+  lead: any,
+  content: string,
+  userId: string,
+  eventContext?: { title: string; startTime: string; location: string | null }
+) {
   try {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) {
@@ -256,13 +298,27 @@ async function sendEmailAction(action: any, lead: any, content: string, userId: 
 
     // Get email configuration from action config
     const config = action.config || action;
-    const subject = personalizeContent(config.subject || action.subject || "Mensagem automática", lead);
-    const body = personalizeContent(config.body || action.body || content, lead);
+    const subject = personalizeContent(config.subject || action.subject || "Mensagem automática", lead, eventContext);
+    const body = personalizeContent(config.body || action.body || content, lead, eventContext);
     const attachments = Array.isArray(config.attachments)
       ? config.attachments
       : Array.isArray(action.attachments)
         ? action.attachments
         : [];
+
+    const isConsultantNotification = config.recipient_type === "consultant";
+    let recipientEmail: string | null | undefined = lead.email;
+
+    if (isConsultantNotification) {
+      // Notificação interna: envia para o próprio consultor, não para a
+      // lead — ver a mesma lógica em src/lib/server/workflowEngine.ts.
+      const { data: profile } = await supabase.from("profiles").select("email").eq("id", userId).maybeSingle();
+      recipientEmail = (profile as { email?: string } | null)?.email;
+      if (!recipientEmail) {
+        console.log("[Workflow] A saltar notificação interna - sem email no perfil do consultor");
+        return;
+      }
+    }
 
     const response = await fetch("/api/smtp/send", {
       method: "POST",
@@ -271,12 +327,15 @@ async function sendEmailAction(action: any, lead: any, content: string, userId: 
         "Authorization": `Bearer ${session.access_token}`,
       },
       body: JSON.stringify({
-        to: lead.email,
+        to: recipientEmail,
         subject: subject,
         html: body.replace(/\n/g, "<br>"),
         text: body,
         attachments,
         sendCopyToSender: config.send_cc === true,
+        // Notificações internas ao consultor não devem levar a assinatura
+        // de cliente (não faz sentido assinar uma nota para si próprio).
+        appendSignature: !isConsultantNotification,
       }),
     });
 
@@ -286,16 +345,20 @@ async function sendEmailAction(action: any, lead: any, content: string, userId: 
       throw new Error(result.error || "Falha ao enviar email");
     }
 
-    // Log the email as an interaction
-    await logEmailInteraction({
-      leadId: lead.id,
-      userId: userId,
-      subject: subject,
-      body: body,
-      outcome: "Email automático enviado (workflow)",
-    });
+    // Só regista como "interação com a lead" quando o email foi mesmo
+    // enviado à lead — uma notificação interna ao consultor não é uma
+    // interação com ninguém, é só um aviso.
+    if (!isConsultantNotification) {
+      await logEmailInteraction({
+        leadId: lead.id,
+        userId: userId,
+        subject: subject,
+        body: body,
+        outcome: "Email automático enviado (workflow)",
+      });
+    }
 
-    console.log("✅ Email sent to:", lead.email);
+    console.log("✅ Email sent to:", recipientEmail);
   } catch (error) {
     console.error("❌ Failed to send email:", error);
     throw error;
@@ -303,7 +366,12 @@ async function sendEmailAction(action: any, lead: any, content: string, userId: 
 }
 
 // Send WhatsApp template
-async function sendWhatsappAction(action: any, lead: any, userId: string) {
+async function sendWhatsappAction(
+  action: any,
+  lead: any,
+  userId: string,
+  _eventContext?: { title: string; startTime: string; location: string | null }
+) {
   try {
     const config = action.config || action;
     if (!lead.phone) {
@@ -452,12 +520,29 @@ async function sendNotificationAction(action: any, lead: any, content: string, u
 }
 
 // Personalize content with lead data
-function personalizeContent(content: string, lead: any): string {
-  return content
+function personalizeContent(
+  content: string,
+  lead: any,
+  eventContext?: { title: string; startTime: string; location: string | null }
+): string {
+  let result = content
     .replace(/{nome}/g, lead.name || "")
     .replace(/{email}/g, lead.email || "")
     .replace(/{telefone}/g, lead.phone || "")
     .replace(/{lead_name}/g, lead.name || "")
     .replace(/{empreendimento}/g, lead.development_name || "")
     .replace(/{empresa}/g, "REMAX"); // Default company name
+
+  if (eventContext) {
+    const eventDate = new Date(eventContext.startTime);
+    const dataVisita = eventDate.toLocaleDateString("pt-PT", { weekday: "long", day: "numeric", month: "long" });
+    const horaVisita = eventDate.toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" });
+    result = result
+      .replace(/{data_visita}/g, dataVisita)
+      .replace(/{hora_visita}/g, horaVisita)
+      .replace(/{local_visita}/g, eventContext.location || "a combinar")
+      .replace(/{titulo_visita}/g, eventContext.title || "");
+  }
+
+  return result;
 }
