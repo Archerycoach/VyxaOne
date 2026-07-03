@@ -492,7 +492,8 @@ export default function WorkflowsPage() {
         target_type: "lead",
         target_id: "",
         email_subject: "",
-        email_body: ""
+        email_body: "",
+        email_recipient_type: "lead"
       });
 
       await Promise.all([

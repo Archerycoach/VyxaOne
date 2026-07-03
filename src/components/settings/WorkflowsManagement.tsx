@@ -557,6 +557,7 @@ export function WorkflowsManagement() {
         target_id: "",
         email_subject: "",
         email_body: "",
+        email_recipient_type: "lead",
         attachments: [],
         send_cc: false,
         wa_template_name: ""
@@ -743,6 +744,7 @@ export function WorkflowsManagement() {
                 target_id: "",
                 email_subject: "",
                 email_body: "",
+                email_recipient_type: "lead",
                 attachments: [],
                 send_cc: false,
                 wa_template_name: ""
