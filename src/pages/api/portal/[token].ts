@@ -19,7 +19,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     const { data: lead, error: leadError } = await supabaseAdmin
-      .from("leads")
+      .from("leads" as any)
       .select("id, name, user_id")
       .eq("portal_token", token)
       .maybeSingle();
@@ -30,7 +30,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const [matchesResult, eventsResult, documentsResult, profileResult] = await Promise.all([
       supabaseAdmin
-        .from("property_matches")
+        .from("property_matches" as any)
         .select("match_score, match_reasons, property:properties(id, title, address, city, price, bedrooms, bathrooms, area, main_image_url, reference_code, property_type)")
         .eq("lead_id", lead.id)
         .order("match_score", { ascending: false })
