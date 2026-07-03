@@ -430,8 +430,8 @@ export function WorkflowsManagement() {
         defaultBody = "Olá,\n\nLembrete para fazer follow-up com {nome}.\n\nÚltimo contacto há 5+ dias.\n\nContacto: {telefone}";
         break;
       case "visit_scheduled":
-        defaultSubject = "📅 Visita Agendada: {nome}";
-        defaultBody = "Olá,\n\nLembrete: Tens uma visita agendada com {nome} amanhã.\n\nContacto: {telefone}\nEmail: {email}";
+        defaultSubject = "📅 Visita Amanhã: {nome}";
+        defaultBody = "Olá,\n\nLembrete: Tens uma visita agendada com {nome} amanhã, {data_visita}, às {hora_visita}.\n\nLocal: {local_visita}\n\nContacto: {telefone}\nEmail: {email}";
         break;
       case "no_activity_7_days":
         defaultSubject = "Lead Inativo: {nome}";
@@ -1109,6 +1109,14 @@ export function WorkflowsManagement() {
                     <li><code className="bg-white px-1 rounded">{"{email}"}</code> - Email da lead/contacto</li>
                     <li><code className="bg-white px-1 rounded">{"{telefone}"}</code> - Telefone da lead/contacto</li>
                     <li><code className="bg-white px-1 rounded">{"{empreendimento}"}</code> - Nome do empreendimento associado</li>
+                    {formState.trigger === "visit_scheduled" && (
+                      <>
+                        <li><code className="bg-white px-1 rounded">{"{data_visita}"}</code> - Data da visita (do evento no calendário)</li>
+                        <li><code className="bg-white px-1 rounded">{"{hora_visita}"}</code> - Hora da visita</li>
+                        <li><code className="bg-white px-1 rounded">{"{local_visita}"}</code> - Local da visita</li>
+                        <li><code className="bg-white px-1 rounded">{"{titulo_visita}"}</code> - Título do evento</li>
+                      </>
+                    )}
                   </ul>
                 </div>
               </div>

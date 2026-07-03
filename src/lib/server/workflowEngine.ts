@@ -20,6 +20,8 @@ interface RunWorkflowsParams {
   userId: string;
   leadId: string;
   triggerType: string;
+  /** Só relevante para gatilhos ligados a um evento específico (ex.: "visit_scheduled") — permite usar {data_visita}/{hora_visita}/{local_visita} no texto da automação. */
+  eventContext?: { title: string; startTime: string; location: string | null };
 }
 
 interface WorkflowExecution {
@@ -43,6 +45,7 @@ export async function runLeadWorkflows({
   userId,
   leadId,
   triggerType,
+  eventContext,
 }: RunWorkflowsParams): Promise<{ success: boolean; errors: string[] }> {
   console.log(`[Workflow Engine] Running workflows for lead ${leadId}, trigger: ${triggerType}`);
 
@@ -104,7 +107,7 @@ export async function runLeadWorkflows({
         }
 
         // Execute workflow with error handling
-        await executeWorkflow(supabase, workflow, lead, userId);
+        await executeWorkflow(supabase, workflow, lead, userId, eventContext);
         console.log(`[Workflow Engine] ✅ Workflow ${workflow.id} executed successfully`);
       } catch (error: any) {
         const errorMsg = `Workflow ${workflow.id} failed: ${error.message}`;
@@ -133,7 +136,8 @@ async function executeWorkflow(
   supabase: ReturnType<typeof createClient>,
   workflow: any,
   lead: any,
-  userId: string
+  userId: string,
+  eventContext?: { title: string; startTime: string; location: string | null }
 ): Promise<void> {
   // Type-safe alias to avoid service-role client type inference issues
   const db = supabase as unknown as SupabaseClient;
@@ -166,11 +170,11 @@ async function executeWorkflow(
 
     switch (actionType) {
       case "send_email":
-        await sendEmailAction(supabase, lead, actionConfig, userId);
+        await sendEmailAction(supabase, lead, actionConfig, userId, eventContext);
         break;
 
       case "send_whatsapp":
-        await sendWhatsappAction(supabase, lead, actionConfig, userId);
+        await sendWhatsappAction(supabase, lead, actionConfig, userId, eventContext);
         break;
 
       case "create_task":
@@ -224,16 +228,19 @@ async function sendEmailAction(
   supabase: ReturnType<typeof createClient>,
   lead: any,
   config: any,
-  userId: string
+  userId: string,
+  eventContext?: { title: string; startTime: string; location: string | null }
 ): Promise<void> {
   const db = supabase as unknown as SupabaseClient;
   const isConsultantNotification = config.recipient_type === "consultant";
 
   // Personalize content — as variáveis ({nome}, {telefone}, etc.) referem-se
   // sempre à lead, mesmo quando o destinatário é o próprio consultor (ex.:
-  // "A lead {nome} está sem atividade há mais de 7 dias").
-  const subject = personalizeContent(config.subject || "Mensagem automática", lead);
-  const body = personalizeContent(config.body || "", lead);
+  // "A lead {nome} está sem atividade há mais de 7 dias"). Se houver um
+  // evento associado (ex.: gatilho "visit_scheduled"), também ficam
+  // disponíveis {data_visita}, {hora_visita} e {local_visita}.
+  const subject = personalizeContent(config.subject || "Mensagem automática", lead, eventContext);
+  const body = personalizeContent(config.body || "", lead, eventContext);
   const attachments = formatWorkflowAttachments(config.attachments);
 
   let recipientEmail: string;
@@ -301,7 +308,8 @@ async function sendWhatsappAction(
   supabase: ReturnType<typeof createClient>,
   lead: any,
   config: any,
-  userId: string
+  userId: string,
+  _eventContext?: { title: string; startTime: string; location: string | null }
 ): Promise<void> {
   if (!lead.phone) {
     console.log(`[Workflow Engine] Skipping WhatsApp action - lead has no phone`);
@@ -470,16 +478,36 @@ async function sendNotificationAction(
 }
 
 /**
- * Personalize content with lead data
+ * Personalize content with lead data — e, quando disponível, dados do
+ * evento de calendário associado (usado pelo gatilho "visit_scheduled",
+ * para {data_visita}/{hora_visita}/{local_visita} refletirem a visita real,
+ * não um texto genérico).
  */
-function personalizeContent(content: string, lead: any): string {
-  return content
+function personalizeContent(
+  content: string,
+  lead: any,
+  eventContext?: { title: string; startTime: string; location: string | null }
+): string {
+  let result = content
     .replace(/{nome}/g, lead.name || "")
     .replace(/{email}/g, lead.email || "")
     .replace(/{telefone}/g, lead.phone || "")
     .replace(/{lead_name}/g, lead.name || "")
     .replace(/{empreendimento}/g, lead.development_name || "")
     .replace(/{empresa}/g, "REMAX");
+
+  if (eventContext) {
+    const eventDate = new Date(eventContext.startTime);
+    const dataVisita = eventDate.toLocaleDateString("pt-PT", { weekday: "long", day: "numeric", month: "long" });
+    const horaVisita = eventDate.toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" });
+    result = result
+      .replace(/{data_visita}/g, dataVisita)
+      .replace(/{hora_visita}/g, horaVisita)
+      .replace(/{local_visita}/g, eventContext.location || "a combinar")
+      .replace(/{titulo_visita}/g, eventContext.title || "");
+  }
+
+  return result;
 }
 
 /**

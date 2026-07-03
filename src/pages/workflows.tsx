@@ -403,8 +403,8 @@ export default function WorkflowsPage() {
         defaultBody = "Olá,\n\nLembrete para fazer follow-up com {nome}.\n\nÚltimo contacto há 5+ dias.\n\nContacto: {telefone}";
         break;
       case "visit_scheduled":
-        defaultSubject = "📅 Visita Agendada: {nome}";
-        defaultBody = "Olá,\n\nLembrete: Tens uma visita agendada com {nome} amanhã.\n\nContacto: {telefone}\nEmail: {email}";
+        defaultSubject = "📅 Visita Amanhã: {nome}";
+        defaultBody = "Olá,\n\nLembrete: Tens uma visita agendada com {nome} amanhã, {data_visita}, às {hora_visita}.\n\nLocal: {local_visita}\n\nContacto: {telefone}\nEmail: {email}";
         break;
       case "no_activity_7_days":
         defaultSubject = "Lead Inativo: {nome}";
