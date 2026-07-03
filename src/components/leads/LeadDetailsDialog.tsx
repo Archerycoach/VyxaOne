@@ -26,6 +26,7 @@ import {
   TrendingUp,
   MessageSquare,
   Calculator,
+  Link as LinkIcon,
   FileText,
   X,
   CheckSquare,
@@ -67,6 +68,7 @@ import { Input } from "@/components/ui/input";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
 import { collapseEmptyBlocks } from "@/lib/emailSignatureFormat";
 import { getMessageSnippets, personalizeSnippet, type MessageSnippet } from "@/services/messageSnippetsService";
+import { getOrCreatePortalLink } from "@/services/portalService";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -122,6 +124,7 @@ export function LeadDetailsDialog({
   // User signature state
   const [userSignature, setUserSignature] = useState<{text: string | null, image: string | null}>({text: null, image: null});
   const [snippets, setSnippets] = useState<MessageSnippet[]>([]);
+  const [generatingPortalLink, setGeneratingPortalLink] = useState(false);
 
   const { toast } = useToast();
   
@@ -374,6 +377,20 @@ export function LeadDetailsDialog({
         : (prev.text ? `${prev.text}\n\n${personalized}` : personalized);
       return { ...prev, text: appended };
     });
+  };
+
+  const handleCopyPortalLink = async () => {
+    if (!leadId) return;
+    setGeneratingPortalLink(true);
+    try {
+      const url = await getOrCreatePortalLink(leadId);
+      await navigator.clipboard.writeText(url);
+      toast({ title: "✅ Link do Portal copiado", description: "Já pode enviar este link ao cliente." });
+    } catch (err: any) {
+      toast({ title: "Erro ao gerar o link", description: err.message, variant: "destructive" });
+    } finally {
+      setGeneratingPortalLink(false);
+    }
   };
 
   const handleGenerateDraft = async (channel: 'email' | 'whatsapp') => {
@@ -633,6 +650,16 @@ export function LeadDetailsDialog({
                   >
                     <Calculator className="h-4 w-4 mr-2" />
                     Simulador
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleCopyPortalLink}
+                    disabled={generatingPortalLink}
+                    className="text-blue-700 border-blue-200 hover:bg-blue-50"
+                  >
+                    {generatingPortalLink ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <LinkIcon className="h-4 w-4 mr-2" />}
+                    Portal do Cliente
                   </Button>
                   <Button 
                     size="sm" 

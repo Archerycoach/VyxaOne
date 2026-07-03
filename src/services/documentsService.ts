@@ -10,6 +10,7 @@ export interface DocumentRecord {
   file_size: number | null;
   file_type: string | null;
   tags: string[] | null;
+  shared_with_lead: boolean;
   created_at: string | null;
 }
 
@@ -38,7 +39,7 @@ const ALLOWED_TYPES = [
  */
 export async function uploadDocument(
   file: File,
-  options: { leadId?: string | null; propertyId?: string | null; tags?: string[] } = {}
+  options: { leadId?: string | null; propertyId?: string | null; tags?: string[]; sharedWithLead?: boolean } = {}
 ): Promise<UploadDocumentResult> {
   try {
     if (!ALLOWED_TYPES.includes(file.type)) {
@@ -80,6 +81,7 @@ export async function uploadDocument(
         file_size: file.size,
         file_type: file.type,
         tags: options.tags || [],
+        shared_with_lead: options.sharedWithLead || false,
       })
       .select()
       .single() as any);
