@@ -85,6 +85,13 @@ type Contact = {
   email?: string;
 };
 
+const STALE_LEAD_TRIGGERS = ["no_contact_5_days", "no_activity_7_days", "stage_stale_10_days"];
+const STALE_TRIGGER_DEFAULT_DAYS: Record<string, number> = {
+  no_contact_5_days: 5,
+  no_activity_7_days: 7,
+  stage_stale_10_days: 10,
+};
+
 const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
   {
     id: "welcome-new-lead",
@@ -207,7 +214,10 @@ export default function WorkflowsPage() {
     target_id: "",
     email_subject: "",
     email_body: "",
-    email_recipient_type: "lead" as "lead" | "consultant"
+    email_recipient_type: "lead" as "lead" | "consultant",
+    stale_threshold_days: 0,
+    stale_max_alerts: 1,
+    stale_repeat_frequency_days: 3
   });
 
   const [executeFormState, setExecuteFormState] = useState({
@@ -421,7 +431,10 @@ export default function WorkflowsPage() {
       target_id: "",
       email_subject: defaultSubject,
       email_body: defaultBody,
-      email_recipient_type: defaultRecipientType
+      email_recipient_type: defaultRecipientType,
+      stale_threshold_days: STALE_TRIGGER_DEFAULT_DAYS[template.trigger] || 0,
+      stale_max_alerts: 1,
+      stale_repeat_frequency_days: 3
     });
     setIsNewWorkflowOpen(true);
   };
@@ -446,6 +459,14 @@ export default function WorkflowsPage() {
         return;
       }
 
+      const staleLeadConfig = STALE_LEAD_TRIGGERS.includes(formState.trigger)
+        ? {
+            threshold_days: formState.stale_threshold_days || STALE_TRIGGER_DEFAULT_DAYS[formState.trigger],
+            max_alerts: formState.stale_max_alerts || 1,
+            repeat_frequency_days: formState.stale_repeat_frequency_days || 3,
+          }
+        : {};
+
       const workflowData = {
         user_id: userId,
         name: formState.name,
@@ -456,9 +477,10 @@ export default function WorkflowsPage() {
           ? {
               subject: formState.email_subject,
               body: formState.email_body,
-              recipient_type: formState.email_recipient_type
+              recipient_type: formState.email_recipient_type,
+              ...staleLeadConfig
             }
-          : {},
+          : { ...staleLeadConfig },
         delay_days: formState.delay_days,
         delay_hours: formState.delay_hours,
         enabled: true
@@ -493,7 +515,10 @@ export default function WorkflowsPage() {
         target_id: "",
         email_subject: "",
         email_body: "",
-        email_recipient_type: "lead"
+        email_recipient_type: "lead",
+        stale_threshold_days: 0,
+        stale_max_alerts: 1,
+        stale_repeat_frequency_days: 3
       });
 
       await Promise.all([
@@ -730,11 +755,58 @@ export default function WorkflowsPage() {
                       <SelectItem value="no_contact_5_days">📧 Sem Contacto (5 dias)</SelectItem>
                       <SelectItem value="visit_scheduled">📅 Visita Agendada (Véspera)</SelectItem>
                       <SelectItem value="no_activity_7_days">💤 Sem Atividade (7 dias)</SelectItem>
+                      <SelectItem value="stage_stale_10_days">🐌 Parada na Mesma Fase (10 dias)</SelectItem>
                       <SelectItem value="birthday">🎂 Aniversário</SelectItem>
                       <SelectItem value="custom_date">📌 Data Personalizada</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
+
+                {STALE_LEAD_TRIGGERS.includes(formState.trigger) && (
+                  <div className="space-y-4 p-4 border rounded-lg bg-amber-50/50">
+                    <h4 className="font-semibold text-sm text-amber-900">Configuração de Lead Parada</h4>
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="stale_threshold_days">Dias sem atividade</Label>
+                        <Input
+                          id="stale_threshold_days"
+                          type="number"
+                          min="1"
+                          placeholder={String(STALE_TRIGGER_DEFAULT_DAYS[formState.trigger] || 7)}
+                          value={formState.stale_threshold_days || ""}
+                          onChange={(e) => setFormState({ ...formState, stale_threshold_days: parseInt(e.target.value) || 0 })}
+                        />
+                        <p className="text-[11px] text-gray-500">Antes do primeiro aviso</p>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="stale_max_alerts">Quantas vezes avisar</Label>
+                        <Input
+                          id="stale_max_alerts"
+                          type="number"
+                          min="1"
+                          value={formState.stale_max_alerts}
+                          onChange={(e) => setFormState({ ...formState, stale_max_alerts: parseInt(e.target.value) || 1 })}
+                        />
+                        <p className="text-[11px] text-gray-500">1 = só um aviso</p>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="stale_repeat_frequency_days">Frequência (dias)</Label>
+                        <Input
+                          id="stale_repeat_frequency_days"
+                          type="number"
+                          min="1"
+                          value={formState.stale_repeat_frequency_days}
+                          onChange={(e) => setFormState({ ...formState, stale_repeat_frequency_days: parseInt(e.target.value) || 1 })}
+                          disabled={formState.stale_max_alerts <= 1}
+                        />
+                        <p className="text-[11px] text-gray-500">Entre avisos repetidos</p>
+                      </div>
+                    </div>
+                    <p className="text-xs text-amber-700">
+                      Se a lead voltar a ter atividade e depois ficar parada outra vez, a contagem de avisos recomeça.
+                    </p>
+                  </div>
+                )}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="delay_days">Delay (Dias)</Label>

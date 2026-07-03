@@ -24,14 +24,24 @@ export default async function handler(
   try {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Get Eduardo's SMTP settings
+    // Endpoint de depuração: já não tem nenhum email pessoal fixo no
+    // código. Quem o chamar tem de indicar explicitamente de quem são as
+    // definições SMTP a testar, e para onde enviar o teste.
+    const { email, to } = req.body || {};
+    if (!email || !to) {
+      return res.status(400).json({
+        error: "Indique 'email' (conta cujas definições SMTP quer testar) e 'to' (destinatário do teste) no corpo do pedido.",
+      });
+    }
+
+    // Get SMTP settings for the requested account
     const { data: smtpSettings, error: smtpError } = await supabase
       .from("user_smtp_settings")
       .select("*")
       .eq("user_id", (await supabase
         .from("profiles")
         .select("id")
-        .eq("email", "eduardotsantos@remax.pt")
+        .eq("email", email)
         .single()).data?.id)
       .eq("is_active", true)
       .single();
@@ -70,7 +80,7 @@ export default async function handler(
       from: smtpSettings.from_name
         ? `"${smtpSettings.from_name}" <${smtpSettings.from_email}>`
         : smtpSettings.from_email,
-      to: "eduardotsantos@remax.pt",
+      to,
       subject: "🧪 Teste SMTP via CRON API",
       html: `
         <h1>✅ Teste de Email SMTP</h1>
