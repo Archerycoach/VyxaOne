@@ -26,6 +26,7 @@ import {
   TrendingUp,
   MessageSquare,
   Calculator,
+  Wrench,
   Link as LinkIcon,
   FileText,
   X,
@@ -69,6 +70,7 @@ import { RichTextEditor } from "@/components/ui/RichTextEditor";
 import { collapseEmptyBlocks } from "@/lib/emailSignatureFormat";
 import { getMessageSnippets, personalizeSnippet, type MessageSnippet } from "@/services/messageSnippetsService";
 import { getOrCreatePortalLink } from "@/services/portalService";
+import { LeadConversionProbabilityPanel } from "@/components/leads/LeadConversionProbabilityPanel";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -613,88 +615,74 @@ export function LeadDetailsDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent ref={dialogContentRef} className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="flex items-center justify-between">
-            <span className="flex items-center gap-2">
-              <User className="h-5 w-5" />
-              {isLoading ? "A carregar..." : lead?.name || "Detalhes do Lead"}
+          <DialogTitle className="flex items-center justify-between gap-2">
+            <span className="flex items-center gap-2 min-w-0">
+              <User className="h-5 w-5 shrink-0" />
+              <span className="truncate">{isLoading ? "A carregar..." : lead?.name || "Detalhes do Lead"}</span>
             </span>
-            <div className="flex items-center gap-2">
-              {lead && (
-                <>
-                  <Button 
-                    size="sm" 
-                    variant="outline" 
-                    onClick={() => setVoiceNoteOpen(true)}
-                    className="text-purple-700 border-purple-200 hover:bg-purple-50"
-                  >
-                    <Mic className="h-4 w-4 mr-2" />
-                    Nota de Voz
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => handleGenerateDraft("email")} disabled={drafting === "email"} className="text-blue-700 border-blue-200 hover:bg-blue-50">
-                    {drafting === "email" ? <div className="animate-spin h-4 w-4 mr-2 border-2 border-blue-700 border-t-transparent rounded-full" /> : <Mail className="h-4 w-4 mr-2" />}
-                    E-mail IA
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => handleGenerateDraft("whatsapp")} disabled={drafting === "whatsapp"} className="text-green-700 border-green-200 hover:bg-green-50">
-                    {drafting === "whatsapp" ? <div className="animate-spin h-4 w-4 mr-2 border-2 border-green-700 border-t-transparent rounded-full" /> : <Bot className="h-4 w-4 mr-2" />}
-                    WhatsApp IA
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => setQuickContactOpen(true)}>
-                    <Phone className="h-4 w-4 mr-2" />
-                    Registar Contacto
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => window.open(`/financing?leadId=${lead.id}`, "_blank")}
-                    className="text-emerald-700 border-emerald-200 hover:bg-emerald-50"
-                  >
-                    <Calculator className="h-4 w-4 mr-2" />
-                    Simulador
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={handleCopyPortalLink}
-                    disabled={generatingPortalLink}
-                    className="text-blue-700 border-blue-200 hover:bg-blue-50"
-                  >
-                    {generatingPortalLink ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <LinkIcon className="h-4 w-4 mr-2" />}
-                    Portal do Cliente
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => window.open(`/valuation?leadId=${lead.id}`, "_blank")}
-                    className="text-slate-700 border-slate-200 hover:bg-slate-50"
-                  >
-                    <Home className="h-4 w-4 mr-2" />
-                    Avaliação
-                  </Button>
-                  <Button 
-                    size="sm" 
-                    variant="outline" 
-                    onClick={handleRunAutomations} 
-                    disabled={isRunningAutomations}
-                    className="text-indigo-700 border-indigo-200 hover:bg-indigo-50"
-                  >
-                    {isRunningAutomations ? (
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    ) : (
-                      <Sparkles className="h-4 w-4 mr-2" />
-                    )}
-                    Executar Automações
-                  </Button>
-                </>
-              )}
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => onOpenChange(false)}
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => onOpenChange(false)}
+              className="shrink-0"
+            >
+              <X className="h-4 w-4" />
+            </Button>
           </DialogTitle>
+
+          {lead && (
+            <div className="flex items-center gap-2 flex-wrap pt-1">
+              <Button 
+                size="sm" 
+                variant="outline" 
+                onClick={() => setVoiceNoteOpen(true)}
+                className="text-purple-700 border-purple-200 hover:bg-purple-50"
+              >
+                <Mic className="h-4 w-4 mr-2" />
+                Nota de Voz
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => handleGenerateDraft("email")} disabled={drafting === "email"} className="text-blue-700 border-blue-200 hover:bg-blue-50">
+                {drafting === "email" ? <div className="animate-spin h-4 w-4 mr-2 border-2 border-blue-700 border-t-transparent rounded-full" /> : <Mail className="h-4 w-4 mr-2" />}
+                E-mail IA
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => handleGenerateDraft("whatsapp")} disabled={drafting === "whatsapp"} className="text-green-700 border-green-200 hover:bg-green-50">
+                {drafting === "whatsapp" ? <div className="animate-spin h-4 w-4 mr-2 border-2 border-green-700 border-t-transparent rounded-full" /> : <Bot className="h-4 w-4 mr-2" />}
+                WhatsApp IA
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setQuickContactOpen(true)}>
+                <Phone className="h-4 w-4 mr-2" />
+                Registar Contacto
+              </Button>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="sm" variant="outline" className="text-slate-600">
+                    <Wrench className="h-4 w-4 mr-2" />
+                    Mais Ferramentas
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-56">
+                  <DropdownMenuItem onClick={() => window.open(`/financing?leadId=${lead.id}`, "_blank")}>
+                    <Calculator className="h-4 w-4 mr-2 text-emerald-600" />
+                    Simulador de Financiamento
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => window.open(`/valuation?leadId=${lead.id}`, "_blank")}>
+                    <Home className="h-4 w-4 mr-2 text-slate-600" />
+                    Avaliação de Imóvel
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleCopyPortalLink} disabled={generatingPortalLink}>
+                    {generatingPortalLink ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <LinkIcon className="h-4 w-4 mr-2 text-blue-600" />}
+                    Copiar Link do Portal do Cliente
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={handleRunAutomations} disabled={isRunningAutomations}>
+                    {isRunningAutomations ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2 text-indigo-600" />}
+                    Executar Automações
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          )}
         </DialogHeader>
 
         {isLoading ? (
@@ -994,6 +982,7 @@ export function LeadDetailsDialog({
             </TabsContent>
 
             <TabsContent value="ai-assistant" className="mt-0 space-y-4">
+              <LeadConversionProbabilityPanel leadId={lead.id} />
               <LeadQualificationPanel leadId={lead.id} onInsertIntoDraft={handleInsertQualificationIntoDraft} />
               <LeadAIInsightsPanel leadId={lead.id} />
             </TabsContent>
