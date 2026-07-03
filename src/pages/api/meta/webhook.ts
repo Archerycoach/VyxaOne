@@ -1,6 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { createClient } from "@supabase/supabase-js";
-import nodemailer from "nodemailer";
 import { logEmailInteractionServer } from "@/lib/emailInteractionLogger";
 import { recordConsent } from "@/services/consentService";
 import { sendWhatsAppTemplate } from "@/services/whatsappService";
