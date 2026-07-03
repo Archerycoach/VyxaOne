@@ -540,10 +540,11 @@ export function WorkflowsManagement() {
           },
         delay_days: formState.delay_days,
         delay_hours: formState.delay_hours,
-        enabled: true
       };
 
       if (editingWorkflowId) {
+        // Ao editar, nunca mexe no estado ativado/desativado já existente —
+        // só quem carrega no interruptor é que o muda.
         const { error: workflowError } = await supabase.from("lead_workflow_rules").update(workflowData as any).eq("id", editingWorkflowId);
         if (workflowError) throw workflowError;
         
@@ -552,19 +553,24 @@ export function WorkflowsManagement() {
           description: "As alterações foram guardadas com sucesso.",
         });
       } else {
-        const { data: workflow, error: workflowError } = await createWorkflowInDB(workflowData);
+        // Criada sempre DESATIVADA — mesmo que tenha sido escolhida uma
+        // lead/contacto para testar já a seguir. Só fica visível para todas
+        // as leads quando o consultor ligar o interruptor, depois de
+        // confirmar que o teste correu bem.
+        const { data: workflow, error: workflowError } = await createWorkflowInDB({ ...workflowData, enabled: false });
         if (workflowError) throw workflowError;
 
-        // Se foi selecionado um lead/contacto, executar imediatamente
+        // Se foi selecionado um lead/contacto, executar imediatamente (só
+        // para essa lead — a automação continua desativada para as outras)
         if (formState.target_id && workflow) {
           await executeWorkflow(workflow.id, formState.target_id);
         }
 
         toast({
-          title: "✅ Workflow criado",
-          description: formState.target_id 
-            ? `${formState.name} foi criado e executado com sucesso.`
-            : `${formState.name} foi criado com sucesso.`,
+          title: "✅ Workflow criado (desativado)",
+          description: formState.target_id
+            ? `${formState.name} foi criado e testado com ${formState.target_type === "lead" ? "essa lead" : "esse contacto"}. Reveja o resultado e ligue o interruptor da automação quando estiver pronto.`
+            : `${formState.name} foi criado, mas está desativado. Use "Executar" para testar antes de ligar o interruptor para todas as leads.`,
         });
       }
 

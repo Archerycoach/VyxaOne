@@ -483,23 +483,27 @@ export default function WorkflowsPage() {
           : { ...staleLeadConfig },
         delay_days: formState.delay_days,
         delay_hours: formState.delay_hours,
-        enabled: true
+        // Criada sempre DESATIVADA — só fica visível para todas as leads
+        // quando alguém ligar o interruptor, depois de testar com
+        // "Executar" (ou com a lead/contacto escolhido já a seguir).
+        enabled: false
       };
 
       const { data: workflow, error: workflowError } = await createWorkflowInDB(workflowData);
 
       if (workflowError) throw workflowError;
 
-      // Se foi selecionado um lead/contacto, executar imediatamente
+      // Se foi selecionado um lead/contacto, executar imediatamente (só
+      // para essa lead — a automação continua desativada para as outras)
       if (formState.target_id && workflow) {
         await executeWorkflow(workflow.id, formState.target_id);
       }
 
       toast({
-        title: "✅ Workflow criado",
+        title: "✅ Workflow criado (desativado)",
         description: formState.target_id 
-          ? `${formState.name} foi criado e executado com sucesso.`
-          : `${formState.name} foi criado com sucesso.`,
+          ? `${formState.name} foi criado e testado com ${formState.target_type === "lead" ? "essa lead" : "esse contacto"}. Reveja o resultado e ligue o interruptor quando estiver pronto.`
+          : `${formState.name} foi criado, mas está desativado. Use "Executar" para testar antes de ligar o interruptor para todas as leads.`,
       });
 
       setIsNewWorkflowOpen(false);
