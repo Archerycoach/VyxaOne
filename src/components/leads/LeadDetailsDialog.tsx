@@ -69,6 +69,7 @@ import { RichTextEditor } from "@/components/ui/RichTextEditor";
 import { collapseEmptyBlocks } from "@/lib/emailSignatureFormat";
 import { getMessageSnippets, personalizeSnippet, type MessageSnippet } from "@/services/messageSnippetsService";
 import { getOrCreatePortalLink } from "@/services/portalService";
+import { LeadConversionProbabilityPanel } from "@/components/leads/LeadConversionProbabilityPanel";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -994,6 +995,7 @@ export function LeadDetailsDialog({
             </TabsContent>
 
             <TabsContent value="ai-assistant" className="mt-0 space-y-4">
+              <LeadConversionProbabilityPanel leadId={lead.id} />
               <LeadQualificationPanel leadId={lead.id} onInsertIntoDraft={handleInsertQualificationIntoDraft} />
               <LeadAIInsightsPanel leadId={lead.id} />
             </TabsContent>

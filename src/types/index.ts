@@ -154,6 +154,7 @@ export interface Lead {
   next_follow_up?: string | null;
   last_contact_date?: string | null;
   won_at?: string | null;
+  conversion_probability?: number | null;
 }
 
 // Property Types
