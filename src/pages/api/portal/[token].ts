@@ -18,8 +18,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    const { data: lead, error: leadError } = await supabaseAdmin
-      .from("leads" as any)
+    // NOTA: alias local sem tipagem estrita — evita que a inferência de
+    // tipos da Supabase (que já é enorme neste projeto) tropece em colunas
+    // muito recentes (portal_token, shared_with_lead) ou em seleções
+    // aninhadas (property:properties(...)). Mesmo padrão já usado noutros
+    // ficheiros (ver "as unknown as SupabaseClient" em workflowEngine.ts).
+    const db = supabaseAdmin as any;
+
+    const { data: lead, error: leadError } = await db
+      .from("leads")
       .select("id, name, user_id")
       .eq("portal_token", token)
       .maybeSingle();
@@ -29,26 +36,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     const [matchesResult, eventsResult, documentsResult, profileResult] = await Promise.all([
-      supabaseAdmin
-        .from("property_matches" as any)
+      db
+        .from("property_matches")
         .select("match_score, match_reasons, property:properties(id, title, address, city, price, bedrooms, bathrooms, area, main_image_url, reference_code, property_type)")
         .eq("lead_id", lead.id)
         .order("match_score", { ascending: false })
         .limit(12),
-      supabaseAdmin
+      db
         .from("calendar_events")
         .select("id, title, start_time, location, event_type")
         .eq("lead_id", lead.id)
         .gte("start_time", new Date().toISOString())
         .order("start_time", { ascending: true })
         .limit(10),
-      supabaseAdmin
-        .from("documents" as any)
+      db
+        .from("documents")
         .select("id, name, file_path, file_type, created_at")
         .eq("lead_id", lead.id)
         .eq("shared_with_lead", true)
         .order("created_at", { ascending: false }),
-      supabaseAdmin
+      db
         .from("profiles")
         .select("full_name, email, phone, avatar_url")
         .eq("id", lead.user_id)
