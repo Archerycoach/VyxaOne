@@ -240,6 +240,7 @@ export function WorkflowsManagement() {
     target_id: "",
     email_subject: "",
     email_body: "",
+    email_recipient_type: "lead" as "lead" | "consultant",
     attachments: [] as Array<{name: string, url: string}>,
     send_cc: false,
     wa_template_name: ""
@@ -395,6 +396,11 @@ export function WorkflowsManagement() {
     // Valores padrão de email baseados no template
     let defaultSubject = "";
     let defaultBody = "";
+    // Estes gatilhos são, pela própria natureza do texto, um aviso para o
+    // consultor sobre a lead — não uma mensagem para a lead ler. Antes desta
+    // correção, eram enviados por engano para a própria lead.
+    const CONSULTANT_NOTIFICATION_TRIGGERS = ["no_contact_3_days", "no_contact_5_days", "visit_scheduled", "no_activity_7_days"];
+    const defaultRecipientType: "lead" | "consultant" = CONSULTANT_NOTIFICATION_TRIGGERS.includes(template.trigger) ? "consultant" : "lead";
     
     switch (template.trigger) {
       case "lead_created":
@@ -442,6 +448,7 @@ export function WorkflowsManagement() {
       target_id: "",
       email_subject: defaultSubject,
       email_body: normalizeEmailBodyForEditor(defaultBody),
+      email_recipient_type: defaultRecipientType,
       attachments: [],
       send_cc: false,
       wa_template_name: ""
@@ -461,6 +468,7 @@ export function WorkflowsManagement() {
       target_id: "",
       email_subject: workflow.action_config?.subject || "",
       email_body: normalizeEmailBodyForEditor(workflow.action_config?.body || ""),
+      email_recipient_type: workflow.action_config?.recipient_type === "consultant" ? "consultant" : "lead",
       attachments: workflow.action_config?.attachments || [],
       send_cc: workflow.action_config?.send_cc || false,
       wa_template_name: workflow.action_config?.template_name || ""
@@ -502,7 +510,8 @@ export function WorkflowsManagement() {
             subject: formState.email_subject,
             body: formState.email_body,
             attachments: formState.attachments,
-            send_cc: formState.send_cc
+            send_cc: formState.send_cc,
+            recipient_type: formState.email_recipient_type
           },
         delay_days: formState.delay_days,
         delay_hours: formState.delay_hours,
@@ -548,6 +557,7 @@ export function WorkflowsManagement() {
         target_id: "",
         email_subject: "",
         email_body: "",
+        email_recipient_type: "lead",
         attachments: [],
         send_cc: false,
         wa_template_name: ""
@@ -734,6 +744,7 @@ export function WorkflowsManagement() {
                 target_id: "",
                 email_subject: "",
                 email_body: "",
+                email_recipient_type: "lead",
                 attachments: [],
                 send_cc: false,
                 wa_template_name: ""
@@ -867,6 +878,28 @@ export function WorkflowsManagement() {
                   </div>
                 ) : (
                   <>
+                    {formState.action_type === "send_email" && (
+                      <div className="space-y-2">
+                        <Label htmlFor="email_recipient_type">Destinatário *</Label>
+                        <Select
+                          value={formState.email_recipient_type}
+                          onValueChange={(value: "lead" | "consultant") => setFormState({ ...formState, email_recipient_type: value })}
+                        >
+                          <SelectTrigger id="email_recipient_type">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="lead">A Lead (mensagem para o cliente)</SelectItem>
+                            <SelectItem value="consultant">Eu mesmo (aviso interno sobre a lead)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-gray-500">
+                          {formState.email_recipient_type === "consultant"
+                            ? "Este email vai ser enviado para si, não para a lead — use para avisos internos (ex.: \"esta lead está parada\")."
+                            : "Este email vai ser enviado diretamente para a lead."}
+                        </p>
+                      </div>
+                    )}
                     <div className="space-y-2">
                       <Label htmlFor="email_subject">
                         {formState.action_type === "send_email" ? "Assunto do Email *" : "Título *"}

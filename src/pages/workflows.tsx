@@ -206,7 +206,8 @@ export default function WorkflowsPage() {
     target_type: "lead" as "lead" | "contact",
     target_id: "",
     email_subject: "",
-    email_body: ""
+    email_body: "",
+    email_recipient_type: "lead" as "lead" | "consultant"
   });
 
   const [executeFormState, setExecuteFormState] = useState({
@@ -368,6 +369,11 @@ export default function WorkflowsPage() {
     // Valores padrão de email baseados no template
     let defaultSubject = "";
     let defaultBody = "";
+    // Estes gatilhos são, pela própria natureza do texto, um aviso para o
+    // consultor sobre a lead — não uma mensagem para a lead ler. Antes desta
+    // correção, eram enviados por engano para a própria lead.
+    const CONSULTANT_NOTIFICATION_TRIGGERS = ["no_contact_3_days", "no_contact_5_days", "visit_scheduled", "no_activity_7_days"];
+    const defaultRecipientType: "lead" | "consultant" = CONSULTANT_NOTIFICATION_TRIGGERS.includes(template.trigger) ? "consultant" : "lead";
     
     switch (template.trigger) {
       case "lead_created":
@@ -414,7 +420,8 @@ export default function WorkflowsPage() {
       target_type: "lead",
       target_id: "",
       email_subject: defaultSubject,
-      email_body: defaultBody
+      email_body: defaultBody,
+      email_recipient_type: defaultRecipientType
     });
     setIsNewWorkflowOpen(true);
   };
@@ -448,7 +455,8 @@ export default function WorkflowsPage() {
         action_config: formState.action_type === "send_email" 
           ? {
               subject: formState.email_subject,
-              body: formState.email_body
+              body: formState.email_body,
+              recipient_type: formState.email_recipient_type
             }
           : {},
         delay_days: formState.delay_days,
@@ -484,7 +492,8 @@ export default function WorkflowsPage() {
         target_type: "lead",
         target_id: "",
         email_subject: "",
-        email_body: ""
+        email_body: "",
+        email_recipient_type: "lead"
       });
 
       await Promise.all([
@@ -765,6 +774,26 @@ export default function WorkflowsPage() {
                 {formState.action_type === "send_email" && (
                   <div className="space-y-4 p-4 border rounded-lg bg-blue-50/50">
                     <h4 className="font-semibold text-sm text-blue-900">Configuração do Email</h4>
+                    <div className="space-y-2">
+                      <Label htmlFor="email_recipient_type">Destinatário *</Label>
+                      <Select
+                        value={formState.email_recipient_type}
+                        onValueChange={(value: "lead" | "consultant") => setFormState({ ...formState, email_recipient_type: value })}
+                      >
+                        <SelectTrigger id="email_recipient_type">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="lead">A Lead (mensagem para o cliente)</SelectItem>
+                          <SelectItem value="consultant">Eu mesmo (aviso interno sobre a lead)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-gray-500">
+                        {formState.email_recipient_type === "consultant"
+                          ? "Este email vai ser enviado para si, não para a lead — use para avisos internos (ex.: \"esta lead está parada\")."
+                          : "Este email vai ser enviado diretamente para a lead."}
+                      </p>
+                    </div>
                     <div className="space-y-2">
                       <Label htmlFor="email_subject">Assunto do Email *</Label>
                       <Input

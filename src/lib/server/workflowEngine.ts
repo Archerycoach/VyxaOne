@@ -226,15 +226,36 @@ async function sendEmailAction(
   config: any,
   userId: string
 ): Promise<void> {
-  if (!lead.email) {
-    console.log(`[Workflow Engine] Skipping email action - lead has no email`);
-    return;
-  }
+  const db = supabase as unknown as SupabaseClient;
+  const isConsultantNotification = config.recipient_type === "consultant";
 
-  // Personalize content
+  // Personalize content — as variáveis ({nome}, {telefone}, etc.) referem-se
+  // sempre à lead, mesmo quando o destinatário é o próprio consultor (ex.:
+  // "A lead {nome} está sem atividade há mais de 7 dias").
   const subject = personalizeContent(config.subject || "Mensagem automática", lead);
   const body = personalizeContent(config.body || "", lead);
   const attachments = formatWorkflowAttachments(config.attachments);
+
+  let recipientEmail: string;
+
+  if (isConsultantNotification) {
+    // Notificação interna: envia para o próprio consultor, não para a lead.
+    // Não bloqueia por a lead não ter email — é precisamente o tipo de
+    // situação sobre a qual o consultor pode querer ser avisado.
+    const { data: profile } = await db.from("profiles").select("email").eq("id", userId).maybeSingle();
+    const consultantEmail = (profile as { email?: string } | null)?.email;
+    if (!consultantEmail) {
+      console.log(`[Workflow Engine] Skipping consultant notification - no email on profile for user ${userId}`);
+      return;
+    }
+    recipientEmail = consultantEmail;
+  } else {
+    if (!lead.email) {
+      console.log(`[Workflow Engine] Skipping email action - lead has no email`);
+      return;
+    }
+    recipientEmail = lead.email;
+  }
 
   const sendResult = await sendClientEmail({
     supabaseAdmin: supabase,
@@ -242,28 +263,35 @@ async function sendEmailAction(
     leadId: lead.id,
     leadName: lead.name,
     source: "workflow_automation",
-    to: lead.email,
+    to: recipientEmail,
     subject,
     html: body.replace(/\s+$/, "").replace(/\n/g, "<br>"),
     text: body,
     attachments,
+    // Notificações internas ao consultor não devem levar a assinatura de
+    // cliente (não faz sentido assinar uma nota para si próprio).
+    appendSignatureToHtml: !isConsultantNotification,
   });
 
   if (!sendResult.success) {
     throw new Error(sendResult.error || "Falha ao enviar email do workflow");
   }
 
-  // Log the email as an interaction
-  await logEmailInteractionServer(supabase, {
-    leadId: lead.id,
-    userId: userId,
-    subject: subject,
-    body: body,
-    outcome: "Email automático enviado (workflow)",
-    updateLastContact: false,
-  });
+  // Só regista como "interação com a lead" quando o email foi mesmo enviado
+  // à lead — uma notificação interna ao consultor não é uma interação com
+  // ninguém, é só um aviso.
+  if (!isConsultantNotification) {
+    await logEmailInteractionServer(supabase, {
+      leadId: lead.id,
+      userId: userId,
+      subject: subject,
+      body: body,
+      outcome: "Email automático enviado (workflow)",
+      updateLastContact: false,
+    });
+  }
 
-  console.log(`[Workflow Engine] ✅ Email sent to: ${lead.email}`);
+  console.log(`[Workflow Engine] ✅ Email sent to: ${recipientEmail}`);
 }
 
 /**
