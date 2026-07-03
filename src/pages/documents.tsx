@@ -15,6 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   DropdownMenu,
@@ -82,6 +83,7 @@ export default function DocumentsPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedTag, setSelectedTag] = useState<string>("contrato");
   const [selectedLeadId, setSelectedLeadId] = useState<string>("none");
+  const [shareWithLead, setShareWithLead] = useState(false);
   const [leads, setLeads] = useState<LeadOption[]>([]);
   const [uploading, setUploading] = useState(false);
 
@@ -125,6 +127,7 @@ export default function DocumentsPage() {
       const result = await uploadDocument(selectedFile, {
         leadId: selectedLeadId === "none" ? null : selectedLeadId,
         tags: [selectedTag],
+        sharedWithLead: selectedLeadId !== "none" && shareWithLead,
       });
       if (!result.success) throw new Error(result.error);
 
@@ -132,6 +135,7 @@ export default function DocumentsPage() {
       setUploadDialogOpen(false);
       setSelectedFile(null);
       setSelectedLeadId("none");
+      setShareWithLead(false);
       loadDocuments();
     } catch (error: any) {
       toast({ title: "Erro ao enviar documento", description: error.message, variant: "destructive" });
@@ -331,6 +335,16 @@ export default function DocumentsPage() {
                   </SelectContent>
                 </Select>
               </div>
+
+              {selectedLeadId !== "none" && (
+                <div className="flex items-center justify-between rounded-lg border p-3">
+                  <div>
+                    <Label htmlFor="share-with-lead" className="text-sm">Partilhar com o cliente</Label>
+                    <p className="text-xs text-gray-500">Aparece no Portal do Cliente desta lead. Por defeito, nenhum documento é partilhado.</p>
+                  </div>
+                  <Switch id="share-with-lead" checked={shareWithLead} onCheckedChange={setShareWithLead} />
+                </div>
+              )}
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setUploadDialogOpen(false)} disabled={uploading}>

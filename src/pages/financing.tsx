@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/router";
 import { Layout } from "@/components/Layout";
-import { Calculator, TrendingUp, Home, FileText, Download, Settings } from "lucide-react";
+import { Calculator, TrendingUp, Home, FileText, Download, Settings, Send, Loader2, User, X } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   calculateMortgage,
@@ -12,6 +14,16 @@ import {
 } from "@/services/financingService";
 import { jsPDF } from "jspdf";
 import "jspdf-autotable";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
+
+interface LinkedLead {
+  id: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  budget_max: number | null;
+}
 
 interface ExtraCosts {
   imt: number;
@@ -22,6 +34,8 @@ interface ExtraCosts {
 }
 
 export default function FinancingPage() {
+  const router = useRouter();
+  const { toast } = useToast();
   const [params, setParams] = useState<FinancingParams>({
     propertyValue: 250000,
     downPayment: 50000,
@@ -38,6 +52,36 @@ export default function FinancingPage() {
 
   const [result, setResult] = useState<ReturnType<typeof calculateMortgage> | null>(null);
   const [extraCosts, setExtraCosts] = useState<ExtraCosts | null>(null);
+
+  const [linkedLead, setLinkedLead] = useState<LinkedLead | null>(null);
+  const [loadingLead, setLoadingLead] = useState(false);
+  const [sendingEmail, setSendingEmail] = useState(false);
+
+  // Se a página foi aberta a partir da ficha de uma lead (?leadId=...), liga
+  // a simulação a essa lead e pré-preenche o valor do imóvel com o
+  // orçamento máximo já registado, se ainda não tiver sido definido.
+  useEffect(() => {
+    const leadId = router.query.leadId;
+    if (typeof leadId !== "string") return;
+
+    const loadLead = async () => {
+      setLoadingLead(true);
+      const { data } = await supabase
+        .from("leads")
+        .select("id, name, email, phone, budget_max")
+        .eq("id", leadId)
+        .maybeSingle();
+
+      if (data) {
+        setLinkedLead(data as LinkedLead);
+        if ((data as LinkedLead).budget_max) {
+          setParams((prev) => ({ ...prev, propertyValue: (data as LinkedLead).budget_max as number }));
+        }
+      }
+      setLoadingLead(false);
+    };
+    loadLead();
+  }, [router.query.leadId]);
 
   const calculateCustomExtraCosts = (propertyValue: number): ExtraCosts => {
     const imt = (propertyValue * imtPercentage) / 100;
@@ -56,8 +100,8 @@ export default function FinancingPage() {
     setExtraCosts(costsResult);
   };
 
-  const handleExport = () => {
-    if (!result || !extraCosts) return;
+  const buildPdfDocument = () => {
+    if (!result || !extraCosts) return null;
 
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
@@ -295,7 +339,64 @@ export default function FinancingPage() {
     );
 
     // Save PDF
+    return doc;
+  };
+
+  const handleExport = () => {
+    const doc = buildPdfDocument();
+    if (!doc) return;
     doc.save(`Simulacao_Financiamento_${new Date().toISOString().split("T")[0]}.pdf`);
+  };
+
+  const handleSendByEmail = async () => {
+    if (!linkedLead) return;
+    if (!linkedLead.email) {
+      toast({ title: "Esta lead não tem email registado", variant: "destructive" });
+      return;
+    }
+    const doc = buildPdfDocument();
+    if (!doc) {
+      toast({ title: "Calcule a simulação primeiro", variant: "destructive" });
+      return;
+    }
+
+    setSendingEmail(true);
+    try {
+      // Data URI vem como "data:application/pdf;filename=generated.pdf;base64,XXXX"
+      // — só precisamos da parte depois da última vírgula.
+      const dataUri = doc.output("datauristring");
+      const base64Content = dataUri.split(",").pop() || "";
+
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch("/api/smtp/send", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({
+          to: linkedLead.email,
+          subject: `Simulação de Financiamento — ${linkedLead.name}`,
+          html: `<p>Olá ${linkedLead.name},</p><p>Em anexo enviamos a simulação de financiamento que preparámos consigo.</p><p>Fique à vontade para nos contactar com qualquer dúvida.</p>`,
+          attachments: [
+            {
+              filename: `Simulacao_Financiamento_${linkedLead.name.replace(/\s+/g, "_")}.pdf`,
+              content: base64Content,
+              encoding: "base64",
+            },
+          ],
+        }),
+      });
+
+      const responseData = await res.json();
+      if (!responseData.success) throw new Error(responseData.error || "Erro ao enviar email");
+
+      toast({ title: "✅ Simulação enviada", description: `Enviada para ${linkedLead.email}` });
+    } catch (error: any) {
+      toast({ title: "Erro ao enviar", description: error.message, variant: "destructive" });
+    } finally {
+      setSendingEmail(false);
+    }
   };
 
   const formatCurrency = (value: number) => {
@@ -317,13 +418,38 @@ export default function FinancingPage() {
               Simule o crédito habitação e calcule os custos associados
             </p>
           </div>
-          {result && (
-            <Button onClick={handleExport} className="gap-2">
-              <Download className="h-4 w-4" />
-              Exportar PDF
-            </Button>
-          )}
+          <div className="flex items-center gap-2">
+            {result && linkedLead && (
+              <Button onClick={handleSendByEmail} disabled={sendingEmail} variant="outline" className="gap-2">
+                {sendingEmail ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                Enviar por Email
+              </Button>
+            )}
+            {result && (
+              <Button onClick={handleExport} className="gap-2">
+                <Download className="h-4 w-4" />
+                Exportar PDF
+              </Button>
+            )}
+          </div>
         </div>
+
+        {loadingLead && (
+          <p className="text-sm text-gray-400 mb-4">A carregar dados da lead...</p>
+        )}
+
+        {linkedLead && (
+          <div className="mb-6 flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-lg px-4 py-2.5 text-sm">
+            <User className="h-4 w-4 text-blue-600 shrink-0" />
+            <span className="text-blue-900">
+              Simulação ligada a <strong>{linkedLead.name}</strong>
+              {linkedLead.budget_max ? ` — valor do imóvel pré-preenchido com o orçamento máximo (${linkedLead.budget_max.toLocaleString("pt-PT")} €)` : ""}
+            </span>
+            <Button variant="ghost" size="icon" className="h-6 w-6 ml-auto shrink-0" onClick={() => setLinkedLead(null)}>
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <Card className="lg:col-span-1">
