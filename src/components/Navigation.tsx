@@ -146,6 +146,7 @@ export function Navigation() {
         { icon: Send, label: "Mensagens", path: "/bulk-messages" },
         { icon: Mail, label: "Registo de Envios Automáticos", path: "/automated-emails" },
         { icon: Calculator, label: "Financiamento", path: "/financing" },
+        { icon: Home, label: "Avaliação de Imóvel", path: "/valuation" },
         { icon: FolderOpen, label: "Documentos", path: "/documents" },
       ]
     },

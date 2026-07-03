@@ -661,6 +661,15 @@ export function LeadDetailsDialog({
                     {generatingPortalLink ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <LinkIcon className="h-4 w-4 mr-2" />}
                     Portal do Cliente
                   </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => window.open(`/valuation?leadId=${lead.id}`, "_blank")}
+                    className="text-slate-700 border-slate-200 hover:bg-slate-50"
+                  >
+                    <Home className="h-4 w-4 mr-2" />
+                    Avaliação
+                  </Button>
                   <Button 
                     size="sm" 
                     variant="outline" 
