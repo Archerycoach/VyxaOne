@@ -392,21 +392,28 @@ export function LeadCard({
               </Badge>
             );
           })()}
-          {typeof lead.conversion_probability === "number" && (
-            <Badge
-              variant="outline"
-              className={
-                lead.conversion_probability >= 60
-                  ? "text-xs bg-emerald-50 text-emerald-700 border-emerald-200"
-                  : lead.conversion_probability >= 30
-                    ? "text-xs bg-amber-50 text-amber-700 border-amber-200"
-                    : "text-xs bg-red-50 text-red-700 border-red-200"
-              }
-              title="Probabilidade de fecho, com base no histórico de negócios já fechados"
-            >
-              🎯 {lead.conversion_probability}%
-            </Badge>
-          )}
+          {(() => {
+            // NOTA: "conversion_probability" é um campo muito recente,
+            // ainda não regenerado nos tipos da Supabase — cast pontual até
+            // isso acontecer (ver src/services/predictiveScoringService.ts).
+            const conversionProbability = (lead as any).conversion_probability as number | null | undefined;
+            if (typeof conversionProbability !== "number") return null;
+            return (
+              <Badge
+                variant="outline"
+                className={
+                  conversionProbability >= 60
+                    ? "text-xs bg-emerald-50 text-emerald-700 border-emerald-200"
+                    : conversionProbability >= 30
+                      ? "text-xs bg-amber-50 text-amber-700 border-amber-200"
+                      : "text-xs bg-red-50 text-red-700 border-red-200"
+                }
+                title="Probabilidade de fecho, com base no histórico de negócios já fechados"
+              >
+                🎯 {conversionProbability}%
+              </Badge>
+            );
+          })()}
         </div>
 
         {activitiesCount && (activitiesCount.events > 0 || activitiesCount.tasks > 0) && (
@@ -676,21 +683,25 @@ export function LeadCard({
             </Badge>
           );
         })()}
-        {typeof lead.conversion_probability === "number" && (
-          <Badge
-            variant="outline"
-            className={
-              lead.conversion_probability >= 60
-                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                : lead.conversion_probability >= 30
-                  ? "bg-amber-50 text-amber-700 border-amber-200"
-                  : "bg-red-50 text-red-700 border-red-200"
-            }
-            title="Probabilidade de fecho, com base no histórico de negócios já fechados"
-          >
-            🎯 {lead.conversion_probability}%
-          </Badge>
-        )}
+        {(() => {
+          const conversionProbability = (lead as any).conversion_probability as number | null | undefined;
+          if (typeof conversionProbability !== "number") return null;
+          return (
+            <Badge
+              variant="outline"
+              className={
+                conversionProbability >= 60
+                  ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                  : conversionProbability >= 30
+                    ? "bg-amber-50 text-amber-700 border-amber-200"
+                    : "bg-red-50 text-red-700 border-red-200"
+              }
+              title="Probabilidade de fecho, com base no histórico de negócios já fechados"
+            >
+              🎯 {conversionProbability}%
+            </Badge>
+          );
+        })()}
       </div>
 
       {activitiesCount && (activitiesCount.events > 0 || activitiesCount.tasks > 0) && (
