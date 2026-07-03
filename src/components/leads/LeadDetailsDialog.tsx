@@ -25,6 +25,7 @@ import {
   Calendar,
   TrendingUp,
   MessageSquare,
+  Calculator,
   FileText,
   X,
   CheckSquare,
@@ -623,6 +624,15 @@ export function LeadDetailsDialog({
                   <Button size="sm" variant="outline" onClick={() => setQuickContactOpen(true)}>
                     <Phone className="h-4 w-4 mr-2" />
                     Registar Contacto
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => window.open(`/financing?leadId=${lead.id}`, "_blank")}
+                    className="text-emerald-700 border-emerald-200 hover:bg-emerald-50"
+                  >
+                    <Calculator className="h-4 w-4 mr-2" />
+                    Simulador
                   </Button>
                   <Button 
                     size="sm" 
