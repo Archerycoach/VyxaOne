@@ -623,6 +623,19 @@ export function LeadDetailsDialog({
       setQuickContactOpen(false);
       setGeneratedDraft(null);
       setDraftVariants(null);
+
+      // Rede de segurança: por vezes, com vários modais dentro desta ficha
+      // (Nota de Voz, Registar Contacto, revisão de rascunho), a biblioteca
+      // de modais (Radix) não repõe corretamente o estado da página ao
+      // fechar — a página fica com "pointer-events: none" e/ou scroll
+      // bloqueado, e só um F5 resolve. Isto força sempre a reposição, um
+      // instante depois de a animação de fecho terminar, mesmo que a
+      // biblioteca não o tenha feito sozinha.
+      setTimeout(() => {
+        document.body.style.pointerEvents = "";
+        document.body.style.overflow = "";
+        document.body.removeAttribute("data-scroll-locked");
+      }, 350);
     }
     onOpenChange(nextOpen);
   };
