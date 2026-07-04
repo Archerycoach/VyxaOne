@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useDraggable } from "@dnd-kit/core";
+import { formatPhoneForWhatsApp } from "@/lib/phoneFormat";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -173,8 +174,7 @@ export function LeadCard({ lead, onClick, onDelete, onConvertSuccess }: LeadCard
       return;
     }
 
-    const cleanPhone = lead.phone.replace(/\D/g, "");
-    const phoneWithCountry = cleanPhone.startsWith("351") ? cleanPhone : `351${cleanPhone}`;
+    const phoneWithCountry = formatPhoneForWhatsApp(lead.phone);
     const whatsappUrl = `https://wa.me/${phoneWithCountry}`;
     window.open(whatsappUrl, "_blank");
   };
@@ -204,8 +204,7 @@ export function LeadCard({ lead, onClick, onDelete, onConvertSuccess }: LeadCard
       return;
     }
 
-    const cleanPhone = lead.phone.replace(/\D/g, "");
-    const phoneWithCountry = cleanPhone.startsWith("351") ? cleanPhone : `351${cleanPhone}`;
+    const phoneWithCountry = formatPhoneForWhatsApp(lead.phone);
     window.location.href = `sms:+${phoneWithCountry}`;
   };
 

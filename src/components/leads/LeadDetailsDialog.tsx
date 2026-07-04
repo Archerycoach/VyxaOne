@@ -71,6 +71,7 @@ import { collapseEmptyBlocks } from "@/lib/emailSignatureFormat";
 import { getMessageSnippets, personalizeSnippet, type MessageSnippet } from "@/services/messageSnippetsService";
 import { getOrCreatePortalLink } from "@/services/portalService";
 import { LeadConversionProbabilityPanel } from "@/components/leads/LeadConversionProbabilityPanel";
+import { formatPhoneForWhatsApp } from "@/lib/phoneFormat";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -1590,11 +1591,7 @@ export function LeadDetailsDialog({
           <Button disabled={isSending} onClick={async () => {
             if (!generatedDraft) return;
             if (generatedDraft.channel === 'whatsapp') {
-              let phone = lead?.phone?.replace(/\D/g, '') || '';
-              // Adiciona indicativo de Portugal caso o número tenha 9 dígitos
-              if (phone.length === 9 && (phone.startsWith('9') || phone.startsWith('2'))) {
-                phone = '351' + phone;
-              }
+              const phone = formatPhoneForWhatsApp(lead?.phone);
               const url = `https://wa.me/${phone}?text=${encodeURIComponent(generatedDraft.text)}`;
               window.open(url, "_blank");
               setGeneratedDraft(null);

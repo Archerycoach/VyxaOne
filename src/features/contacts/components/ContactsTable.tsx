@@ -1,4 +1,5 @@
 import React from "react";
+import { formatPhoneForWhatsApp } from "@/lib/phoneFormat";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -80,8 +81,7 @@ export function ContactsTable({
       });
       return;
     }
-    const cleanPhone = contact.phone.replace(/\D/g, "");
-    const phoneWithCountry = cleanPhone.startsWith("351") ? cleanPhone : `351${cleanPhone}`;
+    const phoneWithCountry = formatPhoneForWhatsApp(contact.phone);
     window.location.href = `sms:+${phoneWithCountry}`;
   };
 
@@ -94,8 +94,7 @@ export function ContactsTable({
       });
       return;
     }
-    const cleanPhone = contact.phone.replace(/\D/g, "");
-    const phoneWithCountry = cleanPhone.startsWith("351") ? cleanPhone : `351${cleanPhone}`;
+    const phoneWithCountry = formatPhoneForWhatsApp(contact.phone);
     window.open(`https://wa.me/${phoneWithCountry}`, "_blank");
   };
 
