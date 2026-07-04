@@ -1,6 +1,7 @@
 import { useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
 import type { LeadWithContacts } from "@/services/leadsService";
+import { formatPhoneForWhatsApp } from "@/lib/phoneFormat";
 
 /**
  * Hook for quick lead actions (email, SMS, WhatsApp)
@@ -32,8 +33,7 @@ export function useLeadActions() {
       return;
     }
 
-    const cleanPhone = lead.phone.replace(/\D/g, "");
-    const phoneWithCountry = cleanPhone.startsWith("351") ? cleanPhone : `351${cleanPhone}`;
+    const phoneWithCountry = formatPhoneForWhatsApp(lead.phone);
     window.location.href = `sms:+${phoneWithCountry}`;
   }, [toast]);
 
@@ -47,8 +47,7 @@ export function useLeadActions() {
       return;
     }
 
-    const cleanPhone = lead.phone.replace(/\D/g, "");
-    const phoneWithCountry = cleanPhone.startsWith("351") ? cleanPhone : `351${cleanPhone}`;
+    const phoneWithCountry = formatPhoneForWhatsApp(lead.phone);
     const whatsappUrl = `https://wa.me/${phoneWithCountry}`;
     window.open(whatsappUrl, "_blank");
   }, [toast]);
