@@ -610,10 +610,30 @@ export function LeadDetailsDialog({
   const linkedContactId = (lead as any)?.contact_id ?? null;
   const linkedContactName = (lead as any)?.contact?.name ?? lead?.name ?? "Contacto associado";
 
+  // Ao fechar a ficha da lead, garante sempre que nenhum dos modais
+  // secundários (Nota de Voz, Registar Contacto, revisão de rascunho) fica
+  // "pendurado" aberto no estado — isso já causou o ecrã a ficar bloqueado
+  // ou a saltar para baixo ao reabrir uma ficha depois. Reinicia tudo
+  // sempre que a ficha principal fecha, nunca só quando o utilizador fecha
+  // esse modal específico.
+  const handleMainDialogOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) {
+      setVoiceNoteOpen(false);
+      setQuickContactOpen(false);
+      setGeneratedDraft(null);
+      setDraftVariants(null);
+    }
+    onOpenChange(nextOpen);
+  };
+
   return (
     <>
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent ref={dialogContentRef} className="max-w-4xl max-h-[90vh] overflow-y-auto">
+    <Dialog open={open} onOpenChange={handleMainDialogOpenChange}>
+      <DialogContent
+        ref={dialogContentRef}
+        className="max-w-4xl max-h-[90vh] overflow-y-auto"
+        onCloseAutoFocus={(e) => e.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center justify-between gap-2">
             <span className="flex items-center gap-2 min-w-0">
