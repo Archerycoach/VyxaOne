@@ -210,9 +210,9 @@ export default async function handler(
               } else if (fieldName.includes("property") || fieldName.includes("imovel") || fieldName === "tipo" || fieldName.includes("tipo de im")) {
                 mappedData.property_type = value;
               } else if (fieldName.includes("crédito") || fieldName.includes("credito") || fieldName.includes("financiamento")) {
-                mappedData.needs_financing = value;
+                mappedData.needs_financing = parseBooleanAnswer(value);
               } else if (fieldName.includes("vender") || fieldName.includes("retoma") || fieldName.includes("venda")) {
-                mappedData.has_property_to_sell = value;
+                mappedData.has_property_to_sell = parseBooleanAnswer(value);
               } else if (fieldName.includes("objetivo") || fieldName.includes("objectivo") || fieldName.includes("procura")) {
                 mappedData.buy_purpose = value;
               } else if (fieldName.includes("prazo") || fieldName.includes("quando") || fieldName.includes("timing") || fieldName.includes("compra")) {
@@ -591,6 +591,18 @@ export default async function handler(
  * em src/pages/api/gpt/leads/[id]/analyze-notes.ts). Não bloqueia nem falha
  * o processamento do webhook se der erro.
  */
+/**
+ * Converte uma resposta de formulário da Meta (texto livre, ex.: "Sim",
+ * "Não", "Yes") num boolean real, para os campos que são colunas booleanas
+ * na base de dados (needs_financing, has_property_to_sell). Sem esta
+ * conversão, gravar o texto tal como veio causa um erro de tipo na base de
+ * dados e pode impedir a lead de ser criada.
+ */
+function parseBooleanAnswer(value: string): boolean {
+  const normalized = String(value).trim().toLowerCase();
+  return ["sim", "s", "yes", "y", "true", "1"].includes(normalized);
+}
+
 function triggerAutoNotesAnalysis(appUrl: string, userId: string, leadId: string): void {
   fetch(`${appUrl}/api/gpt/leads/${leadId}/analyze-notes`, {
     method: "POST",
