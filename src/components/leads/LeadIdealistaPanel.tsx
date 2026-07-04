@@ -51,13 +51,11 @@ export function LeadIdealistaPanel({ lead }: LeadIdealistaPanelProps) {
         throw new Error("Não autenticado");
       }
 
-      const response = await fetch("/api/idealista/search-for-lead", {
-        method: "POST",
+      const response = await fetch(`/api/idealista/search-for-lead?leadId=${encodeURIComponent(lead.id)}`, {
+        method: "GET",
         headers: {
-          "Content-Type": "application/json",
           Authorization: `Bearer ${session.access_token}`,
         },
-        body: JSON.stringify({ leadId: lead.id }),
       });
 
       const data = await response.json();
