@@ -91,25 +91,34 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // configuração de cada uma (dias/repetições/frequência).
     const { data: activeRules } = await supabaseAdmin
       .from("lead_workflow_rules")
-      .select("user_id, trigger_status, action_config")
+      .select("user_id, trigger_status, action_config, applies_to_team")
       .in("trigger_status", triggerTypes)
       .eq("enabled", true);
 
     // Por gatilho, mapa de utilizador -> configuração efetiva (com defeitos
-    // aplicados a quem não personalizou nada).
+    // aplicados a quem não personalizou nada). Regras de equipa
+    // (applies_to_team) ficam à parte, como configuração de reserva para
+    // quem não tiver uma regra pessoal própria nesse gatilho.
     const configByTrigger = new Map<string, Map<string, TriggerConfig>>();
-    for (const rule of (activeRules || []) as { user_id: string; trigger_status: string; action_config: any }[]) {
-      if (!configByTrigger.has(rule.trigger_status)) configByTrigger.set(rule.trigger_status, new Map());
+    const teamWideConfigByTrigger = new Map<string, TriggerConfig>();
+    for (const rule of (activeRules || []) as { user_id: string; trigger_status: string; action_config: any; applies_to_team: boolean }[]) {
       const cfg = rule.action_config || {};
       const defaultThreshold = DEFAULT_THRESHOLDS[rule.trigger_status];
-      configByTrigger.get(rule.trigger_status)!.set(rule.user_id, {
+      const resolvedConfig: TriggerConfig = {
         thresholdDays: Number(cfg.threshold_days) > 0 ? Number(cfg.threshold_days) : defaultThreshold,
         maxAlerts: Number(cfg.max_alerts) > 0 ? Number(cfg.max_alerts) : 1,
         repeatFrequencyDays: Number(cfg.repeat_frequency_days) > 0 ? Number(cfg.repeat_frequency_days) : 3,
-      });
+      };
+
+      if (rule.applies_to_team) {
+        teamWideConfigByTrigger.set(rule.trigger_status, resolvedConfig);
+      } else {
+        if (!configByTrigger.has(rule.trigger_status)) configByTrigger.set(rule.trigger_status, new Map());
+        configByTrigger.get(rule.trigger_status)!.set(rule.user_id, resolvedConfig);
+      }
     }
 
-    if (configByTrigger.size === 0) {
+    if (configByTrigger.size === 0 && teamWideConfigByTrigger.size === 0) {
       console.log("[Stale Lead Checks] Nenhuma automação ativa para estes gatilhos. A terminar.");
       return res.status(200).json({ success: true, message: "Sem automações ativas", results: [] });
     }
@@ -135,15 +144,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     };
 
     for (const triggerType of triggerTypes) {
-      const userConfigs = configByTrigger.get(triggerType);
+      const userConfigs = configByTrigger.get(triggerType) || new Map<string, TriggerConfig>();
+      const teamWideConfig = teamWideConfigByTrigger.get(triggerType);
       const checkResult: CheckResult = { triggerType, checked: 0, fired: 0, skippedAlreadyFired: 0, errors: 0 };
 
-      if (!userConfigs || userConfigs.size === 0) {
+      if (userConfigs.size === 0 && !teamWideConfig) {
         results.push(checkResult);
         continue;
       }
 
-      const eligibleUserIds = Array.from(userConfigs.keys());
+      // Se houver uma regra de equipa, todos os consultores são elegíveis
+      // (mesmo quem não personalizou nada); caso contrário, só quem tem
+      // regra pessoal própria para este gatilho.
+      let eligibleUserIds: string[];
+      if (teamWideConfig) {
+        const { data: allProfiles } = await supabaseAdmin.from("profiles").select("id");
+        eligibleUserIds = (allProfiles || []).map((p: { id: string }) => p.id);
+      } else {
+        eligibleUserIds = Array.from(userConfigs.keys());
+      }
+
       const matcher = matchersByTrigger[triggerType];
 
       const { data: candidateLeads, error: leadsError } = await supabaseAdmin
@@ -160,9 +180,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         continue;
       }
 
-      // Cada lead usa o limiar de dias configurado pelo SEU consultor.
+      // Cada lead usa o limiar de dias configurado pelo SEU consultor, ou o
+      // da regra de equipa se o consultor não tiver uma regra própria.
       const matchingLeads = ((candidateLeads || []) as LeadRow[]).filter((lead) => {
-        const cfg = userConfigs.get(lead.user_id);
+        const cfg = userConfigs.get(lead.user_id) || teamWideConfig;
         if (!cfg) return false;
         return matcher.matches(lead, daysAgo(now, cfg.thresholdDays));
       });
@@ -170,7 +191,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       for (const lead of matchingLeads) {
         try {
-          const cfg = userConfigs.get(lead.user_id)!;
+          const cfg = (userConfigs.get(lead.user_id) || teamWideConfig)!;
           const trackedValue = matcher.trackedValueOf(lead);
 
           const { data: existingLog } = await supabaseAdmin

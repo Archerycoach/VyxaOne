@@ -66,11 +66,13 @@ export async function runLeadWorkflows({
       return { success: false, errors };
     }
 
-    // Get active workflows for this trigger
+    // Get active workflows for this trigger — regras do próprio dono da lead
+    // OU regras de equipa (applies_to_team) criadas pelo broker, que se
+    // aplicam a todos os consultores.
     const { data: workflows, error: wfError } = await supabase
       .from("lead_workflow_rules")
       .select("*")
-      .eq("user_id", userId)
+      .or(`user_id.eq.${userId},applies_to_team.eq.true`)
       .eq("trigger_status", triggerType)
       .eq("enabled", true);
 

@@ -51,22 +51,33 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     const { data: activeRules } = await supabaseAdmin
       .from("lead_workflow_rules")
-      .select("user_id, trigger_status")
+      .select("user_id, trigger_status, applies_to_team")
       .in("trigger_status", ["purchase_anniversary", "referral_request_3_months"])
       .eq("enabled", true);
 
     const usersByTrigger = new Map<string, Set<string>>();
-    for (const rule of (activeRules || []) as { user_id: string; trigger_status: string }[]) {
-      if (!usersByTrigger.has(rule.trigger_status)) usersByTrigger.set(rule.trigger_status, new Set());
-      usersByTrigger.get(rule.trigger_status)!.add(rule.user_id);
+    const teamWideTriggers = new Set<string>();
+    for (const rule of (activeRules || []) as { user_id: string; trigger_status: string; applies_to_team: boolean }[]) {
+      if (rule.applies_to_team) {
+        teamWideTriggers.add(rule.trigger_status);
+      } else {
+        if (!usersByTrigger.has(rule.trigger_status)) usersByTrigger.set(rule.trigger_status, new Set());
+        usersByTrigger.get(rule.trigger_status)!.add(rule.user_id);
+      }
     }
 
-    if (usersByTrigger.size === 0) {
+    if (usersByTrigger.size === 0 && teamWideTriggers.size === 0) {
       console.log("[Post-Sale Checks] Nenhuma automação de pós-venda ativa. A terminar.");
       return res.status(200).json({ success: true, message: "Sem automações ativas", results });
     }
 
-    const relevantUserIds = Array.from(new Set(Array.from(usersByTrigger.values()).flatMap((s) => Array.from(s))));
+    // Se algum gatilho tiver regra de equipa, é preciso verificar leads de
+    // todos os consultores (não só de quem tem regra pessoal própria).
+    let relevantUserIds = Array.from(new Set(Array.from(usersByTrigger.values()).flatMap((s) => Array.from(s))));
+    if (teamWideTriggers.size > 0) {
+      const { data: allProfiles } = await supabaseAdmin.from("profiles").select("id");
+      relevantUserIds = (allProfiles || []).map((p: { id: string }) => p.id);
+    }
 
     const { data: wonLeads, error: leadsError } = await supabaseAdmin
       .from("leads")
@@ -87,7 +98,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const wonAt = new Date(lead.won_at as string);
 
       // --- Aniversário da compra (recorrente, uma vez por ano) ---
-      if (usersByTrigger.get("purchase_anniversary")?.has(lead.user_id)) {
+      if (usersByTrigger.get("purchase_anniversary")?.has(lead.user_id) || teamWideTriggers.has("purchase_anniversary")) {
         const isAnniversaryToday = now.getMonth() === wonAt.getMonth() && now.getDate() === wonAt.getDate() && now.getFullYear() > wonAt.getFullYear();
 
         if (isAnniversaryToday) {
@@ -127,7 +138,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
 
       // --- Pedido de indicação (uma única vez, ~3 meses depois) ---
-      if (usersByTrigger.get("referral_request_3_months")?.has(lead.user_id)) {
+      if (usersByTrigger.get("referral_request_3_months")?.has(lead.user_id) || teamWideTriggers.has("referral_request_3_months")) {
         const daysSinceWon = Math.floor((now.getTime() - wonAt.getTime()) / (24 * 60 * 60 * 1000));
 
         if (daysSinceWon >= REFERRAL_REQUEST_DAYS) {

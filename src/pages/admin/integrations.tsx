@@ -12,6 +12,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { InfoIcon, ExternalLink, CheckCircle2, Settings, Activity, ShieldCheck } from "lucide-react";
 import { MetaAppSettings } from "@/components/admin/MetaAppSettings";
 import { ExternalPortalsSettings } from "@/components/settings/ExternalPortalsSettings";
+import { ProtectedRoute } from "@/components/ProtectedRoute";
 
 export default function Integrations() {
   const { toast } = useToast();
@@ -475,18 +476,21 @@ export default function Integrations() {
 
   if (loading) {
     return (
-      <Layout>
-        <div className="container mx-auto py-8 text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p>Carregando configurações de forma segura...</p>
-        </div>
-      </Layout>
+      <ProtectedRoute allowedRoles={["admin", "broker"]}>
+        <Layout>
+          <div className="container mx-auto py-8 text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p>Carregando configurações de forma segura...</p>
+          </div>
+        </Layout>
+      </ProtectedRoute>
     );
   }
 
   return (
-    <Layout>
-      <div className="container mx-auto py-8 space-y-8">
+    <ProtectedRoute allowedRoles={["admin", "broker"]}>
+      <Layout>
+        <div className="container mx-auto py-8 space-y-8">
         <div>
           <div className="flex items-center gap-2 mb-2">
             <h1 className="text-3xl font-bold">Configurações de Integrações</h1>
@@ -811,6 +815,7 @@ export default function Integrations() {
           <MetaAppSettings />
         </div>
       </div>
-    </Layout>
+      </Layout>
+    </ProtectedRoute>
   );
 }

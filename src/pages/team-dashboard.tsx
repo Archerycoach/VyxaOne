@@ -45,6 +45,7 @@ export default function TeamDashboard() {
   const [loading, setLoading] = useState(true);
   const [hasAccess, setHasAccess] = useState(false);
   const [deals, setDeals] = useState<Deal[]>([]);
+  const [userRole, setUserRole] = useState<string | null>(null);
 
   useEffect(() => {
     checkAccess();
@@ -64,10 +65,11 @@ export default function TeamDashboard() {
         .eq("id", user.id)
         .single();
 
-      if (profile && (profile.role === "admin" || profile.role === "team_lead")) {
+      if (profile && (profile.role === "admin" || profile.role === "broker" || profile.role === "team_lead")) {
+        setUserRole(profile.role);
         setHasAccess(true);
-        loadAgents();
-        loadTeamMetrics();
+        loadAgents(profile.role);
+        loadTeamMetrics(profile.role);
       } else {
         router.push("/performance");
       }
@@ -87,20 +89,28 @@ export default function TeamDashboard() {
     }
   }, [selectedView, leadTypeFilter, hasAccess]);
 
-  const loadAgents = async () => {
+  const loadAgents = async (roleOverride?: string) => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-      
-      const agentsQuery = supabase
+
+      const role = roleOverride ?? userRole;
+
+      let agentsQuery = supabase
         .from("profiles")
         .select("*")
-        .eq("team_lead_id", user.id)
-        .eq("role", "consultant")
         .eq("is_active", true);
-      
+
+      if (role === "admin" || role === "broker") {
+        // Admins/brokers veem todos os team leads e consultores
+        agentsQuery = agentsQuery.in("role", ["consultant", "team_lead"]);
+      } else {
+        // Team leads veem só os seus consultores diretos
+        agentsQuery = agentsQuery.eq("team_lead_id", user.id).eq("role", "consultant");
+      }
+
       const { data } = await agentsQuery;
-      
+
       if (data) {
         setAgents(data.map(a => ({ id: a.id, name: a.full_name || "Agente" })));
       }
@@ -109,18 +119,28 @@ export default function TeamDashboard() {
     }
   };
 
-  const loadTeamMetrics = async () => {
+  const loadTeamMetrics = async (roleOverride?: string) => {
     try {
       setLoading(true);
-      
+
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-      
-      const { data: agentsData } = await supabase
+
+      const role = roleOverride ?? userRole;
+
+      let agentsQueryBuilder = supabase
         .from("profiles")
-        .select("*")
-        .eq("team_lead_id", user.id)
-        .eq("role", "consultant");
+        .select("*");
+
+      if (role === "admin" || role === "broker") {
+        // Admins/brokers veem todos os team leads e consultores
+        agentsQueryBuilder = agentsQueryBuilder.in("role", ["consultant", "team_lead"]);
+      } else {
+        // Team leads veem só os seus consultores diretos
+        agentsQueryBuilder = agentsQueryBuilder.eq("team_lead_id", user.id).eq("role", "consultant");
+      }
+
+      const { data: agentsData } = await agentsQueryBuilder;
 
       if (!agentsData || agentsData.length === 0) {
         setMetrics([]);

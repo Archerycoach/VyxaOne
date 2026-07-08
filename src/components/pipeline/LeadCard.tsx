@@ -110,7 +110,7 @@ export function LeadCard({ lead, onClick, onDelete, onConvertSuccess }: LeadCard
   const checkPermissions = async () => {
     try {
       const profile = await getUserProfile();
-      if (profile && (profile.role === "admin" || profile.role === "team_lead")) {
+      if (profile && (profile.role === "admin" || profile.role === "broker" || profile.role === "team_lead")) {
         setCanAssignLeads(true);
       }
     } catch (error) {

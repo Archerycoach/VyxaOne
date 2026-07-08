@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { executeWorkflowForLead } from "@/services/workflowService";
+import { getUsersForAssignment } from "@/services/profileService";
 import {
   Dialog,
   DialogContent,
@@ -68,6 +69,13 @@ type UserWorkflow = {
   action_config: any;
   delay_days: number;
   delay_hours: number;
+  user_id: string;
+  applies_to_team: boolean;
+};
+
+type TeamMember = {
+  id: string;
+  full_name: string | null;
 };
 
 type WorkflowExecution = {
@@ -175,6 +183,7 @@ const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
 // Helper function to create workflow - isolated to avoid TypeScript deep instantiation
 async function createWorkflowInDB(workflowData: {
   user_id: string;
+  applies_to_team?: boolean;
   name: string;
   description: string;
   trigger_status: string;
@@ -230,6 +239,10 @@ export function WorkflowsManagement() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [userId, setUserId] = useState<string>("");
+  const [role, setRole] = useState<string | null>(null);
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const [teamWorkflows, setTeamWorkflows] = useState<UserWorkflow[]>([]);
+  const isBroker = role === "broker" || role === "admin";
   const [isNewWorkflowOpen, setIsNewWorkflowOpen] = useState(false);
   const [isExecuteWorkflowOpen, setIsExecuteWorkflowOpen] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<WorkflowTemplate | null>(null);
@@ -253,7 +266,9 @@ export function WorkflowsManagement() {
     wa_template_name: "",
     stale_threshold_days: 0,
     stale_max_alerts: 1,
-    stale_repeat_frequency_days: 3
+    stale_repeat_frequency_days: 3,
+    scope: "self" as "self" | "team" | "consultant",
+    scope_user_id: ""
   });
 
   const [executeFormState, setExecuteFormState] = useState({
@@ -278,11 +293,23 @@ export function WorkflowsManagement() {
       // The API calls below are already scoped to session.user.id
 
       setUserId(session.user.id);
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", session.user.id)
+        .single();
+
+      const currentRole = profile?.role || null;
+      setRole(currentRole);
+      const brokerLike = currentRole === "broker" || currentRole === "admin";
+
       await Promise.all([
         loadUserWorkflows(session.user.id),
         loadWorkflowExecutions(session.user.id),
         loadLeads(session.user.id),
-        loadContacts(session.user.id)
+        loadContacts(session.user.id),
+        ...(brokerLike ? [loadTeamMembersAndWorkflows()] : [])
       ]);
       setLoading(false);
     } catch (error: any) {
@@ -315,7 +342,9 @@ export function WorkflowsManagement() {
         action_config: w.action_config || {},
         delay_days: w.delay_days || 0,
         delay_hours: w.delay_hours || 0,
-        actions: 2
+        actions: 2,
+        user_id: (w as any).user_id,
+        applies_to_team: (w as any).applies_to_team || false
       })) || [];
 
       setUserWorkflows(workflows);
@@ -399,6 +428,65 @@ export function WorkflowsManagement() {
     }
   };
 
+  // Lista de consultores/team leads que um broker/admin pode escolher como
+  // alvo de uma automação (reutiliza a mesma regra de visibilidade já usada
+  // para atribuir leads).
+  const loadTeamMembers = async (): Promise<TeamMember[]> => {
+    try {
+      const members = await getUsersForAssignment();
+      const mapped = members.map((m) => ({ id: m.id, full_name: m.full_name }));
+      setTeamMembers(mapped);
+      return mapped;
+    } catch (error) {
+      console.error("Error loading team members:", error);
+      return [];
+    }
+  };
+
+  // Regras que o broker/admin geriu para a equipa: "toda a equipa"
+  // (applies_to_team) ou dirigidas a um consultor específico.
+  const loadTeamWorkflows = async (memberIdsOverride?: string[]) => {
+    try {
+      const memberIds = memberIdsOverride ?? teamMembers.map((m) => m.id);
+      const orFilters = [`applies_to_team.eq.true`];
+      if (memberIds.length > 0) {
+        orFilters.push(`user_id.in.(${memberIds.join(",")})`);
+      }
+
+      const { data, error } = await supabase
+        .from("lead_workflow_rules")
+        .select("*")
+        .or(orFilters.join(","))
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+
+      const workflows = (data || []).map((w: any) => ({
+        id: w.id,
+        name: w.name || "",
+        description: w.description || "",
+        trigger: w.trigger_status || "",
+        enabled: w.enabled || false,
+        action_type: w.action_type || "send_email",
+        action_config: w.action_config || {},
+        delay_days: w.delay_days || 0,
+        delay_hours: w.delay_hours || 0,
+        actions: 2,
+        user_id: w.user_id,
+        applies_to_team: w.applies_to_team || false,
+      }));
+
+      setTeamWorkflows(workflows);
+    } catch (error) {
+      console.error("Error loading team workflows:", error);
+    }
+  };
+
+  const loadTeamMembersAndWorkflows = async () => {
+    const members = await loadTeamMembers();
+    await loadTeamWorkflows(members.map((m) => m.id));
+  };
+
   const handleUseTemplate = (template: WorkflowTemplate) => {
     setSelectedTemplate(template);
     setEditingWorkflowId(null);
@@ -464,7 +552,9 @@ export function WorkflowsManagement() {
       wa_template_name: "",
       stale_threshold_days: STALE_TRIGGER_DEFAULT_DAYS[template.trigger] || 0,
       stale_max_alerts: 1,
-      stale_repeat_frequency_days: 3
+      stale_repeat_frequency_days: 3,
+      scope: "self",
+      scope_user_id: ""
     });
     setIsNewWorkflowOpen(true);
   };
@@ -487,7 +577,9 @@ export function WorkflowsManagement() {
       wa_template_name: workflow.action_config?.template_name || "",
       stale_threshold_days: workflow.action_config?.threshold_days || 0,
       stale_max_alerts: workflow.action_config?.max_alerts || 1,
-      stale_repeat_frequency_days: workflow.action_config?.repeat_frequency_days || 3
+      stale_repeat_frequency_days: workflow.action_config?.repeat_frequency_days || 3,
+      scope: workflow.applies_to_team ? "team" : (workflow.user_id !== userId ? "consultant" : "self"),
+      scope_user_id: workflow.user_id !== userId ? workflow.user_id : ""
     });
     setEditingWorkflowId(workflow.id);
     setSelectedTemplate(null);
@@ -514,6 +606,15 @@ export function WorkflowsManagement() {
         return;
       }
 
+      if (formState.scope === "consultant" && !formState.scope_user_id) {
+        toast({
+          title: "Erro",
+          description: "Selecione o consultor para quem esta automação se aplica.",
+          variant: "destructive",
+        });
+        return;
+      }
+
       const staleLeadConfig = STALE_LEAD_TRIGGERS.includes(formState.trigger)
         ? {
             threshold_days: formState.stale_threshold_days || STALE_TRIGGER_DEFAULT_DAYS[formState.trigger],
@@ -522,8 +623,16 @@ export function WorkflowsManagement() {
           }
         : {};
 
+      // "Toda a equipa": a regra fica associada ao próprio broker (dono/criador)
+      // mas marcada como applies_to_team, para se aplicar a todos os consultores.
+      // "Consultor específico": a regra passa a pertencer literalmente a esse
+      // consultor (user_id), tal como se ele próprio a tivesse criado.
+      const targetUserId = formState.scope === "consultant" ? formState.scope_user_id : userId;
+      const appliesToTeam = formState.scope === "team";
+
       const workflowData = {
-        user_id: userId,
+        user_id: targetUserId,
+        applies_to_team: appliesToTeam,
         name: formState.name,
         description: formState.description,
         trigger_status: formState.trigger,
@@ -597,12 +706,15 @@ export function WorkflowsManagement() {
         wa_template_name: "",
         stale_threshold_days: 0,
         stale_max_alerts: 1,
-        stale_repeat_frequency_days: 3
+        stale_repeat_frequency_days: 3,
+        scope: "self",
+        scope_user_id: ""
       });
 
       await Promise.all([
         loadUserWorkflows(userId),
-        loadWorkflowExecutions(userId)
+        loadWorkflowExecutions(userId),
+        ...(isBroker ? [loadTeamWorkflows()] : [])
       ]);
     } catch (error) {
       console.error("Error creating/updating workflow:", error);
@@ -682,7 +794,10 @@ export function WorkflowsManagement() {
         description: `O workflow foi ${enabled ? "ativado" : "desativado"} com sucesso.`,
       });
 
-      await loadUserWorkflows(userId);
+      await Promise.all([
+        loadUserWorkflows(userId),
+        ...(isBroker ? [loadTeamWorkflows()] : [])
+      ]);
     } catch (error) {
       console.error("Error toggling workflow:", error);
       toast({
@@ -707,7 +822,10 @@ export function WorkflowsManagement() {
         description: "O workflow foi removido com sucesso.",
       });
 
-      await loadUserWorkflows(userId);
+      await Promise.all([
+        loadUserWorkflows(userId),
+        ...(isBroker ? [loadTeamWorkflows()] : [])
+      ]);
     } catch (error) {
       console.error("Error deleting workflow:", error);
       toast({
@@ -795,7 +913,9 @@ export function WorkflowsManagement() {
                 wa_template_name: "",
                 stale_threshold_days: 0,
                 stale_max_alerts: 1,
-                stale_repeat_frequency_days: 3
+                stale_repeat_frequency_days: 3,
+                scope: "self",
+                scope_user_id: ""
               });
             }}>
               <Plus className="h-4 w-4 mr-2" />
@@ -869,6 +989,59 @@ export function WorkflowsManagement() {
                   </SelectContent>
                 </Select>
               </div>
+
+              {isBroker && (
+                <div className="space-y-4 p-4 border rounded-lg bg-purple-50/50">
+                  <div className="space-y-2">
+                    <Label htmlFor="scope">Âmbito</Label>
+                    <Select
+                      value={formState.scope}
+                      onValueChange={(value: "self" | "team" | "consultant") => setFormState({ ...formState, scope: value, scope_user_id: value === "consultant" ? formState.scope_user_id : "" })}
+                    >
+                      <SelectTrigger id="scope">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="self">Só eu</SelectItem>
+                        <SelectItem value="team">Toda a equipa</SelectItem>
+                        <SelectItem value="consultant">Consultor específico</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-gray-500">
+                      {formState.scope === "team"
+                        ? "Esta automação vai disparar para leads de todos os consultores da equipa."
+                        : formState.scope === "consultant"
+                          ? "Esta automação vai pertencer ao consultor escolhido, tal como se ele próprio a tivesse criado."
+                          : "Automação pessoal, só para as suas próprias leads."}
+                    </p>
+                  </div>
+
+                  {formState.scope === "consultant" && (
+                    <div className="space-y-2">
+                      <Label htmlFor="scope_user_id">Consultor *</Label>
+                      <Select
+                        value={formState.scope_user_id}
+                        onValueChange={(value) => setFormState({ ...formState, scope_user_id: value })}
+                      >
+                        <SelectTrigger id="scope_user_id">
+                          <SelectValue placeholder="Selecione um consultor" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {teamMembers.length > 0 ? (
+                            teamMembers.map((member) => (
+                              <SelectItem key={member.id} value={member.id}>
+                                {member.full_name || "Sem nome"}
+                              </SelectItem>
+                            ))
+                          ) : (
+                            <SelectItem value="no-members" disabled>Nenhum consultor disponível</SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {STALE_LEAD_TRIGGERS.includes(formState.trigger) && (
                 <div className="space-y-4 p-4 border rounded-lg bg-amber-50/50">
@@ -1326,6 +1499,78 @@ export function WorkflowsManagement() {
                   </CardContent>
                 </Card>
               ))}
+            </div>
+          )}
+
+          {isBroker && teamWorkflows.length > 0 && (
+            <div className="pt-6 space-y-4">
+              <h3 className="text-lg font-semibold text-gray-900">Regras de equipa</h3>
+              <p className="text-sm text-gray-500">
+                Automações que configurou para toda a equipa ou para um consultor específico.
+              </p>
+              <div className="space-y-4">
+                {teamWorkflows.map((workflow) => {
+                  const scopeLabel = workflow.applies_to_team
+                    ? "Toda a equipa"
+                    : teamMembers.find((m) => m.id === workflow.user_id)?.full_name || "Consultor";
+                  return (
+                    <Card key={workflow.id} className={`border-2 ${workflow.enabled ? "border-green-200 bg-green-50/30" : "border-gray-200"}`}>
+                      <CardContent className="p-6">
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-2">
+                              <h3 className="text-lg font-semibold text-gray-900">{workflow.name}</h3>
+                              {workflow.enabled && (
+                                <Badge className="bg-green-100 text-green-700 hover:bg-green-100">
+                                  Ativo
+                                </Badge>
+                              )}
+                            </div>
+                            <p className="text-sm text-gray-600 mb-3">{workflow.description}</p>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <Badge variant="outline" className="bg-blue-50 text-blue-700">
+                                Trigger: {workflow.trigger}
+                              </Badge>
+                              <Badge variant="outline" className="bg-purple-50 text-purple-700">
+                                {scopeLabel}
+                              </Badge>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-4">
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              onClick={() => handleEditWorkflow(workflow)}
+                              className="text-gray-600 hover:text-blue-600 hover:bg-blue-50"
+                              title="Editar"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <div className="flex items-center gap-2">
+                              <Label htmlFor={`toggle-team-${workflow.id}`} className="text-sm text-gray-600">
+                                {workflow.enabled ? "Desativar" : "Ativar"}
+                              </Label>
+                              <Switch
+                                id={`toggle-team-${workflow.id}`}
+                                checked={workflow.enabled}
+                                onCheckedChange={(checked) => handleToggleWorkflow(workflow.id, checked)}
+                              />
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleDeleteWorkflow(workflow.id)}
+                              className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
             </div>
           )}
         </TabsContent>
