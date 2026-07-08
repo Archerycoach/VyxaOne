@@ -1163,6 +1163,7 @@ export function MetaFormsManagement({ integrationId, integrationName }: MetaForm
                             <SelectItem value="property_area">Área do Imóvel (m2)</SelectItem>
                             <SelectItem value="needs_financing">Precisa Financiamento (true/false)</SelectItem>
                             <SelectItem value="has_property_to_sell">Tem imóvel p/ vender (true/false)</SelectItem>
+                            <SelectItem value="whatsapp_optin">Consentimento WhatsApp (Sim/Não)</SelectItem>
                             <SelectItem value="development_name">Nome do Empreendimento</SelectItem>
                             <SelectItem value="birthday">Data de Nascimento</SelectItem>
                             <SelectItem value="notes">Notas / Observações</SelectItem>

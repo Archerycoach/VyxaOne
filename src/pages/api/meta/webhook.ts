@@ -43,6 +43,42 @@ function verifyMetaSignature(rawBody: Buffer, signatureHeader: string | undefine
   }
 }
 
+/**
+ * Deteta consentimento de WhatsApp a partir das respostas do formulário da
+ * Meta. Prioriza o mapeamento explícito (campo CRM "whatsapp_optin",
+ * configurável em Definições > Integrações > Meta); só cai para a deteção
+ * por palavras-chave no nome do campo (comportamento antigo, menos fiável)
+ * quando não existe esse mapeamento para o formulário.
+ */
+function detectMetaWhatsAppConsent(
+  leadFields: Record<string, string>,
+  explicitFieldName: string | undefined,
+  explicitValue: unknown
+): { granted: boolean; fieldName: string | null; rawValue: string | null } {
+  if (explicitFieldName) {
+    return {
+      granted: explicitValue === true,
+      fieldName: explicitFieldName,
+      rawValue: leadFields[explicitFieldName] ?? null,
+    };
+  }
+
+  const whatsappConsentField = Object.keys(leadFields).find(key =>
+    key.toLowerCase().includes('whatsapp') &&
+    (key.toLowerCase().includes('consent') ||
+     key.toLowerCase().includes('aceito') ||
+     key.toLowerCase().includes('autorizo') ||
+     key.toLowerCase().includes('concordo'))
+  );
+  const whatsappConsentValue = whatsappConsentField ? leadFields[whatsappConsentField] : null;
+  const granted = !!whatsappConsentValue &&
+    (whatsappConsentValue.toLowerCase() === 'sim' ||
+     whatsappConsentValue.toLowerCase() === 'yes' ||
+     whatsappConsentValue.toLowerCase() === 'aceito');
+
+  return { granted, fieldName: whatsappConsentField || null, rawValue: whatsappConsentValue };
+}
+
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
@@ -376,6 +412,15 @@ export default async function handler(
             }
           }
 
+          // "whatsapp_optin" não é uma coluna real da tabela leads — extrai-se
+          // aqui para gravar como consentimento (lead_consents) mais abaixo,
+          // e nunca é escrito diretamente na lead.
+          const explicitWhatsappOptinField = fieldMappings.find(
+            (m: any) => m.crm_field_name === "whatsapp_optin"
+          )?.meta_field_name;
+          const explicitWhatsappOptinValue = mappedData.whatsapp_optin;
+          delete mappedData.whatsapp_optin;
+
           const finalEmail = mappedData.email || emailValue;
           const finalPhone = mappedData.phone || phoneValue;
 
@@ -449,8 +494,25 @@ export default async function handler(
             }
 
             await applyMetaFormAssociation(existingLead.id, formAssociation, existingLead.custom_fields);
-            
+
             console.log("✅ Note added to existing lead:", existingLead.id);
+
+            // Regista consentimento de WhatsApp também para leads já
+            // existentes que voltem a submeter o formulário (antes, isto só
+            // acontecia para leads novas).
+            const existingLeadConsent = detectMetaWhatsAppConsent(leadFields, explicitWhatsappOptinField, explicitWhatsappOptinValue);
+            if (existingLeadConsent.granted) {
+              console.log(`[Meta Webhook] Lead existente ${existingLead.id} deu consentimento de WhatsApp via formulário`);
+              await recordConsent(
+                existingLead.id,
+                integration.user_id,
+                "granted",
+                "meta_form",
+                supabase,
+                `${existingLeadConsent.fieldName}: ${existingLeadConsent.rawValue}`,
+                `meta_form:${formId}:${leadgenId}:${new Date().toISOString()}`
+              );
+            }
 
             // Apanha, em segundo plano, qualquer dado de qualificação que
             // não bateu com nenhuma regra fixa de mapeamento acima.
@@ -529,27 +591,16 @@ export default async function handler(
           await calculateLeadScore(newLead.id, supabase, "new_lead_meta");
 
           // Detect WhatsApp Consent from Meta Form
-          const whatsappConsentField = Object.keys(leadFields).find(key => 
-            key.toLowerCase().includes('whatsapp') && 
-            (key.toLowerCase().includes('consent') || 
-             key.toLowerCase().includes('aceito') || 
-             key.toLowerCase().includes('autorizo') ||
-             key.toLowerCase().includes('concordo'))
-          );
-          
-          const whatsappConsentValue = whatsappConsentField ? leadFields[whatsappConsentField] : null;
-          const hasWhatsAppConsent = whatsappConsentValue && 
-            (whatsappConsentValue.toLowerCase() === 'sim' || 
-             whatsappConsentValue.toLowerCase() === 'yes' ||
-             whatsappConsentValue.toLowerCase() === 'aceito');
+          const newLeadConsent = detectMetaWhatsAppConsent(leadFields, explicitWhatsappOptinField, explicitWhatsappOptinValue);
+          const hasWhatsAppConsent = newLeadConsent.granted;
 
           if (hasWhatsAppConsent && finalPhone) {
             console.log(`[Meta Webhook] Lead ${newLead.id} granted WhatsApp consent via Meta form`);
-            
+
             // Record WhatsApp consent with full GDPR evidence
-            const consentText = `${whatsappConsentField}: ${whatsappConsentValue}`;
+            const consentText = `${newLeadConsent.fieldName}: ${newLeadConsent.rawValue}`;
             const evidenceRef = `meta_form:${formId}:${leadgenId}:${new Date().toISOString()}`;
-            
+
             await recordConsent(
               newLead.id,
               integration.user_id,
@@ -601,8 +652,8 @@ export default async function handler(
             } else {
               console.log(`[Meta Webhook] User ${integration.user_id} does not have WhatsApp module enabled`);
             }
-          } else if (whatsappConsentField && !hasWhatsAppConsent) {
-            console.log(`[Meta Webhook] Lead ${newLead.id} did NOT grant WhatsApp consent (field: ${whatsappConsentField}, value: ${whatsappConsentValue})`);
+          } else if (newLeadConsent.fieldName && !hasWhatsAppConsent) {
+            console.log(`[Meta Webhook] Lead ${newLead.id} did NOT grant WhatsApp consent (field: ${newLeadConsent.fieldName}, value: ${newLeadConsent.rawValue})`);
           }
 
           // Create internal notification

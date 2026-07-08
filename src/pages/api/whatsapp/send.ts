@@ -7,7 +7,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ error: "Method Not Allowed" });
   }
   
-  const { lead_id, phone, type, content } = req.body;
+  const { lead_id, phone, type, content, is_bulk } = req.body;
   const token = req.headers.authorization?.split(" ")[1];
   
   if (!token || (!lead_id && !phone) || !type || !content) {
@@ -51,14 +51,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     let result;
-    // Envio manual, iniciado diretamente pelo consultor autenticado (Caixa
-    // de Entrada / ficha da lead) — por decisão de negócio, não bloqueia
-    // por falta de consentimento registado, ao contrário das automações
-    // (crons, webhooks), que continuam sempre a verificar.
+    // Envio manual e individual, iniciado diretamente pelo consultor
+    // autenticado (Caixa de Entrada / ficha da lead) — por decisão de
+    // negócio, não bloqueia por falta de consentimento registado. Envios em
+    // massa (is_bulk) são tratados como uma automação e verificam sempre o
+    // consentimento, tal como os crons/webhooks.
+    const skipConsentCheck = !is_bulk;
     if (type === 'template') {
-      result = await sendWhatsAppTemplate(targetUserId, targetPhone, content, supabaseAdmin, lead_id, true);
+      result = await sendWhatsAppTemplate(targetUserId, targetPhone, content, supabaseAdmin, lead_id, skipConsentCheck, is_bulk ? "bulk_message" : undefined);
     } else {
-      result = await sendWhatsAppMessage(targetUserId, targetPhone, content, supabaseAdmin, lead_id, true);
+      result = await sendWhatsAppMessage(targetUserId, targetPhone, content, supabaseAdmin, lead_id, skipConsentCheck, is_bulk ? "bulk_message" : undefined);
     }
 
     if (!result.success) {

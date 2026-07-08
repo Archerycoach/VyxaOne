@@ -1042,11 +1042,12 @@ export default function BulkMessages() {
                 "Content-Type": "application/json", 
                 "Authorization": `Bearer ${session.access_token}` 
               },
-              body: JSON.stringify({ 
-                lead_id: recipient.type === "lead" ? recipient.id.replace("lead-", "") : undefined, 
+              body: JSON.stringify({
+                lead_id: recipient.type === "lead" ? recipient.id.replace("lead-", "") : undefined,
                 phone: recipient.phone,
-                type: 'text', 
-                content: personalizedMessage 
+                type: 'text',
+                content: personalizedMessage,
+                is_bulk: true,
               })
             });
             
