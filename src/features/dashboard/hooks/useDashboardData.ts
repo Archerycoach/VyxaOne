@@ -129,7 +129,7 @@ export function useDashboardData({ userRole, currentUserId, selectedAgentId, lea
       // 4. Fetch Leads
       let leadsQuery = supabase.from("leads").select("*");
 
-      if (userRole === "admin" || userRole === "team_lead") {
+      if (userRole === "admin" || userRole === "broker" || userRole === "team_lead") {
         if (targetUserId) {
           leadsQuery = leadsQuery.eq("assigned_to", targetUserId);
         }
@@ -162,7 +162,7 @@ export function useDashboardData({ userRole, currentUserId, selectedAgentId, lea
         .lte("start_time", endOfWeek.toISOString())
         .order("start_time", { ascending: true });
 
-      if (userRole === "admin" || userRole === "team_lead") {
+      if (userRole === "admin" || userRole === "broker" || userRole === "team_lead") {
         if (targetUserId) {
           eventsQuery = eventsQuery.eq("user_id", targetUserId);
         }
@@ -188,7 +188,7 @@ export function useDashboardData({ userRole, currentUserId, selectedAgentId, lea
         .lte("due_date", endOfToday.toISOString())
         .order("priority", { ascending: false });
 
-      if (userRole === "admin" || userRole === "team_lead") {
+      if (userRole === "admin" || userRole === "broker" || userRole === "team_lead") {
         if (targetUserId) {
           tasksQuery = tasksQuery.eq("assigned_to", targetUserId);
         }
@@ -201,7 +201,7 @@ export function useDashboardData({ userRole, currentUserId, selectedAgentId, lea
       setTodayTasks(tasksData || []);
 
       // 7. Fetch Goals
-      const goalType = (userRole === "admin" || userRole === "team_lead") && selectedAgentId === "all" ? "team" : "individual";
+      const goalType = (userRole === "admin" || userRole === "broker" || userRole === "team_lead") && selectedAgentId === "all" ? "team" : "individual";
       const goalUserId = goalType === "individual" ? (targetUserId || currentUserId) : null;
 
       let goalsQuery = (supabase as any).from("goals")
@@ -228,7 +228,7 @@ export function useDashboardData({ userRole, currentUserId, selectedAgentId, lea
       // 8. Fetch Deals for Revenue
       let dealsQuery = (supabase as any).from("deals").select("amount, transaction_date");
       
-      if (userRole === "admin" || userRole === "team_lead") {
+      if (userRole === "admin" || userRole === "broker" || userRole === "team_lead") {
         if (targetUserId) {
           dealsQuery = dealsQuery.eq("user_id", targetUserId);
         }
@@ -241,7 +241,7 @@ export function useDashboardData({ userRole, currentUserId, selectedAgentId, lea
       // 9. Fetch Properties
       let propertiesQuery = supabase.from("properties").select("*");
       
-      if (userRole === "admin" || userRole === "team_lead") {
+      if (userRole === "admin" || userRole === "broker" || userRole === "team_lead") {
         if (targetUserId) {
           propertiesQuery = propertiesQuery.eq("user_id", targetUserId);
         }
