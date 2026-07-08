@@ -35,7 +35,8 @@ import {
   Loader2,
   MessageCircle,
   Send,
-  Mic
+  Mic,
+  Bell
 } from "lucide-react";
 import { getLeadById } from "@/services/leadsService";
 import { getInteractionsByLead, createInteraction } from "@/services/interactionsService";
@@ -102,6 +103,8 @@ export function LeadDetailsDialog({
   const [quickContactOpen, setQuickContactOpen] = useState(false);
   const [voiceNoteOpen, setVoiceNoteOpen] = useState(false);
   const [propertyFormOpen, setPropertyFormOpen] = useState(false);
+  const [contactPrefsDialogOpen, setContactPrefsDialogOpen] = useState(false);
+  const [alertRequestsDialogOpen, setAlertRequestsDialogOpen] = useState(false);
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
   const [drafting, setDrafting] = useState<string | null>(null);
   const [generatedDraft, setGeneratedDraft] = useState<{text: string, channel: 'whatsapp'|'email'} | null>(null);
@@ -773,6 +776,15 @@ export function LeadDetailsDialog({
                     {isRunningAutomations ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2 text-indigo-600" />}
                     Executar Automações
                   </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => setContactPrefsDialogOpen(true)}>
+                    <ShieldOff className="h-4 w-4 mr-2 text-slate-600" />
+                    Preferências de Contacto
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setAlertRequestsDialogOpen(true)}>
+                    <Bell className="h-4 w-4 mr-2 text-amber-600" />
+                    Pedidos de Alerta
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
@@ -960,73 +972,7 @@ export function LeadDetailsDialog({
                 </CardContent>
               </Card>
 
-              <Card>
-                <CardContent className="p-4 space-y-4">
-                  <div className="flex items-center justify-between flex-wrap gap-3">
-                    <div className="flex items-center gap-2">
-                      <MessageCircle className="h-4 w-4 text-gray-400" />
-                      <div>
-                        <p className="text-sm text-gray-500">Consentimento WhatsApp</p>
-                        {whatsappConsentStatus === "granted" ? (
-                          <Badge className="bg-green-100 text-green-700 hover:bg-green-100">Concedido</Badge>
-                        ) : whatsappConsentStatus === "revoked" ? (
-                          <Badge className="bg-red-100 text-red-700 hover:bg-red-100">Revogado</Badge>
-                        ) : (
-                          <Badge variant="outline" className="bg-gray-50 text-gray-600">Sem resposta</Badge>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <ShieldOff className="h-4 w-4 text-gray-400" />
-                      <Label htmlFor="do-not-contact" className="text-sm text-gray-600 cursor-pointer">
-                        Não enviar WhatsApp a esta lead
-                      </Label>
-                      <Switch
-                        id="do-not-contact"
-                        checked={!!(lead as any).do_not_contact}
-                        onCheckedChange={handleToggleDoNotContact}
-                        disabled={isUpdatingDoNotContact}
-                      />
-                    </div>
-                  </div>
-                  {(lead as any).do_not_contact && (
-                    <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2">
-                      Esta lead não vai receber mensagens de WhatsApp (em massa ou individuais) enquanto esta marcação estiver ativa.
-                    </p>
-                  )}
-
-                  <div className="flex items-center justify-between flex-wrap gap-3 pt-3 border-t">
-                    <div className="flex items-center gap-2">
-                      <Bot className="h-4 w-4 text-gray-400" />
-                      <Label htmlFor="exclude-ai-lists" className="text-sm text-gray-600 cursor-pointer">
-                        Excluir das listas de distribuição do agente IA (emails automáticos)
-                      </Label>
-                    </div>
-                    <Switch
-                      id="exclude-ai-lists"
-                      checked={!!(lead as any).exclude_from_ai_lists}
-                      onCheckedChange={handleToggleExcludeFromAiLists}
-                      disabled={isUpdatingAiListExclusion}
-                    />
-                  </div>
-                  {(lead as any).exclude_from_ai_lists && (
-                    <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2">
-                      Esta lead não vai receber os emails automáticos de Alertas de Procura nem do AI Property Matcher, enquanto esta marcação estiver ativa.
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
-
               <LeadQualificationOverview lead={lead} onSave={handleSaveQualification} />
-
-              <ContactAlertRequestsPanel
-                entity={{
-                  id: lead.id,
-                  name: lead.name,
-                  type: "lead",
-                }}
-              />
 
               {(lead.lead_type === "buyer" || lead.lead_type === "both") && (
                 <LeadIdealistaPanel lead={lead} />
@@ -1446,6 +1392,96 @@ export function LeadDetailsDialog({
         }}
         preselectedLeadId={leadId}
       />
+    )}
+
+    {lead && (
+      <Dialog open={contactPrefsDialogOpen} onOpenChange={setContactPrefsDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ShieldOff className="h-5 w-5 text-slate-600" />
+              Preferências de Contacto
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div className="flex items-center gap-2">
+                <MessageCircle className="h-4 w-4 text-gray-400" />
+                <div>
+                  <p className="text-sm text-gray-500">Consentimento WhatsApp</p>
+                  {whatsappConsentStatus === "granted" ? (
+                    <Badge className="bg-green-100 text-green-700 hover:bg-green-100">Concedido</Badge>
+                  ) : whatsappConsentStatus === "revoked" ? (
+                    <Badge className="bg-red-100 text-red-700 hover:bg-red-100">Revogado</Badge>
+                  ) : (
+                    <Badge variant="outline" className="bg-gray-50 text-gray-600">Sem resposta</Badge>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between flex-wrap gap-3 pt-3 border-t">
+              <div className="flex items-center gap-2">
+                <ShieldOff className="h-4 w-4 text-gray-400" />
+                <Label htmlFor="do-not-contact" className="text-sm text-gray-600 cursor-pointer">
+                  Não enviar WhatsApp a esta lead
+                </Label>
+              </div>
+              <Switch
+                id="do-not-contact"
+                checked={!!(lead as any).do_not_contact}
+                onCheckedChange={handleToggleDoNotContact}
+                disabled={isUpdatingDoNotContact}
+              />
+            </div>
+            {(lead as any).do_not_contact && (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2">
+                Esta lead não vai receber mensagens de WhatsApp (em massa ou individuais) enquanto esta marcação estiver ativa.
+              </p>
+            )}
+
+            <div className="flex items-center justify-between flex-wrap gap-3 pt-3 border-t">
+              <div className="flex items-center gap-2">
+                <Bot className="h-4 w-4 text-gray-400" />
+                <Label htmlFor="exclude-ai-lists" className="text-sm text-gray-600 cursor-pointer">
+                  Excluir das listas de distribuição do agente IA (emails automáticos)
+                </Label>
+              </div>
+              <Switch
+                id="exclude-ai-lists"
+                checked={!!(lead as any).exclude_from_ai_lists}
+                onCheckedChange={handleToggleExcludeFromAiLists}
+                disabled={isUpdatingAiListExclusion}
+              />
+            </div>
+            {(lead as any).exclude_from_ai_lists && (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2">
+                Esta lead não vai receber os emails automáticos de Alertas de Procura nem do AI Property Matcher, enquanto esta marcação estiver ativa.
+              </p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+    )}
+
+    {lead && (
+      <Dialog open={alertRequestsDialogOpen} onOpenChange={setAlertRequestsDialogOpen}>
+        <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Bell className="h-5 w-5 text-amber-600" />
+              Pedidos de Alerta
+            </DialogTitle>
+          </DialogHeader>
+          <ContactAlertRequestsPanel
+            entity={{
+              id: lead.id,
+              name: lead.name,
+              type: "lead",
+            }}
+          />
+        </DialogContent>
+      </Dialog>
     )}
 
     {/* Modal de Revisão do Rascunho */}
