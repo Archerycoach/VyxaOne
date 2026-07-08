@@ -115,10 +115,10 @@ async function maybeCreateAgendaTask(
 async function maybeSendMatchEmail(
   supabase: any,
   request: ContactAlertRequest,
-  entity: { name: string; email: string | null; phone: string | null; do_not_contact?: boolean },
+  entity: { name: string; email: string | null; phone: string | null; exclude_from_ai_lists?: boolean },
   opportunityTitle: string
 ) {
-  if (!request.auto_send_email || !entity.email || entity.do_not_contact) return;
+  if (!request.auto_send_email || !entity.email || entity.exclude_from_ai_lists) return;
 
   try {
     let subject = request.email_subject || "Nova Oportunidade Encontrada";
@@ -224,7 +224,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       existingMatchesResult,
     ] = await Promise.all([
       (supabase.from("contacts").select("id, name, email, phone").in("id", contactIds) as any),
-      (supabase.from("leads").select("id, name, email, phone, do_not_contact").in("id", leadIds) as any),
+      (supabase.from("leads").select("id, name, email, phone, exclude_from_ai_lists").in("id", leadIds) as any),
       (supabase
         .from("properties")
         .select("id, user_id, title, city, district, address, property_type, typology, price, bedrooms, created_at, listed_at")
@@ -247,9 +247,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (developmentsResult.error) throw developmentsResult.error;
     if (existingMatchesResult.error) throw existingMatchesResult.error;
 
-    const entities = new Map<string, { name: string; email: string | null; phone: string | null; do_not_contact?: boolean }>();
+    const entities = new Map<string, { name: string; email: string | null; phone: string | null; exclude_from_ai_lists?: boolean }>();
     ((contactsResult.data ?? []) as any[]).forEach(c => entities.set(c.id, { name: c.name, email: c.email, phone: c.phone }));
-    ((leadsResult.data ?? []) as any[]).forEach(l => entities.set(l.id, { name: l.name, email: l.email, phone: l.phone, do_not_contact: !!l.do_not_contact }));
+    ((leadsResult.data ?? []) as any[]).forEach(l => entities.set(l.id, { name: l.name, email: l.email, phone: l.phone, exclude_from_ai_lists: !!l.exclude_from_ai_lists }));
 
     const contactNames = new Map<string, string>(
       ((contactsResult.data ?? []) as Array<{ id: string; name: string }>).map((contact) => [contact.id, contact.name]),

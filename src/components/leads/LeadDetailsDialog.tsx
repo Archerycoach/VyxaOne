@@ -120,6 +120,7 @@ export function LeadDetailsDialog({
   const [isRunningAutomations, setIsRunningAutomations] = useState(false);
   const [whatsappConsentStatus, setWhatsappConsentStatus] = useState<WhatsAppConsentStatus>("none");
   const [isUpdatingDoNotContact, setIsUpdatingDoNotContact] = useState(false);
+  const [isUpdatingAiListExclusion, setIsUpdatingAiListExclusion] = useState(false);
   
   // WhatsApp State
   const [waMessage, setWaMessage] = useState("");
@@ -565,6 +566,26 @@ export function LeadDetailsDialog({
     }
   };
 
+  const handleToggleExcludeFromAiLists = async (value: boolean) => {
+    if (!leadId) return;
+    setIsUpdatingAiListExclusion(true);
+    try {
+      await updateLead(leadId, { exclude_from_ai_lists: value } as any);
+      toast({
+        title: value ? "🚫 Excluída das listas do agente IA" : "✅ Lead volta a entrar nas listas do agente IA",
+        description: value
+          ? "Deixa de receber emails automáticos de Alertas de Procura e do AI Property Matcher."
+          : undefined,
+      });
+      const updatedLead = await getLeadById(leadId);
+      setLead(updatedLead);
+    } catch (e: any) {
+      toast({ title: "Erro ao atualizar exclusão das listas de IA", description: e.message, variant: "destructive" });
+    } finally {
+      setIsUpdatingAiListExclusion(false);
+    }
+  };
+
   const handleRunAutomations = async () => {
     if (!leadId) return;
     setIsRunningAutomations(true);
@@ -959,7 +980,7 @@ export function LeadDetailsDialog({
                     <div className="flex items-center gap-2">
                       <ShieldOff className="h-4 w-4 text-gray-400" />
                       <Label htmlFor="do-not-contact" className="text-sm text-gray-600 cursor-pointer">
-                        Não contactar esta lead
+                        Não enviar WhatsApp a esta lead
                       </Label>
                       <Switch
                         id="do-not-contact"
@@ -971,7 +992,27 @@ export function LeadDetailsDialog({
                   </div>
                   {(lead as any).do_not_contact && (
                     <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2">
-                      Esta lead não vai receber emails automáticos de Alertas de Procura, nem mensagens de WhatsApp (em massa ou individuais), enquanto esta marcação estiver ativa.
+                      Esta lead não vai receber mensagens de WhatsApp (em massa ou individuais) enquanto esta marcação estiver ativa.
+                    </p>
+                  )}
+
+                  <div className="flex items-center justify-between flex-wrap gap-3 pt-3 border-t">
+                    <div className="flex items-center gap-2">
+                      <Bot className="h-4 w-4 text-gray-400" />
+                      <Label htmlFor="exclude-ai-lists" className="text-sm text-gray-600 cursor-pointer">
+                        Excluir das listas de distribuição do agente IA (emails automáticos)
+                      </Label>
+                    </div>
+                    <Switch
+                      id="exclude-ai-lists"
+                      checked={!!(lead as any).exclude_from_ai_lists}
+                      onCheckedChange={handleToggleExcludeFromAiLists}
+                      disabled={isUpdatingAiListExclusion}
+                    />
+                  </div>
+                  {(lead as any).exclude_from_ai_lists && (
+                    <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2">
+                      Esta lead não vai receber os emails automáticos de Alertas de Procura nem do AI Property Matcher, enquanto esta marcação estiver ativa.
                     </p>
                   )}
                 </CardContent>

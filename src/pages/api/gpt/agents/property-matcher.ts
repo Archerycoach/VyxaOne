@@ -20,9 +20,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // 1. Get lead info
     const { data: lead } = await supabase.from("leads").select("*").eq("id", leadId).single();
     if (!lead || !lead.email) return res.status(200).json({ message: "No email or lead not found" });
-    if ((lead as any).do_not_contact) {
-      console.log("Lead marked as do_not_contact. Skipping auto property matcher email.");
-      return res.status(200).json({ message: "Lead opted out of contact" });
+    if ((lead as any).exclude_from_ai_lists) {
+      console.log("Lead excluded from AI distribution lists. Skipping auto property matcher email.");
+      return res.status(200).json({ message: "Lead excluded from AI lists" });
     }
 
     // 2. Check if user has property matcher enabled

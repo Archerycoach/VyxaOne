@@ -104,8 +104,8 @@ async function getLeadName(leadId: string): Promise<string> {
 
 async function getEntityDetails(contactId?: string | null, leadId?: string | null) {
   if (leadId) {
-    const { data } = await (supabase.from("leads").select("name, email, phone, do_not_contact").eq("id", leadId).single() as any);
-    return data || { name: "Cliente", email: null, phone: null, do_not_contact: false };
+    const { data } = await (supabase.from("leads").select("name, email, phone, exclude_from_ai_lists").eq("id", leadId).single() as any);
+    return data || { name: "Cliente", email: null, phone: null, exclude_from_ai_lists: false };
   }
   if (contactId) {
     const { data } = await supabase.from("contacts").select("name, email, phone").eq("id", contactId).single();
@@ -191,10 +191,10 @@ async function maybeCreateAgendaTask(
 
 async function maybeSendMatchEmailClient(
   request: ContactAlertRequest,
-  entity: { name: string; email: string | null; phone: string | null; do_not_contact?: boolean },
+  entity: { name: string; email: string | null; phone: string | null; exclude_from_ai_lists?: boolean },
   opportunityTitle: string
 ) {
-  if (!request.auto_send_email || !entity.email || entity.do_not_contact) return;
+  if (!request.auto_send_email || !entity.email || entity.exclude_from_ai_lists) return;
 
   try {
     const { data: { session } } = await supabase.auth.getSession();
