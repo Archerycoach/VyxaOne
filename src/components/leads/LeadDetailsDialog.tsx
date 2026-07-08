@@ -1031,17 +1031,18 @@ export function LeadDetailsDialog({
                 </CardHeader>
                 <CardContent className="flex-1 p-0 overflow-y-auto bg-[#e5ddd5] flex flex-col gap-2 p-4">
                   {interactions
-                    .filter(i => i.interaction_type.startsWith('whatsapp'))
+                    .filter(i => i.interaction_type?.startsWith('whatsapp'))
                     .sort((a, b) => new Date(a.interaction_date).getTime() - new Date(b.interaction_date).getTime())
                     .map(msg => {
                       const isInbound = msg.interaction_type === 'whatsapp_inbound';
+                      const content = msg.content ?? "";
                       return (
                         <div key={msg.id} className={`max-w-[75%] p-2.5 rounded-lg shadow-sm ${isInbound ? 'bg-white self-start rounded-tl-none' : 'bg-[#dcf8c6] self-end rounded-tr-none'}`}>
                           <p className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">
-                            {msg.content.replace(/^(Recebido: |Enviado \(IA\): |Enviado \(Automático\): |Enviado \(Manual[^\)]*\): )/, '')}
+                            {content.replace(/^(Recebido: |Enviado \(IA\): |Enviado \(Automático\): |Enviado \(Manual[^\)]*\): )/, '')}
                           </p>
                           <div className="flex items-center justify-end gap-1 mt-1">
-                            {!isInbound && <span className="text-[9px] text-gray-500">{msg.content.match(/\(IA\)/) ? '🤖 IA' : msg.content.match(/\(Automático\)/) ? '⚡ Auto' : '👤 Humano'}</span>}
+                            {!isInbound && <span className="text-[9px] text-gray-500">{content.match(/\(IA\)/) ? '🤖 IA' : content.match(/\(Automático\)/) ? '⚡ Auto' : '👤 Humano'}</span>}
                             <span className="text-[10px] text-gray-500">
                               {new Date(msg.interaction_date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
                             </span>
@@ -1049,7 +1050,7 @@ export function LeadDetailsDialog({
                         </div>
                       );
                     })}
-                  {interactions.filter(i => i.interaction_type.startsWith('whatsapp')).length === 0 && (
+                  {interactions.filter(i => i.interaction_type?.startsWith('whatsapp')).length === 0 && (
                     <div className="flex flex-col items-center justify-center h-full text-gray-500 space-y-2 opacity-50">
                       <MessageCircle className="h-12 w-12" />
                       <p className="text-sm">Nenhuma conversa de WhatsApp registada.</p>
