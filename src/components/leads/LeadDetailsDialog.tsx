@@ -59,6 +59,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { LeadAIInsightsPanel } from "./LeadAIInsightsPanel";
 import { LeadQualificationPanel } from "./LeadQualificationPanel";
+import { LeadQualificationOverview } from "./LeadQualificationOverview";
 import { VoiceNoteRecorder } from "./VoiceNoteRecorder";
 import { LeadTimeline } from "@/components/LeadTimeline";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -899,6 +900,8 @@ export function LeadDetailsDialog({
                   </div>
                 </CardContent>
               </Card>
+
+              <LeadQualificationOverview lead={lead} />
 
               <ContactAlertRequestsPanel
                 entity={{
