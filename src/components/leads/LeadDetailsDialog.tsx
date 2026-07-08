@@ -18,10 +18,6 @@ import {
   Phone,
   MapPin,
   Home,
-  Euro,
-  Bed,
-  Bath,
-  Maximize,
   Calendar,
   TrendingUp,
   MessageSquare,
@@ -912,109 +908,7 @@ export function LeadDetailsDialog({
               />
 
               {(lead.lead_type === "buyer" || lead.lead_type === "both") && (
-                <>
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
-                        <Home className="h-5 w-5" />
-                        Preferências (Comprador)
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="flex items-center gap-2">
-                        <MapPin className="h-4 w-4 text-gray-400" />
-                        <div>
-                          <p className="text-sm text-gray-500">Localização</p>
-                          <p className="font-medium">{lead.location_preference || "-"}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Home className="h-4 w-4 text-gray-400" />
-                        <div>
-                          <p className="text-sm text-gray-500">Tipo de Imóvel</p>
-                          <p className="font-medium">{lead.property_type || "-"}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Euro className="h-4 w-4 text-gray-400" />
-                        <div>
-                          <p className="text-sm text-gray-500">Orçamento</p>
-                          <p className="font-medium">
-                            {formatCurrency(lead.budget_min)} - {formatCurrency(lead.budget_max)}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Bed className="h-4 w-4 text-gray-400" />
-                        <div>
-                          <p className="text-sm text-gray-500">Quartos</p>
-                          <p className="font-medium">{lead.bedrooms || "-"}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Bath className="h-4 w-4 text-gray-400" />
-                        <div>
-                          <p className="text-sm text-gray-500">Casas de Banho</p>
-                          <p className="font-medium">{lead.bathrooms || "-"}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Maximize className="h-4 w-4 text-gray-400" />
-                        <div>
-                          <p className="text-sm text-gray-500">Área Mínima</p>
-                          <p className="font-medium">
-                            {lead.min_area ? `${lead.min_area}m²` : "-"}
-                          </p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  <LeadIdealistaPanel lead={lead} />
-                </>
-              )}
-
-              {(lead.lead_type === "seller" || lead.lead_type === "both") && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Home className="h-5 w-5" />
-                      Informações do Imóvel (Vendedor)
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="flex items-center gap-2">
-                      <MapPin className="h-4 w-4 text-gray-400" />
-                      <div>
-                        <p className="text-sm text-gray-500">Localização</p>
-                        <p className="font-medium">{(lead as any).property_location || lead.location_preference || "-"}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Home className="h-4 w-4 text-gray-400" />
-                      <div>
-                        <p className="text-sm text-gray-500">Tipo de Imóvel</p>
-                        <p className="font-medium">{lead.property_type || "-"}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Euro className="h-4 w-4 text-gray-400" />
-                      <div>
-                        <p className="text-sm text-gray-500">Preço Desejado</p>
-                        <p className="font-medium">{formatCurrency(lead.desired_price)}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Maximize className="h-4 w-4 text-gray-400" />
-                      <div>
-                        <p className="text-sm text-gray-500">Área</p>
-                        <p className="font-medium">
-                          {lead.property_area ? `${lead.property_area}m²` : "-"}
-                        </p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
+                <LeadIdealistaPanel lead={lead} />
               )}
             </TabsContent>
 
