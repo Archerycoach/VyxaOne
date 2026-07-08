@@ -237,6 +237,11 @@ export function LeadCard({
             {lead.email && (
               <p className="text-xs text-gray-600 truncate">{lead.email}</p>
             )}
+            {canAssignLeads && lead.assigned_user?.full_name && (
+              <p className="text-xs text-gray-500 truncate mt-0.5">
+                👤 {lead.assigned_user.full_name}
+              </p>
+            )}
           </div>
           <div className="flex gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
             <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
@@ -245,8 +250,8 @@ export function LeadCard({
                   <MoreVertical className="h-4 w-4" />
                 </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent 
-                align="end" 
+              <DropdownMenuContent
+                align="end"
                 side="bottom"
                 sideOffset={5}
                 collisionPadding={20}
@@ -527,6 +532,11 @@ export function LeadCard({
           )}
           {lead.email && (
             <p className="text-sm text-gray-600">{lead.email}</p>
+          )}
+          {canAssignLeads && lead.assigned_user?.full_name && (
+            <p className="text-xs text-gray-500 mt-0.5">
+              👤 {lead.assigned_user.full_name}
+            </p>
           )}
         </div>
         <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
