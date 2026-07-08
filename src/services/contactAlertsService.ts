@@ -104,8 +104,8 @@ async function getLeadName(leadId: string): Promise<string> {
 
 async function getEntityDetails(contactId?: string | null, leadId?: string | null) {
   if (leadId) {
-    const { data } = await supabase.from("leads").select("name, email, phone").eq("id", leadId).single();
-    return data || { name: "Cliente", email: null, phone: null };
+    const { data } = await (supabase.from("leads").select("name, email, phone, do_not_contact").eq("id", leadId).single() as any);
+    return data || { name: "Cliente", email: null, phone: null, do_not_contact: false };
   }
   if (contactId) {
     const { data } = await supabase.from("contacts").select("name, email, phone").eq("id", contactId).single();
@@ -191,10 +191,10 @@ async function maybeCreateAgendaTask(
 
 async function maybeSendMatchEmailClient(
   request: ContactAlertRequest,
-  entity: { name: string; email: string | null; phone: string | null },
+  entity: { name: string; email: string | null; phone: string | null; do_not_contact?: boolean },
   opportunityTitle: string
 ) {
-  if (!request.auto_send_email || !entity.email) return;
+  if (!request.auto_send_email || !entity.email || entity.do_not_contact) return;
 
   try {
     const { data: { session } } = await supabase.auth.getSession();

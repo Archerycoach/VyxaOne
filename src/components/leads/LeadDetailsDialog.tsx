@@ -56,6 +56,9 @@ import { useToast } from "@/hooks/use-toast";
 import { LeadAIInsightsPanel } from "./LeadAIInsightsPanel";
 import { LeadQualificationPanel } from "./LeadQualificationPanel";
 import { LeadQualificationOverview } from "./LeadQualificationOverview";
+import { getWhatsAppConsentStatus, type WhatsAppConsentStatus } from "@/services/consentService";
+import { Switch } from "@/components/ui/switch";
+import { ShieldOff } from "lucide-react";
 import { VoiceNoteRecorder } from "./VoiceNoteRecorder";
 import { LeadTimeline } from "@/components/LeadTimeline";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -115,6 +118,8 @@ export function LeadDetailsDialog({
   const [isUpdatingTemperature, setIsUpdatingTemperature] = useState(false);
   const [sendCopyToSelf, setSendCopyToSelf] = useState(false);
   const [isRunningAutomations, setIsRunningAutomations] = useState(false);
+  const [whatsappConsentStatus, setWhatsappConsentStatus] = useState<WhatsAppConsentStatus>("none");
+  const [isUpdatingDoNotContact, setIsUpdatingDoNotContact] = useState(false);
   
   // WhatsApp State
   const [waMessage, setWaMessage] = useState("");
@@ -178,6 +183,10 @@ export function LeadDetailsDialog({
         setNotes(notesData);
         setEvents(eventsData);
         setProperties(propertiesData);
+
+        getWhatsAppConsentStatus(leadId)
+          .then(setWhatsappConsentStatus)
+          .catch((err) => console.error("[LeadDetailsDialog] Erro ao obter estado de consentimento WhatsApp:", err));
         
         // Map database tasks to frontend Task type
         const mappedTasks = tasksData.map((t: any) => ({
@@ -533,6 +542,26 @@ export function LeadDetailsDialog({
     } catch (e: any) {
       toast({ title: "Erro ao guardar qualificação", description: e.message, variant: "destructive" });
       throw e;
+    }
+  };
+
+  const handleToggleDoNotContact = async (value: boolean) => {
+    if (!leadId) return;
+    setIsUpdatingDoNotContact(true);
+    try {
+      await updateLead(leadId, { do_not_contact: value } as any);
+      toast({
+        title: value ? "🚫 Lead marcada como \"não contactar\"" : "✅ Lead voltou a poder ser contactada",
+        description: value
+          ? "Deixa de receber emails automáticos de alertas de procura e mensagens de WhatsApp."
+          : undefined,
+      });
+      const updatedLead = await getLeadById(leadId);
+      setLead(updatedLead);
+    } catch (e: any) {
+      toast({ title: "Erro ao atualizar preferência de contacto", description: e.message, variant: "destructive" });
+    } finally {
+      setIsUpdatingDoNotContact(false);
     }
   };
 
@@ -907,6 +936,44 @@ export function LeadDetailsDialog({
                       )}
                     </div>
                   </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="p-4 space-y-4">
+                  <div className="flex items-center justify-between flex-wrap gap-3">
+                    <div className="flex items-center gap-2">
+                      <MessageCircle className="h-4 w-4 text-gray-400" />
+                      <div>
+                        <p className="text-sm text-gray-500">Consentimento WhatsApp</p>
+                        {whatsappConsentStatus === "granted" ? (
+                          <Badge className="bg-green-100 text-green-700 hover:bg-green-100">Concedido</Badge>
+                        ) : whatsappConsentStatus === "revoked" ? (
+                          <Badge className="bg-red-100 text-red-700 hover:bg-red-100">Revogado</Badge>
+                        ) : (
+                          <Badge variant="outline" className="bg-gray-50 text-gray-600">Sem resposta</Badge>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <ShieldOff className="h-4 w-4 text-gray-400" />
+                      <Label htmlFor="do-not-contact" className="text-sm text-gray-600 cursor-pointer">
+                        Não contactar esta lead
+                      </Label>
+                      <Switch
+                        id="do-not-contact"
+                        checked={!!(lead as any).do_not_contact}
+                        onCheckedChange={handleToggleDoNotContact}
+                        disabled={isUpdatingDoNotContact}
+                      />
+                    </div>
+                  </div>
+                  {(lead as any).do_not_contact && (
+                    <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2">
+                      Esta lead não vai receber emails automáticos de Alertas de Procura, nem mensagens de WhatsApp (em massa ou individuais), enquanto esta marcação estiver ativa.
+                    </p>
+                  )}
                 </CardContent>
               </Card>
 

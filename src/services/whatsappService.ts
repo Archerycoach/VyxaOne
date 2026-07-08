@@ -1,5 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
-import { getWhatsAppConsentStatus, isWithin24hWindow } from "./consentService";
+import { getWhatsAppConsentStatus, isWithin24hWindow, isDoNotContact } from "./consentService";
 
 export interface WhatsAppSettings {
   phone_number?: string;
@@ -106,6 +106,10 @@ export async function sendWhatsAppMessage(
   source: string = "unknown_automation"
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
   try {
+    if (leadId && await isDoNotContact(leadId, supabaseClient)) {
+      return { success: false, error: "Esta lead está marcada como \"não quer ser contactada\"." };
+    }
+
     if (leadId && !skipConsentCheck) {
       const consentStatus = await getWhatsAppConsentStatus(leadId, supabaseClient);
       if (consentStatus !== "granted") {
@@ -225,6 +229,10 @@ export async function sendWhatsAppTemplate(
   source: string = "unknown_automation"
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
   try {
+    if (leadId && await isDoNotContact(leadId, supabaseClient)) {
+      return { success: false, error: "Esta lead está marcada como \"não quer ser contactada\"." };
+    }
+
     if (leadId && !skipConsentCheck) {
       const consentStatus = await getWhatsAppConsentStatus(leadId, supabaseClient);
       if (consentStatus !== "granted") {

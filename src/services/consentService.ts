@@ -131,6 +131,22 @@ export async function recordEmailOptOut(
   }
 }
 
+/**
+ * Marcação manual do consultor: "esta lead não quer ser contactada". Ao
+ * contrário do consentimento de WhatsApp (que só bloqueia envios em massa),
+ * isto bloqueia sempre — inclusive envios manuais individuais — porque é uma
+ * decisão explícita e deliberada, não a simples ausência de um opt-in.
+ */
+export async function isDoNotContact(leadId: string, supabaseClient = supabase): Promise<boolean> {
+  const { data } = await (supabaseClient
+    .from("leads")
+    .select("do_not_contact")
+    .eq("id", leadId)
+    .maybeSingle() as any);
+
+  return !!data?.do_not_contact;
+}
+
 export async function isWithin24hWindow(leadId: string, supabaseClient = supabase): Promise<boolean> {
   const { data, error } = await supabaseClient
     .from("interactions")
