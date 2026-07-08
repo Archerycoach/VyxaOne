@@ -45,6 +45,14 @@ export interface MetaFormConfig {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  /** "fixed" atribui sempre a auto_assign_to; "team_round_robin" distribui pela equipa, por quem tiver menos leads ativas. */
+  auto_assign_mode: "fixed" | "team_round_robin";
+  auto_assign_to: string | null;
+  /** Só relevante quando auto_assign_mode = "team_round_robin": se o dono (broker/team_lead) entra também no conjunto de candidatos à distribuição. */
+  auto_assign_include_owner: boolean;
+  auto_reply_enabled: boolean;
+  auto_reply_subject: string | null;
+  auto_reply_body: string | null;
 }
 
 export interface MetaFieldMapping {
@@ -186,7 +194,13 @@ export const getFormConfigs = async (integrationId?: string): Promise<MetaFormCo
     associated_development_name: d.custom_settings?.associated_development_name || null,
     is_active: d.is_active,
     created_at: d.created_at,
-    updated_at: d.updated_at
+    updated_at: d.updated_at,
+    auto_assign_mode: d.auto_assign_mode || "fixed",
+    auto_assign_to: d.auto_assign_to || null,
+    auto_assign_include_owner: d.auto_assign_include_owner || false,
+    auto_reply_enabled: d.auto_reply_enabled || false,
+    auto_reply_subject: d.auto_reply_subject || null,
+    auto_reply_body: d.auto_reply_body || null,
   })).filter((c: MetaFormConfig) => !integrationId || c.integration_id === integrationId);
 };
 
@@ -206,6 +220,12 @@ export const createOrUpdateFormConfig = async (config: Partial<MetaFormConfig>) 
     form_name: config.form_name,
     is_active: config.is_active,
     page_id: page_id,
+    auto_assign_mode: config.auto_assign_mode || "fixed",
+    auto_assign_to: config.auto_assign_mode === "team_round_robin" ? null : (config.auto_assign_to || null),
+    auto_assign_include_owner: config.auto_assign_mode === "team_round_robin" ? !!config.auto_assign_include_owner : false,
+    auto_reply_enabled: config.auto_reply_enabled || false,
+    auto_reply_subject: config.auto_reply_subject || null,
+    auto_reply_body: config.auto_reply_body || null,
     custom_settings: {
       integration_id: config.integration_id,
       auto_import: config.auto_import,

@@ -7,6 +7,7 @@ import { recordConsent } from "@/services/consentService";
 import { sendWhatsAppTemplate } from "@/services/whatsappService";
 import { calculateLeadScore } from "@/services/leadScoringService";
 import { runNewLeadPipeline } from "@/lib/server/leadPipeline";
+import { sendClientEmail } from "@/lib/server/sendClientEmail";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -77,6 +78,88 @@ function detectMetaWhatsAppConsent(
      whatsappConsentValue.toLowerCase() === 'aceito');
 
   return { granted, fieldName: whatsappConsentField || null, rawValue: whatsappConsentValue };
+}
+
+/**
+ * Distribuição automática e equitativa de leads pela equipa: em vez de
+ * guardar um ponteiro de rotação (que desalinha facilmente se uma lead for
+ * apagada ou reatribuída manualmente), atribui sempre a quem tiver menos
+ * leads ativas neste momento — fica equitativo por natureza e autocorrige-se
+ * sozinho. O universo de "equipa" replica a mesma regra de visibilidade já
+ * usada para atribuição manual (profileService.getUsersForAssignment): um
+ * broker/admin distribui por todos os team_leads e consultores; um team_lead
+ * só pelos seus próprios consultores.
+ */
+async function getLeastLoadedTeamMember(
+  supabaseClient: any,
+  ownerId: string,
+  includeOwner: boolean = false
+): Promise<string> {
+  const { data: ownerProfile } = await supabaseClient
+    .from("profiles")
+    .select("role")
+    .eq("id", ownerId)
+    .single();
+
+  let candidateIds: string[] = [ownerId];
+
+  if (ownerProfile?.role === "admin" || ownerProfile?.role === "broker") {
+    const { data: members } = await supabaseClient
+      .from("profiles")
+      .select("id")
+      .in("role", ["consultant", "team_lead"])
+      .eq("is_active", true);
+    if (members && members.length > 0) {
+      candidateIds = members.map((m: { id: string }) => m.id);
+    }
+  } else if (ownerProfile?.role === "team_lead") {
+    const { data: members } = await supabaseClient
+      .from("profiles")
+      .select("id")
+      .eq("team_lead_id", ownerId)
+      .eq("role", "consultant")
+      .eq("is_active", true);
+    if (members && members.length > 0) {
+      candidateIds = members.map((m: { id: string }) => m.id);
+    }
+  }
+
+  // Por omissão, o broker/team_lead dono da campanha não entra na
+  // distribuição (só a equipa) — mas pode optar por se incluir também.
+  if (includeOwner && !candidateIds.includes(ownerId)) {
+    candidateIds = [...candidateIds, ownerId];
+  } else if (!includeOwner) {
+    candidateIds = candidateIds.filter((id) => id !== ownerId || candidateIds.length === 1);
+  }
+
+  if (candidateIds.length === 1) {
+    return candidateIds[0];
+  }
+
+  const { data: activeLeads } = await supabaseClient
+    .from("leads")
+    .select("assigned_to")
+    .in("assigned_to", candidateIds)
+    .is("archived_at", null)
+    .not("status", "in", '("won","lost")');
+
+  const loadByCandidate = new Map<string, number>(candidateIds.map((id) => [id, 0]));
+  for (const lead of (activeLeads || []) as { assigned_to: string | null }[]) {
+    if (lead.assigned_to && loadByCandidate.has(lead.assigned_to)) {
+      loadByCandidate.set(lead.assigned_to, (loadByCandidate.get(lead.assigned_to) || 0) + 1);
+    }
+  }
+
+  let leastLoadedId = candidateIds[0];
+  let leastLoad = Infinity;
+  for (const [id, load] of loadByCandidate.entries()) {
+    if (load < leastLoad) {
+      leastLoad = load;
+      leastLoadedId = id;
+    }
+  }
+
+  return leastLoadedId;
 }
 
 export default async function handler(
@@ -545,10 +628,16 @@ export default async function handler(
              safeStatus = "new"; // fallback to 'new' if it's a mock ID
           }
 
+          // Distribuição pela equipa (quando ativada para este formulário) ou
+          // atribuição fixa, tal como configurado em Definições > Meta.
+          const assignedTo = (formConfig as any)?.auto_assign_mode === "team_round_robin"
+            ? await getLeastLoadedTeamMember(supabase, integration.user_id, !!(formConfig as any)?.auto_assign_include_owner)
+            : (formConfig?.auto_assign_to || integration.user_id);
+
           const leadRecord = {
             ...mappedData,
             user_id: integration.user_id,
-            assigned_to: formConfig?.auto_assign_to || integration.user_id, // Ensure lead is assigned to the user
+            assigned_to: assignedTo,
             email: finalEmail || null,
             phone: finalPhone || null,
             source: `Meta Lead Ads - ${integration.page_name || 'Facebook'}`, // Set specific origin in the correct column
@@ -579,6 +668,48 @@ export default async function handler(
           }
 
           console.log("✅ Lead created:", newLead.id);
+
+          // Email de resposta automática configurável por formulário/campanha
+          // (independente do workflow genérico "meta_lead_created", que é
+          // por utilizador, não por formulário).
+          if ((formConfig as any)?.auto_reply_enabled && (formConfig as any)?.auto_reply_subject && finalEmail) {
+            try {
+              const replaceVars = (str: string) => str
+                .replace(/\{nome\}/g, newLead.name || "")
+                .replace(/\{email\}/g, finalEmail)
+                .replace(/\{telefone\}/g, finalPhone || "");
+
+              const subject = replaceVars((formConfig as any).auto_reply_subject);
+              const html = replaceVars((formConfig as any).auto_reply_body || "").replace(/\n/g, "<br>");
+
+              const emailResult = await sendClientEmail({
+                supabaseAdmin: supabase,
+                userId: integration.user_id,
+                leadId: newLead.id,
+                leadName: newLead.name,
+                source: "meta_auto_reply",
+                to: finalEmail,
+                subject,
+                html,
+              });
+
+              if (emailResult.success) {
+                await logEmailInteractionServer(supabase, {
+                  leadId: newLead.id,
+                  userId: integration.user_id,
+                  to: finalEmail,
+                  subject,
+                  body: html,
+                  outcome: `Resposta automática enviada (formulário: ${formConfig?.form_name || formId})`,
+                  updateLastContact: false,
+                });
+              } else {
+                console.error("❌ Falha ao enviar resposta automática do formulário:", emailResult.error);
+              }
+            } catch (autoReplyError) {
+              console.error("❌ Erro ao enviar resposta automática do formulário:", autoReplyError);
+            }
+          }
 
           // Apanha, em segundo plano, qualquer dado de qualificação que não
           // bateu com nenhuma regra fixa de mapeamento (fica só no campo

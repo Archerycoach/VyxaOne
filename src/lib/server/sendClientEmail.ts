@@ -27,7 +27,8 @@ export type AutomatedEmailSource =
   | "lead_reactivation"
   | "contact_alerts"
   | "property_matcher"
-  | "workflow_automation";
+  | "workflow_automation"
+  | "meta_auto_reply";
 
 export interface EmailAttachment {
   filename?: string;

@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -39,6 +40,7 @@ import {
 import { getAllProperties } from "@/services/propertiesService";
 import { getDevelopments } from "@/services/developmentsService";
 import { getBuyerStages, getSellerStages, type PipelineStage } from "@/services/pipelineSettingsService";
+import { getUsersForAssignment } from "@/services/profileService";
 
 interface MetaForm {
   id: string;
@@ -88,6 +90,7 @@ export function MetaFormsManagement({ integrationId, integrationName }: MetaForm
   const [savingDailySync, setSavingDailySync] = useState(false);
   const [checkingStatus, setCheckingStatus] = useState(false);
   const [webhookStatus, setWebhookStatus] = useState<any>(null);
+  const [teamMembers, setTeamMembers] = useState<Array<{ id: string; full_name: string | null; email: string | null }>>([]);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -95,6 +98,9 @@ export function MetaFormsManagement({ integrationId, integrationName }: MetaForm
     loadPipelineStages();
     loadAssociationOptions();
     loadIntegrationSettings();
+    getUsersForAssignment()
+      .then((users) => setTeamMembers(users.map((u: any) => ({ id: u.id, full_name: u.full_name, email: u.email }))))
+      .catch((err) => console.error("Erro ao carregar membros da equipa:", err));
   }, [integrationId]);
 
   const loadIntegrationSettings = async () => {
@@ -874,8 +880,9 @@ export function MetaFormsManagement({ integrationId, integrationName }: MetaForm
           </DialogHeader>
 
           <Tabs defaultValue="general" className="w-full">
-            <TabsList className="grid w-full grid-cols-3">
+            <TabsList className="grid w-full grid-cols-4">
               <TabsTrigger value="general">Geral</TabsTrigger>
+              <TabsTrigger value="distribution">Distribuição</TabsTrigger>
               <TabsTrigger value="mapping">Mapeamento</TabsTrigger>
               <TabsTrigger value="history">Histórico</TabsTrigger>
             </TabsList>
@@ -1064,6 +1071,119 @@ export function MetaFormsManagement({ integrationId, integrationName }: MetaForm
                     </div>
                   )}
                 </div>
+              </div>
+            </TabsContent>
+
+            {/* Distribution & Auto-Reply */}
+            <TabsContent value="distribution" className="space-y-6">
+              <div className="space-y-3">
+                <h4 className="font-medium text-sm">Atribuição de Leads</h4>
+                <Select
+                  value={formConfig.auto_assign_mode || "fixed"}
+                  onValueChange={(value: "fixed" | "team_round_robin") =>
+                    setFormConfig({ ...formConfig, auto_assign_mode: value })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="fixed">Atribuir sempre à mesma pessoa</SelectItem>
+                    <SelectItem value="team_round_robin">Distribuir automaticamente pela equipa</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                {formConfig.auto_assign_mode === "team_round_robin" ? (
+                  <>
+                    <p className="text-xs text-gray-500 bg-gray-50 border rounded-lg p-2.5">
+                      Cada lead nova deste formulário é atribuída a quem, na sua equipa, tiver neste momento menos leads ativas — fica equitativo automaticamente, sem precisar de escolher ninguém.
+                    </p>
+                    <div className="flex items-center space-x-2 pt-1">
+                      <Switch
+                        id="auto_assign_include_owner"
+                        checked={formConfig.auto_assign_include_owner || false}
+                        onCheckedChange={(checked) =>
+                          setFormConfig({ ...formConfig, auto_assign_include_owner: checked })
+                        }
+                      />
+                      <Label htmlFor="auto_assign_include_owner">Incluir-me também na distribuição</Label>
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      {formConfig.auto_assign_include_owner
+                        ? "Também entras no conjunto de candidatos — podes receber leads deste formulário tal como o resto da equipa."
+                        : "Só a equipa recebe leads deste formulário; tu não entras na distribuição."}
+                    </p>
+                  </>
+                ) : (
+                  <div className="space-y-2">
+                    <Label htmlFor="auto_assign_to">Atribuir a</Label>
+                    <Select
+                      value={formConfig.auto_assign_to || "owner"}
+                      onValueChange={(value) =>
+                        setFormConfig({ ...formConfig, auto_assign_to: value === "owner" ? null : value })
+                      }
+                    >
+                      <SelectTrigger id="auto_assign_to">
+                        <SelectValue placeholder="Selecione um consultor" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="owner">Eu (dono da integração)</SelectItem>
+                        {teamMembers.map((member) => (
+                          <SelectItem key={member.id} value={member.id}>
+                            {member.full_name || member.email || "Sem nome"}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-3 pt-4 border-t">
+                <div className="flex items-center space-x-2">
+                  <Switch
+                    id="auto_reply_enabled"
+                    checked={formConfig.auto_reply_enabled || false}
+                    onCheckedChange={(checked) =>
+                      setFormConfig({ ...formConfig, auto_reply_enabled: checked })
+                    }
+                  />
+                  <Label htmlFor="auto_reply_enabled">Enviar email de resposta automática para este formulário</Label>
+                </div>
+
+                {formConfig.auto_reply_enabled && (
+                  <div className="space-y-3">
+                    <div className="space-y-2">
+                      <Label htmlFor="auto_reply_subject">Assunto</Label>
+                      <Input
+                        id="auto_reply_subject"
+                        value={formConfig.auto_reply_subject || ""}
+                        onChange={(e) =>
+                          setFormConfig({ ...formConfig, auto_reply_subject: e.target.value })
+                        }
+                        placeholder="Ex: Obrigado pelo seu interesse, {nome}!"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="auto_reply_body">Corpo do Email</Label>
+                      <Textarea
+                        id="auto_reply_body"
+                        value={formConfig.auto_reply_body || ""}
+                        onChange={(e) =>
+                          setFormConfig({ ...formConfig, auto_reply_body: e.target.value })
+                        }
+                        placeholder="Olá {nome}, obrigado por preencher o nosso formulário..."
+                        rows={6}
+                      />
+                      <p className="text-xs text-gray-500">
+                        Variáveis disponíveis: <code className="bg-gray-100 px-1 rounded">{"{nome}"}</code>, <code className="bg-gray-100 px-1 rounded">{"{email}"}</code>, <code className="bg-gray-100 px-1 rounded">{"{telefone}"}</code>
+                      </p>
+                    </div>
+                  </div>
+                )}
+                <p className="text-xs text-gray-500">
+                  Este email é próprio deste formulário/campanha — independente das automações gerais em Definições &gt; Automação.
+                </p>
               </div>
             </TabsContent>
 
