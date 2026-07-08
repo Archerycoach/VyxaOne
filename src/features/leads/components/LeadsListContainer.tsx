@@ -32,6 +32,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { getLeadRecentInteractionState } from "@/lib/leadInteractionHighlight";
 import { getLeadQualification } from "@/lib/leadQualification";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ScopeSelector } from "@/components/ScopeSelector";
 
 // Default columns configuration for fallback
 const DEFAULT_COLUMNS: LeadColumnConfig[] = [
@@ -117,7 +118,7 @@ export function LeadsListContainer({
 
   // Fetch leads data with archived support
   const { leads, isLoading, error, refetch } = useLeads(showArchived);
-  
+
   // Stabilize refetch callback
   const stableRefetch = async () => {
     await refetch();
@@ -134,6 +135,16 @@ export function LeadsListContainer({
     }, 500);
   };
 
+  // Âmbito (consultor/equipa) — "all" mostra tudo o que já é visível para o
+  // utilizador atual; um id específico mostra só as leads atribuídas a essa
+  // pessoa. Aplicado antes da pesquisa/tipo, para os cartões de estatísticas
+  // também reagirem ao âmbito escolhido.
+  const [scopeFilter, setScopeFilter] = useState<string>("all");
+  const scopedLeads = useMemo(() => {
+    if (scopeFilter === "all") return leads;
+    return leads.filter((lead) => lead.assigned_to === scopeFilter);
+  }, [leads, scopeFilter]);
+
   // Filter logic
   const {
     searchTerm,
@@ -141,7 +152,7 @@ export function LeadsListContainer({
     filterType,
     setFilterType,
     filteredLeads,
-  } = useLeadFilters(leads);
+  } = useLeadFilters(scopedLeads);
 
   const sortedLeads = useMemo(() => {
     return [...filteredLeads].sort((a, b) => {
@@ -587,19 +598,19 @@ export function LeadsListContainer({
   // Calculate statistics
   const stats = React.useMemo(() => {
     return {
-      total: leads.length,
-      buyers: leads.filter(l => l.lead_type === 'buyer' || l.lead_type === 'both').length,
-      sellers: leads.filter(l => l.lead_type === 'seller' || l.lead_type === 'both').length,
+      total: scopedLeads.length,
+      buyers: scopedLeads.filter(l => l.lead_type === 'buyer' || l.lead_type === 'both').length,
+      sellers: scopedLeads.filter(l => l.lead_type === 'seller' || l.lead_type === 'both').length,
       pipeline: {
-        new: leads.filter(l => l.status === 'new').length,
-        contacted: leads.filter(l => l.status === 'contacted').length,
-        qualified: leads.filter(l => l.status === 'qualified').length,
-        proposal: leads.filter(l => l.status === 'proposal').length,
-        negotiation: leads.filter(l => l.status === 'negotiation').length,
-        won: leads.filter(l => l.status === 'won').length,
+        new: scopedLeads.filter(l => l.status === 'new').length,
+        contacted: scopedLeads.filter(l => l.status === 'contacted').length,
+        qualified: scopedLeads.filter(l => l.status === 'qualified').length,
+        proposal: scopedLeads.filter(l => l.status === 'proposal').length,
+        negotiation: scopedLeads.filter(l => l.status === 'negotiation').length,
+        won: scopedLeads.filter(l => l.status === 'won').length,
       }
     };
-  }, [leads]);
+  }, [scopedLeads]);
 
   // Loading and error states
   if (isLoading) {
@@ -664,6 +675,12 @@ export function LeadsListContainer({
         </div>
       )}
 
+      {canAssignLeads && (
+        <div className="flex items-center">
+          <ScopeSelector value={scopeFilter} onChange={setScopeFilter} label="Consultor / Equipa" />
+        </div>
+      )}
+
       <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
         <LeadFilters
           searchTerm={searchTerm}
@@ -673,7 +690,7 @@ export function LeadsListContainer({
           showArchived={showArchived}
           onToggleArchived={() => setShowArchived(!showArchived)}
         />
-        
+
         <div className="flex gap-4 items-center flex-wrap sm:flex-nowrap">
           <div className="flex items-center gap-2">
             <Select value={sortField} onValueChange={setSortField}>
