@@ -24,7 +24,7 @@ export class AuthError extends Error {
 /**
  * Tipos de roles disponíveis no sistema
  */
-export type UserRole = "admin" | "team_lead" | "consultant";
+export type UserRole = "admin" | "broker" | "team_lead" | "consultant";
 
 /**
  * Interface para dados do perfil do utilizador
@@ -214,9 +214,10 @@ export const hasRole = async (requiredRole: UserRole): Promise<boolean> => {
     const role = await getCurrentUserRole();
     if (!role) return false;
 
-    // Map role hierarchy: admin > team_lead > agent
+    // Map role hierarchy: admin/broker (topo, equivalentes) > team_lead > consultant
     const roleHierarchy: Record<UserRole, number> = {
       admin: 3,
+      broker: 3,
       team_lead: 2,
       consultant: 1,
     };
@@ -272,9 +273,9 @@ export const canAccessResource = async (
     // Próprio utilizador sempre pode aceder
     if (user.id === resourceUserId) return true;
 
-    // Admin pode aceder a tudo
+    // Admin/broker podem aceder a tudo
     const role = await getCurrentUserRole();
-    if (role === "admin") return true;
+    if (role === "admin" || role === "broker") return true;
 
     // Team lead pode aceder a recursos da sua equipa
     if (role === "team_lead") {

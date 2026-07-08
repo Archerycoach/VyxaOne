@@ -35,29 +35,40 @@ export default async function handler(
       }
     });
 
-    // Get userId from request body
-    const { userId, email, password, fullName, role, isActive, teamLeadId } = req.body;
-
-    if (!userId) {
-      console.error("[API] Missing userId in request body");
-      return res.status(401).json({ 
-        error: "Não autorizado: ID de utilizador em falta",
-        code: "NO_USER_ID"
+    // Verify the caller's identity from the session token — never trust a
+    // client-supplied userId as proof of who is making the request.
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith("Bearer ")) {
+      console.error("[API] Missing Authorization header");
+      return res.status(401).json({
+        error: "Não autorizado: sessão em falta",
+        code: "NO_TOKEN"
       });
     }
 
-    console.log("[API] Validating user:", userId);
+    const token = authHeader.substring(7);
+    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
 
-    // Verify user exists and is admin
+    if (authError || !user) {
+      console.error("[API] Invalid token:", authError?.message);
+      return res.status(401).json({
+        error: "Não autorizado: sessão inválida",
+        code: "INVALID_TOKEN"
+      });
+    }
+
+    console.log("[API] Validating user:", user.id);
+
+    // Verify caller is admin/broker
     const { data: profile, error: profileError } = await supabaseAdmin
       .from("profiles")
       .select("id, role")
-      .eq("id", userId)
+      .eq("id", user.id)
       .single();
 
     if (profileError) {
       console.error("[API] Profile fetch error:", profileError.message);
-      return res.status(500).json({ 
+      return res.status(500).json({
         error: "Erro ao verificar permissões",
         code: "PROFILE_ERROR",
         details: profileError.message
@@ -65,20 +76,23 @@ export default async function handler(
     }
 
     if (!profile) {
-      console.error("[API] User not found:", userId);
-      return res.status(401).json({ 
+      console.error("[API] User not found:", user.id);
+      return res.status(401).json({
         error: "Não autorizado: Utilizador não encontrado",
         code: "USER_NOT_FOUND"
       });
     }
 
-    if (profile.role !== "admin") {
-      console.error("[API] User is not admin. Role:", profile.role);
-      return res.status(403).json({ 
+    if (profile.role !== "admin" && profile.role !== "broker") {
+      console.error("[API] User is not admin/broker. Role:", profile.role);
+      return res.status(403).json({
         error: "Não autorizado: Requer privilégios de administrador",
         code: "INSUFFICIENT_PERMISSIONS"
       });
     }
+
+    // Fields for the user being created (distinct from the caller's own body-supplied identity above)
+    const { email, password, fullName, role, isActive, teamLeadId } = req.body;
 
     console.log("[API] Admin verified. Creating user...");
 

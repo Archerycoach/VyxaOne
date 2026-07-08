@@ -1,5 +1,7 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import { createClient } from "@supabase/supabase-js";
+import { buffer } from "micro";
+import crypto from "crypto";
 import { sendWhatsAppMessage } from "@/services/whatsappService";
 import { getGoogleCalendarFreeBusy, syncEventToGoogle } from "@/lib/googleCalendar";
 import { recordOptOut } from "@/services/consentService";
@@ -10,6 +12,35 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 
 const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+
+// Precisamos do corpo em bruto (bytes exatos) para validar a assinatura
+// HMAC da Meta — o parser automático do Next.js já teria alterado/reserializado o JSON.
+export const config = {
+  api: {
+    bodyParser: false,
+  },
+};
+
+/**
+ * Verifica a assinatura "x-hub-signature-256" (HMAC-SHA256 do corpo em
+ * bruto, usando o App Secret). MODO OBSERVAÇÃO: só regista o resultado, não
+ * bloqueia nenhum pedido. Retorna null quando não é possível verificar (sem
+ * app_secret configurado no admin ou sem header).
+ */
+function verifyMetaSignature(rawBody: Buffer, signatureHeader: string | undefined, appSecret: string | undefined): boolean | null {
+  if (!appSecret || !signatureHeader) return null;
+
+  const expected = "sha256=" + crypto.createHmac("sha256", appSecret).update(rawBody).digest("hex");
+
+  try {
+    const expectedBuf = Buffer.from(expected);
+    const receivedBuf = Buffer.from(signatureHeader);
+    if (expectedBuf.length !== receivedBuf.length) return false;
+    return crypto.timingSafeEqual(expectedBuf, receivedBuf);
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Find next available 30-minute slot based on Google Calendar free/busy
@@ -142,7 +173,45 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // Handle incoming messages
   if (req.method === "POST") {
     try {
-      const body = req.body;
+      const rawBody = await buffer(req);
+
+      let body: any;
+      try {
+        body = JSON.parse(rawBody.toString("utf8"));
+      } catch (parseError) {
+        console.error("[WhatsApp Webhook] Failed to parse JSON body:", parseError);
+        return res.status(400).json({ error: "Invalid JSON" });
+      }
+
+      // Verificação de assinatura em MODO OBSERVAÇÃO: só regista o
+      // resultado, não bloqueia nenhum pedido. Só é possível verificar se o
+      // "App Secret" tiver sido configurado em /admin/integrations.
+      try {
+        const { data: waSettings } = await supabaseAdmin
+          .from("integration_settings")
+          .select("settings")
+          .eq("integration_name", "whatsapp_api")
+          .maybeSingle();
+
+        const appSecret = waSettings?.settings ? (waSettings.settings as any).app_secret : undefined;
+        const signatureHeader = req.headers["x-hub-signature-256"] as string | undefined;
+        const signatureValid = verifyMetaSignature(rawBody, signatureHeader, appSecret);
+
+        if (signatureValid === false) {
+          console.error("[WhatsApp Webhook] ⚠️ SIGNATURE MISMATCH — payload pode não vir da Meta (modo observação: não bloqueado ainda)", {
+            hasHeader: !!signatureHeader,
+          });
+        } else if (signatureValid === true) {
+          console.log("[WhatsApp Webhook] ✅ Signature verified");
+        } else {
+          console.warn("[WhatsApp Webhook] Signature verification skipped (sem app_secret configurado ou sem header)", {
+            hasSecret: !!appSecret,
+            hasHeader: !!signatureHeader,
+          });
+        }
+      } catch (sigError) {
+        console.error("[WhatsApp Webhook] Error during signature check:", sigError);
+      }
 
       if (body.object === "whatsapp_business_account") {
         for (const entry of body.entry) {

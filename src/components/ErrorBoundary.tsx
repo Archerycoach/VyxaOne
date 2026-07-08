@@ -39,6 +39,11 @@ export class ErrorBoundary extends React.Component<Props, State> {
 
     if (!error) return this.props.children;
 
+    // Em produção não expomos mensagem/stack/componente ao utilizador final
+    // (pode revelar detalhes internos do servidor); o diagnóstico completo
+    // fica reservado a ambientes não-produção.
+    const isProduction = process.env.NODE_ENV === "production";
+
     return (
       <div
         style={{
@@ -53,56 +58,64 @@ export class ErrorBoundary extends React.Component<Props, State> {
         }}
       >
         <h1 style={{ fontSize: "18px", marginBottom: "12px", color: "#b91c1c" }}>
-          Erro na aplicação (diagnóstico)
+          {isProduction ? "Ocorreu um erro na aplicação" : "Erro na aplicação (diagnóstico)"}
         </h1>
 
-        <div style={{ marginBottom: "16px" }}>
-          <strong>Mensagem:</strong>
-          <pre
-            style={{
-              whiteSpace: "pre-wrap",
-              background: "#f3f4f6",
-              padding: "12px",
-              borderRadius: "6px",
-              marginTop: "6px",
-            }}
-          >
-            {error.name}: {error.message}
-          </pre>
-        </div>
+        {isProduction ? (
+          <p style={{ marginBottom: "16px" }}>
+            Pedimos desculpa pelo incómodo. Por favor recarregue a página; se o problema persistir, contacte o suporte.
+          </p>
+        ) : (
+          <>
+            <div style={{ marginBottom: "16px" }}>
+              <strong>Mensagem:</strong>
+              <pre
+                style={{
+                  whiteSpace: "pre-wrap",
+                  background: "#f3f4f6",
+                  padding: "12px",
+                  borderRadius: "6px",
+                  marginTop: "6px",
+                }}
+              >
+                {error.name}: {error.message}
+              </pre>
+            </div>
 
-        {error.stack && (
-          <div style={{ marginBottom: "16px" }}>
-            <strong>Stack:</strong>
-            <pre
-              style={{
-                whiteSpace: "pre-wrap",
-                background: "#f3f4f6",
-                padding: "12px",
-                borderRadius: "6px",
-                marginTop: "6px",
-              }}
-            >
-              {error.stack}
-            </pre>
-          </div>
-        )}
+            {error.stack && (
+              <div style={{ marginBottom: "16px" }}>
+                <strong>Stack:</strong>
+                <pre
+                  style={{
+                    whiteSpace: "pre-wrap",
+                    background: "#f3f4f6",
+                    padding: "12px",
+                    borderRadius: "6px",
+                    marginTop: "6px",
+                  }}
+                >
+                  {error.stack}
+                </pre>
+              </div>
+            )}
 
-        {componentStack && (
-          <div style={{ marginBottom: "16px" }}>
-            <strong>Componente:</strong>
-            <pre
-              style={{
-                whiteSpace: "pre-wrap",
-                background: "#f3f4f6",
-                padding: "12px",
-                borderRadius: "6px",
-                marginTop: "6px",
-              }}
-            >
-              {componentStack}
-            </pre>
-          </div>
+            {componentStack && (
+              <div style={{ marginBottom: "16px" }}>
+                <strong>Componente:</strong>
+                <pre
+                  style={{
+                    whiteSpace: "pre-wrap",
+                    background: "#f3f4f6",
+                    padding: "12px",
+                    borderRadius: "6px",
+                    marginTop: "6px",
+                  }}
+                >
+                  {componentStack}
+                </pre>
+              </div>
+            )}
+          </>
         )}
 
         <button

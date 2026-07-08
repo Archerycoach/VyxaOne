@@ -42,6 +42,7 @@ export default function Integrations() {
     verify_token: "",
     phone_number_id: "",
     template_name: "",
+    app_secret: "",
     enabled: false
   });
   const [isWhatsappConfigured, setIsWhatsappConfigured] = useState(false);
@@ -187,6 +188,7 @@ export default function Integrations() {
           verify_token: settings.verify_token || "",
           phone_number_id: settings.phone_number_id || "",
           template_name: settings.template_name || "",
+          app_secret: settings.app_secret || "",
           enabled: waData.is_active || false
         });
         setIsWhatsappConfigured(!!(settings.access_token && settings.phone_number_id));
@@ -316,7 +318,8 @@ export default function Integrations() {
             business_account_id: whatsapp.business_account_id.trim(),
             verify_token: whatsapp.verify_token.trim(),
             phone_number_id: whatsapp.phone_number_id.trim(),
-            template_name: whatsapp.template_name.trim()
+            template_name: whatsapp.template_name.trim(),
+            app_secret: whatsapp.app_secret.trim()
           },
           is_active: whatsapp.enabled
         })
@@ -618,6 +621,20 @@ export default function Integrations() {
                     <Input value={whatsapp.verify_token} onChange={(e) => setWhatsapp(prev => ({ ...prev, verify_token: e.target.value }))} />
                     <Button variant="outline" onClick={generateVerifyToken}>Gerar</Button>
                   </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>App Secret (opcional, recomendado)</Label>
+                  <Input
+                    type="password"
+                    placeholder="••••••••••••"
+                    value={whatsapp.app_secret}
+                    onChange={(e) => setWhatsapp(prev => ({ ...prev, app_secret: e.target.value }))}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    App Secret da app da Meta usada para o WhatsApp Business (Meta for Developers → Definições → Básico).
+                    Enquanto este campo estiver vazio, a assinatura dos webhooks recebidos não é verificada.
+                  </p>
                 </div>
 
                 <div className="space-y-2">

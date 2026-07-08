@@ -15,7 +15,7 @@ export default async function handler(
 
   // Validate CRON secret token
   const authHeader = req.headers.authorization;
-  const expectedToken = `Bearer ${process.env.CRON_SECRET_TOKEN}`;
+  const expectedToken = `Bearer ${process.env.CRON_SECRET}`;
 
   if (!authHeader || authHeader !== expectedToken) {
     return res.status(401).json({ error: "Unauthorized" });
