@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useRouter } from "next/router";
 import { LeadCard } from "./LeadCard";
 import { LeadFilters } from "./LeadFilters";
+import { RenderBoundary } from "@/components/RenderBoundary";
 import { LeadDialogs } from "./LeadDialogs";
 import { LeadNotesDialog } from "@/components/leads/LeadNotesDialog";
 import { LeadDetailsDialog } from "@/components/leads/LeadDetailsDialog";
@@ -745,6 +746,16 @@ export function LeadsListContainer({
       ) : viewMode === "grid" ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {sortedLeads.map((lead) => (
+            <RenderBoundary
+              key={lead.id}
+              fallback={(error) => (
+                <div className="p-4 border border-red-300 bg-red-50 rounded-lg text-sm text-red-700">
+                  <p className="font-semibold">Erro ao mostrar esta lead</p>
+                  <p className="mt-1 break-words">Lead: {lead.name || "(sem nome)"} — id {lead.id}</p>
+                  <p className="mt-1 break-words">{error.name}: {error.message}</p>
+                </div>
+              )}
+            >
             <LeadCard
               key={lead.id}
               lead={lead}
@@ -766,6 +777,7 @@ export function LeadsListContainer({
               onSMS={handleSMS}
               onWhatsApp={handleWhatsApp}
             />
+            </RenderBoundary>
           ))}
         </div>
       ) : (
@@ -795,8 +807,17 @@ export function LeadsListContainer({
                       ? "bg-white"
                       : "bg-gray-50";
                   return (
-                    <tr
+                    <RenderBoundary
                       key={lead.id}
+                      fallback={(error) => (
+                        <tr>
+                          <td colSpan={columnsConfig.length + 1} className="px-4 py-3 text-sm text-red-700 bg-red-50">
+                            Erro ao mostrar lead {lead.name || "(sem nome)"} (id {lead.id}): {error.message}
+                          </td>
+                        </tr>
+                      )}
+                    >
+                    <tr
                       className={`${bgClass} hover:bg-blue-50 transition-colors cursor-pointer`}
                       onClick={() => handleViewDetails(lead)}
                     >
@@ -955,6 +976,7 @@ export function LeadsListContainer({
                         </div>
                       </td>
                     </tr>
+                    </RenderBoundary>
                   );
                 })}
               </tbody>
