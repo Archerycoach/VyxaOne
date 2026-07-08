@@ -83,8 +83,8 @@ export default async function handler(
       });
     }
 
-    if (profile.role !== "admin" && profile.role !== "broker") {
-      console.error("[API] User is not admin/broker. Role:", profile.role);
+    if (profile.role !== "admin") {
+      console.error("[API] User is not admin. Role:", profile.role);
       return res.status(403).json({
         error: "Não autorizado: Requer privilégios de administrador",
         code: "INSUFFICIENT_PERMISSIONS"

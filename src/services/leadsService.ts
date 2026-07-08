@@ -97,9 +97,9 @@ export const getLeads = async (useCache = false) => {
       .is("archived_at", null);
 
     // Apply visibility rules based on role
-    if (profile.role === "admin") {
-      // Admins see all leads - no filter needed
-      console.log("[leadsService] Admin user - fetching all leads");
+    if (profile.role === "admin" || profile.role === "broker") {
+      // Admins/brokers see all leads - no filter needed
+      console.log("[leadsService] Admin/broker user - fetching all leads");
     } else if (profile.role === "team_lead") {
       // Team leads see their leads + their team members' leads
       const teamMemberIds = await getTeamMemberIds(profile.id);
@@ -401,8 +401,8 @@ export const getArchivedLeads = async (useCache = false): Promise<Lead[]> => {
       .not("archived_at", "is", null);
 
     // Apply visibility rules
-    if (profile.role === "admin") {
-      // Admins see all archived leads
+    if (profile.role === "admin" || profile.role === "broker") {
+      // Admins/brokers see all archived leads
     } else if (profile.role === "team_lead") {
       const teamMemberIds = await getTeamMemberIds(profile.id);
       const visibleUserIds = [profile.id, ...teamMemberIds];
@@ -556,7 +556,7 @@ export const assignLead = async (leadId: string, userId: string): Promise<void> 
   // Verify current user has permission to assign
   const profile = await getCurrentUserProfile();
   
-  if (profile.role !== "admin" && profile.role !== "team_lead") {
+  if (profile.role !== "admin" && profile.role !== "broker" && profile.role !== "team_lead") {
     throw new Error("Não tem permissão para atribuir leads");
   }
 

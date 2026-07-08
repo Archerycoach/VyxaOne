@@ -21,7 +21,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     .eq("id", user.id)
     .single();
 
-  if (callerProfile?.role !== "admin" && callerProfile?.role !== "broker") {
+  if (callerProfile?.role !== "admin") {
     return res.status(403).json({ error: "Forbidden: Admin access required" });
   }
 
