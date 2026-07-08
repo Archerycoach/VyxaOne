@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { eupago } from "@/lib/eupago";
-import { supabase } from "@/integrations/supabase/client";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export default async function handler(
   req: NextApiRequest,
@@ -11,10 +11,24 @@ export default async function handler(
   }
 
   try {
-    const { userId, planId, phone } = req.body;
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith("Bearer ")) {
+      return res.status(401).json({ error: "Não autorizado" });
+    }
 
-    if (!userId || !planId || !phone) {
-      return res.status(400).json({ error: "userId, planId e phone são obrigatórios" });
+    const token = authHeader.substring(7);
+    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
+    if (authError || !user) {
+      return res.status(401).json({ error: "Sessão inválida" });
+    }
+
+    // O pagamento é sempre criado para o utilizador autenticado, nunca para
+    // um userId indicado pelo chamador.
+    const userId = user.id;
+    const { planId, phone } = req.body;
+
+    if (!planId || !phone) {
+      return res.status(400).json({ error: "planId e phone são obrigatórios" });
     }
 
     // Validate Portuguese phone number
@@ -38,7 +52,7 @@ export default async function handler(
     }
 
     // Get plan details
-    const { data: plan, error: planError } = await supabase
+    const { data: plan, error: planError } = await supabaseAdmin
       .from("subscription_plans")
       .select("*")
       .eq("id", planId)
@@ -60,7 +74,7 @@ export default async function handler(
     });
 
     // Create pending payment record
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from("payment_history")
       .insert({
         user_id: userId,

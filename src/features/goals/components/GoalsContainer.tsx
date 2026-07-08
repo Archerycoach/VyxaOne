@@ -87,8 +87,8 @@ export function GoalsContainer() {
       setUserRole(role);
       setUserId(user.id);
 
-      // Load team members for team leads and admins
-      if (role === "admin" || role === "team_lead") {
+      // Load team members for team leads, brokers and admins
+      if (role === "admin" || role === "broker" || role === "team_lead") {
         await loadTeamMembers(user.id, role);
       }
 
@@ -115,8 +115,8 @@ export function GoalsContainer() {
       if (role === "team_lead") {
         // Team leads see only their agents
         query = query.eq("team_lead_id", uid).eq("role", "consultant");
-      } else if (role === "admin") {
-        // Admins see all agents and team leads
+      } else if (role === "admin" || role === "broker") {
+        // Admins/brokers see all agents and team leads
         query = query.in("role", ["consultant", "team_lead"]);
       }
 
@@ -142,8 +142,8 @@ export function GoalsContainer() {
       
       const goals = goalsData as unknown as Goal[];
 
-      // Load team goals for admins and team leads
-      if (role === "admin" || role === "team_lead") {
+      // Load team goals for admins, brokers and team leads
+      if (role === "admin" || role === "broker" || role === "team_lead") {
         goals?.forEach((goal: Goal) => {
           if (goal.goal_type === "team") {
             const revenueValue = goal.revenue_target?.toString() || "";

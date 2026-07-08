@@ -1,7 +1,18 @@
-import React from "react";
+import React, { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ClipboardList, CheckCircle2, AlertCircle } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { CurrencyInput } from "@/components/CurrencyInput";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { ClipboardList, CheckCircle2, AlertCircle, Pencil, Loader2, X } from "lucide-react";
 
 type Role = "buyer" | "seller";
 
@@ -27,6 +38,8 @@ interface LeadLike {
 
 interface Props {
   lead: LeadLike;
+  /** Grava as alterações (chamado só com os campos de qualificação editados). */
+  onSave: (updates: Record<string, unknown>) => Promise<void>;
 }
 
 const PROPERTY_TYPE_LABELS: Record<string, string> = {
@@ -176,12 +189,79 @@ function buildRows(lead: LeadLike): Row[] {
   return rows;
 }
 
+interface EditValues {
+  property_type: string;
+  buy_purpose: string;
+  purchase_timeline: string;
+  budget: string;
+  desired_price: string;
+  typology: string;
+  bedrooms: string;
+  bathrooms: string;
+  min_area: string;
+  max_area: string;
+  property_area: string;
+  location_preference: string;
+  needs_financing: boolean;
+  has_property_to_sell: boolean;
+}
+
+function buildEditValues(lead: LeadLike): EditValues {
+  return {
+    property_type: lead.property_type || "",
+    buy_purpose: lead.buy_purpose || "",
+    purchase_timeline: lead.purchase_timeline || "",
+    budget: lead.budget != null ? String(lead.budget) : "",
+    desired_price: lead.desired_price != null ? String(lead.desired_price) : "",
+    typology: lead.typology || (lead.bedrooms ? `T${lead.bedrooms}` : ""),
+    bedrooms: lead.bedrooms != null ? String(lead.bedrooms) : "",
+    bathrooms: lead.bathrooms != null ? String(lead.bathrooms) : "",
+    min_area: lead.min_area != null ? String(lead.min_area) : "",
+    max_area: lead.max_area != null ? String(lead.max_area) : "",
+    property_area: lead.property_area != null ? String(lead.property_area) : "",
+    location_preference: lead.location_preference || "",
+    needs_financing: lead.needs_financing === true,
+    has_property_to_sell: lead.has_property_to_sell === true,
+  };
+}
+
+function buildUpdatePayload(values: EditValues): Record<string, unknown> {
+  const toNumberOrNull = (v: string): number | null => {
+    const trimmed = v.trim();
+    if (trimmed === "") return null;
+    const n = Number(trimmed.replace(",", "."));
+    return Number.isFinite(n) ? n : null;
+  };
+
+  return {
+    property_type: values.property_type || null,
+    buy_purpose: values.buy_purpose || null,
+    purchase_timeline: values.purchase_timeline.trim() || null,
+    budget: toNumberOrNull(values.budget),
+    desired_price: toNumberOrNull(values.desired_price),
+    typology: values.typology || null,
+    bedrooms: values.typology ? parseInt(values.typology.replace(/\D/g, ""), 10) || null : toNumberOrNull(values.bedrooms),
+    bathrooms: toNumberOrNull(values.bathrooms),
+    min_area: toNumberOrNull(values.min_area),
+    max_area: toNumberOrNull(values.max_area),
+    property_area: toNumberOrNull(values.property_area),
+    location_preference: values.location_preference.trim() || null,
+    needs_financing: values.needs_financing,
+    has_property_to_sell: values.has_property_to_sell,
+  };
+}
+
 /**
- * Vista única e consolidada de todos os dados de qualificação/preferências da
- * lead (comprador e/ou vendedor consoante o tipo), sem duplicações, com os
- * campos em falta assinalados — para se ver o que falta sem abrir a edição.
+ * Vista consolidada de todos os dados de qualificação/preferências da lead
+ * (comprador e/ou vendedor consoante o tipo), com os campos em falta
+ * assinalados. Pode ser editada diretamente aqui, sem precisar de abrir
+ * "Editar Lead".
  */
-export function LeadQualificationOverview({ lead }: Props) {
+export function LeadQualificationOverview({ lead, onSave }: Props) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [values, setValues] = useState<EditValues>(() => buildEditValues(lead));
+
   const rows = buildRows(lead);
   if (rows.length === 0) return null;
 
@@ -189,54 +269,281 @@ export function LeadQualificationOverview({ lead }: Props) {
   const total = rows.length;
   const percentage = Math.round((filled / total) * 100);
 
+  const roles = getRoles(lead.lead_type);
+  const isBuyer = roles.includes("buyer");
+  const isSeller = roles.includes("seller");
+
+  const set = <K extends keyof EditValues>(key: K, value: EditValues[K]) =>
+    setValues((prev) => ({ ...prev, [key]: value }));
+
+  const handleStartEdit = () => {
+    setValues(buildEditValues(lead));
+    setIsEditing(true);
+  };
+
+  const handleCancel = () => {
+    setIsEditing(false);
+  };
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      await onSave(buildUpdatePayload(values));
+      setIsEditing(false);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center justify-between gap-2">
+        <CardTitle className="flex items-center justify-between gap-2 flex-wrap">
           <span className="flex items-center gap-2">
             <ClipboardList className="h-5 w-5" />
             Dados de Qualificação
           </span>
-          <Badge
-            variant="outline"
-            className={
-              percentage === 100
-                ? "bg-green-50 text-green-700 border-green-200"
-                : "bg-amber-50 text-amber-700 border-amber-200"
-            }
-          >
-            {filled}/{total} · {percentage}%
-          </Badge>
+          <div className="flex items-center gap-2">
+            <Badge
+              variant="outline"
+              className={
+                percentage === 100
+                  ? "bg-green-50 text-green-700 border-green-200"
+                  : "bg-amber-50 text-amber-700 border-amber-200"
+              }
+            >
+              {filled}/{total} · {percentage}%
+            </Badge>
+            {!isEditing && (
+              <Button variant="outline" size="sm" onClick={handleStartEdit}>
+                <Pencil className="h-3.5 w-3.5 mr-2" />
+                Editar
+              </Button>
+            )}
+          </div>
         </CardTitle>
       </CardHeader>
-      <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        {rows.map((row) => (
-          <div
-            key={row.label}
-            className={`flex items-start gap-2 rounded-md border p-2.5 ${
-              row.filled
-                ? "border-gray-100 bg-white"
-                : "border-amber-200 bg-amber-50/60"
-            }`}
-          >
-            {row.filled ? (
-              <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5 shrink-0" />
-            ) : (
-              <AlertCircle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
-            )}
-            <div className="min-w-0">
-              <p className="text-sm text-gray-500">{row.label}</p>
-              <p
-                className={`font-medium break-words ${
-                  row.filled ? "" : "text-amber-700"
-                }`}
+
+      {!isEditing ? (
+        <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {rows.map((row) => (
+            <div
+              key={row.label}
+              className={`flex items-start gap-2 rounded-md border p-2.5 ${
+                row.filled
+                  ? "border-gray-100 bg-white"
+                  : "border-amber-200 bg-amber-50/60"
+              }`}
+            >
+              {row.filled ? (
+                <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5 shrink-0" />
+              ) : (
+                <AlertCircle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
+              )}
+              <div className="min-w-0">
+                <p className="text-sm text-gray-500">{row.label}</p>
+                <p
+                  className={`font-medium break-words ${
+                    row.filled ? "" : "text-amber-700"
+                  }`}
+                >
+                  {row.value}
+                </p>
+              </div>
+            </div>
+          ))}
+        </CardContent>
+      ) : (
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Tipo de imóvel</Label>
+              <Select value={values.property_type} onValueChange={(v) => set("property_type", v)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione tipo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="apartment">Apartamento</SelectItem>
+                  <SelectItem value="house">Moradia</SelectItem>
+                  <SelectItem value="land">Terreno</SelectItem>
+                  <SelectItem value="commercial">Comercial</SelectItem>
+                  <SelectItem value="store">Loja</SelectItem>
+                  <SelectItem value="office">Escritório</SelectItem>
+                  <SelectItem value="warehouse">Armazém</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Tipologia / quartos</Label>
+              <Select
+                value={values.typology}
+                onValueChange={(v) => {
+                  set("typology", v);
+                  set("bedrooms", v.replace(/\D/g, ""));
+                }}
               >
-                {row.value}
-              </p>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione (ex: T2)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="T0">T0</SelectItem>
+                  <SelectItem value="T1">T1</SelectItem>
+                  <SelectItem value="T2">T2</SelectItem>
+                  <SelectItem value="T3">T3</SelectItem>
+                  <SelectItem value="T4">T4</SelectItem>
+                  <SelectItem value="T5+">T5 ou mais</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {isBuyer && (
+              <div className="space-y-2">
+                <Label>Objetivo da procura</Label>
+                <Select value={values.buy_purpose} onValueChange={(v) => set("buy_purpose", v)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione objetivo" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="housing">Habitação própria</SelectItem>
+                    <SelectItem value="investment">Investimento</SelectItem>
+                    <SelectItem value="secondary">Habitação secundária</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {isBuyer && (
+              <div className="space-y-2">
+                <Label>Prazo previsto para a decisão</Label>
+                <Input
+                  value={values.purchase_timeline}
+                  onChange={(e) => set("purchase_timeline", e.target.value)}
+                  placeholder="Ex: Imediato, 3-6 meses, 1 ano"
+                />
+              </div>
+            )}
+
+            {isBuyer && (
+              <div className="space-y-2">
+                <Label>Orçamento</Label>
+                <CurrencyInput
+                  value={values.budget}
+                  onValueChange={(v) => set("budget", v.toString())}
+                  placeholder="Ex: 250.000"
+                />
+              </div>
+            )}
+
+            {isSeller && (
+              <div className="space-y-2">
+                <Label>Preço pretendido na venda</Label>
+                <CurrencyInput
+                  value={values.desired_price}
+                  onValueChange={(v) => set("desired_price", v.toString())}
+                  placeholder="Ex: 350.000"
+                />
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label>Casas de banho</Label>
+              <Input
+                type="number"
+                min="0"
+                value={values.bathrooms}
+                onChange={(e) => set("bathrooms", e.target.value)}
+                placeholder="Ex: 2"
+              />
+            </div>
+
+            {isBuyer && (
+              <>
+                <div className="space-y-2">
+                  <Label>Área pretendida — mínima (m²)</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={values.min_area}
+                    onChange={(e) => set("min_area", e.target.value)}
+                    placeholder="Ex: 80"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Área pretendida — máxima (m²)</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={values.max_area}
+                    onChange={(e) => set("max_area", e.target.value)}
+                    placeholder="Ex: 120"
+                  />
+                </div>
+              </>
+            )}
+
+            {isSeller && (
+              <div className="space-y-2">
+                <Label>Área do imóvel (m²)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  value={values.property_area}
+                  onChange={(e) => set("property_area", e.target.value)}
+                  placeholder="Ex: 120"
+                />
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label>Localização</Label>
+              <Input
+                value={values.location_preference}
+                onChange={(e) => set("location_preference", e.target.value)}
+                placeholder="Ex: Lisboa, Cascais, Oeiras"
+              />
             </div>
           </div>
-        ))}
-      </CardContent>
+
+          {isBuyer && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={values.needs_financing}
+                  onChange={(e) => set("needs_financing", e.target.checked)}
+                  className="w-4 h-4 rounded border-gray-300"
+                />
+                Vai recorrer a crédito?
+              </Label>
+              <Label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={values.has_property_to_sell}
+                  onChange={(e) => set("has_property_to_sell", e.target.checked)}
+                  className="w-4 h-4 rounded border-gray-300"
+                />
+                Tem imóvel próprio para vender?
+              </Label>
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2 pt-2 border-t">
+            <Button variant="outline" size="sm" onClick={handleCancel} disabled={isSaving}>
+              <X className="h-3.5 w-3.5 mr-2" />
+              Cancelar
+            </Button>
+            <Button size="sm" onClick={handleSave} disabled={isSaving}>
+              {isSaving ? (
+                <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" />
+              ) : (
+                <CheckCircle2 className="h-3.5 w-3.5 mr-2" />
+              )}
+              Guardar
+            </Button>
+          </div>
+        </CardContent>
+      )}
     </Card>
   );
 }

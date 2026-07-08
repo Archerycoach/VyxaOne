@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { supabase } from "@/integrations/supabase/client";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { verifyEupagoWebhook, eupago } from "@/lib/eupago";
 
 export default async function handler(
   req: NextApiRequest,
@@ -11,11 +12,18 @@ export default async function handler(
 
   const { referencia, valor, estado, identificador } = req.body;
 
+  // Verify the request actually comes from EuPago (shared API key in payload),
+  // instead of trusting the body blindly.
+  if (!verifyEupagoWebhook(req.body, req.body?.chave)) {
+    console.error("Eupago webhook: invalid or missing 'chave' in payload");
+    return res.status(401).json({ error: "Invalid webhook signature" });
+  }
+
   try {
     // 1. Find the payment in payment_history using the reference
     // We stored reference in provider_transaction_id or metadata
     // Using provider_transaction_id for lookup
-    const { data: payment, error: fetchError } = await (supabase as any)
+    const { data: payment, error: fetchError } = await (supabaseAdmin as any)
       .from("payment_history")
       .select("*")
       .eq("provider_transaction_id", referencia)
@@ -26,6 +34,14 @@ export default async function handler(
       return res.status(404).json({ error: "Payment not found" });
     }
 
+    // Re-confirm the payment status directly with EuPago's API rather than
+    // trusting the "estado" field from the webhook body alone.
+    const confirmedStatus = await eupago.checkPaymentStatus(referencia);
+    if (estado === "PAGA" && !confirmedStatus.paid) {
+      console.error("Eupago webhook: body claims PAGA but EuPago API disagrees", { referencia, confirmedStatus });
+      return res.status(400).json({ error: "Payment status could not be confirmed" });
+    }
+
     if (estado === "PAGA") {
       // 2. Update payment status
       const updateData: any = {
@@ -33,7 +49,7 @@ export default async function handler(
         updated_at: new Date().toISOString(),
       };
 
-      const { error: updateError } = await (supabase as any)
+      const { error: updateError } = await (supabaseAdmin as any)
         .from("payment_history")
         .update(updateData)
         .eq("eupago_reference", referencia);
@@ -49,7 +65,7 @@ export default async function handler(
       
       if (planId) {
         // Get user's current subscription
-        const { data: currentSub } = await (supabase as any)
+        const { data: currentSub } = await (supabaseAdmin as any)
           .from("subscriptions")
           .select("*")
           .eq("user_id", payment.user_id)
@@ -61,7 +77,7 @@ export default async function handler(
 
         if (currentSub) {
           // Renew
-          await (supabase as any)
+          await (supabaseAdmin as any)
             .from("subscriptions")
             .update({
               status: "active",
@@ -72,7 +88,7 @@ export default async function handler(
             .eq("id", currentSub.id);
         } else {
           // Create new
-          await (supabase as any)
+          await (supabaseAdmin as any)
             .from("subscriptions")
             .insert({
               user_id: payment.user_id,
@@ -85,7 +101,7 @@ export default async function handler(
       }
     } else {
       // Update as failed or cancelled
-      await (supabase as any)
+      await (supabaseAdmin as any)
         .from("payment_history")
         .update({ 
           status: "failed",

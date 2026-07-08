@@ -87,7 +87,7 @@ export default function PerformancePage() {
 
       // Load agents based on role
       let agentsData: Profile[] = [];
-      if (profile.role === "admin") {
+      if (profile.role === "admin" || profile.role === "broker") {
         const { data } = await supabase
           .from("profiles")
           .select("*")
@@ -270,7 +270,7 @@ export default function PerformancePage() {
 
   if (loading) {
     return (
-      <ProtectedRoute allowedRoles={["admin", "team_lead", "consultant"]}>
+      <ProtectedRoute allowedRoles={["admin", "broker", "team_lead", "consultant"]}>
         <Layout>
           <div className="container mx-auto p-6">
             <p>A carregar...</p>
@@ -281,7 +281,7 @@ export default function PerformancePage() {
   }
 
   return (
-    <ProtectedRoute allowedRoles={["admin", "team_lead", "consultant"]}>
+    <ProtectedRoute allowedRoles={["admin", "broker", "team_lead", "consultant"]}>
       <Layout>
         <div className="container mx-auto p-6 max-w-7xl">
           <div className="mb-6">

@@ -30,8 +30,8 @@ export const getUsersForAssignment = async (): Promise<Profile[]> => {
     .select("*")
     .eq("is_active", true);
 
-  if (profile.role === "admin") {
-    // Admins can assign to anyone (agents and team_leads)
+  if (profile.role === "admin" || profile.role === "broker") {
+    // Admins/brokers can assign to anyone (agents and team_leads)
     query = query.in("role", ["consultant", "team_lead"]);
   } else if (profile.role === "team_lead") {
     // Team leads can assign to themselves or their team members

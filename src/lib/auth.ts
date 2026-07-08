@@ -24,7 +24,7 @@ export class AuthError extends Error {
 /**
  * Tipos de roles disponíveis no sistema
  */
-export type UserRole = "admin" | "team_lead" | "consultant";
+export type UserRole = "admin" | "broker" | "team_lead" | "consultant";
 
 /**
  * Interface para dados do perfil do utilizador
@@ -214,9 +214,13 @@ export const hasRole = async (requiredRole: UserRole): Promise<boolean> => {
     const role = await getCurrentUserRole();
     if (!role) return false;
 
-    // Map role hierarchy: admin > team_lead > agent
+    // Map role hierarchy: admin (equipa Vyxa, topo da plataforma) > broker
+    // (dono da agência, topo do seu próprio tenant) > team_lead > consultant.
+    // admin e broker são papéis distintos — admin NÃO é automaticamente broker
+    // nem vice-versa, mas broker continua acima de team_lead/consultant.
     const roleHierarchy: Record<UserRole, number> = {
-      admin: 3,
+      admin: 4,
+      broker: 3,
       team_lead: 2,
       consultant: 1,
     };
@@ -272,7 +276,10 @@ export const canAccessResource = async (
     // Próprio utilizador sempre pode aceder
     if (user.id === resourceUserId) return true;
 
-    // Admin pode aceder a tudo
+    // Admin (equipa Vyxa) pode aceder a tudo, em qualquer conta/agência.
+    // NOTA: esta função está atualmente sem nenhuma chamada no código. Se vier
+    // a ser usada, "broker" precisa de uma verificação própria, restrita à
+    // sua própria equipa/agência (não deve ter acesso à plataforma toda).
     const role = await getCurrentUserRole();
     if (role === "admin") return true;
 

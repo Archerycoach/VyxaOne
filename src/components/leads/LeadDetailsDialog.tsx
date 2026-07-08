@@ -523,6 +523,19 @@ export function LeadDetailsDialog({
     }
   };
 
+  const handleSaveQualification = async (updates: Record<string, unknown>) => {
+    if (!leadId) return;
+    try {
+      await updateLead(leadId, updates as any);
+      toast({ title: "✅ Dados de qualificação atualizados" });
+      const updatedLead = await getLeadById(leadId);
+      setLead(updatedLead);
+    } catch (e: any) {
+      toast({ title: "Erro ao guardar qualificação", description: e.message, variant: "destructive" });
+      throw e;
+    }
+  };
+
   const handleRunAutomations = async () => {
     if (!leadId) return;
     setIsRunningAutomations(true);
@@ -897,7 +910,7 @@ export function LeadDetailsDialog({
                 </CardContent>
               </Card>
 
-              <LeadQualificationOverview lead={lead} />
+              <LeadQualificationOverview lead={lead} onSave={handleSaveQualification} />
 
               <ContactAlertRequestsPanel
                 entity={{

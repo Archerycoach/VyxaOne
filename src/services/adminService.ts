@@ -440,26 +440,24 @@ export const createUser = async (userData: CreateUserData) => {
   try {
     console.log("[AdminService] Starting createUser process...");
     
-    // Get current authenticated user
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-    
-    if (userError || !user) {
-      console.error("[AdminService] Failed to get authenticated user:", userError);
+    // Get current authenticated session (need the access token, not just the user id)
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
+    if (sessionError || !session) {
+      console.error("[AdminService] Failed to get authenticated session:", sessionError);
       throw new Error("Não autorizado. Por favor, faça login novamente.");
     }
-    
-    console.log("[AdminService] Authenticated user:", user.id);
 
-    // Make API request with userId in body
+    console.log("[AdminService] Authenticated user:", session.user.id);
+
+    // Make API request with the session token — the server verifies identity from this
     const response = await fetch("/api/admin/create-user", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
       },
-      body: JSON.stringify({
-        userId: user.id, // Send userId instead of token
-        ...userData
-      }),
+      body: JSON.stringify(userData),
     });
 
     const result = await response.json();

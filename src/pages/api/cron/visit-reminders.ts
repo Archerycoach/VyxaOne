@@ -49,11 +49,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     const { data: activeRules } = await supabaseAdmin
       .from("lead_workflow_rules")
-      .select("user_id")
+      .select("user_id, applies_to_team")
       .eq("trigger_status", "visit_scheduled")
       .eq("enabled", true);
 
-    const eligibleUserIds = Array.from(new Set((activeRules || []).map((r: { user_id: string }) => r.user_id)));
+    // Uma regra de equipa (applies_to_team) aplica-se a todos os
+    // consultores, independentemente de terem ou não uma regra pessoal.
+    const hasTeamWideRule = (activeRules || []).some((r: { applies_to_team: boolean }) => r.applies_to_team);
+
+    let eligibleUserIds: string[];
+    if (hasTeamWideRule) {
+      const { data: allProfiles } = await supabaseAdmin.from("profiles").select("id");
+      eligibleUserIds = (allProfiles || []).map((p: { id: string }) => p.id);
+    } else {
+      eligibleUserIds = Array.from(new Set((activeRules || []).map((r: { user_id: string }) => r.user_id)));
+    }
 
     if (eligibleUserIds.length === 0) {
       console.log("[Visit Reminders] Nenhuma automação ativa. A terminar.");

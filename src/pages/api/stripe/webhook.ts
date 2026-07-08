@@ -1,7 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { buffer } from "micro";
 import { verifyStripeWebhook } from "@/lib/stripe";
-import { supabase } from "@/integrations/supabase/client";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import Stripe from "stripe";
 
 // Disable body parsing, need raw body for webhook verification
@@ -100,7 +100,7 @@ async function handleSubscriptionCreated(subscription: any) {
   const trialEnd = subscription.trial_end ? new Date(subscription.trial_end * 1000) : null;
 
   // Create subscription in Supabase
-  const { error } = await supabase.from("subscriptions").insert({
+  const { error } = await supabaseAdmin.from("subscriptions").insert({
     user_id: userId,
     plan_id: planId,
     status: subscription.status === "trialing" ? "trial" : "active",
@@ -134,7 +134,7 @@ async function handleSubscriptionUpdated(subscription: any) {
   else if (stripeStatus === "unpaid") status = "unpaid";
 
   // Update subscription status
-  const { error: updateError } = await supabase
+  const { error: updateError } = await supabaseAdmin
     .from("subscriptions")
     .update({
       status: status,
@@ -153,7 +153,7 @@ async function handleSubscriptionUpdated(subscription: any) {
 // Handle subscription deleted
 async function handleSubscriptionDeleted(subscription: any) {
   // Update subscription status to cancelled
-  const { error } = await supabase
+  const { error } = await supabaseAdmin
     .from("subscriptions")
     .update({
       status: "cancelled",
@@ -179,14 +179,14 @@ async function handleInvoicePaid(invoice: any) {
       ? invoice.subscription 
       : invoice.subscription.id;
 
-    const { data: subscription } = await supabase
+    const { data: subscription } = await supabaseAdmin
       .from("subscriptions")
       .select("id, user_id")
       .eq("stripe_subscription_id", subscriptionId)
       .single();
 
     if (subscription) {
-      await supabase.from("payment_history").insert({
+      await supabaseAdmin.from("payment_history").insert({
         subscription_id: subscription.id,
         user_id: subscription.user_id,
         amount: invoice.amount_paid / 100,
@@ -210,7 +210,7 @@ async function handleInvoicePaymentFailed(invoice: any) {
       ? invoice.subscription 
       : invoice.subscription.id;
 
-    await supabase
+    await supabaseAdmin
       .from("subscriptions")
       .update({ status: "past_due" })
       .eq("stripe_subscription_id", subscriptionId);

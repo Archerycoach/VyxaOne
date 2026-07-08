@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -44,14 +44,12 @@ export function DashboardContainer() {
     leadTypeFilter,
   });
 
-  const [scopeFilter, setScopeFilter] = useState<string>("all");
-
   // Consultant always sees only their own data - initialize to their ID
   useEffect(() => {
     if (userRole === "consultant" && currentUserId) {
-      setScopeFilter(currentUserId);
+      setSelectedAgent(currentUserId);
     } else {
-      setScopeFilter("all");
+      setSelectedAgent("all");
     }
   }, [userRole, currentUserId]);
 
@@ -98,9 +96,9 @@ export function DashboardContainer() {
           {/* Filters */}
           <div className="flex gap-3">
             {/* Scope Selector - Hierarchical (hidden for consultant) */}
-            <ScopeSelector 
-              value={scopeFilter}
-              onChange={setScopeFilter}
+            <ScopeSelector
+              value={selectedAgent}
+              onChange={setSelectedAgent}
               label="Âmbito"
             />
 

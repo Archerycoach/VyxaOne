@@ -12,6 +12,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { InfoIcon, ExternalLink, CheckCircle2, Settings, Activity, ShieldCheck } from "lucide-react";
 import { MetaAppSettings } from "@/components/admin/MetaAppSettings";
 import { ExternalPortalsSettings } from "@/components/settings/ExternalPortalsSettings";
+import { ProtectedRoute } from "@/components/ProtectedRoute";
 
 export default function Integrations() {
   const { toast } = useToast();
@@ -42,6 +43,7 @@ export default function Integrations() {
     verify_token: "",
     phone_number_id: "",
     template_name: "",
+    app_secret: "",
     enabled: false
   });
   const [isWhatsappConfigured, setIsWhatsappConfigured] = useState(false);
@@ -187,6 +189,7 @@ export default function Integrations() {
           verify_token: settings.verify_token || "",
           phone_number_id: settings.phone_number_id || "",
           template_name: settings.template_name || "",
+          app_secret: settings.app_secret || "",
           enabled: waData.is_active || false
         });
         setIsWhatsappConfigured(!!(settings.access_token && settings.phone_number_id));
@@ -316,7 +319,8 @@ export default function Integrations() {
             business_account_id: whatsapp.business_account_id.trim(),
             verify_token: whatsapp.verify_token.trim(),
             phone_number_id: whatsapp.phone_number_id.trim(),
-            template_name: whatsapp.template_name.trim()
+            template_name: whatsapp.template_name.trim(),
+            app_secret: whatsapp.app_secret.trim()
           },
           is_active: whatsapp.enabled
         })
@@ -472,18 +476,21 @@ export default function Integrations() {
 
   if (loading) {
     return (
-      <Layout>
-        <div className="container mx-auto py-8 text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p>Carregando configurações de forma segura...</p>
-        </div>
-      </Layout>
+      <ProtectedRoute allowedRoles={["admin", "broker"]}>
+        <Layout>
+          <div className="container mx-auto py-8 text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p>Carregando configurações de forma segura...</p>
+          </div>
+        </Layout>
+      </ProtectedRoute>
     );
   }
 
   return (
-    <Layout>
-      <div className="container mx-auto py-8 space-y-8">
+    <ProtectedRoute allowedRoles={["admin", "broker"]}>
+      <Layout>
+        <div className="container mx-auto py-8 space-y-8">
         <div>
           <div className="flex items-center gap-2 mb-2">
             <h1 className="text-3xl font-bold">Configurações de Integrações</h1>
@@ -618,6 +625,20 @@ export default function Integrations() {
                     <Input value={whatsapp.verify_token} onChange={(e) => setWhatsapp(prev => ({ ...prev, verify_token: e.target.value }))} />
                     <Button variant="outline" onClick={generateVerifyToken}>Gerar</Button>
                   </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>App Secret (opcional, recomendado)</Label>
+                  <Input
+                    type="password"
+                    placeholder="••••••••••••"
+                    value={whatsapp.app_secret}
+                    onChange={(e) => setWhatsapp(prev => ({ ...prev, app_secret: e.target.value }))}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    App Secret da app da Meta usada para o WhatsApp Business (Meta for Developers → Definições → Básico).
+                    Enquanto este campo estiver vazio, a assinatura dos webhooks recebidos não é verificada.
+                  </p>
                 </div>
 
                 <div className="space-y-2">
@@ -794,6 +815,7 @@ export default function Integrations() {
           <MetaAppSettings />
         </div>
       </div>
-    </Layout>
+      </Layout>
+    </ProtectedRoute>
   );
 }

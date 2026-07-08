@@ -6,6 +6,16 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { CreditCard, Smartphone, Building2, Loader2, CheckCircle2, XCircle } from "lucide-react";
 import { loadStripe } from "@stripe/stripe-js";
+import { supabase } from "@/integrations/supabase/client";
+
+async function getAuthHeaders(): Promise<Record<string, string>> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error("Sessão inválida. Por favor, faça login novamente.");
+  return {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${session.access_token}`,
+  };
+}
 
 interface PaymentMethodSelectorProps {
   isOpen: boolean;
@@ -62,7 +72,7 @@ export function PaymentMethodSelector({
 
       const response = await fetch("/api/stripe/create-checkout-session", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: await getAuthHeaders(),
         body: JSON.stringify({ userId, planId }),
       });
 
@@ -106,7 +116,7 @@ export function PaymentMethodSelector({
 
       const response = await fetch("/api/eupago/create-mbway", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: await getAuthHeaders(),
         body: JSON.stringify({ userId, planId, phone: formattedPhone }),
       });
 
@@ -138,7 +148,7 @@ export function PaymentMethodSelector({
 
       const response = await fetch("/api/eupago/create-multibanco", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: await getAuthHeaders(),
         body: JSON.stringify({ userId, planId }),
       });
 

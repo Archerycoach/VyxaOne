@@ -28,6 +28,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Search, UserPlus, Trash2, Edit, Mail, Phone, RefreshCw, MessageCircle } from "lucide-react";
 import { getAllUsers, createUser, deleteUser, updateUserRole, getTeamLeads, assignAgentToTeamLead, toggleWhatsappModule } from "@/services/adminService";
+import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
@@ -291,9 +292,15 @@ export default function UsersManagement() {
   const handleForceRelogin = async (userId?: string) => {
     setIsProcessingRelogin(true);
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("Sessão inválida. Por favor, faça login novamente.");
+
       const response = await fetch("/api/admin/force-relogin", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
         body: JSON.stringify({ userId, all: !userId })
       });
       

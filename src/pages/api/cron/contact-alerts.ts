@@ -19,7 +19,7 @@ import type {
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const cronSecret = process.env.CRON_SECRET_TOKEN;
+const cronSecret = process.env.CRON_SECRET;
 
 type PropertyCandidate = Property & { user_id: string; listed_at?: string | null };
 type DevelopmentCandidate = Development & { user_id: string; published_at?: string | null };

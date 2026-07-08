@@ -1,5 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { createClient } from "@supabase/supabase-js";
+import { buffer } from "micro";
+import crypto from "crypto";
 import { logEmailInteractionServer } from "@/lib/emailInteractionLogger";
 import { recordConsent } from "@/services/consentService";
 import { sendWhatsAppTemplate } from "@/services/whatsappService";
@@ -11,6 +13,36 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+// Precisamos do corpo em bruto (bytes exatos) para validar a assinatura
+// HMAC da Meta — o parser automático do Next.js já teria alterado/reserializado o JSON.
+export const config = {
+  api: {
+    bodyParser: false,
+  },
+};
+
+/**
+ * Verifica a assinatura "x-hub-signature-256" da Meta (HMAC-SHA256 do corpo
+ * em bruto, usando o App Secret). MODO OBSERVAÇÃO: por agora só regista o
+ * resultado (não bloqueia nenhum pedido) até confirmarmos em produção, com
+ * tráfego real da Meta, que a verificação está correta. Retorna null quando
+ * não é possível verificar (sem app_secret configurado ou sem header).
+ */
+function verifyMetaSignature(rawBody: Buffer, signatureHeader: string | undefined, appSecret: string | undefined): boolean | null {
+  if (!appSecret || !signatureHeader) return null;
+
+  const expected = "sha256=" + crypto.createHmac("sha256", appSecret).update(rawBody).digest("hex");
+
+  try {
+    const expectedBuf = Buffer.from(expected);
+    const receivedBuf = Buffer.from(signatureHeader);
+    if (expectedBuf.length !== receivedBuf.length) return false;
+    return crypto.timingSafeEqual(expectedBuf, receivedBuf);
+  } catch {
+    return false;
+  }
+}
+
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
@@ -20,7 +52,7 @@ export default async function handler(
     method: req.method,
     query: req.query,
     headers: {
-      "x-hub-signature": req.headers["x-hub-signature"],
+      "x-hub-signature-256": req.headers["x-hub-signature-256"],
       "content-type": req.headers["content-type"],
     },
     timestamp: new Date().toISOString(),
@@ -51,8 +83,40 @@ export default async function handler(
   // Handle webhook events
   if (req.method === "POST") {
     try {
-      const body = req.body;
-      
+      const rawBody = await buffer(req);
+
+      let body: any;
+      try {
+        body = JSON.parse(rawBody.toString("utf8"));
+      } catch (parseError) {
+        console.error("[Meta Webhook] Failed to parse JSON body:", parseError);
+        return res.status(400).json({ error: "Invalid JSON" });
+      }
+
+      // Verificação de assinatura em MODO OBSERVAÇÃO: regista o resultado
+      // mas não bloqueia nenhum pedido enquanto não confirmarmos, com
+      // tráfego real da Meta, que a verificação está correta.
+      const { data: appSettings } = await supabase
+        .from("meta_app_settings")
+        .select("app_secret")
+        .single();
+
+      const signatureHeader = req.headers["x-hub-signature-256"] as string | undefined;
+      const signatureValid = verifyMetaSignature(rawBody, signatureHeader, appSettings?.app_secret);
+
+      if (signatureValid === false) {
+        console.error("[Meta Webhook] ⚠️ SIGNATURE MISMATCH — payload pode não vir da Meta (modo observação: não bloqueado ainda)", {
+          hasHeader: !!signatureHeader,
+        });
+      } else if (signatureValid === true) {
+        console.log("[Meta Webhook] ✅ Signature verified");
+      } else {
+        console.warn("[Meta Webhook] Signature verification skipped (sem app_secret configurado ou sem header)", {
+          hasSecret: !!appSettings?.app_secret,
+          hasHeader: !!signatureHeader,
+        });
+      }
+
       console.log("[Meta Webhook] Received POST event:", {
         hasBody: !!body,
         hasEntry: !!body?.entry,
@@ -72,7 +136,11 @@ export default async function handler(
           leadgen_id: "RAW_HIT",
           status: "debug",
           webhook_payload: body,
-          error_message: "Raw hit received"
+          error_message: signatureValid === false
+            ? "Raw hit received - SIGNATURE_MISMATCH"
+            : signatureValid === true
+            ? "Raw hit received - signature_ok"
+            : "Raw hit received - signature_not_checked"
         });
       } catch (e) {
         console.error("Failed to log raw hit", e);
