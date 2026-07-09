@@ -53,6 +53,7 @@ import { QuickContactDialog } from "./QuickContactDialog";
 import { LeadIdealistaPanel } from "./LeadIdealistaPanel";
 import { ContactAlertRequestsPanel } from "@/features/contacts/components/ContactAlertRequestsPanel";
 import { LeadActivityLogPanel } from "./LeadActivityLogPanel";
+import { useLeadActions } from "@/features/leads/hooks/useLeadActions";
 import { PropertyForm } from "@/components/properties/PropertyForm";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -139,7 +140,8 @@ export function LeadDetailsDialog({
   const [generatingPortalLink, setGeneratingPortalLink] = useState(false);
 
   const { toast } = useToast();
-  
+  const { sendEmail, sendSMS, sendWhatsApp } = useLeadActions();
+
   // Use ref to prevent multiple fetches
   const fetchingRef = useRef(false);
   const currentLeadIdRef = useRef<string | null>(null);
@@ -816,27 +818,53 @@ export function LeadDetailsDialog({
               }
             }}
           >
-            <TabsList className="grid w-full grid-cols-6 h-auto">
-              <TabsTrigger value="info">Informações</TabsTrigger>
-              <TabsTrigger value="ai-assistant" className="text-indigo-700 bg-indigo-50/50 data-[state=active]:bg-indigo-100 data-[state=active]:text-indigo-900 border border-indigo-100/50">
-                <Sparkles className="h-3.5 w-3.5 mr-1.5" />
-                Assistente IA
-              </TabsTrigger>
-              <TabsTrigger value="whatsapp" className="text-green-700 bg-green-50/50 data-[state=active]:bg-green-100 data-[state=active]:text-green-900 border border-green-100/50">
-                <MessageCircle className="h-3.5 w-3.5 mr-1.5" />
-                WhatsApp
-              </TabsTrigger>
-              {(lead.lead_type === "seller" || lead.lead_type === "both") && (
-                <TabsTrigger value="properties">Imóveis ({properties.length})</TabsTrigger>
-              )}
-              <TabsTrigger value="interactions">
-                Interações ({interactions.length})
-              </TabsTrigger>
-              <TabsTrigger value="notes">Notas ({notes.length})</TabsTrigger>
-              <TabsTrigger value="events">Eventos ({events.length})</TabsTrigger>
-              <TabsTrigger value="tasks">Tarefas ({tasks.length})</TabsTrigger>
-              <TabsTrigger value="timeline">Cronologia</TabsTrigger>
-            </TabsList>
+            <div className="flex items-center gap-2">
+              <TabsList className="grid flex-1 grid-cols-6 h-auto">
+                <TabsTrigger value="info">Informações</TabsTrigger>
+                <TabsTrigger value="ai-assistant" className="text-indigo-700 bg-indigo-50/50 data-[state=active]:bg-indigo-100 data-[state=active]:text-indigo-900 border border-indigo-100/50">
+                  <Sparkles className="h-3.5 w-3.5 mr-1.5" />
+                  Assistente IA
+                </TabsTrigger>
+                <TabsTrigger value="whatsapp" className="text-green-700 bg-green-50/50 data-[state=active]:bg-green-100 data-[state=active]:text-green-900 border border-green-100/50">
+                  <MessageCircle className="h-3.5 w-3.5 mr-1.5" />
+                  WhatsApp
+                </TabsTrigger>
+                {(lead.lead_type === "seller" || lead.lead_type === "both") && (
+                  <TabsTrigger value="properties">Imóveis ({properties.length})</TabsTrigger>
+                )}
+                <TabsTrigger value="interactions">
+                  Interações ({interactions.length})
+                </TabsTrigger>
+                <TabsTrigger value="notes">Notas ({notes.length})</TabsTrigger>
+                <TabsTrigger value="events">Eventos ({events.length})</TabsTrigger>
+                <TabsTrigger value="tasks">Tarefas ({tasks.length})</TabsTrigger>
+                <TabsTrigger value="timeline">Cronologia</TabsTrigger>
+              </TabsList>
+
+              <div className="flex items-center gap-1 bg-muted rounded-md p-1 h-9 shrink-0">
+                <button
+                  onClick={() => sendEmail(lead)}
+                  className="p-1.5 rounded-md text-blue-600 hover:bg-background transition-colors"
+                  title="Enviar Email"
+                >
+                  <Mail className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={() => sendWhatsApp(lead)}
+                  className="p-1.5 rounded-md text-green-600 hover:bg-background transition-colors"
+                  title="Enviar WhatsApp"
+                >
+                  <MessageCircle className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={() => sendSMS(lead)}
+                  className="p-1.5 rounded-md text-purple-600 hover:bg-background transition-colors"
+                  title="Enviar SMS"
+                >
+                  <MessageSquare className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
 
             <TabsContent value="info" className="space-y-4 mt-4">
               <Card>
