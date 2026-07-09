@@ -144,8 +144,8 @@ export default function TeamDashboard() {
         // Admins/brokers veem todos os team leads e consultores
         agentsQuery = agentsQuery.in("role", ["consultant", "team_lead"]);
       } else {
-        // Team leads veem só os seus consultores diretos
-        agentsQuery = agentsQuery.eq("team_lead_id", user.id).eq("role", "consultant");
+        // Team leads veem os seus consultores diretos + o seu próprio desempenho
+        agentsQuery = agentsQuery.or(`and(team_lead_id.eq.${user.id},role.eq.consultant),id.eq.${user.id}`);
       }
 
       const { data } = await agentsQuery;
@@ -175,8 +175,8 @@ export default function TeamDashboard() {
         // Admins/brokers veem todos os team leads e consultores
         agentsQueryBuilder = agentsQueryBuilder.in("role", ["consultant", "team_lead"]);
       } else {
-        // Team leads veem só os seus consultores diretos
-        agentsQueryBuilder = agentsQueryBuilder.eq("team_lead_id", user.id).eq("role", "consultant");
+        // Team leads veem os seus consultores diretos + o seu próprio desempenho
+        agentsQueryBuilder = agentsQueryBuilder.or(`and(team_lead_id.eq.${user.id},role.eq.consultant),id.eq.${user.id}`);
       }
 
       const { data: agentsData } = await agentsQueryBuilder;
@@ -195,8 +195,6 @@ export default function TeamDashboard() {
       if (dealsError) {
         console.error("[TeamDashboard] Error fetching deals:", dealsError);
       }
-      console.log("[TeamDashboard] agentsData ids:", agentsData.map((a: any) => ({ id: a.id, name: a.full_name })));
-      console.log("[TeamDashboard] dealsData:", dealsData);
 
       setDeals(dealsData || []);
 
