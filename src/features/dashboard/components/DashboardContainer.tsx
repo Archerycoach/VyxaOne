@@ -25,6 +25,7 @@ import { useDashboardFilters } from "../hooks/useDashboardFilters";
 import { useRouter } from "next/router";
 import { ScopeSelector } from "@/components/ScopeSelector";
 import { supabase } from "@/integrations/supabase/client";
+import { AiAssistantCard } from "./AiAssistantCard";
 
 interface TeamMember {
   id: string;
@@ -131,6 +132,8 @@ export function DashboardContainer() {
           </div>
         </div>
       </div>
+
+      <AiAssistantCard />
 
       {/* Top Stats Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">

@@ -22,6 +22,14 @@ interface GptApiKey {
   property_matcher_enabled?: boolean;
 }
 
+interface OrgAiKey {
+  id: string;
+  provider: string;
+  model: string;
+  api_key: string;
+  created_at: string;
+}
+
 interface MonthlyUsage {
   totalInputTokens: number;
   totalOutputTokens: number;
@@ -78,17 +86,194 @@ export function GptApiSettings() {
   const [propertyMatcherEnabled, setPropertyMatcherEnabled] = useState(false);
   const [monthlyUsage, setMonthlyUsage] = useState<MonthlyUsage | null>(null);
   const [loadingUsage, setLoadingUsage] = useState(false);
-  
+  const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
+
   // Form state
   const [showForm, setShowForm] = useState(false);
   const [provider, setProvider] = useState<string>("openai");
   const [model, setModel] = useState<string>("gpt-4o-mini");
   const [apiKey, setApiKey] = useState<string>("");
 
+  // Org-wide key state (só broker/admin)
+  const [orgKey, setOrgKey] = useState<OrgAiKey | null>(null);
+  const [loadingOrgKey, setLoadingOrgKey] = useState(false);
+  const [showOrgForm, setShowOrgForm] = useState(false);
+  const [orgProvider, setOrgProvider] = useState<string>("openai");
+  const [orgModel, setOrgModel] = useState<string>("gpt-4o-mini");
+  const [orgApiKey, setOrgApiKey] = useState<string>("");
+  const [savingOrgKey, setSavingOrgKey] = useState(false);
+  const [testingOrgKey, setTestingOrgKey] = useState(false);
+  const [orgTestResult, setOrgTestResult] = useState<{ success: boolean; message: string } | null>(null);
+
   useEffect(() => {
     loadKeys();
     loadMonthlyUsage();
+    loadCurrentUserRole();
   }, []);
+
+  useEffect(() => {
+    const firstModel = PROVIDERS[orgProvider as keyof typeof PROVIDERS]?.models[0]?.value;
+    if (firstModel) setOrgModel(firstModel);
+  }, [orgProvider]);
+
+  const loadCurrentUserRole = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .single();
+
+      const role = profile?.role || null;
+      setCurrentUserRole(role);
+
+      if (role === "admin" || role === "broker") {
+        loadOrgKey();
+      }
+    } catch (error) {
+      console.error("Error loading current user role:", error);
+    }
+  };
+
+  const loadOrgKey = async () => {
+    try {
+      setLoadingOrgKey(true);
+      const { data, error } = await (supabase
+        .from("org_ai_keys" as any)
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle() as any);
+
+      if (error) throw error;
+      setOrgKey(data || null);
+    } catch (error) {
+      console.error("Error loading org AI key:", error);
+    } finally {
+      setLoadingOrgKey(false);
+    }
+  };
+
+  const saveOrgKey = async () => {
+    if (!orgApiKey.trim()) {
+      toast({
+        title: "Erro",
+        description: "Por favor, insira uma chave de API válida.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setSavingOrgKey(true);
+
+      // Só uma chave de agência ativa de cada vez: substitui a anterior.
+      if (orgKey) {
+        await (supabase.from("org_ai_keys" as any) as any).delete().eq("id", orgKey.id);
+      }
+
+      const { data: { user } } = await supabase.auth.getUser();
+      const { error } = await (supabase.from("org_ai_keys" as any) as any).insert({
+        provider: orgProvider,
+        model: orgModel,
+        api_key: orgApiKey,
+        created_by: user?.id,
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Chave da agência guardada",
+        description: "Os consultores sem chave própria passam a usar esta automaticamente.",
+      });
+
+      setShowOrgForm(false);
+      setOrgApiKey("");
+      setOrgTestResult(null);
+      await loadOrgKey();
+    } catch (error) {
+      console.error("Error saving org AI key:", error);
+      toast({
+        title: "Erro",
+        description: "Não foi possível guardar a chave da agência.",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingOrgKey(false);
+    }
+  };
+
+  const revokeOrgKey = async () => {
+    if (!orgKey) return;
+    try {
+      const { error } = await (supabase.from("org_ai_keys" as any) as any).delete().eq("id", orgKey.id);
+      if (error) throw error;
+
+      toast({
+        title: "Chave da agência removida",
+        description: "Os consultores sem chave própria deixam de ter IA disponível.",
+      });
+      setOrgKey(null);
+    } catch (error) {
+      console.error("Error revoking org AI key:", error);
+      toast({
+        title: "Erro",
+        description: "Não foi possível remover a chave da agência.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const testOrgConnection = async () => {
+    if (!orgApiKey.trim()) return;
+    try {
+      setTestingOrgKey(true);
+      setOrgTestResult(null);
+
+      let success = false;
+      let errorMessage = "";
+
+      if (orgProvider === "openai") {
+        const response = await fetch("https://api.openai.com/v1/chat/completions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${orgApiKey}` },
+          body: JSON.stringify({ model: orgModel, messages: [{ role: "user", content: "Teste" }], max_tokens: 5 }),
+        });
+        success = response.ok;
+        if (!success) errorMessage = (await response.json())?.error?.message || "Erro desconhecido";
+      } else if (orgProvider === "anthropic") {
+        const response = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-api-key": orgApiKey, "anthropic-version": "2023-06-01" },
+          body: JSON.stringify({ model: orgModel, max_tokens: 10, messages: [{ role: "user", content: "Teste" }] }),
+        });
+        success = response.ok;
+        if (!success) errorMessage = (await response.json())?.error?.message || "Erro desconhecido";
+      } else if (orgProvider === "google") {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${orgModel}:generateContent?key=${orgApiKey}`;
+        const response = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ contents: [{ parts: [{ text: "Teste" }] }], generationConfig: { maxOutputTokens: 5 } }),
+        });
+        success = response.ok;
+        if (!success) errorMessage = (await response.json())?.error?.message || "Erro desconhecido";
+      }
+
+      setOrgTestResult(
+        success
+          ? { success: true, message: "Ligação bem-sucedida! A chave está válida." }
+          : { success: false, message: `Falha na ligação: ${errorMessage}` }
+      );
+    } catch (error: any) {
+      setOrgTestResult({ success: false, message: `Erro: ${error.message}` });
+    } finally {
+      setTestingOrgKey(false);
+    }
+  };
 
   useEffect(() => {
     // Reset model to first option when provider changes
@@ -409,6 +594,108 @@ export function GptApiSettings() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
+        {/* Org-wide AI key (só broker/admin) */}
+        {(currentUserRole === "admin" || currentUserRole === "broker") && (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-amber-900">Chave de IA da Agência</h3>
+                <p className="text-sm text-amber-800 mt-1">
+                  Configurada aqui, esta chave é usada automaticamente por qualquer consultor que ainda não tenha a sua própria — paga pela agência, sem fricção de cada pessoa ter de criar conta e chave.
+                </p>
+              </div>
+              {!showOrgForm && (
+                <Button
+                  onClick={() => setShowOrgForm(true)}
+                  variant="outline"
+                  className="border-amber-300 text-amber-800 hover:bg-amber-100"
+                >
+                  {orgKey ? "Substituir Chave" : "Configurar Chave"}
+                </Button>
+              )}
+            </div>
+
+            {loadingOrgKey ? (
+              <div className="flex items-center justify-center py-4">
+                <Loader2 className="h-5 w-5 animate-spin text-amber-500" />
+              </div>
+            ) : orgKey && !showOrgForm ? (
+              <div className="flex items-center justify-between bg-white rounded-lg p-3 border border-amber-100">
+                <div className="text-sm">
+                  <span className="font-medium">{PROVIDERS[orgKey.provider as keyof typeof PROVIDERS]?.name || orgKey.provider}</span>
+                  <span className="text-gray-500"> · {orgKey.model}</span>
+                </div>
+                <Button variant="ghost" size="icon" className="text-red-500 hover:text-red-700" onClick={revokeOrgKey} title="Remover chave da agência">
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            ) : !orgKey && !showOrgForm ? (
+              <p className="text-sm text-amber-700">Ainda não há nenhuma chave da agência configurada — cada consultor precisa da sua própria.</p>
+            ) : null}
+
+            {showOrgForm && (
+              <div className="bg-white border border-amber-100 rounded-lg p-4 space-y-3">
+                <div className="space-y-2">
+                  <Label>Fornecedor de IA</Label>
+                  <Select value={orgProvider} onValueChange={setOrgProvider}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="openai">OpenAI (ChatGPT)</SelectItem>
+                      <SelectItem value="anthropic">Anthropic (Claude)</SelectItem>
+                      <SelectItem value="google">Google (Gemini)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Modelo</Label>
+                  <Select value={orgModel} onValueChange={setOrgModel}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PROVIDERS[orgProvider as keyof typeof PROVIDERS]?.models.map((m) => (
+                        <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Chave de API</Label>
+                  <Input
+                    type="password"
+                    placeholder={orgProvider === "openai" ? "sk-..." : orgProvider === "anthropic" ? "sk-ant-..." : "AIza..."}
+                    value={orgApiKey}
+                    onChange={(e) => setOrgApiKey(e.target.value)}
+                  />
+                </div>
+
+                {orgTestResult && (
+                  <div className={`flex items-start gap-2 p-3 rounded-lg ${orgTestResult.success ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+                    {orgTestResult.success ? <CheckCircle2 className="h-5 w-5 text-green-600 mt-0.5" /> : <XCircle className="h-5 w-5 text-red-600 mt-0.5" />}
+                    <p className={`text-sm ${orgTestResult.success ? 'text-green-800' : 'text-red-800'}`}>{orgTestResult.message}</p>
+                  </div>
+                )}
+
+                <div className="flex gap-3 pt-1">
+                  <Button onClick={testOrgConnection} disabled={testingOrgKey || !orgApiKey.trim()} variant="outline" className="flex-1">
+                    {testingOrgKey ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />A testar...</> : <><Key className="h-4 w-4 mr-2" />Testar Ligação</>}
+                  </Button>
+                  <Button onClick={saveOrgKey} disabled={savingOrgKey || !orgApiKey.trim()} className="flex-1 bg-amber-600 hover:bg-amber-700">
+                    {savingOrgKey ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />A guardar...</> : <><Check className="h-4 w-4 mr-2" />Guardar</>}
+                  </Button>
+                  <Button onClick={() => { setShowOrgForm(false); setOrgApiKey(""); setOrgTestResult(null); }} variant="ghost">
+                    Cancelar
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Monthly Usage Panel */}
         {monthlyUsage !== null && (
           <div className="bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-100 rounded-lg p-6">

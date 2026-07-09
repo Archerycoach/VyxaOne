@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { calculateCost } from "./pricing";
+import { resolveAiKey } from "./keys";
 
 /**
  * Unified AI provider interface
@@ -9,9 +10,48 @@ import { calculateCost } from "./pricing";
  * while remaining backward-compatible with older models.
  */
 
+// Formato de conteúdo multimodal usado pelos chamadores (mesmo formato da
+// OpenAI, já usado antes desta mudança) — cada provider traduz para o seu
+// próprio formato de imagem em callOpenAI/callAnthropic/callGoogleGemini.
+export type AIContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
+
 export interface AIMessage {
   role: "system" | "user" | "assistant";
-  content: string;
+  content: string | AIContentPart[];
+}
+
+// "data:image/jpeg;base64,XXXX" -> { mediaType: "image/jpeg", base64: "XXXX" }
+function parseDataUrl(url: string): { mediaType: string; base64: string } {
+  const match = url.match(/^data:([^;]+);base64,(.+)$/);
+  if (!match) {
+    throw new Error("Formato de imagem inválido — esperado um data URL base64.");
+  }
+  return { mediaType: match[1], base64: match[2] };
+}
+
+// Traduz o conteúdo (texto simples, ou texto+imagem no formato da OpenAI)
+// para o formato de blocos de conteúdo da Anthropic.
+function toAnthropicContent(content: string | AIContentPart[]): any {
+  if (typeof content === "string") return content;
+
+  return content.map((part) => {
+    if (part.type === "text") return { type: "text", text: part.text };
+    const { mediaType, base64 } = parseDataUrl(part.image_url.url);
+    return { type: "image", source: { type: "base64", media_type: mediaType, data: base64 } };
+  });
+}
+
+// Traduz o conteúdo para blocos de "parts" da Gemini (texto e/ou inlineData).
+function toGeminiParts(content: string | AIContentPart[]): any[] {
+  if (typeof content === "string") return [{ text: content }];
+
+  return content.map((part) => {
+    if (part.type === "text") return { text: part.text };
+    const { mediaType, base64 } = parseDataUrl(part.image_url.url);
+    return { inlineData: { mimeType: mediaType, data: base64 } };
+  });
 }
 
 export interface AIUsage {
@@ -45,32 +85,18 @@ export async function runAI(params: RunAIParams): Promise<AIResponse> {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
-  // Fetch user's AI provider configuration
-  const { data: apiKey, error: keyError } = await supabase
-    .from("gpt_api_keys")
-    .select("provider, model, api_key")
-    .eq("user_id", userId)
-    .eq("is_active", true)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  // Chave própria do utilizador, com reserva na chave da agência (ver lib/ai/keys.ts)
+  const { provider, model, apiKey: api_key, scope } = await resolveAiKey(userId, supabase);
 
-  if (keyError || !apiKey) {
-    throw new Error(
-      "Configuração de IA não encontrada. Por favor, configure a sua chave de API nas definições."
-    );
+  if (scope === "user") {
+    await supabase
+      .from("gpt_api_keys")
+      .update({ last_used_at: new Date().toISOString() })
+      .eq("user_id", userId)
+      .eq("is_active", true);
   }
 
-  const { provider, model, api_key } = apiKey as { provider: string; model: string; api_key: string };
-
-  // Update last_used_at timestamp
-  await supabase
-    .from("gpt_api_keys")
-    .update({ last_used_at: new Date().toISOString() })
-    .eq("user_id", userId)
-    .eq("is_active", true);
-
-  console.log(`[AI Provider] Task: ${task} | Provider: ${provider} | Model: ${model}`);
+  console.log(`[AI Provider] Task: ${task} | Provider: ${provider} | Model: ${model} | Key scope: ${scope}`);
 
   let response: AIResponse;
 
@@ -189,7 +215,7 @@ async function callAnthropic(
   const systemMessage = messages.find(m => m.role === "system");
   const conversationMessages = messages.filter(m => m.role !== "system");
 
-  let systemPrompt = systemMessage?.content || "";
+  let systemPrompt = typeof systemMessage?.content === "string" ? systemMessage.content : "";
 
   if (jsonMode && !systemPrompt.includes("JSON")) {
     systemPrompt += "\n\nResponde APENAS em JSON válido. Não incluas markdown nem texto antes ou depois do JSON.";
@@ -201,7 +227,7 @@ async function callAnthropic(
     temperature,
     messages: conversationMessages.map(m => ({
       role: m.role === "assistant" ? "assistant" : "user",
-      content: m.content,
+      content: toAnthropicContent(m.content),
     })),
   };
 
@@ -260,13 +286,13 @@ async function callGoogleGemini(
   const conversationMessages = messages.filter(m => m.role !== "system");
 
   // Build the system instruction text (system message + optional JSON directive)
-  let systemText = systemMessage?.content || "";
+  let systemText = typeof systemMessage?.content === "string" ? systemMessage.content : "";
   if (jsonMode) {
     systemText += "\n\nResponde APENAS em JSON válido. Não incluas markdown nem texto antes ou depois do JSON.";
   }
 
-  // Conversation content goes into parts
-  const parts = conversationMessages.map(msg => ({ text: msg.content }));
+  // Conversation content goes into parts (texto e/ou imagem)
+  const parts = conversationMessages.flatMap(msg => toGeminiParts(msg.content));
 
   const requestBody: any = {
     contents: [{ parts }],

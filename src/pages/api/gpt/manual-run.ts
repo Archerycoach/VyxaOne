@@ -123,31 +123,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(500).json({ error: "Failed to parse AI planning" });
     }
 
-    const { data: smtpSettings } = await supabase
-      .from("smtp_settings")
-      .select("*")
-      .eq("user_id", user.id)
-      .eq("is_active", true)
-      .single();
-
-    if (!smtpSettings || !profile.email) {
-      console.log(`No active SMTP or email for user ${user.id}, skipping email send`);
-      return res.status(200).json({
-        message: "Planning generated but not sent (no active SMTP or email)",
-        planning
-      });
-    }
-
-    const transporter = nodemailer.createTransport({
-      host: smtpSettings.smtp_host,
-      port: smtpSettings.smtp_port,
-      secure: smtpSettings.smtp_port === 465,
-      auth: {
-        user: smtpSettings.smtp_user,
-        pass: smtpSettings.smtp_password,
-      },
-    });
-
     const emailHtml = `
       <!DOCTYPE html>
       <html>
@@ -275,6 +250,39 @@ ${planning.closing || ""}
 ---
 Este email foi gerado automaticamente pelo Assistente IA do Vyxa CRM.
     `.trim();
+
+    // Guarda sempre no histórico (separador "Relatórios Diários" no Agente
+    // IA), independentemente de haver email configurado ou não.
+    await supabase.from("ai_reports").insert({
+      user_id: user.id,
+      title: `Plano do Dia - ${new Date().toLocaleDateString("pt-PT")}`,
+      content: emailHtml,
+    });
+
+    const { data: smtpSettings } = await supabase
+      .from("smtp_settings")
+      .select("*")
+      .eq("user_id", user.id)
+      .eq("is_active", true)
+      .single();
+
+    if (!smtpSettings || !profile.email) {
+      console.log(`No active SMTP or email for user ${user.id}, skipping email send`);
+      return res.status(200).json({
+        message: "Planning generated but not sent (no active SMTP or email)",
+        planning
+      });
+    }
+
+    const transporter = nodemailer.createTransport({
+      host: smtpSettings.smtp_host,
+      port: smtpSettings.smtp_port,
+      secure: smtpSettings.smtp_port === 465,
+      auth: {
+        user: smtpSettings.smtp_user,
+        pass: smtpSettings.smtp_password,
+      },
+    });
 
     await transporter.sendMail({
       from: `"${smtpSettings.sender_name || "Vyxa CRM"}" <${smtpSettings.sender_email}>`,

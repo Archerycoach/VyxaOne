@@ -116,6 +116,7 @@ export function Navigation() {
     
     // Main items
     { icon: ListTodo, label: "O Meu Dia", path: "/ai-organizer" },
+    { icon: Bot, label: "Agente IA", path: "/ai-agent" },
     { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
     { icon: Users, label: "Leads", path: "/leads" },
     { icon: Target, label: "Pipeline", path: "/pipeline" },
@@ -156,7 +157,6 @@ export function Navigation() {
       icon: Sparkles,
       label: "Inteligência Artificial",
       subItems: [
-        { icon: Bot, label: "Agente IA", path: "/ai-agent" },
         { icon: BrainCircuit, label: "Emails por Procura", path: "/ai-email-campaigns" },
         { icon: Brain, label: "Coach de Performance", path: "/ai-performance-coach" },
       ]

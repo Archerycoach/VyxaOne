@@ -4,16 +4,13 @@ import { runAI } from "@/lib/ai/provider";
 import { getVoiceNoteAnalysisPrompt, type QualificationFieldContext } from "@/lib/ai/prompts/voiceNoteAnalysis";
 import { getLeadQualification, formatCurrentQualificationValue, mapExtractedDataToLeadUpdate } from "@/lib/leadQualification";
 import { storeMemory } from "@/lib/ai/embeddings";
+import { resolveAiKey, resolveAiKeyForProvider } from "@/lib/ai/keys";
 import formidable from "formidable";
 import fs from "fs";
 import FormData from "form-data";
 import fetch from "node-fetch";
 
-// Temporary types until these tables are added to database.types.ts
-interface GptApiKey {
-  provider: string;
-  api_key: string;
-}
+const DEFAULT_GEMINI_AUDIO_MODEL = "gemini-3.5-flash";
 
 export const config = {
   api: {
@@ -45,24 +42,29 @@ async function readJsonBody(req: NextApiRequest): Promise<any> {
 }
 
 async function transcribeAudio(audioBuffer: Buffer, userId: string): Promise<string> {
-  // Get user's AI configuration
-  const { data: apiKey } = await supabaseAdmin
-    .from("gpt_api_keys")
-    .select("provider, api_key")
-    .eq("user_id", userId)
-    .eq("is_active", true)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .returns<GptApiKey>()
-    .maybeSingle();
+  const primaryKey = await resolveAiKey(userId, supabaseAdmin);
 
-  if (!apiKey) {
-    throw new Error("Configuração de IA não encontrada");
+  if (primaryKey.provider === "openai") {
+    return transcribeWithWhisper(audioBuffer, primaryKey.apiKey);
   }
 
-  const { provider, api_key } = apiKey;
+  // O Claude não processa áudio — para quem tem a Anthropic como fornecedor
+  // principal, usamos uma chave Google (Gemini, que processa áudio
+  // nativamente) que o próprio já tenha configurada, principal ou secundária.
+  const googleKey = primaryKey.provider === "google"
+    ? primaryKey
+    : await resolveAiKeyForProvider(userId, "google", supabaseAdmin);
 
-  // Use OpenAI Whisper for all providers (standard transcription)
+  if (!googleKey) {
+    throw new Error(
+      "Para transcrever notas de voz é necessária uma chave do Google Gemini nas Definições de IA — o fornecedor atual não processa áudio."
+    );
+  }
+
+  return transcribeWithGemini(audioBuffer, googleKey.apiKey, googleKey.model);
+}
+
+async function transcribeWithWhisper(audioBuffer: Buffer, apiKey: string): Promise<string> {
   const formData = new FormData();
   formData.append("file", audioBuffer, {
     filename: "audio.webm",
@@ -74,7 +76,7 @@ async function transcribeAudio(audioBuffer: Buffer, userId: string): Promise<str
   const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${api_key}`,
+      Authorization: `Bearer ${apiKey}`,
       ...formData.getHeaders(),
     },
     body: formData as any,
@@ -87,6 +89,32 @@ async function transcribeAudio(audioBuffer: Buffer, userId: string): Promise<str
 
   const data: any = await response.json();
   return data.text;
+}
+
+async function transcribeWithGemini(audioBuffer: Buffer, apiKey: string, model?: string): Promise<string> {
+  const geminiModel = model && model.startsWith("gemini") ? model : DEFAULT_GEMINI_AUDIO_MODEL;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${apiKey}`;
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [{
+        parts: [
+          { text: "Transcreve fielmente o áudio seguinte em português. Responde apenas com a transcrição, sem comentários adicionais." },
+          { inlineData: { mimeType: "audio/webm", data: audioBuffer.toString("base64") } },
+        ],
+      }],
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Erro na transcrição: ${error}`);
+  }
+
+  const data: any = await response.json();
+  return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {

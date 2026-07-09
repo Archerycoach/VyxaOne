@@ -4,17 +4,26 @@
  */
 
 import { createClient } from "@supabase/supabase-js";
+import { resolveAiKey, resolveAiKeyForProvider } from "./keys";
 
-const EMBEDDING_MODEL_OPENAI = "text-embedding-3-small"; // 1536 dimensions
-const EMBEDDING_MODEL_VOYAGE = "voyage-2"; // Alternative: Voyage AI
+const EMBEDDING_MODEL_OPENAI = "text-embedding-3-small"; // 1536 dimensões
+const EMBEDDING_MODEL_GOOGLE = "text-embedding-004"; // 768 dimensões
+
+type EmbeddingSpace = "openai" | "google";
 
 interface EmbeddingResult {
   embedding: number[];
   tokens: number;
+  space: EmbeddingSpace;
 }
 
 /**
- * Generate embedding for text using the user's configured AI provider
+ * Gera o embedding de um texto usando o fornecedor de IA configurado.
+ *
+ * A Anthropic (Claude) não tem API de embeddings própria — quando é o
+ * fornecedor principal do utilizador, usamos a chave Google (Gemini) que o
+ * próprio já tenha configurada (principal ou secundária) especificamente
+ * para esta capacidade.
  */
 export async function generateEmbedding(
   userId: string,
@@ -26,36 +35,28 @@ export async function generateEmbedding(
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
-  // Get user's AI configuration
-  const { data: apiKey, error: keyError } = await supabase
-    .from("gpt_api_keys")
-    .select("provider, api_key")
-    .eq("user_id", userId)
-    .eq("is_active", true)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const primaryKey = await resolveAiKey(userId, supabase);
 
-  if (keyError || !apiKey) {
-    throw new Error("Configuração de IA não encontrada para gerar embeddings.");
+  if (primaryKey.provider === "openai") {
+    const { embedding, tokens } = await generateOpenAIEmbedding(primaryKey.apiKey, text);
+    return { embedding, tokens, space: "openai" };
   }
 
-  const { provider, api_key } = apiKey as { provider: string; api_key: string };
+  const googleKey = primaryKey.provider === "google"
+    ? primaryKey
+    : await resolveAiKeyForProvider(userId, "google", supabase);
 
-  // Only OpenAI and Anthropic have native embedding APIs
-  // For Google Gemini, we'll use OpenAI embeddings as fallback (or Voyage AI)
-  if (provider === "openai" || provider === "anthropic" || provider === "google") {
-    // Use OpenAI for embeddings (standard across all providers)
-    return await generateOpenAIEmbedding(api_key, text);
+  if (!googleKey) {
+    throw new Error(
+      "Para gerar memória de contexto de IA é necessária uma chave do Google Gemini nas Definições de IA — o fornecedor atual não tem uma API de embeddings própria."
+    );
   }
 
-  throw new Error(`Embeddings não suportados para o provider: ${provider}`);
+  const { embedding, tokens } = await generateGoogleEmbedding(googleKey.apiKey, text);
+  return { embedding, tokens, space: "google" };
 }
 
-/**
- * Generate embedding using OpenAI API
- */
-async function generateOpenAIEmbedding(apiKey: string, text: string): Promise<EmbeddingResult> {
+async function generateOpenAIEmbedding(apiKey: string, text: string): Promise<{ embedding: number[]; tokens: number }> {
   const response = await fetch("https://api.openai.com/v1/embeddings", {
     method: "POST",
     headers: {
@@ -81,6 +82,31 @@ async function generateOpenAIEmbedding(apiKey: string, text: string): Promise<Em
   };
 }
 
+async function generateGoogleEmbedding(apiKey: string, text: string): Promise<{ embedding: number[]; tokens: number }> {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${EMBEDDING_MODEL_GOOGLE}:embedContent?key=${apiKey}`;
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      content: { parts: [{ text: text.substring(0, 8000) }] },
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Google embedding error: ${error}`);
+  }
+
+  const data = await response.json();
+
+  return {
+    embedding: data.embedding.values,
+    // A API de embeddings da Google não devolve contagem de tokens.
+    tokens: 0,
+  };
+}
+
 /**
  * Store a memory with embedding in the database
  */
@@ -99,10 +125,8 @@ export async function storeMemory(params: {
   );
 
   try {
-    // Generate embedding for the content
-    const { embedding } = await generateEmbedding(userId, content, supabase);
+    const { embedding, space } = await generateEmbedding(userId, content, supabase);
 
-    // Store in lead_memory table
     const { error } = await supabase
       .from("lead_memory")
       .insert({
@@ -110,7 +134,7 @@ export async function storeMemory(params: {
         user_id: userId,
         source,
         content,
-        embedding,
+        ...(space === "openai" ? { embedding } : { embedding_google: embedding }),
       });
 
     if (error) {
@@ -118,7 +142,7 @@ export async function storeMemory(params: {
       throw error;
     }
 
-    console.log(`✅ Memory stored for lead ${leadId} (source: ${source})`);
+    console.log(`✅ Memory stored for lead ${leadId} (source: ${source}, space: ${space})`);
   } catch (error) {
     console.error("Error storing memory:", error);
     // Don't throw - allow the operation to continue even if memory storage fails
@@ -141,13 +165,11 @@ export async function getLeadContext(
   );
 
   try {
-    // Generate embedding for the query
-    const { embedding } = await generateEmbedding(userId, query, supabase);
+    const { embedding, space } = await generateEmbedding(userId, query, supabase);
 
-    // Search for similar memories using the PostgreSQL function
     const { data, error } = await supabase.rpc("match_lead_memory", {
       p_lead_id: leadId,
-      p_query_embedding: embedding,
+      ...(space === "openai" ? { p_query_embedding: embedding } : { p_query_embedding_google: embedding }),
       p_match_count: topK,
     });
 
