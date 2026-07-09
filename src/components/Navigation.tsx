@@ -132,7 +132,7 @@ export function Navigation() {
       label: "Análise Desempenho", 
       subItems: [
         { icon: Handshake, label: "Negócios", path: "/deals" },
-        { icon: Trophy, label: isAdmin || isTeamLead ? "Performance de Equipa" : "Performance", path: isAdmin || isTeamLead ? "/team-dashboard" : "/performance" },
+        { icon: Trophy, label: canSeeTeamFeatures ? "Performance de Equipa" : "Performance", path: canSeeTeamFeatures ? "/team-dashboard" : "/performance" },
         { icon: Target, label: "Objetivos", path: "/goals" },
         { icon: FileText, label: "Relatórios", path: "/reports" },
       ]

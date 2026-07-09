@@ -91,6 +91,7 @@ export function MetaFormsManagement({ integrationId, integrationName }: MetaForm
   const [checkingStatus, setCheckingStatus] = useState(false);
   const [webhookStatus, setWebhookStatus] = useState<any>(null);
   const [teamMembers, setTeamMembers] = useState<Array<{ id: string; full_name: string | null; email: string | null }>>([]);
+  const [crmMetricsByFormId, setCrmMetricsByFormId] = useState<Record<string, { leadsCount: number; wonCount: number }>>({});
   const { toast } = useToast();
 
   useEffect(() => {
@@ -98,10 +99,33 @@ export function MetaFormsManagement({ integrationId, integrationName }: MetaForm
     loadPipelineStages();
     loadAssociationOptions();
     loadIntegrationSettings();
+    loadCrmLeadMetrics();
     getUsersForAssignment()
       .then((users) => setTeamMembers(users.map((u: any) => ({ id: u.id, full_name: u.full_name, email: u.email }))))
       .catch((err) => console.error("Erro ao carregar membros da equipa:", err));
   }, [integrationId]);
+
+  // Leads e vendas já criadas no CRM por formulário Meta — base real para o
+  // cálculo de custo por lead/venda (independente do que a Meta reporta).
+  const loadCrmLeadMetrics = async () => {
+    try {
+      const { data } = await supabase
+        .from("leads")
+        .select("meta_form_id, status")
+        .not("meta_form_id", "is", null);
+
+      const metrics: Record<string, { leadsCount: number; wonCount: number }> = {};
+      (data || []).forEach((lead: any) => {
+        const formId = lead.meta_form_id as string;
+        if (!metrics[formId]) metrics[formId] = { leadsCount: 0, wonCount: 0 };
+        metrics[formId].leadsCount += 1;
+        if (lead.status === "won") metrics[formId].wonCount += 1;
+      });
+      setCrmMetricsByFormId(metrics);
+    } catch (error) {
+      console.error("Error loading CRM lead metrics for ROI:", error);
+    }
+  };
 
   const loadIntegrationSettings = async () => {
     try {
@@ -822,6 +846,12 @@ export function MetaFormsManagement({ integrationId, integrationName }: MetaForm
                     </div>
                     <p className="text-sm text-gray-500 mt-1">
                       {form.leads_count} leads • ID: {form.id}
+                      {(() => {
+                        const crmMetrics = crmMetricsByFormId[form.id];
+                        const spend = form.config?.total_ad_spend || 0;
+                        if (!crmMetrics || spend <= 0 || crmMetrics.leadsCount === 0) return null;
+                        return ` • €${(spend / crmMetrics.leadsCount).toFixed(2)}/lead`;
+                      })()}
                     </p>
                     {form.config && (
                       <div className="flex gap-2 mt-2">
@@ -880,9 +910,10 @@ export function MetaFormsManagement({ integrationId, integrationName }: MetaForm
           </DialogHeader>
 
           <Tabs defaultValue="general" className="w-full">
-            <TabsList className="grid w-full grid-cols-4">
+            <TabsList className="grid w-full grid-cols-5">
               <TabsTrigger value="general">Geral</TabsTrigger>
               <TabsTrigger value="distribution">Distribuição</TabsTrigger>
+              <TabsTrigger value="roi">ROI</TabsTrigger>
               <TabsTrigger value="mapping">Mapeamento</TabsTrigger>
               <TabsTrigger value="history">Histórico</TabsTrigger>
             </TabsList>
@@ -1185,6 +1216,61 @@ export function MetaFormsManagement({ integrationId, integrationName }: MetaForm
                   Este email é próprio deste formulário/campanha — independente das automações gerais em Definições &gt; Automação.
                 </p>
               </div>
+            </TabsContent>
+
+            {/* ROI */}
+            <TabsContent value="roi" className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="total_ad_spend">Valor investido nesta campanha/formulário (€)</Label>
+                <Input
+                  id="total_ad_spend"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={formConfig.total_ad_spend ?? 0}
+                  onChange={(e) =>
+                    setFormConfig({ ...formConfig, total_ad_spend: parseFloat(e.target.value) || 0 })
+                  }
+                  placeholder="0.00"
+                />
+                <p className="text-xs text-gray-500">
+                  Inserido manualmente a partir do Gestor de Anúncios da Meta — atualiza sempre que quiseres ver o ROI atualizado. Acumulado, não é reiniciado por mês.
+                </p>
+              </div>
+
+              {(() => {
+                const crmMetrics = selectedForm ? crmMetricsByFormId[selectedForm.id] : undefined;
+                const leadsCount = crmMetrics?.leadsCount || 0;
+                const wonCount = crmMetrics?.wonCount || 0;
+                const spend = formConfig.total_ad_spend ?? 0;
+                const costPerLead = leadsCount > 0 ? spend / leadsCount : null;
+                const costPerSale = wonCount > 0 ? spend / wonCount : null;
+
+                return (
+                  <div className="grid grid-cols-2 gap-3 pt-2">
+                    <div className="border rounded-lg p-3">
+                      <p className="text-xs text-gray-500">Leads geradas (CRM)</p>
+                      <p className="text-xl font-semibold">{leadsCount}</p>
+                    </div>
+                    <div className="border rounded-lg p-3">
+                      <p className="text-xs text-gray-500">Vendas fechadas</p>
+                      <p className="text-xl font-semibold">{wonCount}</p>
+                    </div>
+                    <div className="border rounded-lg p-3">
+                      <p className="text-xs text-gray-500">Custo por lead</p>
+                      <p className="text-xl font-semibold">
+                        {costPerLead !== null ? `€${costPerLead.toFixed(2)}` : "—"}
+                      </p>
+                    </div>
+                    <div className="border rounded-lg p-3">
+                      <p className="text-xs text-gray-500">Custo por venda</p>
+                      <p className="text-xl font-semibold">
+                        {costPerSale !== null ? `€${costPerSale.toFixed(2)}` : "—"}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })()}
             </TabsContent>
 
             {/* Field Mapping */}

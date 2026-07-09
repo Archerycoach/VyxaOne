@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/router";
 import { Button } from "@/components/ui/button";
-import { Plus, Upload, Download, Loader2 } from "lucide-react";
+import { Plus, Upload, Download, Loader2, Users2 } from "lucide-react";
 import { LeadFormContainer } from "@/features/leads/components/form";
 import { LeadsListContainer } from "@/features/leads/components/LeadsListContainer";
 import {
@@ -207,6 +207,18 @@ export default function Leads() {
               <p className="text-gray-600 mt-1">Gerir potenciais clientes</p>
             </div>
             <div className="flex gap-3">
+              {canAssignLeads && (
+                <Button
+                  onClick={() => router.push("/duplicate-leads")}
+                  variant="outline"
+                  className="border-amber-200 text-amber-600 hover:bg-amber-50"
+                  disabled={isImporting || isLoading}
+                >
+                  <Users2 className="h-5 w-5 mr-2" />
+                  Duplicados
+                </Button>
+              )}
+
               <Button
                 onClick={handleDownloadTemplate}
                 variant="outline"

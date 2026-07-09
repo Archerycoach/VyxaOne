@@ -36,7 +36,8 @@ import {
   MessageCircle,
   Send,
   Mic,
-  Bell
+  Bell,
+  History
 } from "lucide-react";
 import { getLeadById } from "@/services/leadsService";
 import { getInteractionsByLead, createInteraction } from "@/services/interactionsService";
@@ -51,6 +52,7 @@ import type { CalendarEvent, Task, Property } from "@/types";
 import { QuickContactDialog } from "./QuickContactDialog";
 import { LeadIdealistaPanel } from "./LeadIdealistaPanel";
 import { ContactAlertRequestsPanel } from "@/features/contacts/components/ContactAlertRequestsPanel";
+import { LeadActivityLogPanel } from "./LeadActivityLogPanel";
 import { PropertyForm } from "@/components/properties/PropertyForm";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -105,6 +107,7 @@ export function LeadDetailsDialog({
   const [propertyFormOpen, setPropertyFormOpen] = useState(false);
   const [contactPrefsDialogOpen, setContactPrefsDialogOpen] = useState(false);
   const [alertRequestsDialogOpen, setAlertRequestsDialogOpen] = useState(false);
+  const [activityLogDialogOpen, setActivityLogDialogOpen] = useState(false);
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
   const [drafting, setDrafting] = useState<string | null>(null);
   const [generatedDraft, setGeneratedDraft] = useState<{text: string, channel: 'whatsapp'|'email'} | null>(null);
@@ -784,6 +787,10 @@ export function LeadDetailsDialog({
                   <DropdownMenuItem onClick={() => setAlertRequestsDialogOpen(true)}>
                     <Bell className="h-4 w-4 mr-2 text-amber-600" />
                     Pedidos de Alerta
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setActivityLogDialogOpen(true)}>
+                    <History className="h-4 w-4 mr-2 text-slate-600" />
+                    Histórico de Atividade
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -1480,6 +1487,20 @@ export function LeadDetailsDialog({
               type: "lead",
             }}
           />
+        </DialogContent>
+      </Dialog>
+    )}
+
+    {lead && (
+      <Dialog open={activityLogDialogOpen} onOpenChange={setActivityLogDialogOpen}>
+        <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <History className="h-5 w-5 text-slate-600" />
+              Histórico de Atividade
+            </DialogTitle>
+          </DialogHeader>
+          <LeadActivityLogPanel leadId={lead.id} />
         </DialogContent>
       </Dialog>
     )}

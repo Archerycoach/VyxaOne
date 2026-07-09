@@ -26,7 +26,23 @@ interface AgentMetrics {
   monthly_goal: number;
   goal_progress: number;
   acquisitions: number;
+  avg_response_minutes: number | null;
 }
+
+type RankBy = "revenue" | "deals_closed" | "conversion_rate" | "response_time";
+
+const RANK_COMPARATORS: Record<RankBy, (a: AgentMetrics, b: AgentMetrics) => number> = {
+  revenue: (a, b) => b.total_revenue - a.total_revenue,
+  deals_closed: (a, b) => b.deals_closed - a.deals_closed,
+  conversion_rate: (a, b) => b.conversion_rate - a.conversion_rate,
+  // Tempo de resposta: quanto menor, melhor; quem ainda não tem nenhuma lead
+  // contactada fica no fim (não é possível avaliar).
+  response_time: (a, b) => {
+    if (a.avg_response_minutes === null) return 1;
+    if (b.avg_response_minutes === null) return -1;
+    return a.avg_response_minutes - b.avg_response_minutes;
+  },
+};
 
 interface Deal {
   id: string;
@@ -36,12 +52,29 @@ interface Deal {
   amount: number;
 }
 
+// Média de minutos entre a criação da lead e o primeiro contacto registado,
+// para as leads do agente que já foram contactadas. null se nenhuma foi.
+const calculateAvgResponseMinutes = (
+  leads: { created_at: string | null; first_contact_at: string | null }[]
+): number | null => {
+  const contacted = leads.filter((l) => l.created_at && l.first_contact_at);
+  if (contacted.length === 0) return null;
+
+  const totalMinutes = contacted.reduce((sum, l) => {
+    const minutes = (new Date(l.first_contact_at!).getTime() - new Date(l.created_at!).getTime()) / (1000 * 60);
+    return sum + Math.max(0, minutes);
+  }, 0);
+
+  return Math.round(totalMinutes / contacted.length);
+};
+
 export default function TeamDashboard() {
   const router = useRouter();
   const [metrics, setMetrics] = useState<AgentMetrics[]>([]);
   const [agents, setAgents] = useState<Array<{ id: string; name: string }>>([]);
   const [selectedView, setSelectedView] = useState<string>("team");
   const [leadTypeFilter, setLeadTypeFilter] = useState<string>("all");
+  const [rankBy, setRankBy] = useState<RankBy>("revenue");
   const [loading, setLoading] = useState(true);
   const [hasAccess, setHasAccess] = useState(false);
   const [deals, setDeals] = useState<Deal[]>([]);
@@ -158,7 +191,7 @@ export default function TeamDashboard() {
       const metricsPromises = agentsData.map(async (agent) => {
         let query = supabase
           .from("leads")
-          .select("status, lead_type")
+          .select("status, lead_type, created_at, first_contact_at")
           .eq("assigned_to", agent.id);
 
         if (leadTypeFilter === "buyers") {
@@ -172,29 +205,41 @@ export default function TeamDashboard() {
         // Calculate acquisitions from deals
         const agentDeals = (dealsData || []).filter((d: Deal) => d.user_id === agent.id);
         let acquisitions = 0;
-        
+
         if (leadTypeFilter === "all" || leadTypeFilter === "sellers") {
-          acquisitions = agentDeals.filter((d: Deal) => 
+          acquisitions = agentDeals.filter((d: Deal) =>
             d.deal_type === "seller" || d.deal_type === "both"
           ).length;
         }
 
-        const wonLeads = leads?.filter(l => l.status === "won").length || 0;
+        // Negócios/faturação vêm da tabela "deals" (valores reais), não do
+        // status da lead — o pipeline desta app nunca marca leads como
+        // "won"; o fecho de negócio é registado à parte, em "Negócios".
+        const relevantDeals = agentDeals.filter((d: Deal) => {
+          if (leadTypeFilter === "buyers") return d.deal_type === "buyer" || d.deal_type === "both";
+          if (leadTypeFilter === "sellers") return d.deal_type === "seller" || d.deal_type === "both";
+          return true;
+        });
+        const dealsClosed = relevantDeals.length;
+        const totalRevenue = relevantDeals.reduce((sum: number, d: Deal) => sum + (d.amount || 0), 0);
+
         const totalLeads = leads?.length || 0;
         const activeLeads = leads?.filter(l => !["won", "lost"].includes(l.status)).length || 0;
-        const conversionRate = totalLeads > 0 ? (wonLeads / totalLeads) * 100 : 0;
+        const conversionRate = totalLeads > 0 ? (dealsClosed / totalLeads) * 100 : 0;
+        const avgResponseMinutes = calculateAvgResponseMinutes(leads || []);
 
         return {
           id: agent.id,
           name: agent.full_name || agent.email || "Agente",
           avatar: (agent.full_name || agent.email || "A").split(" ").map((n: string) => n[0]).join("").toUpperCase(),
-          deals_closed: wonLeads,
-          total_revenue: wonLeads * 150000,
+          deals_closed: dealsClosed,
+          total_revenue: totalRevenue,
           active_leads: activeLeads,
           conversion_rate: Math.round(conversionRate),
           monthly_goal: 500000,
-          goal_progress: Math.min(100, Math.round((wonLeads * 150000 / 500000) * 100)),
-          acquisitions
+          goal_progress: Math.min(100, Math.round((totalRevenue / 500000) * 100)),
+          acquisitions,
+          avg_response_minutes: avgResponseMinutes,
         };
       });
 
@@ -216,7 +261,7 @@ export default function TeamDashboard() {
 
       let query = supabase
         .from("leads")
-        .select("status, lead_type")
+        .select("status, lead_type, created_at, first_contact_at")
         .eq("assigned_to", agentId);
 
       if (leadTypeFilter === "buyers") {
@@ -242,22 +287,30 @@ export default function TeamDashboard() {
         ).length;
       }
 
-      const wonLeads = leads?.filter(l => l.status === "won").length || 0;
+      const relevantDeals = (dealsData || []).filter((d: Deal) => {
+        if (leadTypeFilter === "buyers") return d.deal_type === "buyer" || d.deal_type === "both";
+        if (leadTypeFilter === "sellers") return d.deal_type === "seller" || d.deal_type === "both";
+        return true;
+      });
+      const dealsClosed = relevantDeals.length;
+      const totalRevenue = relevantDeals.reduce((sum: number, d: Deal) => sum + (d.amount || 0), 0);
+
       const totalLeads = leads?.length || 0;
       const activeLeads = leads?.filter(l => !["won", "lost"].includes(l.status)).length || 0;
-      const conversionRate = totalLeads > 0 ? (wonLeads / totalLeads) * 100 : 0;
+      const conversionRate = totalLeads > 0 ? (dealsClosed / totalLeads) * 100 : 0;
 
       const agentMetric: AgentMetrics = {
         id: agentId,
         name: agent.name,
         avatar: agent.name.split(" ").map(n => n[0]).join("").toUpperCase(),
-        deals_closed: wonLeads,
-        total_revenue: wonLeads * 150000,
+        deals_closed: dealsClosed,
+        total_revenue: totalRevenue,
         active_leads: activeLeads,
         conversion_rate: Math.round(conversionRate),
         monthly_goal: 200000,
-        goal_progress: Math.min(100, Math.round((wonLeads * 150000 / 200000) * 100)),
-        acquisitions
+        goal_progress: Math.min(100, Math.round((totalRevenue / 200000) * 100)),
+        acquisitions,
+        avg_response_minutes: calculateAvgResponseMinutes(leads || []),
       };
 
       setMetrics([agentMetric]);
@@ -277,9 +330,12 @@ export default function TeamDashboard() {
   const totalDeals = metrics.reduce((sum, m) => sum + m.deals_closed, 0);
   const totalLeads = metrics.reduce((sum, m) => sum + m.active_leads, 0);
   const totalAcquisitions = metrics.reduce((sum, m) => sum + m.acquisitions, 0);
-  const avgConversion = metrics.length > 0 
-    ? metrics.reduce((sum, m) => sum + m.conversion_rate, 0) / metrics.length 
+  const avgConversion = metrics.length > 0
+    ? metrics.reduce((sum, m) => sum + m.conversion_rate, 0) / metrics.length
     : 0;
+
+  const rankedMetrics = [...metrics].sort(RANK_COMPARATORS[rankBy]);
+  const medals = ["🥇", "🥈", "🥉"];
 
   return (
     <Layout title="Performance da Equipa">
@@ -383,27 +439,40 @@ export default function TeamDashboard() {
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           <Card className="col-span-1">
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="flex items-center gap-2">
                 <Award className="h-5 w-5 text-yellow-500" />
                 {selectedView === "team" ? "Ranking de Performance" : "Desempenho Individual"}
               </CardTitle>
+              {selectedView === "team" && (
+                <Select value={rankBy} onValueChange={(value) => setRankBy(value as RankBy)}>
+                  <SelectTrigger className="w-44 h-8 text-xs">
+                    <SelectValue placeholder="Ordenar por" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="revenue">💶 Faturação</SelectItem>
+                    <SelectItem value="deals_closed">🏆 Negócios Fechados</SelectItem>
+                    <SelectItem value="conversion_rate">🎯 Taxa de Conversão</SelectItem>
+                    <SelectItem value="response_time">⚡ Tempo de Resposta</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
             </CardHeader>
             <CardContent className="space-y-6">
               {loading ? (
                 <div className="flex items-center justify-center py-8">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
                 </div>
-              ) : metrics.length === 0 ? (
+              ) : rankedMetrics.length === 0 ? (
                 <div className="text-center py-8 text-slate-500">
                   Nenhum agente encontrado ou sem dados de performance.
                 </div>
               ) : (
-                metrics.map((agent, index) => (
+                rankedMetrics.map((agent, index) => (
                   <div key={agent.id} className="flex items-center gap-4">
                     {selectedView === "team" && (
-                      <div className="flex items-center justify-center w-8 h-8 rounded-full bg-slate-100 font-bold text-slate-600">
-                        {index + 1}
+                      <div className="flex items-center justify-center w-8 h-8 rounded-full bg-slate-100 font-bold text-slate-600 text-sm">
+                        {medals[index] || index + 1}
                       </div>
                     )}
                     <Avatar>
@@ -419,6 +488,11 @@ export default function TeamDashboard() {
                       <div className="flex justify-between text-xs text-gray-500 mb-2">
                         <span>{agent.deals_closed} negócios</span>
                         <span>{agent.conversion_rate}% conv.</span>
+                        <span>
+                          {agent.avg_response_minutes !== null
+                            ? `⚡ ${agent.avg_response_minutes} min resp.`
+                            : "⚡ sem dados"}
+                        </span>
                       </div>
                       <Progress value={agent.goal_progress} className="h-2" />
                       <p className="text-xs text-right mt-1 text-gray-400">
