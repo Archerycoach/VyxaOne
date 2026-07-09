@@ -94,7 +94,7 @@ export default function TeamDashboard() {
 
       const { data: profile } = await supabase
         .from("profiles")
-        .select("role")
+        .select("role, full_name")
         .eq("id", user.id)
         .single();
 
@@ -103,6 +103,12 @@ export default function TeamDashboard() {
         setHasAccess(true);
         loadAgents(profile.role);
         loadTeamMetrics(profile.role);
+      } else if (profile && profile.role === "consultant") {
+        // Consultor só vê os seus próprios resultados, sem seletor de equipa/ranking.
+        setUserRole("consultant");
+        setAgents([{ id: user.id, name: profile.full_name || "Eu" }]);
+        setSelectedView(user.id);
+        setHasAccess(true);
       } else {
         router.push("/performance");
       }
@@ -181,10 +187,14 @@ export default function TeamDashboard() {
       }
 
       // Fetch all deals
-      const { data: dealsData } = await (supabase as any)
+      const { data: dealsData, error: dealsError } = await (supabase as any)
         .from("deals")
         .select("*")
         .order("transaction_date", { ascending: false });
+
+      if (dealsError) {
+        console.error("[TeamDashboard] Error fetching deals:", dealsError);
+      }
 
       setDeals(dealsData || []);
 
@@ -273,11 +283,15 @@ export default function TeamDashboard() {
       const { data: leads } = await query;
 
       // Fetch deals for this agent
-      const { data: dealsData } = await (supabase as any)
+      const { data: dealsData, error: dealsError } = await (supabase as any)
         .from("deals")
         .select("*")
         .eq("user_id", agentId)
         .order("transaction_date", { ascending: false });
+
+      if (dealsError) {
+        console.error("[TeamDashboard] Error fetching agent deals:", dealsError);
+      }
 
       // Calculate acquisitions
       let acquisitions = 0;
@@ -356,12 +370,12 @@ export default function TeamDashboard() {
                 <SelectItem value="sellers">💼 Vendedores</SelectItem>
               </SelectContent>
             </Select>
-            <Select value={selectedView} onValueChange={setSelectedView}>
+            <Select value={selectedView} onValueChange={setSelectedView} disabled={userRole === "consultant"}>
               <SelectTrigger className="w-64">
                 <SelectValue placeholder="Selecione a visualização" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="team">📊 Equipa Completa</SelectItem>
+                {userRole !== "consultant" && <SelectItem value="team">📊 Equipa Completa</SelectItem>}
                 {agents.map(agent => (
                   <SelectItem key={agent.id} value={agent.id}>
                     👤 {agent.name}
