@@ -27,6 +27,22 @@ interface LeadWithUser {
   };
 }
 
+// Se, depois do alerta inicial ao consultor, a lead continuar sem primeiro
+// contacto por mais este múltiplo do tempo original, escala-se ao team_lead
+// (ou, na falta de um, aos brokers).
+const ESCALATION_MULTIPLIER = 3;
+
+async function getBrokerIds(supabaseAdmin: any, cache: { ids: string[] | null }): Promise<string[]> {
+  if (cache.ids) return cache.ids;
+  const { data } = await supabaseAdmin
+    .from("profiles")
+    .select("id")
+    .eq("role", "broker")
+    .eq("is_active", true);
+  cache.ids = (data || []).map((p: { id: string }) => p.id);
+  return cache.ids;
+}
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   // Verificar segredo do cron
   const authHeader = req.headers.authorization;
@@ -40,8 +56,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const results = {
       checked: 0,
       alerted: 0,
+      escalated: 0,
       errors: 0,
     };
+    const brokerCache: { ids: string[] | null } = { ids: null };
 
     // Buscar leads novas sem primeiro contacto, junto com as configurações do utilizador
     const { data: leads, error: leadsError } = await supabaseAdmin
@@ -54,7 +72,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         user_id,
         first_contact_at,
         profiles!leads_user_id_fkey (
-          first_contact_alert_minutes
+          full_name,
+          first_contact_alert_minutes,
+          team_lead_id
         )
       `)
       .is("first_contact_at", null)
@@ -89,12 +109,45 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         // Verificar se já foi enviado alerta para esta lead
         const { data: existingAlert } = await supabaseAdmin
           .from("first_contact_alerts")
-          .select("id")
+          .select("id, escalated_at")
           .eq("lead_id", lead.id)
           .maybeSingle();
 
         if (existingAlert) {
-          continue; // Já alertado
+          // O consultor já foi alertado — se continuar sem responder por
+          // muito mais tempo, escala-se à gestão (uma única vez por lead).
+          if (!existingAlert.escalated_at && minutesElapsed >= alertMinutes * ESCALATION_MULTIPLIER) {
+            const targetIds = lead.profiles?.team_lead_id
+              ? [lead.profiles.team_lead_id as string]
+              : await getBrokerIds(supabaseAdmin, brokerCache);
+
+            const assigneeName = lead.profiles?.full_name || "o consultor responsável";
+
+            for (const targetId of targetIds) {
+              await supabaseAdmin.from("notifications").insert({
+                user_id: targetId,
+                title: "⚠️ Lead sem primeiro contacto há demasiado tempo",
+                message: `A lead "${lead.name}", atribuída a ${assigneeName}, continua sem primeiro contacto ${minutesElapsed} minutos depois de criada.`,
+                type: "alert",
+                data: {
+                  lead_id: lead.id,
+                  lead_name: lead.name,
+                  assigned_to: lead.user_id,
+                  minutes_elapsed: minutesElapsed,
+                  action_url: `/leads?id=${lead.id}`,
+                },
+              });
+            }
+
+            await supabaseAdmin
+              .from("first_contact_alerts")
+              .update({ escalated_at: new Date().toISOString() })
+              .eq("id", existingAlert.id);
+
+            results.escalated++;
+            console.log(`[First Contact Alerts] Escalated lead ${lead.name} (${minutesElapsed} min) to ${targetIds.length} manager(s)`);
+          }
+          continue;
         }
 
         // Buscar dados completos do utilizador

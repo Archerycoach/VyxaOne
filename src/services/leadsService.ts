@@ -4,6 +4,7 @@ import { CacheManager, CacheKey } from "@/lib/cacheInvalidation";
 import type { Database } from "@/integrations/supabase/types";
 import { processLeadWorkflows } from "./workflowService";
 import { getLeadQualification } from "@/lib/leadQualification";
+import { logLeadActivity } from "./leadActivityService";
 
 const LEADS_CACHE_KEY = CacheKey.LEADS;
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutos
@@ -319,18 +320,56 @@ export const updateLead = async (id: string, updates: Partial<LeadUpdate>) => {
   // Invalidate cache
   CacheManager.invalidateLeadsRelated();
 
+  // Log de atividade (fire-and-forget, nunca bloqueia a atualização real):
+  // reatribuição e mudança de estado ficam em entradas próprias porque são
+  // as mais relevantes para auditoria; outros campos editados ficam juntos
+  // numa única entrada "updated" com a lista de campos alterados.
+  if (updates.assigned_to !== undefined && currentLead?.assigned_to !== updates.assigned_to) {
+    logLeadActivity({
+      leadId: id,
+      action: "reassigned",
+      fieldName: "assigned_to",
+      oldValue: currentLead?.assigned_to ?? null,
+      newValue: updates.assigned_to ?? null,
+    });
+  }
+  if (updates.status !== undefined && currentLead?.status !== data?.status) {
+    logLeadActivity({
+      leadId: id,
+      action: "status_changed",
+      fieldName: "status",
+      oldValue: currentLead?.status ?? null,
+      newValue: data?.status ?? null,
+    });
+  }
+  const otherChangedFields = Object.keys(updates).filter(
+    (key) =>
+      key !== "assigned_to" &&
+      key !== "status" &&
+      (currentLead as Record<string, unknown> | null)?.[key] !== (updates as Record<string, unknown>)[key]
+  );
+  if (otherChangedFields.length > 0) {
+    logLeadActivity({
+      leadId: id,
+      action: "updated",
+      fieldName: otherChangedFields.join(", "),
+    });
+  }
+
   return data;
 };
 
 // Archive lead (soft delete) - replaces deleteLead
 export const archiveLead = async (id: string): Promise<void> => {
   const query: any = supabase.from("leads");
-  
+
   const { error } = await query
     .update({ archived_at: new Date().toISOString() })
     .eq("id", id);
 
   if (error) throw error;
+
+  logLeadActivity({ leadId: id, action: "archived" });
 
   // Invalidar caches relacionados
   CacheManager.invalidateLeadsRelated();
@@ -339,12 +378,14 @@ export const archiveLead = async (id: string): Promise<void> => {
 // Restore archived lead
 export const restoreLead = async (id: string): Promise<void> => {
   const query: any = supabase.from("leads");
-  
+
   const { error } = await query
     .update({ archived_at: null })
     .eq("id", id);
 
   if (error) throw error;
+
+  logLeadActivity({ leadId: id, action: "restored" });
 
   // Invalidar caches relacionados
   CacheManager.invalidateLeadsRelated();
