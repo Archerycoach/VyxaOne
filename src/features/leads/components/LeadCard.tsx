@@ -244,6 +244,28 @@ export function LeadCard({
             )}
           </div>
           <div className="flex gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={() => onEmail(lead)}
+              className="p-1.5 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded-md transition-colors"
+              title="Enviar Email"
+            >
+              <Mail className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => onWhatsApp(lead)}
+              className="p-1.5 text-green-600 hover:text-green-800 hover:bg-green-50 rounded-md transition-colors"
+              title="Enviar WhatsApp"
+            >
+              <MessageCircle className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => onSMS(lead)}
+              className="p-1.5 text-purple-500 hover:text-purple-700 hover:bg-purple-50 rounded-md transition-colors"
+              title="Enviar SMS"
+            >
+              <MessageSquare className="h-4 w-4" />
+            </button>
+
             <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
               <DropdownMenuTrigger asChild>
                 <button className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-colors">
@@ -257,24 +279,9 @@ export function LeadCard({
                 collisionPadding={20}
                 className="w-56 max-h-[500px] overflow-y-auto"
               >
-                <div className="px-2 py-1.5 text-xs font-semibold text-gray-500 uppercase">
-                  Comunicação
-                </div>
                 <DropdownMenuItem onClick={() => handleMenuItemClick(() => setQuickContactOpen(true))}>
                   <Phone className="h-4 w-4 mr-2" />
                   Registar Contacto Rápido
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleMenuItemClick(() => onEmail(lead))}>
-                  <Mail className="h-4 w-4 mr-2" />
-                  Email
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleMenuItemClick(() => onSMS(lead))}>
-                  <MessageSquare className="h-4 w-4 mr-2" />
-                  SMS
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleMenuItemClick(() => onWhatsApp(lead))}>
-                  <MessageCircle className="h-4 w-4 mr-2" />
-                  WhatsApp
                 </DropdownMenuItem>
 
                 <DropdownMenuSeparator />
@@ -540,37 +547,44 @@ export function LeadCard({
           )}
         </div>
         <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+          <button
+            onClick={() => onEmail(lead)}
+            className="p-1.5 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded-md transition-colors"
+            title="Enviar Email"
+          >
+            <Mail className="h-4 w-4" />
+          </button>
+          <button
+            onClick={() => onWhatsApp(lead)}
+            className="p-1.5 text-green-600 hover:text-green-800 hover:bg-green-50 rounded-md transition-colors"
+            title="Enviar WhatsApp"
+          >
+            <MessageCircle className="h-4 w-4" />
+          </button>
+          <button
+            onClick={() => onSMS(lead)}
+            className="p-1.5 text-purple-500 hover:text-purple-700 hover:bg-purple-50 rounded-md transition-colors"
+            title="Enviar SMS"
+          >
+            <MessageSquare className="h-4 w-4" />
+          </button>
+
           <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
             <DropdownMenuTrigger asChild>
               <button className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-colors">
                 <MoreVertical className="h-4 w-4" />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent 
-              align="end" 
+            <DropdownMenuContent
+              align="end"
               side="bottom"
               sideOffset={5}
               collisionPadding={20}
               className="w-56 max-h-[500px] overflow-y-auto"
             >
-              <div className="px-2 py-1.5 text-xs font-semibold text-gray-500 uppercase">
-                Comunicação
-              </div>
               <DropdownMenuItem onClick={() => handleMenuItemClick(() => setQuickContactOpen(true))}>
                 <Phone className="h-4 w-4 mr-2" />
                 Registar Contacto Rápido
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleMenuItemClick(() => onEmail(lead))}>
-                <Mail className="h-4 w-4 mr-2" />
-                Email
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleMenuItemClick(() => onSMS(lead))}>
-                <MessageSquare className="h-4 w-4 mr-2" />
-                SMS
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleMenuItemClick(() => onWhatsApp(lead))}>
-                <MessageCircle className="h-4 w-4 mr-2" />
-                WhatsApp
               </DropdownMenuItem>
 
               <DropdownMenuSeparator />
