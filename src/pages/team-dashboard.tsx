@@ -195,6 +195,8 @@ export default function TeamDashboard() {
       if (dealsError) {
         console.error("[TeamDashboard] Error fetching deals:", dealsError);
       }
+      console.log("[TeamDashboard] agentsData ids:", agentsData.map((a: any) => ({ id: a.id, name: a.full_name })));
+      console.log("[TeamDashboard] dealsData:", dealsData);
 
       setDeals(dealsData || []);
 
