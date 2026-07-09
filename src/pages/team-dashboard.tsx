@@ -212,22 +212,32 @@ export default function TeamDashboard() {
           ).length;
         }
 
-        const wonLeads = leads?.filter(l => l.status === "won").length || 0;
+        // Negócios/faturação vêm da tabela "deals" (valores reais), não do
+        // status da lead — o pipeline desta app nunca marca leads como
+        // "won"; o fecho de negócio é registado à parte, em "Negócios".
+        const relevantDeals = agentDeals.filter((d: Deal) => {
+          if (leadTypeFilter === "buyers") return d.deal_type === "buyer" || d.deal_type === "both";
+          if (leadTypeFilter === "sellers") return d.deal_type === "seller" || d.deal_type === "both";
+          return true;
+        });
+        const dealsClosed = relevantDeals.length;
+        const totalRevenue = relevantDeals.reduce((sum: number, d: Deal) => sum + (d.amount || 0), 0);
+
         const totalLeads = leads?.length || 0;
         const activeLeads = leads?.filter(l => !["won", "lost"].includes(l.status)).length || 0;
-        const conversionRate = totalLeads > 0 ? (wonLeads / totalLeads) * 100 : 0;
+        const conversionRate = totalLeads > 0 ? (dealsClosed / totalLeads) * 100 : 0;
         const avgResponseMinutes = calculateAvgResponseMinutes(leads || []);
 
         return {
           id: agent.id,
           name: agent.full_name || agent.email || "Agente",
           avatar: (agent.full_name || agent.email || "A").split(" ").map((n: string) => n[0]).join("").toUpperCase(),
-          deals_closed: wonLeads,
-          total_revenue: wonLeads * 150000,
+          deals_closed: dealsClosed,
+          total_revenue: totalRevenue,
           active_leads: activeLeads,
           conversion_rate: Math.round(conversionRate),
           monthly_goal: 500000,
-          goal_progress: Math.min(100, Math.round((wonLeads * 150000 / 500000) * 100)),
+          goal_progress: Math.min(100, Math.round((totalRevenue / 500000) * 100)),
           acquisitions,
           avg_response_minutes: avgResponseMinutes,
         };
@@ -277,21 +287,28 @@ export default function TeamDashboard() {
         ).length;
       }
 
-      const wonLeads = leads?.filter(l => l.status === "won").length || 0;
+      const relevantDeals = (dealsData || []).filter((d: Deal) => {
+        if (leadTypeFilter === "buyers") return d.deal_type === "buyer" || d.deal_type === "both";
+        if (leadTypeFilter === "sellers") return d.deal_type === "seller" || d.deal_type === "both";
+        return true;
+      });
+      const dealsClosed = relevantDeals.length;
+      const totalRevenue = relevantDeals.reduce((sum: number, d: Deal) => sum + (d.amount || 0), 0);
+
       const totalLeads = leads?.length || 0;
       const activeLeads = leads?.filter(l => !["won", "lost"].includes(l.status)).length || 0;
-      const conversionRate = totalLeads > 0 ? (wonLeads / totalLeads) * 100 : 0;
+      const conversionRate = totalLeads > 0 ? (dealsClosed / totalLeads) * 100 : 0;
 
       const agentMetric: AgentMetrics = {
         id: agentId,
         name: agent.name,
         avatar: agent.name.split(" ").map(n => n[0]).join("").toUpperCase(),
-        deals_closed: wonLeads,
-        total_revenue: wonLeads * 150000,
+        deals_closed: dealsClosed,
+        total_revenue: totalRevenue,
         active_leads: activeLeads,
         conversion_rate: Math.round(conversionRate),
         monthly_goal: 200000,
-        goal_progress: Math.min(100, Math.round((wonLeads * 150000 / 200000) * 100)),
+        goal_progress: Math.min(100, Math.round((totalRevenue / 200000) * 100)),
         acquisitions,
         avg_response_minutes: calculateAvgResponseMinutes(leads || []),
       };
