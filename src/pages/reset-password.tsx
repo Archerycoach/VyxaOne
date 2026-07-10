@@ -21,40 +21,48 @@ export default function ResetPasswordPage() {
   const [isCheckingToken, setIsCheckingToken] = useState(true);
 
   useEffect(() => {
-    // Verificar se temos um token de recuperação válido na URL
-    const checkRecoveryToken = async () => {
-      try {
-        // Obter o hash da URL (contém o token)
-        const hashParams = new URLSearchParams(window.location.hash.substring(1));
-        const accessToken = hashParams.get("access_token");
-        const type = hashParams.get("type");
+    // O cliente Supabase usa flowType "pkce" com detectSessionInUrl: true
+    // (ver src/integrations/supabase/client.ts) — o link de recuperação vem
+    // com "?code=..." na URL, e o próprio SDK troca isso por uma sessão
+    // automaticamente ao carregar a página. Não há hash com access_token
+    // para ler manualmente (isso era o fluxo antigo, "implicit").
+    //
+    // Confirmamos a troca através do evento PASSWORD_RECOVERY (o caminho
+    // normal) e, como rede de segurança para quando esse evento já tiver
+    // disparado antes deste efeito montar, verificamos também a sessão
+    // diretamente. Um timeout mostra o erro se nenhum dos dois resolver
+    // (link mesmo inválido/expirado, ou troca falhada).
+    let resolved = false;
 
-        if (!accessToken || type !== "recovery") {
-          setError("Link de recuperação inválido ou expirado.");
-          setIsCheckingToken(false);
-          return;
-        }
-
-        // Verificar a sessão com o token
-        const { data, error } = await supabase.auth.getSession();
-        
-        if (error || !data.session) {
-          setError("Link de recuperação inválido ou expirado.");
-          setIsCheckingToken(false);
-          return;
-        }
-
-        // Token válido
+    const finish = (valid: boolean, message?: string) => {
+      if (resolved) return;
+      resolved = true;
+      if (valid) {
         setIsValidToken(true);
-        setIsCheckingToken(false);
-      } catch (err: any) {
-        console.error("Erro ao verificar token:", err);
-        setError("Erro ao verificar link de recuperação.");
-        setIsCheckingToken(false);
+      } else {
+        setError(message || "Link de recuperação inválido ou expirado.");
       }
+      setIsCheckingToken(false);
     };
 
-    checkRecoveryToken();
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "PASSWORD_RECOVERY" && session) {
+        finish(true);
+      }
+    });
+
+    supabase.auth.getSession().then(({ data, error }) => {
+      if (data.session && !error) {
+        finish(true);
+      }
+    });
+
+    const timeout = setTimeout(() => finish(false), 4000);
+
+    return () => {
+      authListener.subscription.unsubscribe();
+      clearTimeout(timeout);
+    };
   }, []);
 
   const validatePassword = (pwd: string): string | null => {
