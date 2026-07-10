@@ -5,6 +5,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { LeadActivitiesPanel } from "./LeadActivitiesPanel";
 import type { CalendarEvent, Task } from "@/types";
 
@@ -147,6 +148,22 @@ export function CalendarDialogs({
                   </SelectContent>
                 </Select>
               </div>
+
+              {!eventForm.leadId && (
+                <div className="flex items-center justify-between rounded-md border p-3">
+                  <div>
+                    <Label htmlFor="event-bookable">Disponível para reserva</Label>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Aparece no teu link de agendamento para o cliente reservar diretamente este horário.
+                    </p>
+                  </div>
+                  <Switch
+                    id="event-bookable"
+                    checked={eventForm.isBookable || false}
+                    onCheckedChange={(checked) => setEventForm({ ...eventForm, isBookable: checked })}
+                  />
+                </div>
+              )}
 
               <DialogFooter>
                 <Button

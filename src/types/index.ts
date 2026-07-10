@@ -289,6 +289,7 @@ export interface CalendarEvent {
   eventType?: string;
   createdAt: string;
   userId?: string;
+  isBookable?: boolean;
 }
 
 // Pipeline Stage Types

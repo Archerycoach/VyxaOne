@@ -262,6 +262,18 @@ export function CalendarContainer() {
   };
 
   // Handlers
+  const handleCopyBookingLink = async () => {
+    try {
+      const { getOrCreateBookingLink } = await import("@/services/bookingService");
+      const link = await getOrCreateBookingLink();
+      await navigator.clipboard.writeText(link);
+      toast({ title: "Link copiado", description: "Partilha este link para os clientes reservarem uma conversa." });
+    } catch (error) {
+      console.error(error);
+      toast({ title: "Erro ao copiar o link de reservas", variant: "destructive" });
+    }
+  };
+
   const handleCreateEvent = () => {
     setEditingEvent(null);
     
@@ -447,12 +459,13 @@ export function CalendarContainer() {
           location: eventForm.location || null,
           event_type: eventForm.eventType,
           lead_id: eventForm.leadId || null,
-        });
+          is_bookable: eventForm.isBookable || false,
+        } as any);
         toast({ title: "Evento atualizado com sucesso" });
       } else {
         const { supabase } = await import("@/integrations/supabase/client");
         const { data: { user } } = await supabase.auth.getUser();
-        
+
         await createCalendarEvent({
           title: eventForm.title!,
           description: eventForm.description || null,
@@ -462,7 +475,8 @@ export function CalendarContainer() {
           event_type: eventForm.eventType || "viewing",
           lead_id: eventForm.leadId || null,
           user_id: user?.id || "",
-        });
+          is_bookable: eventForm.isBookable || false,
+        } as any);
         toast({ title: "Evento criado com sucesso" });
       }
       setShowEventForm(false);
@@ -638,6 +652,7 @@ export function CalendarContainer() {
         onNavigate={navigateDate}
         onViewModeChange={setViewMode}
         onNewEvent={handleCreateEvent}
+        onCopyBookingLink={handleCopyBookingLink}
         googleConnected={isConnected}
         googleConfigured={isConfigured}
         isSyncing={isSyncing}

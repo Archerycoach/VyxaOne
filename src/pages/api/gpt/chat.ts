@@ -523,11 +523,16 @@ async function generateEmailCampaignDraft(
     // externa — quando presente, o email deve divulgar especificamente este
     // imóvel, usando só os factos aqui descritos (nunca inventar dados).
     listingContent?: string | null;
+    // Link pessoal do consultor para o cliente marcar uma chamada de 30 min
+    // (ver src/services/bookingService.ts) — quando presente, inclui um CTA
+    // curto e natural a convidar para marcar a conversa.
+    bookingLink?: string | null;
   } = {},
 ): Promise<EmailCampaignDraft> {
   const filterSummary = context.filterSummaryOverride?.trim() || buildCampaignFilterSummary(criteria);
   const fallback = buildFallbackDraft(criteria, agentName);
   const hasListingContent = Boolean(context.listingContent?.trim());
+  const hasBookingLink = Boolean(context.bookingLink?.trim());
 
   try {
     const aiResponse = await runAI({
@@ -536,9 +541,15 @@ async function generateEmailCampaignDraft(
       messages: [
         {
           role: "system",
-          content: hasListingContent
-            ? "És um copywriter imobiliário em português de Portugal. Cria um email curto, humano e comercial para divulgar especificamente o imóvel descrito em 'imovel_a_divulgar'. Usa apenas factos presentes nesse texto (preço, tipologia, localização, características, fotos referidas) — nunca inventes dados que não estejam lá. Sem promessas falsas. Responde APENAS em JSON com as chaves subject, htmlBody e textBody. Usa o placeholder {nome} na saudação."
-            : "És um copywriter imobiliário em português de Portugal. Cria emails curtos, humanos e comerciais, sem promessas falsas. Responde APENAS em JSON com as chaves subject, htmlBody e textBody. Usa o placeholder {nome} na saudação.",
+          content: [
+            hasListingContent
+              ? "És um copywriter imobiliário em português de Portugal. Cria um email curto, humano e comercial para divulgar especificamente o imóvel descrito em 'imovel_a_divulgar'. Usa apenas factos presentes nesse texto (preço, tipologia, localização, características, fotos referidas) — nunca inventes dados que não estejam lá. Sem promessas falsas."
+              : "És um copywriter imobiliário em português de Portugal. Cria emails curtos, humanos e comerciais, sem promessas falsas.",
+            hasBookingLink
+              ? "Inclui, perto do fim do email, um parágrafo curto e natural a convidar a marcar uma conversa de 30 minutos através do link em 'link_agendamento' (usa esse URL exato, não inventes outro)."
+              : null,
+            "Responde APENAS em JSON com as chaves subject, htmlBody e textBody. Usa o placeholder {nome} na saudação.",
+          ].filter(Boolean).join(" "),
         },
         {
           role: "user",
@@ -546,6 +557,7 @@ async function generateEmailCampaignDraft(
             pedido: message,
             agente: agentName,
             segmento: filterSummary,
+            link_agendamento: context.bookingLink?.trim() || null,
             numero_de_leads: leads.length,
             imovel_a_divulgar: context.listingContent?.trim() || null,
             historico_recente: (context.history || []).slice(-6),
@@ -1238,6 +1250,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         // Texto já extraído (no cliente) de uma brochura PDF/Word ou de um
         // link de publicação externa, para divulgar um imóvel específico.
         listingContent?: string | null;
+        // Link pessoal de agendamento do consultor (opcional).
+        bookingLink?: string | null;
       };
       debug?: boolean;
     };
@@ -1413,6 +1427,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
               filterSummaryOverride: audienceSelection.filterSummary,
               debugNotes: debugRequested ? debugNotes : undefined,
               listingContent: campaignContext?.listingContent || null,
+              bookingLink: campaignContext?.bookingLink || null,
             },
           ),
           detectDoNotContactSignals({

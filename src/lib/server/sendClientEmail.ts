@@ -28,7 +28,8 @@ export type AutomatedEmailSource =
   | "contact_alerts"
   | "property_matcher"
   | "workflow_automation"
-  | "meta_auto_reply";
+  | "meta_auto_reply"
+  | "booking_confirmation";
 
 export interface EmailAttachment {
   filename?: string;

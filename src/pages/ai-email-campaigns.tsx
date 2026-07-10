@@ -91,6 +91,11 @@ export default function AiEmailCampaignsPage() {
   // consultor as marcar explicitamente.
   const [includedFlaggedLeadIds, setIncludedFlaggedLeadIds] = useState<Set<string>>(new Set());
 
+  // Link de agendamento (opcional) a incluir no email
+  const [includeBookingLink, setIncludeBookingLink] = useState(false);
+  const [bookingLinkUrl, setBookingLinkUrl] = useState<string | null>(null);
+  const [isLoadingBookingLink, setIsLoadingBookingLink] = useState(false);
+
   useEffect(() => {
     const loadConnectionStatus = async () => {
       try {
@@ -185,7 +190,29 @@ export default function AiEmailCampaignsPage() {
     recipientLeadIds:
       draft?.recipientLeadIds || draft?.recipients.map((recipient) => recipient.id) || null,
     listingContent: listingContent || null,
+    bookingLink: includeBookingLink ? bookingLinkUrl : null,
   });
+
+  const handleToggleBookingLink = async (checked: boolean) => {
+    setIncludeBookingLink(checked);
+    if (checked && !bookingLinkUrl) {
+      setIsLoadingBookingLink(true);
+      try {
+        const { getOrCreateBookingLink } = await import("@/services/bookingService");
+        const link = await getOrCreateBookingLink();
+        setBookingLinkUrl(link);
+      } catch (error) {
+        toast({
+          title: "Erro",
+          description: error instanceof Error ? error.message : "Não foi possível gerar o link de agendamento.",
+          variant: "destructive",
+        });
+        setIncludeBookingLink(false);
+      } finally {
+        setIsLoadingBookingLink(false);
+      }
+    }
+  };
 
   const requestCampaignDraft = async (
     prompt: string,
@@ -735,6 +762,22 @@ export default function AiEmailCampaignsPage() {
                         </p>
                       )}
                     </div>
+
+                    <label className="flex items-start gap-2 rounded-lg border p-4 bg-slate-50 cursor-pointer">
+                      <Checkbox
+                        checked={includeBookingLink}
+                        onCheckedChange={(checked) => handleToggleBookingLink(checked === true)}
+                        disabled={isLoadingBookingLink}
+                        className="mt-0.5"
+                      />
+                      <span>
+                        <span className="text-sm font-medium block">Incluir link para marcar uma conversa de 30 min</span>
+                        <span className="text-xs text-gray-500">
+                          O cliente escolhe um horário que tenhas marcado como disponível na tua agenda e reserva sozinho.
+                          {isLoadingBookingLink && " A gerar link..."}
+                        </span>
+                      </span>
+                    </label>
 
                     <Button
                       onClick={handleGenerateDraft}

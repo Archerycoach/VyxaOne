@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { ChevronLeft, ChevronRight, Plus, Calendar as CalendarIcon } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, Calendar as CalendarIcon, Link as LinkIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 
@@ -10,6 +10,7 @@ interface CalendarHeaderProps {
   onNavigate: (direction: "prev" | "next") => void;
   onViewModeChange: (mode: "day" | "week" | "month") => void;
   onNewEvent: () => void;
+  onCopyBookingLink?: () => void;
   googleConnected: boolean;
   googleConfigured: boolean;
   isSyncing: boolean;
@@ -30,6 +31,7 @@ export function CalendarHeader({
   onNavigate,
   onViewModeChange,
   onNewEvent,
+  onCopyBookingLink,
   googleConnected,
   googleConfigured,
   isSyncing,
@@ -93,6 +95,13 @@ export function CalendarHeader({
           <Plus className="mr-2 h-4 w-4" />
           Novo Evento
         </Button>
+
+        {onCopyBookingLink && (
+          <Button variant="outline" onClick={onCopyBookingLink}>
+            <LinkIcon className="mr-2 h-4 w-4" />
+            Copiar Link de Reservas
+          </Button>
+        )}
 
         {googleConfigured && (
           <div className="flex flex-wrap items-center gap-2">

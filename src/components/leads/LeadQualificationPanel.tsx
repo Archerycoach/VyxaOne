@@ -39,9 +39,11 @@ interface LeadQualificationPanelProps {
   leadId: string;
   /** Insere o texto das perguntas selecionadas no rascunho atual (ou inicia um novo). */
   onInsertIntoDraft?: (text: string, channel: "email" | "whatsapp") => void;
+  /** Chamado depois de aplicar com sucesso os dados extraídos das notas à lead — o ecrã principal (fora deste painel) precisa disto para deixar de mostrar dados desatualizados. */
+  onApplied?: () => void;
 }
 
-export function LeadQualificationPanel({ leadId, onInsertIntoDraft }: LeadQualificationPanelProps) {
+export function LeadQualificationPanel({ leadId, onInsertIntoDraft, onApplied }: LeadQualificationPanelProps) {
   const { toast } = useToast();
   const [data, setData] = useState<QualificationData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -156,6 +158,7 @@ export function LeadQualificationPanel({ leadId, onInsertIntoDraft }: LeadQualif
       toast({ title: "✅ Campos atualizados", description: "Os dados encontrados nas notas foram aplicados à lead." });
       setExtractedFromNotes(null);
       fetchQualification();
+      onApplied?.();
     } catch (err: any) {
       toast({ title: "Erro ao aplicar", description: err.message, variant: "destructive" });
     } finally {

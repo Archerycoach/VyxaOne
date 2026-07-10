@@ -554,6 +554,19 @@ export function LeadDetailsDialog({
     }
   };
 
+  // O "Aplicar à Lead" do painel de análise de notas (IA) grava diretamente
+  // na base de dados sem passar por updateLead() — só falta atualizar o
+  // "lead" já carregado neste ecrã para deixar de mostrar dados antigos.
+  const handleQualificationAppliedByAi = async () => {
+    if (!leadId) return;
+    try {
+      const updatedLead = await getLeadById(leadId);
+      setLead(updatedLead);
+    } catch (e: any) {
+      console.error("[LeadDetailsDialog] Falha ao atualizar lead após análise de IA:", e);
+    }
+  };
+
   const handleToggleDoNotContact = async (value: boolean) => {
     if (!leadId) return;
     setIsUpdatingDoNotContact(true);
@@ -1012,7 +1025,7 @@ export function LeadDetailsDialog({
 
             <TabsContent value="ai-assistant" className="mt-0 space-y-4">
               <LeadConversionProbabilityPanel leadId={lead.id} />
-              <LeadQualificationPanel leadId={lead.id} onInsertIntoDraft={handleInsertQualificationIntoDraft} />
+              <LeadQualificationPanel leadId={lead.id} onInsertIntoDraft={handleInsertQualificationIntoDraft} onApplied={handleQualificationAppliedByAi} />
               <LeadAIInsightsPanel leadId={lead.id} />
             </TabsContent>
 
