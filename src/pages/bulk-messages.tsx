@@ -249,6 +249,11 @@ export default function BulkMessages() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
   const [messageType, setMessageType] = useState<"email" | "whatsapp">("email");
+  // "text": mensagem livre (só funciona se a lead tiver escrito nas últimas
+  // 24h — janela de mensagens da Meta). "template": envia o template
+  // aprovado "reativacao_radar" no Meta Business Manager, que funciona
+  // sempre (é a única forma de contactar leads fora dessa janela).
+  const [whatsappSendMode, setWhatsappSendMode] = useState<"text" | "template">("text");
   
   // Data
   const [leads, setLeads] = useState<LeadWithContacts[]>([]);
@@ -877,8 +882,10 @@ export default function BulkMessages() {
       return;
     }
 
+    const sendingWhatsappTemplate = messageType === "whatsapp" && whatsappSendMode === "template";
+
     const cleanMsg = message.replace(/<[^>]*>?/gm, '').trim();
-    if (!message.trim() || (!cleanMsg && !message.includes('<img'))) {
+    if (!sendingWhatsappTemplate && (!message.trim() || (!cleanMsg && !message.includes('<img')))) {
       toast({
         title: "Aviso",
         description: "A mensagem não pode estar vazia.",
@@ -1029,26 +1036,34 @@ export default function BulkMessages() {
           }
 
           try {
-            const personalizedMessage = message
-              .replace(/\{nome\}/g, recipient.name)
-              .replace(/\{email\}/g, recipient.email || "")
-              .replace(/\{telefone\}/g, recipient.phone || "")
-              .replace(/\{empreendimento\}/g, recipient.development_name || "");
+            const requestBody = whatsappSendMode === "template"
+              ? {
+                  lead_id: recipient.type === "lead" ? recipient.id.replace("lead-", "") : undefined,
+                  phone: recipient.phone,
+                  type: 'template',
+                  content: 'reativacao_radar',
+                  is_bulk: true,
+                }
+              : {
+                  lead_id: recipient.type === "lead" ? recipient.id.replace("lead-", "") : undefined,
+                  phone: recipient.phone,
+                  type: 'text',
+                  content: message
+                    .replace(/\{nome\}/g, recipient.name)
+                    .replace(/\{email\}/g, recipient.email || "")
+                    .replace(/\{telefone\}/g, recipient.phone || "")
+                    .replace(/\{empreendimento\}/g, recipient.development_name || ""),
+                  is_bulk: true,
+                };
 
             // Send to WhatsApp API
             const res = await fetch("/api/whatsapp/send", {
               method: "POST",
-              headers: { 
-                "Content-Type": "application/json", 
-                "Authorization": `Bearer ${session.access_token}` 
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${session.access_token}`
               },
-              body: JSON.stringify({
-                lead_id: recipient.type === "lead" ? recipient.id.replace("lead-", "") : undefined,
-                phone: recipient.phone,
-                type: 'text',
-                content: personalizedMessage,
-                is_bulk: true,
-              })
+              body: JSON.stringify(requestBody)
             });
             
             const data = await res.json();
@@ -1554,7 +1569,27 @@ export default function BulkMessages() {
                         </AlertDescription>
                       </Alert>
 
-                      {(personalTemplates.filter(t => t.template_type === 'whatsapp').length > 0) && (
+                      <div className="space-y-2">
+                        <Label htmlFor="wa-send-mode">Modo de envio</Label>
+                        <Select value={whatsappSendMode} onValueChange={(value: any) => setWhatsappSendMode(value)}>
+                          <SelectTrigger id="wa-send-mode">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="text">Mensagem livre (só funciona se a lead escreveu nas últimas 24h)</SelectItem>
+                            <SelectItem value="template">Template aprovado "reativacao_radar" (funciona sempre, incl. fora da janela de 24h)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        {whatsappSendMode === "template" && (
+                          <p className="text-xs text-gray-500">
+                            O conteúdo é fixo (definido no Meta Business Manager, com os botões "Interessado" / "Sem Interesse")
+                            — não pode ser personalizado aqui. Use este modo quando a Meta bloquear o envio de texto livre por
+                            a lead não ter escrito nas últimas 24h.
+                          </p>
+                        )}
+                      </div>
+
+                      {whatsappSendMode === "text" && (personalTemplates.filter(t => t.template_type === 'whatsapp').length > 0) && (
                         <div className="flex items-end justify-between pb-4 border-b gap-4">
                           <div className="flex-1 space-y-2">
                             <Label htmlFor="wa-template">Usar Template Pessoal</Label>
@@ -1592,11 +1627,11 @@ export default function BulkMessages() {
                         </div>
                       )}
 
-                      {personalTemplates.filter(t => t.template_type === 'whatsapp').length === 0 && (
+                      {whatsappSendMode === "text" && personalTemplates.filter(t => t.template_type === 'whatsapp').length === 0 && (
                         <div className="flex justify-end pb-2">
-                          <Button 
-                            variant="outline" 
-                            onClick={() => setIsSaveTemplateOpen(true)} 
+                          <Button
+                            variant="outline"
+                            onClick={() => setIsSaveTemplateOpen(true)}
                             disabled={!message.trim()}
                           >
                             Guardar como Template
@@ -1604,28 +1639,33 @@ export default function BulkMessages() {
                         </div>
                       )}
 
-                      <div className="space-y-2">
-                        <Label htmlFor="whatsapp-message">Mensagem *</Label>
-                        <Textarea
-                          id="whatsapp-message"
-                          placeholder="Escreva a sua mensagem aqui..."
-                          value={message}
-                          onChange={(e) => setMessage(e.target.value)}
-                          rows={12}
-                          className="font-mono text-sm"
-                        />
-                        <p className="text-xs text-gray-500">
-                          Pode usar variáveis: {"{nome}"}, {"{email}"}, {"{telefone}"}, {"{empreendimento}"}
-                        </p>
-                      </div>
+                      {whatsappSendMode === "text" && (
+                        <div className="space-y-2">
+                          <Label htmlFor="whatsapp-message">Mensagem *</Label>
+                          <Textarea
+                            id="whatsapp-message"
+                            placeholder="Escreva a sua mensagem aqui..."
+                            value={message}
+                            onChange={(e) => setMessage(e.target.value)}
+                            rows={12}
+                            className="font-mono text-sm"
+                          />
+                          <p className="text-xs text-gray-500">
+                            Pode usar variáveis: {"{nome}"}, {"{email}"}, {"{telefone}"}, {"{empreendimento}"}
+                          </p>
+                        </div>
+                      )}
                     </TabsContent>
                   </Tabs>
 
                   {/* Preview */}
-                  {selectedRecipients.size > 0 && message.trim() && (
+                  {selectedRecipients.size > 0 && (message.trim() || (messageType === "whatsapp" && whatsappSendMode === "template")) && (
                     <Alert>
                       <AlertDescription>
-                        <strong>Pré-visualização:</strong> Esta mensagem será enviada para{" "}
+                        <strong>Pré-visualização:</strong>{" "}
+                        {messageType === "whatsapp" && whatsappSendMode === "template"
+                          ? <>O template <strong>"reativacao_radar"</strong> será enviado para</>
+                          : <>Esta mensagem será enviada para</>}{" "}
                         <strong>{selectedRecipients.size}</strong> destinatário
                         {selectedRecipients.size > 1 ? "s" : ""}.
                       </AlertDescription>

@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
-import { ArrowLeft, User, Lock, Building2, Bell, Save, Loader2, Mail, Facebook, Calendar, Bot, Activity, Zap, FileText, Globe, Sparkles, CheckCircle2, XCircle, MessageCircle, Trash2 } from "lucide-react";
+import { ArrowLeft, User, Lock, Building2, Bell, Save, Loader2, Mail, Facebook, Calendar, Bot, Activity, Zap, FileText, Globe, Sparkles, CheckCircle2, XCircle, MessageCircle, Trash2, Kanban } from "lucide-react";
 import { getUserProfile, updateUserProfile } from "@/services/profileService";
 import { updatePassword, getSession, signOut } from "@/services/authService";
 import { useToast } from "@/hooks/use-toast";
@@ -19,6 +19,7 @@ import { WorkflowsManagement } from "@/components/settings/WorkflowsManagement";
 import { MessageSnippetsManagement } from "@/components/settings/MessageSnippetsManagement";
 import { ReactivationTemplatesManagement } from "@/components/settings/ReactivationTemplatesManagement";
 import { NotionAccountConnection } from "@/components/settings/NotionAccountConnection";
+import { PipelineStagesSettings } from "@/components/settings/PipelineStagesSettings";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
 
 const REQUIRED_GOOGLE_SCOPES = [
@@ -426,6 +427,10 @@ export default function Settings() {
               <FileText className="h-4 w-4 mr-2" />
               Assinatura
             </TabsTrigger>
+            <TabsTrigger value="pipeline">
+              <Kanban className="h-4 w-4 mr-2" />
+              Pipeline
+            </TabsTrigger>
             <TabsTrigger value="meta">
               <Facebook className="h-4 w-4 mr-2" />
               Meta
@@ -729,6 +734,10 @@ export default function Settings() {
                 </div>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="pipeline" className="space-y-6">
+            <PipelineStagesSettings />
           </TabsContent>
 
           <TabsContent value="notifications" className="space-y-6">

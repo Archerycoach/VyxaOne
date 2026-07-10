@@ -30,6 +30,7 @@ import type { LeadWithContacts } from "@/services/leadsService";
 import { supabase } from "@/integrations/supabase/client";
 import { QuickContactDialog } from "@/components/leads/QuickContactDialog";
 import { getLeadRecentInteractionState } from "@/lib/leadInteractionHighlight";
+import { getBuyerStages, getSellerStages, type PipelineStage } from "@/services/pipelineSettingsService";
 
 interface Lead {
   id: string;
@@ -99,6 +100,25 @@ export function LeadCard({
     tasks: number;
     pendingTasks: number;
   } | null>(null);
+  const [buyerStages, setBuyerStages] = useState<PipelineStage[] | null>(null);
+  const [sellerStages, setSellerStages] = useState<PipelineStage[] | null>(null);
+
+  // As fases do pipeline são isoladas por consultor — carregamos as fases do
+  // DONO da lead (lead.assigned_to), não as do utilizador a ver o ecrã, para
+  // que o nome da fase mostrado corresponda sempre ao pipeline configurado
+  // por quem gere essa lead.
+  React.useEffect(() => {
+    const ownerId = lead.assigned_to || undefined;
+    const needsBuyer = lead.lead_type === "buyer" || lead.lead_type === "both";
+    const needsSeller = lead.lead_type === "seller" || lead.lead_type === "both";
+
+    if (needsBuyer) {
+      getBuyerStages(ownerId).then(setBuyerStages).catch(() => setBuyerStages(null));
+    }
+    if (needsSeller) {
+      getSellerStages(ownerId).then(setSellerStages).catch(() => setSellerStages(null));
+    }
+  }, [lead.assigned_to, lead.lead_type]);
 
   // Load activities count for this lead
   React.useEffect(() => {
@@ -207,6 +227,46 @@ export function LeadCard({
     return typeMap[type || ""] || type || "N/A";
   };
 
+  // Mostra a fase do pipeline de compra/venda em que a lead está, de acordo
+  // com as fases configuradas pelo consultor a quem a lead está atribuída
+  // (buyer_status/seller_status), em vez do "status" genérico antigo — que
+  // não sabia distinguir pipelines de compra e venda diferentes.
+  const getStageBadge = (stageType: "buyer" | "seller", prefix?: string) => {
+    const stages = stageType === "buyer" ? buyerStages : sellerStages;
+    const currentId = (stageType === "buyer" ? lead.buyer_status : lead.seller_status) || lead.status;
+    const stage = stages?.find((s) => s.id === currentId);
+
+    if (stage) {
+      return (
+        <Badge
+          key={stageType}
+          style={{ backgroundColor: stage.color, color: "#fff", borderColor: stage.color }}
+          className="text-xs"
+        >
+          {prefix ? `${prefix} ${stage.name}` : stage.name}
+        </Badge>
+      );
+    }
+
+    return (
+      <Badge key={stageType} variant={getStatusBadgeVariant(currentId)} className="text-xs">
+        {prefix ? `${prefix} ${getStatusLabel(currentId)}` : getStatusLabel(currentId)}
+      </Badge>
+    );
+  };
+
+  const renderStageBadges = () => {
+    if (lead.lead_type === "both") {
+      return (
+        <>
+          {getStageBadge("buyer", "🏠")}
+          {getStageBadge("seller", "🏡")}
+        </>
+      );
+    }
+    return getStageBadge(lead.lead_type === "seller" ? "seller" : "buyer");
+  };
+
   // Grid view - Compact card
   if (viewMode === "grid") {
     return (
@@ -244,28 +304,6 @@ export function LeadCard({
             )}
           </div>
           <div className="flex gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-            <button
-              onClick={() => onEmail(lead)}
-              className="p-1.5 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded-md transition-colors"
-              title="Enviar Email"
-            >
-              <Mail className="h-4 w-4" />
-            </button>
-            <button
-              onClick={() => onWhatsApp(lead)}
-              className="p-1.5 text-green-600 hover:text-green-800 hover:bg-green-50 rounded-md transition-colors"
-              title="Enviar WhatsApp"
-            >
-              <MessageCircle className="h-4 w-4" />
-            </button>
-            <button
-              onClick={() => onSMS(lead)}
-              className="p-1.5 text-purple-500 hover:text-purple-700 hover:bg-purple-50 rounded-md transition-colors"
-              title="Enviar SMS"
-            >
-              <MessageSquare className="h-4 w-4" />
-            </button>
-
             <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
               <DropdownMenuTrigger asChild>
                 <button className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-colors">
@@ -282,6 +320,24 @@ export function LeadCard({
                 <DropdownMenuItem onClick={() => handleMenuItemClick(() => setQuickContactOpen(true))}>
                   <Phone className="h-4 w-4 mr-2" />
                   Registar Contacto Rápido
+                </DropdownMenuItem>
+
+                <DropdownMenuSeparator />
+
+                <div className="px-2 py-1.5 text-xs font-semibold text-gray-500 uppercase">
+                  Comunicação
+                </div>
+                <DropdownMenuItem onClick={() => handleMenuItemClick(() => onEmail(lead))}>
+                  <Mail className="h-4 w-4 mr-2" />
+                  Enviar Email
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleMenuItemClick(() => onWhatsApp(lead))}>
+                  <MessageCircle className="h-4 w-4 mr-2" />
+                  Enviar WhatsApp
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleMenuItemClick(() => onSMS(lead))}>
+                  <MessageSquare className="h-4 w-4 mr-2" />
+                  Enviar SMS
                 </DropdownMenuItem>
 
                 <DropdownMenuSeparator />
@@ -374,9 +430,7 @@ export function LeadCard({
         </div>
 
         <div className="flex flex-wrap gap-1.5 mb-3">
-          <Badge variant={getStatusBadgeVariant(lead.status)} className="text-xs">
-            {getStatusLabel(lead.status)}
-          </Badge>
+          {renderStageBadges()}
           <Badge variant="outline" className="text-xs">{getLeadTypeLabel(lead.lead_type)}</Badge>
           {lead.temperature && (
             <Badge 
@@ -547,28 +601,6 @@ export function LeadCard({
           )}
         </div>
         <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
-          <button
-            onClick={() => onEmail(lead)}
-            className="p-1.5 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded-md transition-colors"
-            title="Enviar Email"
-          >
-            <Mail className="h-4 w-4" />
-          </button>
-          <button
-            onClick={() => onWhatsApp(lead)}
-            className="p-1.5 text-green-600 hover:text-green-800 hover:bg-green-50 rounded-md transition-colors"
-            title="Enviar WhatsApp"
-          >
-            <MessageCircle className="h-4 w-4" />
-          </button>
-          <button
-            onClick={() => onSMS(lead)}
-            className="p-1.5 text-purple-500 hover:text-purple-700 hover:bg-purple-50 rounded-md transition-colors"
-            title="Enviar SMS"
-          >
-            <MessageSquare className="h-4 w-4" />
-          </button>
-
           <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
             <DropdownMenuTrigger asChild>
               <button className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-colors">
@@ -585,6 +617,24 @@ export function LeadCard({
               <DropdownMenuItem onClick={() => handleMenuItemClick(() => setQuickContactOpen(true))}>
                 <Phone className="h-4 w-4 mr-2" />
                 Registar Contacto Rápido
+              </DropdownMenuItem>
+
+              <DropdownMenuSeparator />
+
+              <div className="px-2 py-1.5 text-xs font-semibold text-gray-500 uppercase">
+                Comunicação
+              </div>
+              <DropdownMenuItem onClick={() => handleMenuItemClick(() => onEmail(lead))}>
+                <Mail className="h-4 w-4 mr-2" />
+                Enviar Email
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleMenuItemClick(() => onWhatsApp(lead))}>
+                <MessageCircle className="h-4 w-4 mr-2" />
+                Enviar WhatsApp
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleMenuItemClick(() => onSMS(lead))}>
+                <MessageSquare className="h-4 w-4 mr-2" />
+                Enviar SMS
               </DropdownMenuItem>
 
               <DropdownMenuSeparator />
@@ -677,9 +727,7 @@ export function LeadCard({
       </div>
 
       <div className="flex flex-wrap gap-2 mb-3">
-        <Badge variant={getStatusBadgeVariant(lead.status)}>
-          {getStatusLabel(lead.status)}
-        </Badge>
+        {renderStageBadges()}
         <Badge variant="outline">{getLeadTypeLabel(lead.lead_type)}</Badge>
         {lead.temperature && (
           <Badge 

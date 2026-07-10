@@ -33,6 +33,7 @@ import { getLeadRecentInteractionState } from "@/lib/leadInteractionHighlight";
 import { getLeadQualification } from "@/lib/leadQualification";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScopeSelector } from "@/components/ScopeSelector";
+import { getStagesForUsers, type PipelineStage } from "@/services/pipelineSettingsService";
 
 // Default columns configuration for fallback
 const DEFAULT_COLUMNS: LeadColumnConfig[] = [
@@ -144,6 +145,31 @@ export function LeadsListContainer({
     if (scopeFilter === "all") return leads;
     return leads.filter((lead) => lead.assigned_to === scopeFilter);
   }, [leads, scopeFilter]);
+
+  // Fases do pipeline são isoladas por consultor — carregamos, de uma só
+  // vez, as fases de todos os donos das leads visíveis (pode haver várias
+  // leads de vários consultores na mesma grelha/lista), para mostrar o nome
+  // de fase correto de cada uma sem N pedidos individuais.
+  const [buyerStagesByOwner, setBuyerStagesByOwner] = useState<Record<string, PipelineStage[]>>({});
+  const [sellerStagesByOwner, setSellerStagesByOwner] = useState<Record<string, PipelineStage[]>>({});
+
+  useEffect(() => {
+    const buyerOwnerIds = scopedLeads
+      .filter((l) => l.lead_type === "buyer" || l.lead_type === "both")
+      .map((l) => l.assigned_to)
+      .filter((id): id is string => Boolean(id));
+    const sellerOwnerIds = scopedLeads
+      .filter((l) => l.lead_type === "seller" || l.lead_type === "both")
+      .map((l) => l.assigned_to)
+      .filter((id): id is string => Boolean(id));
+
+    if (buyerOwnerIds.length > 0) {
+      getStagesForUsers(buyerOwnerIds, "buyer").then(setBuyerStagesByOwner);
+    }
+    if (sellerOwnerIds.length > 0) {
+      getStagesForUsers(sellerOwnerIds, "seller").then(setSellerStagesByOwner);
+    }
+  }, [scopedLeads]);
 
   // Filter logic
   const {
@@ -543,6 +569,47 @@ export function LeadsListContainer({
     return <Badge variant={config.variant}>{config.label}</Badge>;
   };
 
+  // Mostra a fase do pipeline de compra/venda em que a lead está, de acordo
+  // com as fases configuradas pelo consultor a quem a lead está atribuída
+  // (buyer_status/seller_status) — substitui o "status" genérico antigo, que
+  // não distinguia pipelines de compra e venda diferentes.
+  const getPipelineStageBadge = (lead: LeadWithContacts) => {
+    const renderOne = (stageType: "buyer" | "seller", prefix?: string) => {
+      const stagesByOwner = stageType === "buyer" ? buyerStagesByOwner : sellerStagesByOwner;
+      const stages = lead.assigned_to ? stagesByOwner[lead.assigned_to] : undefined;
+      const currentId = (stageType === "buyer" ? lead.buyer_status : lead.seller_status) || lead.status;
+      const stage = stages?.find((s) => s.id === currentId);
+
+      if (stage) {
+        return (
+          <Badge
+            key={stageType}
+            style={{ backgroundColor: stage.color, color: "#fff", borderColor: stage.color }}
+          >
+            {prefix ? `${prefix} ${stage.name}` : stage.name}
+          </Badge>
+        );
+      }
+
+      return (
+        <span key={stageType} className="inline-flex items-center gap-1">
+          {prefix && <span>{prefix}</span>}
+          {getStatusBadge(currentId)}
+        </span>
+      );
+    };
+
+    if (lead.lead_type === "both") {
+      return (
+        <div className="flex flex-wrap gap-1">
+          {renderOne("buyer", "🏠")}
+          {renderOne("seller", "🏡")}
+        </div>
+      );
+    }
+    return renderOne(lead.lead_type === "seller" ? "seller" : "buyer");
+  };
+
   const getLeadTypeLabel = (type: string | null | undefined) => {
     const typeMap: Record<string, string> = {
       buyer: "Comprador",
@@ -561,7 +628,7 @@ export function LeadsListContainer({
       case "phone":
         return lead.phone || "-";
       case "status":
-        return getStatusBadge(lead.status);
+        return getPipelineStageBadge(lead);
       case "lead_type":
         return getLeadTypeLabel(lead.lead_type);
       case "location_preference":

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Plus, CheckCircle2, Clock, AlertCircle, List, CalendarClock } from "lucide-react";
+import { Plus, CheckCircle2, Clock, AlertCircle, List, CalendarClock, Percent } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { TaskCard } from "./TaskCard";
 import { TaskFilters } from "./TaskFilters";
@@ -52,6 +52,7 @@ export function TasksContainer() {
       return new Date(t.dueDate) < new Date();
     }).length,
   };
+  const completionRate = allTasks.length > 0 ? Math.round((stats.completed / allTasks.length) * 100) : 0;
 
   // Form state
   const [formDialogOpen, setFormDialogOpen] = useState(false);
@@ -197,7 +198,7 @@ export function TasksContainer() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total</CardTitle>
@@ -245,6 +246,16 @@ export function TasksContainer() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-red-500">{stats.overdue}</div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">% Concluídas</CardTitle>
+            <Percent className="h-4 w-4 text-purple-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{completionRate}%</div>
           </CardContent>
         </Card>
       </div>

@@ -10,7 +10,6 @@ import { getSession } from "@/services/authService";
 import { getUserProfile } from "@/services/profileService";
 import { Layout } from "@/components/Layout";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
-import { PipelineSettings } from "@/components/admin/PipelineSettings";
 import { LeadSourceSettings } from "@/components/admin/LeadSourceSettings";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -262,9 +261,6 @@ export default function SystemSettings() {
               </div>
             </CardContent>
           </Card>
-
-          {/* Pipeline Settings */}
-          <PipelineSettings />
 
           {/* Lead Sources */}
           <LeadSourceSettings />
