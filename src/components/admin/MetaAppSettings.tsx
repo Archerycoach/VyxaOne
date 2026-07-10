@@ -24,6 +24,13 @@ import Link from "next/link";
 import { getMetaAppSettings, updateMetaAppSettings, type MetaAppSettings, getSyncHistory } from "@/services/metaService";
 import { supabase } from "@/integrations/supabase/client";
 
+// Placeholder mostrado no lugar de segredos já guardados (app_secret,
+// verify_token) — nunca é o valor real. Se o campo continuar com este valor
+// ao Guardar, significa que o utilizador não o alterou, por isso não deve
+// ser enviado para a base de dados (senão substituía o segredo real por
+// estes pontos, partindo a integração).
+const MASKED_SECRET = "••••••••••••••••";
+
 export function MetaAppSettings() {
   const [loading, setLoading] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -67,8 +74,8 @@ export function MetaAppSettings() {
         setSettings({
           id: data.id,
           app_id: data.app_id || "",
-          app_secret: "••••••••••••••••", // Esconder token (fake)
-          verify_token: "••••••••••••••••", // Esconder token (fake)
+          app_secret: MASKED_SECRET,
+          verify_token: MASKED_SECRET,
           webhook_url: `${window.location.origin}/api/meta/webhook`,
           is_active: data.is_active || false
         });
@@ -210,8 +217,25 @@ export function MetaAppSettings() {
       setLoading(true);
 
       if (settings.id) {
-        await updateMetaAppSettings(settings);
+        // Só envia app_secret/verify_token se tiverem sido realmente
+        // alterados — caso contrário mantém-se o valor já guardado (o campo
+        // mostra só o placeholder, nunca o segredo real).
+        const updates: Partial<MetaAppSettings> = { ...settings };
+        if (updates.app_secret === MASKED_SECRET) delete updates.app_secret;
+        if (updates.verify_token === MASKED_SECRET) delete updates.verify_token;
+
+        await updateMetaAppSettings(updates);
       } else {
+        if (settings.app_secret === MASKED_SECRET || settings.verify_token === MASKED_SECRET) {
+          toast({
+            title: "Campos obrigatórios",
+            description: "Introduza o App Secret e o Verify Token reais.",
+            variant: "destructive",
+          });
+          setLoading(false);
+          return;
+        }
+
         const { data, error } = await supabase
           .from("meta_app_settings" as any)
           .insert({
@@ -261,23 +285,26 @@ export function MetaAppSettings() {
       setTesting(true);
       setConnectionStatus("unknown");
 
-      const response = await fetch(
-        `https://graph.facebook.com/v18.0/oauth/access_token?client_id=${settings.app_id}&client_secret=${settings.app_secret}&grant_type=client_credentials`
-      );
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("Sessão expirada. Faça login novamente.");
 
-      if (response.ok) {
-        const data = await response.json();
-        if (data.access_token) {
-          setConnectionStatus("connected");
-          toast({
-            title: "✅ Conexão bem-sucedida",
-            description: "Credenciais da Meta validadas com sucesso!",
-          });
-        } else {
-          throw new Error("Invalid response");
-        }
+      // O teste corre no servidor (ver /api/meta/test-connection) — o App
+      // Secret guardado nunca é enviado para o browser, incluindo quando o
+      // campo aqui mostra só o placeholder mascarado.
+      const response = await fetch("/api/meta/test-connection", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      const data = await response.json();
+
+      if (data.success) {
+        setConnectionStatus("connected");
+        toast({
+          title: "✅ Conexão bem-sucedida",
+          description: "Credenciais da Meta validadas com sucesso!",
+        });
       } else {
-        throw new Error("Failed to validate credentials");
+        throw new Error(data.error || "Não foi possível validar as credenciais.");
       }
     } catch (error: any) {
       console.error("Error testing connection:", error);

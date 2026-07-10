@@ -39,12 +39,25 @@ export default async function handler(
       return res.redirect("/settings?meta_error=not_configured");
     }
 
+    // O redirect_uri usado aqui tem de ser IDÊNTICO, carácter a carácter, ao
+    // que foi enviado à Meta em /api/meta/auth.ts ao pedir a autorização —
+    // caso contrário a troca do código por token falha sempre com
+    // "redirect_uri mismatch". Como este pedido é uma navegação normal do
+    // browser (o redirecionamento da Meta), não chega aqui nenhum cabeçalho
+    // "X-Origin" customizado — por isso usamos o mesmo cálculo por
+    // host/protocolo que auth.ts usa como alternativa ao X-Origin, que
+    // reflete sempre o domínio real onde o utilizador está a usar a app.
+    const host = req.headers.host;
+    const protocol = host?.includes("localhost") ? "http" : "https";
+    const origin = host ? `${protocol}://${host}` : (process.env.NEXT_PUBLIC_APP_URL || "https://www.vyxa.pt");
+    const redirectUri = `${origin}/api/meta/callback`;
+
     // Exchange code for access token
     const tokenResponse = await fetch(
       `https://graph.facebook.com/v18.0/oauth/access_token?` +
       `client_id=${settings.app_id}` +
       `&client_secret=${settings.app_secret}` +
-      `&redirect_uri=${encodeURIComponent(`${process.env.NEXT_PUBLIC_APP_URL || "https://www.vyxa.pt"}/api/meta/callback`)}` +
+      `&redirect_uri=${encodeURIComponent(redirectUri)}` +
       `&code=${code}`
     );
 

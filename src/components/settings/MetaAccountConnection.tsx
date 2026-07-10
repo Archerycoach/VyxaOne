@@ -34,8 +34,8 @@ export function MetaAccountConnection({ onSelectIntegration }: MetaAccountConnec
       window.history.replaceState({}, document.title, window.location.pathname);
     } else if (metaError === "no_pages_selected") {
       toast({
-        title: "Nenhuma página selecionada",
-        description: "Tem de selecionar as páginas a que pretende dar acesso durante a janela do Facebook. Tente novamente.",
+        title: "Nenhuma Página do Facebook encontrada",
+        description: "Esta conta não administra nenhuma Página do Facebook, ou não deu acesso a nenhuma durante a janela de autorização. Confirme que é administrador de pelo menos uma Página e tente novamente.",
         variant: "destructive",
       });
       // Clean URL
@@ -43,7 +43,7 @@ export function MetaAccountConnection({ onSelectIntegration }: MetaAccountConnec
     } else if (metaError) {
       toast({
         title: "Erro na conexão",
-        description: "Não foi possível conectar a conta Meta. Tente novamente.",
+        description: `Não foi possível conectar a conta Meta (${metaError}). Tente novamente.`,
         variant: "destructive",
       });
       // Clean URL
