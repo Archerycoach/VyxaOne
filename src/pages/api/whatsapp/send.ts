@@ -7,7 +7,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ error: "Method Not Allowed" });
   }
   
-  const { lead_id, phone, type, content, is_bulk } = req.body;
+  const { lead_id, phone, type, content, is_bulk, language } = req.body;
   const token = req.headers.authorization?.split(" ")[1];
   
   if (!token || (!lead_id && !phone) || !type || !content) {
@@ -58,7 +58,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // consentimento, tal como os crons/webhooks.
     const skipConsentCheck = !is_bulk;
     if (type === 'template') {
-      result = await sendWhatsAppTemplate(targetUserId, targetPhone, content, supabaseAdmin, lead_id, skipConsentCheck, is_bulk ? "bulk_message" : undefined);
+      result = await sendWhatsAppTemplate(targetUserId, targetPhone, content, supabaseAdmin, lead_id, skipConsentCheck, is_bulk ? "bulk_message" : undefined, language || undefined);
     } else {
       result = await sendWhatsAppMessage(targetUserId, targetPhone, content, supabaseAdmin, lead_id, skipConsentCheck, is_bulk ? "bulk_message" : undefined);
     }

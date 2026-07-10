@@ -250,10 +250,17 @@ export default function BulkMessages() {
   const [user, setUser] = useState<any>(null);
   const [messageType, setMessageType] = useState<"email" | "whatsapp">("email");
   // "text": mensagem livre (só funciona se a lead tiver escrito nas últimas
-  // 24h — janela de mensagens da Meta). "template": envia o template
-  // aprovado "reativacao_radar" no Meta Business Manager, que funciona
-  // sempre (é a única forma de contactar leads fora dessa janela).
+  // 24h — janela de mensagens da Meta). "template": envia um template
+  // aprovado no Meta Business Manager, que funciona sempre (é a única forma
+  // de contactar leads fora dessa janela).
   const [whatsappSendMode, setWhatsappSendMode] = useState<"text" | "template">("text");
+  // O nome e o idioma têm de corresponder EXATAMENTE ao que está aprovado no
+  // Meta Business Manager (Templates de mensagem) — a Meta devolve o erro
+  // "(#132001) Template name does not exist in the translation" se o idioma
+  // não corresponder (ex.: template criado como "pt_BR" mas aqui a pedir
+  // "pt_PT"), por isso deixamos os dois editáveis em vez de fixos no código.
+  const [waTemplateName, setWaTemplateName] = useState("reativacao_radar");
+  const [waTemplateLanguage, setWaTemplateLanguage] = useState("pt_PT");
   
   // Data
   const [leads, setLeads] = useState<LeadWithContacts[]>([]);
@@ -884,6 +891,15 @@ export default function BulkMessages() {
 
     const sendingWhatsappTemplate = messageType === "whatsapp" && whatsappSendMode === "template";
 
+    if (sendingWhatsappTemplate && (!waTemplateName.trim() || !waTemplateLanguage.trim())) {
+      toast({
+        title: "Aviso",
+        description: "Indique o nome e o idioma do template aprovado no Meta Business Manager.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     const cleanMsg = message.replace(/<[^>]*>?/gm, '').trim();
     if (!sendingWhatsappTemplate && (!message.trim() || (!cleanMsg && !message.includes('<img')))) {
       toast({
@@ -1041,7 +1057,8 @@ export default function BulkMessages() {
                   lead_id: recipient.type === "lead" ? recipient.id.replace("lead-", "") : undefined,
                   phone: recipient.phone,
                   type: 'template',
-                  content: 'reativacao_radar',
+                  content: waTemplateName.trim(),
+                  language: waTemplateLanguage.trim(),
                   is_bulk: true,
                 }
               : {
@@ -1577,17 +1594,47 @@ export default function BulkMessages() {
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="text">Mensagem livre (só funciona se a lead escreveu nas últimas 24h)</SelectItem>
-                            <SelectItem value="template">Template aprovado "reativacao_radar" (funciona sempre, incl. fora da janela de 24h)</SelectItem>
+                            <SelectItem value="template">Template aprovado no Meta Business Manager (funciona sempre, incl. fora da janela de 24h)</SelectItem>
                           </SelectContent>
                         </Select>
-                        {whatsappSendMode === "template" && (
-                          <p className="text-xs text-gray-500">
-                            O conteúdo é fixo (definido no Meta Business Manager, com os botões "Interessado" / "Sem Interesse")
-                            — não pode ser personalizado aqui. Use este modo quando a Meta bloquear o envio de texto livre por
-                            a lead não ter escrito nas últimas 24h.
-                          </p>
-                        )}
                       </div>
+
+                      {whatsappSendMode === "template" && (
+                        <div className="space-y-4 p-4 border rounded-lg bg-slate-50/50">
+                          <p className="text-xs text-gray-500">
+                            O conteúdo da mensagem é fixo (o que estiver aprovado no Meta Business Manager) — não pode ser
+                            personalizado aqui. O nome e o idioma têm de corresponder EXATAMENTE ao que está configurado em{" "}
+                            <strong>Meta Business Manager → WhatsApp Manager → Templates de mensagem</strong>.
+                          </p>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <Label htmlFor="wa-template-name">Nome do Template</Label>
+                              <Input
+                                id="wa-template-name"
+                                value={waTemplateName}
+                                onChange={(e) => setWaTemplateName(e.target.value)}
+                                placeholder="ex: reativacao_radar"
+                                className="font-mono text-sm"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="wa-template-language">Código de Idioma</Label>
+                              <Input
+                                id="wa-template-language"
+                                value={waTemplateLanguage}
+                                onChange={(e) => setWaTemplateLanguage(e.target.value)}
+                                placeholder="ex: pt_PT ou pt_BR"
+                                className="font-mono text-sm"
+                              />
+                            </div>
+                          </div>
+                          <p className="text-xs text-gray-500">
+                            Se a Meta continuar a indicar "Template name does not exist in the translation", o idioma aqui não
+                            corresponde ao idioma com que o template foi aprovado — confirme no Meta Business Manager (é comum
+                            "Português" ter sido criado como <code>pt_BR</code> em vez de <code>pt_PT</code>).
+                          </p>
+                        </div>
+                      )}
 
                       {whatsappSendMode === "text" && (personalTemplates.filter(t => t.template_type === 'whatsapp').length > 0) && (
                         <div className="flex items-end justify-between pb-4 border-b gap-4">
@@ -1664,7 +1711,7 @@ export default function BulkMessages() {
                       <AlertDescription>
                         <strong>Pré-visualização:</strong>{" "}
                         {messageType === "whatsapp" && whatsappSendMode === "template"
-                          ? <>O template <strong>"reativacao_radar"</strong> será enviado para</>
+                          ? <>O template <strong>"{waTemplateName.trim() || "(sem nome)"}"</strong> ({waTemplateLanguage.trim() || "(sem idioma)"}) será enviado para</>
                           : <>Esta mensagem será enviada para</>}{" "}
                         <strong>{selectedRecipients.size}</strong> destinatário
                         {selectedRecipients.size > 1 ? "s" : ""}.

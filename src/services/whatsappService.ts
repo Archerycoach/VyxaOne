@@ -220,13 +220,14 @@ export async function sendWhatsAppMessage(
  * source: identifica qual automação está a enviar — ver sendWhatsAppMessage.
  */
 export async function sendWhatsAppTemplate(
-  userId: string, 
-  to: string, 
+  userId: string,
+  to: string,
   templateName: string,
   supabaseClient = supabase,
   leadId?: string,
   skipConsentCheck: boolean = false,
-  source: string = "unknown_automation"
+  source: string = "unknown_automation",
+  languageCode: string = "pt_PT"
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
   try {
     if (leadId && await isDoNotContact(leadId, supabaseClient)) {
@@ -283,7 +284,7 @@ export async function sendWhatsAppTemplate(
         template: {
           name: templateName,
           language: {
-            code: "pt_PT"
+            code: languageCode
           }
         }
       })
