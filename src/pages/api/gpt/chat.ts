@@ -107,6 +107,10 @@ interface EmailCampaignDraft {
   }>;
   matchedLeadCount?: number;
   missingEmailCount?: number;
+  // Leads cujas notas/interações sugerem não querer ser contactadas — ficam
+  // de fora de recipientLeadIds por omissão; o consultor decide se as
+  // adiciona mesmo assim.
+  flaggedForReview?: Array<{ leadId: string; name: string; reason: string }>;
 }
 
 interface EmailCampaignAudienceResult {
@@ -515,10 +519,15 @@ async function generateEmailCampaignDraft(
     developments?: DevelopmentContext[];
     filterSummaryOverride?: string | null;
     debugNotes?: DebugNote[];
+    // Texto extraído de uma brochura (PDF/Word) ou de um link de publicação
+    // externa — quando presente, o email deve divulgar especificamente este
+    // imóvel, usando só os factos aqui descritos (nunca inventar dados).
+    listingContent?: string | null;
   } = {},
 ): Promise<EmailCampaignDraft> {
   const filterSummary = context.filterSummaryOverride?.trim() || buildCampaignFilterSummary(criteria);
   const fallback = buildFallbackDraft(criteria, agentName);
+  const hasListingContent = Boolean(context.listingContent?.trim());
 
   try {
     const aiResponse = await runAI({
@@ -527,8 +536,9 @@ async function generateEmailCampaignDraft(
       messages: [
         {
           role: "system",
-          content:
-            "És um copywriter imobiliário em português de Portugal. Cria emails curtos, humanos e comerciais, sem promessas falsas. Responde APENAS em JSON com as chaves subject, htmlBody e textBody. Usa o placeholder {nome} na saudação.",
+          content: hasListingContent
+            ? "És um copywriter imobiliário em português de Portugal. Cria um email curto, humano e comercial para divulgar especificamente o imóvel descrito em 'imovel_a_divulgar'. Usa apenas factos presentes nesse texto (preço, tipologia, localização, características, fotos referidas) — nunca inventes dados que não estejam lá. Sem promessas falsas. Responde APENAS em JSON com as chaves subject, htmlBody e textBody. Usa o placeholder {nome} na saudação."
+            : "És um copywriter imobiliário em português de Portugal. Cria emails curtos, humanos e comerciais, sem promessas falsas. Responde APENAS em JSON com as chaves subject, htmlBody e textBody. Usa o placeholder {nome} na saudação.",
         },
         {
           role: "user",
@@ -537,6 +547,7 @@ async function generateEmailCampaignDraft(
             agente: agentName,
             segmento: filterSummary,
             numero_de_leads: leads.length,
+            imovel_a_divulgar: context.listingContent?.trim() || null,
             historico_recente: (context.history || []).slice(-6),
             rascunho_anterior: context.previousDraft || null,
             amostra_de_leads: leads.slice(0, 8).map((lead) => ({
@@ -728,6 +739,109 @@ async function selectEmailCampaignAudience(params: {
       selectedLeadIds: fallbackLeadIds,
       filterSummary: fallbackSummary,
     };
+  }
+}
+
+/**
+ * Lê notas e interações em texto livre das leads candidatas e sinaliza,
+ * via IA, quaisquer sinais explícitos de que a pessoa não quer ser
+ * contactada (pedido para não ligarem/escreverem, desinterese manifestado,
+ * etc.) — nunca leads simplesmente frias ou sem resposta. É uma sugestão
+ * para revisão do consultor, nunca uma exclusão automática silenciosa.
+ */
+async function detectDoNotContactSignals(params: {
+  leads: LeadContext[];
+  userId: string;
+  supabase: any;
+  debugNotes?: DebugNote[];
+}): Promise<Array<{ leadId: string; name: string; reason: string }>> {
+  if (params.leads.length === 0) return [];
+
+  const leadIds = params.leads.map((lead) => lead.id);
+
+  const [notesResult, interactionsResult] = await Promise.all([
+    params.supabase
+      .from("lead_notes")
+      .select("lead_id, note")
+      .in("lead_id", leadIds)
+      .order("created_at", { ascending: false }),
+    params.supabase
+      .from("interactions")
+      .select("lead_id, outcome, interaction_type")
+      .in("lead_id", leadIds)
+      .order("interaction_date", { ascending: false }),
+  ]);
+
+  const notesByLead = new Map<string, string[]>();
+  for (const note of (notesResult.data || []) as { lead_id: string; note: string | null }[]) {
+    if (!note.note) continue;
+    const existing = notesByLead.get(note.lead_id) || [];
+    if (existing.length < 5) {
+      existing.push(note.note);
+      notesByLead.set(note.lead_id, existing);
+    }
+  }
+
+  const interactionsByLead = new Map<string, string[]>();
+  for (const interaction of (interactionsResult.data || []) as { lead_id: string; outcome: string | null; interaction_type: string | null }[]) {
+    if (!interaction.outcome) continue;
+    const existing = interactionsByLead.get(interaction.lead_id) || [];
+    if (existing.length < 5) {
+      existing.push(`${interaction.interaction_type || "interação"}: ${interaction.outcome}`);
+      interactionsByLead.set(interaction.lead_id, existing);
+    }
+  }
+
+  const candidateLeads = params.leads
+    .map((lead) => ({
+      leadId: lead.id,
+      nome: lead.name,
+      notas: notesByLead.get(lead.id) || [],
+      interacoes: interactionsByLead.get(lead.id) || [],
+    }))
+    .filter((entry) => entry.notas.length > 0 || entry.interacoes.length > 0);
+
+  if (candidateLeads.length === 0) return [];
+
+  try {
+    const aiResponse = await runAI({
+      userId: params.userId,
+      task: "email_campaign_dnc_review",
+      messages: [
+        {
+          role: "system",
+          content:
+            "Analisas notas e interações de leads imobiliárias em português de Portugal. Sinaliza APENAS leads cujo texto contenha um sinal explícito de que a pessoa não quer ser contactada (pediu para não ligarem/escreverem, manifestou desinteresse claro em continuar a ser contactada, pediu para ser removida). NÃO sinalizes leads apenas frias, sem resposta, ou com histórico neutro — isso não é o mesmo que recusa explícita. Responde APENAS em JSON com a chave flagged: array de {leadId, reason}, em que reason é uma frase curta (até 15 palavras) a citar ou resumir o sinal encontrado.",
+        },
+        {
+          role: "user",
+          content: JSON.stringify({ leads: candidateLeads }),
+        },
+      ],
+      jsonMode: true,
+      temperature: 0.1,
+    });
+
+    const parsed = JSON.parse(sanitizeJsonReply(aiResponse.text));
+    const flagged = Array.isArray(parsed.flagged) ? parsed.flagged : [];
+    const validIds = new Set(params.leads.map((lead) => lead.id));
+    const nameById = new Map(params.leads.map((lead) => [lead.id, lead.name]));
+
+    return flagged
+      .filter((entry: any): entry is { leadId: string; reason?: string } =>
+        entry && typeof entry.leadId === "string" && validIds.has(entry.leadId)
+      )
+      .map((entry: any) => ({
+        leadId: entry.leadId,
+        name: nameById.get(entry.leadId) || "",
+        reason: typeof entry.reason === "string" && entry.reason.trim() ? entry.reason.trim() : "Sinal encontrado nas notas/interações.",
+      }));
+  } catch (error) {
+    addDebugNote(params.debugNotes, "dnc_signal_detection_catch", "Falha ao analisar sinais de não-contacto (não bloqueante).", {
+      errorMessage: error instanceof Error ? error.message : "Unknown error",
+    });
+    console.error("Erro ao detetar sinais de não-contacto:", error);
+    return [];
   }
 }
 
@@ -1114,6 +1228,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         criteria?: EmailCampaignCriteria | null;
         previousDraft?: Pick<EmailCampaignDraft, "subject" | "htmlBody" | "textBody"> | null;
         recipientLeadIds?: string[] | null;
+        // Texto já extraído (no cliente) de uma brochura PDF/Word ou de um
+        // link de publicação externa, para divulgar um imóvel específico.
+        listingContent?: string | null;
       };
       debug?: boolean;
     };
@@ -1128,15 +1245,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const { data: profile } = await userScopedSupabase.from("profiles").select("*").eq("id", user.id).single();
 
-    const { data: leads, error: leadsError } = await userScopedSupabase
+    const { data: leads, error: leadsError } = await (userScopedSupabase
       .from("leads")
       .select(
-        "id, name, phone, email, status, lead_type, next_follow_up, property_type, location_preference, buy_purpose, budget, budget_min, budget_max, min_area, max_area, bedrooms, bathrooms, source, meta_form_id, typology",
+        "id, name, phone, email, status, lead_type, next_follow_up, property_type, location_preference, buy_purpose, budget, budget_min, budget_max, min_area, max_area, bedrooms, bathrooms, source, meta_form_id, typology, exclude_from_ai_lists",
       )
       .or(`assigned_to.eq.${user.id},user_id.eq.${user.id}`)
       .is("archived_at", null)
       .order("updated_at", { ascending: false })
-      .limit(200);
+      .limit(200) as any);
 
     if (leadsError) {
       throw leadsError;
@@ -1148,15 +1265,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     if (isEmailCampaignRequest(message) || campaignContext?.mode === "email_campaign") {
       try {
+        // Exclui sempre quem foi marcado para ficar de fora das listas de
+        // distribuição automáticas de IA (mesma flag usada pelo Property
+        // Matcher e pelos Alertas de Procura) — nunca entram na campanha.
+        const campaignEligibleLeads = activeLeads.filter((lead) => !(lead as any).exclude_from_ai_lists);
+
         addDebugNote(debugRequested ? debugNotes : undefined, "email_campaign_start", "Início da geração de campanha por email.", {
           activeLeads: activeLeads.length,
+          eligibleLeads: campaignEligibleLeads.length,
           requestedBedrooms,
           previousRecipientLeadIds: campaignContext?.recipientLeadIds?.length || 0,
         });
 
         const baseCriteria = campaignContext?.criteria || null;
         const criteria: EmailCampaignCriteria = {
-          location: resolveRequestedLocation(message, activeLeads) ?? baseCriteria?.location ?? null,
+          location: resolveRequestedLocation(message, campaignEligibleLeads) ?? baseCriteria?.location ?? null,
           typology:
             requestedBedrooms !== null
               ? `T${requestedBedrooms}`
@@ -1216,7 +1339,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const audienceSelection = await selectEmailCampaignAudience({
           message,
           criteria,
-          leads: activeLeads,
+          leads: campaignEligibleLeads,
           userId: user.id,
           history: history || [],
           previousRecipientLeadIds: campaignContext?.recipientLeadIds || [],
@@ -1225,7 +1348,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           debugNotes: debugRequested ? debugNotes : undefined,
         });
         const matchedLeadIdSet = new Set(audienceSelection.selectedLeadIds);
-        const matchedLeads = activeLeads.filter((lead) => matchedLeadIdSet.has(lead.id));
+        const matchedLeads = campaignEligibleLeads.filter((lead) => matchedLeadIdSet.has(lead.id));
 
         const emailableLeads = matchedLeads.filter((lead) => Boolean(lead.email));
 
@@ -1267,27 +1390,47 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           });
         }
 
-        const baseCampaignDraft = await generateEmailCampaignDraft(
-          message,
-          criteria,
-          emailableLeads,
-          profile?.full_name || "Agente",
-          user.id,
-          {
-            history: history || [],
-            previousDraft: campaignContext?.previousDraft || null,
-            properties,
-            developments,
-            filterSummaryOverride: audienceSelection.filterSummary,
+        const [baseCampaignDraft, flaggedForReview] = await Promise.all([
+          generateEmailCampaignDraft(
+            message,
+            criteria,
+            emailableLeads,
+            profile?.full_name || "Agente",
+            user.id,
+            {
+              history: history || [],
+              previousDraft: campaignContext?.previousDraft || null,
+              properties,
+              developments,
+              filterSummaryOverride: audienceSelection.filterSummary,
+              debugNotes: debugRequested ? debugNotes : undefined,
+              listingContent: campaignContext?.listingContent || null,
+            },
+          ),
+          detectDoNotContactSignals({
+            leads: emailableLeads,
+            userId: user.id,
+            supabase: userScopedSupabase,
             debugNotes: debugRequested ? debugNotes : undefined,
-          },
-        );
+          }),
+        ]);
+
+        const flaggedLeadIdSet = new Set(flaggedForReview.map((entry) => entry.leadId));
+
+        addDebugNote(debugRequested ? debugNotes : undefined, "email_campaign_dnc_review", "Revisão de sinais de não-contacto concluída.", {
+          flaggedCount: flaggedForReview.length,
+        });
 
         const campaignDraft: EmailCampaignDraft = {
           ...baseCampaignDraft,
           matchedLeadCount: matchedLeads.length,
           missingEmailCount: matchedLeads.length - emailableLeads.length,
-          recipientLeadIds: emailableLeads.map((lead) => lead.id),
+          // Leads sinalizadas ficam de fora por omissão — o consultor decide
+          // se as inclui, revendo flaggedForReview na interface.
+          recipientLeadIds: emailableLeads
+            .filter((lead) => !flaggedLeadIdSet.has(lead.id))
+            .map((lead) => lead.id),
+          flaggedForReview,
         };
 
         return res.status(200).json({
@@ -1300,6 +1443,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                   activeLeads: activeLeads.length,
                   matchedLeads: matchedLeads.length,
                   emailableLeads: emailableLeads.length,
+                  flaggedForReview: flaggedForReview.length,
                   properties: properties.length,
                   developments: developments.length,
                 },

@@ -15,7 +15,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Send, Sparkles, Users } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Loader2, Send, Sparkles, Users, Upload, Link as LinkIcon, AlertTriangle, CheckCircle2 } from "lucide-react";
 
 interface EmailCampaignDraft {
   criteria: {
@@ -40,6 +41,7 @@ interface EmailCampaignDraft {
     location_preference: string | null;
     typology: string | null;
   }>;
+  flaggedForReview?: Array<{ leadId: string; name: string; reason: string }>;
 }
 
 interface CampaignConversationMessage {
@@ -77,6 +79,17 @@ export default function AiEmailCampaignsPage() {
   const [refinementPrompt, setRefinementPrompt] = useState("");
   const [debugMode, setDebugMode] = useState(false);
   const [debugInfo, setDebugInfo] = useState<EmailCampaignDebugInfo | null>(null);
+
+  // Imóvel a divulgar (brochura ou link) — opcional
+  const [listingMode, setListingMode] = useState<"none" | "document" | "url">("none");
+  const [listingUrl, setListingUrl] = useState("");
+  const [listingContent, setListingContent] = useState<string | null>(null);
+  const [listingSourceTitle, setListingSourceTitle] = useState<string | null>(null);
+  const [isExtractingListing, setIsExtractingListing] = useState(false);
+
+  // Leads sinalizadas por notas/interações — incluídas na campanha só se o
+  // consultor as marcar explicitamente.
+  const [includedFlaggedLeadIds, setIncludedFlaggedLeadIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const loadConnectionStatus = async () => {
@@ -171,6 +184,7 @@ export default function AiEmailCampaignsPage() {
       : null,
     recipientLeadIds:
       draft?.recipientLeadIds || draft?.recipients.map((recipient) => recipient.id) || null,
+    listingContent: listingContent || null,
   });
 
   const requestCampaignDraft = async (
@@ -265,12 +279,18 @@ export default function AiEmailCampaignsPage() {
       return;
     }
 
+    // Destinatários finais = seleção da IA (já sem as sinalizadas) + as
+    // sinalizadas que o consultor decidiu incluir mesmo assim.
+    const baseRecipientIds =
+      latestCampaignDraft.recipientLeadIds || latestCampaignDraft.recipients.map((recipient) => recipient.id);
+    const finalRecipientIds = Array.from(new Set([...baseRecipientIds, ...includedFlaggedLeadIds]));
+
     if (typeof window !== "undefined") {
       window.sessionStorage.setItem(
         AI_DRAFT_STORAGE_KEY,
         JSON.stringify({
           recipients: latestCampaignDraft.recipients,
-          recipientLeadIds: latestCampaignDraft.recipientLeadIds || latestCampaignDraft.recipients.map((recipient) => recipient.id),
+          recipientLeadIds: finalRecipientIds,
           matchedLeadCount: latestCampaignDraft.matchedLeadCount ?? latestCampaignDraft.recipients.length,
           missingEmailCount: latestCampaignDraft.missingEmailCount ?? 0,
           filterSummary: latestCampaignDraft.filterSummary,
@@ -313,6 +333,7 @@ export default function AiEmailCampaignsPage() {
     setConversationHistory([]);
     setLatestCampaignDraft(null);
     setDebugInfo(null);
+    setIncludedFlaggedLeadIds(new Set());
 
     try {
       const {
@@ -381,6 +402,58 @@ export default function AiEmailCampaignsPage() {
     } finally {
       setIsGenerating(false);
     }
+  };
+
+  const handleExtractListing = async (payload: { documentBase64?: string; documentName?: string; sourceUrl?: string }) => {
+    setIsExtractingListing(true);
+    setListingContent(null);
+    setListingSourceTitle(null);
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("Sessão expirada. Faça login novamente.");
+
+      const response = await fetch("/api/gpt/properties/extract-listing-content", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Não foi possível ler o conteúdo do imóvel.");
+
+      setListingContent(data.text);
+      setListingSourceTitle(data.sourceTitle || null);
+      toast({ title: "Imóvel identificado", description: "O conteúdo foi lido com sucesso — o email vai divulgar este imóvel." });
+    } catch (error) {
+      toast({
+        title: "Erro",
+        description: error instanceof Error ? error.message : "Não foi possível ler o conteúdo do imóvel.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsExtractingListing(false);
+    }
+  };
+
+  const handleDocumentSelected = async (file: File) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      handleExtractListing({ documentBase64: reader.result as string, documentName: file.name });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const toggleFlaggedLead = (leadId: string, checked: boolean) => {
+    setIncludedFlaggedLeadIds((current) => {
+      const next = new Set(current);
+      if (checked) next.add(leadId);
+      else next.delete(leadId);
+      return next;
+    });
   };
 
   return (
@@ -589,6 +662,80 @@ export default function AiEmailCampaignsPage() {
                       />
                     </div>
 
+                    <div className="space-y-3 rounded-lg border p-4 bg-slate-50">
+                      <div>
+                        <Label>Imóvel a divulgar (opcional)</Label>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          Carregue uma brochura ou cole o link de uma publicação — a IA escreve o email a divulgar especificamente esse imóvel, usando os dados reais encontrados.
+                        </p>
+                      </div>
+
+                      <div className="flex gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={listingMode === "document" ? "default" : "outline"}
+                          onClick={() => setListingMode(listingMode === "document" ? "none" : "document")}
+                        >
+                          <Upload className="h-3.5 w-3.5 mr-1.5" />
+                          Brochura (PDF/Word)
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={listingMode === "url" ? "default" : "outline"}
+                          onClick={() => setListingMode(listingMode === "url" ? "none" : "url")}
+                        >
+                          <LinkIcon className="h-3.5 w-3.5 mr-1.5" />
+                          Link da publicação
+                        </Button>
+                      </div>
+
+                      {listingMode === "document" && (
+                        <Input
+                          type="file"
+                          accept=".pdf,.docx"
+                          disabled={isExtractingListing}
+                          onChange={(event) => {
+                            const file = event.target.files?.[0];
+                            if (file) handleDocumentSelected(file);
+                          }}
+                        />
+                      )}
+
+                      {listingMode === "url" && (
+                        <div className="flex gap-2">
+                          <Input
+                            placeholder="https://..."
+                            value={listingUrl}
+                            onChange={(event) => setListingUrl(event.target.value)}
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            disabled={isExtractingListing || !listingUrl.trim()}
+                            onClick={() => handleExtractListing({ sourceUrl: listingUrl.trim() })}
+                          >
+                            Ler
+                          </Button>
+                        </div>
+                      )}
+
+                      {isExtractingListing && (
+                        <p className="text-xs text-gray-500 flex items-center gap-1.5">
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          A ler o conteúdo do imóvel...
+                        </p>
+                      )}
+
+                      {listingContent && !isExtractingListing && (
+                        <p className="text-xs text-green-700 flex items-center gap-1.5">
+                          <CheckCircle2 className="h-3.5 w-3.5" />
+                          {listingSourceTitle || "Conteúdo do imóvel"} identificado — o email vai divulgar este imóvel.
+                        </p>
+                      )}
+                    </div>
+
                     <Button
                       onClick={handleGenerateDraft}
                       disabled={isGenerating}
@@ -673,6 +820,33 @@ export default function AiEmailCampaignsPage() {
                       <p className="text-xs text-gray-500">
                         +{latestCampaignDraft.recipients.length - 8} leads adicionais serão pré-selecionadas em Mensagens.
                       </p>
+                    )}
+
+                    {latestCampaignDraft.flaggedForReview && latestCampaignDraft.flaggedForReview.length > 0 && (
+                      <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-2">
+                        <div className="flex items-center gap-2 text-sm font-medium text-amber-900">
+                          <AlertTriangle className="h-4 w-4" />
+                          {latestCampaignDraft.flaggedForReview.length} lead{latestCampaignDraft.flaggedForReview.length !== 1 ? "s" : ""} com sinais de não querer ser contactada{latestCampaignDraft.flaggedForReview.length !== 1 ? "s" : ""}
+                        </div>
+                        <p className="text-xs text-amber-800">
+                          Ficam de fora do envio por omissão. Reveja e marque quem quiser incluir mesmo assim.
+                        </p>
+                        <div className="space-y-2">
+                          {latestCampaignDraft.flaggedForReview.map((flagged) => (
+                            <label key={flagged.leadId} className="flex items-start gap-2 text-sm">
+                              <Checkbox
+                                checked={includedFlaggedLeadIds.has(flagged.leadId)}
+                                onCheckedChange={(checked) => toggleFlaggedLead(flagged.leadId, checked === true)}
+                                className="mt-0.5"
+                              />
+                              <span>
+                                <span className="font-medium text-amber-900">{flagged.name}</span>
+                                <span className="text-amber-700"> — {flagged.reason}</span>
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
                     )}
                   </div>
 
