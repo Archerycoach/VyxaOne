@@ -309,6 +309,8 @@ export async function syncTaskToGoogle(
     due_date: string;
     priority?: string;
     status?: string;
+    start_time?: string | null;
+    end_time?: string | null;
   },
   googleEventId?: string | null
 ): Promise<string | null> {
@@ -369,10 +371,12 @@ export async function syncTaskToGoogle(
     const calendarId = integrationData.calendar_id || "primary";
     console.log("[googleCalendar:syncTask] ✅ Sync is enabled, calendar ID:", calendarId);
 
-    // Create an all-day event for the task
+    // Se a tarefa tiver hora de início/fim, sincroniza como evento com hora;
+    // senão mantém o comportamento antigo (evento de dia inteiro).
     const dueDate = new Date(taskData.due_date);
     const dueDateString = dueDate.toISOString().split('T')[0]; // YYYY-MM-DD format
-    
+    const hasTimedRange = Boolean(taskData.start_time && taskData.end_time);
+
     // Color based on status (not priority)
     // pending = yellow (5), in_progress = blue (9), completed = green (10)
     let colorId = "5"; // Default yellow for pending
@@ -390,14 +394,12 @@ export async function syncTaskToGoogle(
     const googleEvent = {
       summary: `${statusEmoji} [TAREFA] ${taskData.title}`,
       description: `${taskData.description || ""}\n\n[TASK_SYNC_ID]`, // Identifier to prevent reimport
-      start: { 
-        date: dueDateString,
-        timeZone: "Europe/Lisbon"
-      },
-      end: { 
-        date: dueDateString,
-        timeZone: "Europe/Lisbon"
-      },
+      start: hasTimedRange
+        ? { dateTime: new Date(taskData.start_time!).toISOString(), timeZone: "Europe/Lisbon" }
+        : { date: dueDateString, timeZone: "Europe/Lisbon" },
+      end: hasTimedRange
+        ? { dateTime: new Date(taskData.end_time!).toISOString(), timeZone: "Europe/Lisbon" }
+        : { date: dueDateString, timeZone: "Europe/Lisbon" },
       colorId: colorId,
     };
 

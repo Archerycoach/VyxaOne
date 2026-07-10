@@ -31,6 +31,8 @@ const mapDbTaskToGlobal = (task: any): GlobalTask => {
     priority: task.priority,
     status: task.status,
     dueDate: task.due_date || "",
+    startTime: task.start_time || undefined,
+    endTime: task.end_time || undefined,
     assignedTo: task.assigned_to || "",
     completed: task.status === 'completed',
     createdAt: task.created_at,
@@ -159,6 +161,8 @@ export const createTask = async (task: TaskInsert & { lead_id?: string | null, c
       description: data.description || "",
       due_date: data.due_date,
       priority: data.priority,
+      start_time: (data as any).start_time || null,
+      end_time: (data as any).end_time || null,
     }, null);
 
     if (googleEventId) {
@@ -219,6 +223,8 @@ export const updateTask = async (id: string, updates: TaskUpdate) => {
       description: data.description || "",
       due_date: data.due_date,
       priority: data.priority,
+      start_time: (data as any).start_time || null,
+      end_time: (data as any).end_time || null,
     }, currentTask.google_event_id);
 
     if (googleEventId) {
@@ -238,6 +244,8 @@ export const updateTask = async (id: string, updates: TaskUpdate) => {
       description: data.description || "",
       due_date: data.due_date,
       priority: data.priority,
+      start_time: (data as any).start_time || null,
+      end_time: (data as any).end_time || null,
     }, null);
 
     if (googleEventId) {

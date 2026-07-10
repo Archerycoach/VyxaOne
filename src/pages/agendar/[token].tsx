@@ -10,7 +10,7 @@ interface Slot {
 }
 
 interface BookingData {
-  consultant: { full_name: string; avatar_url: string | null };
+  consultant: { full_name: string; avatar_url: string | null; email: string | null; phone: string | null };
   slots: Slot[];
 }
 
@@ -142,7 +142,24 @@ export default function BookingPage() {
             ) : !selectedSlot ? (
               data.slots.length === 0 ? (
                 <div style={{ background: "#FFFFFF", border: "1px solid #E8E0D2", borderRadius: 14, padding: 32, textAlign: "center", color: "#5B6B74" }}>
-                  Não há horários disponíveis neste momento. Contacte diretamente {data.consultant.full_name}.
+                  <p style={{ margin: 0 }}>
+                    Não há horários disponíveis neste momento. Contacte diretamente {data.consultant.full_name}.
+                  </p>
+                  {(data.consultant.email || data.consultant.phone) && (
+                    <p style={{ margin: "10px 0 0", color: "#22303A" }}>
+                      {data.consultant.phone && (
+                        <a href={`tel:${data.consultant.phone}`} style={{ color: "#3B6E8F", textDecoration: "none" }}>
+                          {data.consultant.phone}
+                        </a>
+                      )}
+                      {data.consultant.phone && data.consultant.email && " · "}
+                      {data.consultant.email && (
+                        <a href={`mailto:${data.consultant.email}`} style={{ color: "#3B6E8F", textDecoration: "none" }}>
+                          {data.consultant.email}
+                        </a>
+                      )}
+                    </p>
+                  )}
                 </div>
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -197,20 +214,20 @@ export default function BookingPage() {
                     placeholder="O seu nome"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    style={{ padding: "10px 14px", borderRadius: 8, border: "1px solid #E8E0D2", fontSize: 14 }}
+                    style={{ padding: "10px 14px", borderRadius: 8, border: "1px solid #E8E0D2", fontSize: 14, background: "#000000", color: "#FFFFFF" }}
                   />
                   <input
                     type="email"
                     placeholder="O seu email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    style={{ padding: "10px 14px", borderRadius: 8, border: "1px solid #E8E0D2", fontSize: 14 }}
+                    style={{ padding: "10px 14px", borderRadius: 8, border: "1px solid #E8E0D2", fontSize: 14, background: "#000000", color: "#FFFFFF" }}
                   />
                   <input
                     placeholder="O seu telefone (opcional)"
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
-                    style={{ padding: "10px 14px", borderRadius: 8, border: "1px solid #E8E0D2", fontSize: 14 }}
+                    style={{ padding: "10px 14px", borderRadius: 8, border: "1px solid #E8E0D2", fontSize: 14, background: "#000000", color: "#FFFFFF" }}
                   />
 
                   {submitError && <p style={{ color: "#B3403E", fontSize: 13 }}>{submitError}</p>}

@@ -281,7 +281,7 @@ export function CalendarContainer() {
     const now = new Date();
     const startTime = new Date(now);
     const endTime = new Date(now);
-    endTime.setHours(endTime.getHours() + 1); // Default 1 hour duration
+    endTime.setMinutes(endTime.getMinutes() + 30); // Default 30 min duration
     
     // Format for datetime-local input (YYYY-MM-DDTHH:MM)
     const formatForInput = (date: Date) => {
@@ -307,18 +307,26 @@ export function CalendarContainer() {
 
   const handleCreateTask = () => {
     setEditingTask(null);
-    
-    // Auto-fill with current date only (no time required)
+
+    // Auto-fill with current date/time, fim 30 min depois do início
     const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    const dateOnly = `${year}-${month}-${day}`;
-    
+    const end = new Date(now.getTime() + 30 * 60 * 1000);
+    const formatForInput = (date: Date) => {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      const hours = String(date.getHours()).padStart(2, '0');
+      const minutes = String(date.getMinutes()).padStart(2, '0');
+      return `${year}-${month}-${day}T${hours}:${minutes}`;
+    };
+    const startTime = formatForInput(now);
+
     setTaskForm({
       title: "",
       description: "",
-      dueDate: dateOnly,
+      dueDate: startTime,
+      startTime,
+      endTime: formatForInput(end),
       priority: "medium",
       leadId: "",
       relatedLeadId: "",
@@ -365,20 +373,31 @@ export function CalendarContainer() {
     console.log("[CalendarContainer] ================================================================");
     
     setEditingTask(task);
-    
-    // Format date for date input (YYYY-MM-DD)
-    const formatDateOnly = (isoString: string) => {
+
+    // Format date/time for datetime-local input (YYYY-MM-DDTHH:MM)
+    const formatForInput = (isoString: string) => {
       const date = new Date(isoString);
       const year = date.getFullYear();
       const month = String(date.getMonth() + 1).padStart(2, '0');
       const day = String(date.getDate()).padStart(2, '0');
-      return `${year}-${month}-${day}`;
+      const hours = String(date.getHours()).padStart(2, '0');
+      const minutes = String(date.getMinutes()).padStart(2, '0');
+      return `${year}-${month}-${day}T${hours}:${minutes}`;
     };
-    
+
+    // Tarefas antigas podem só ter dueDate (sem start/end) — usa-a como
+    // início e assume 30 min de duração por omissão.
+    const startIso = task.startTime || task.dueDate;
+    const endIso = task.endTime || new Date(new Date(startIso).getTime() + 30 * 60 * 1000).toISOString();
+    const startTime = startIso ? formatForInput(startIso) : "";
+    const endTime = startIso ? formatForInput(endIso) : "";
+
     const formData = {
       title: task.title,
       description: task.description || "",
-      dueDate: formatDateOnly(task.dueDate),
+      dueDate: startTime,
+      startTime,
+      endTime,
       priority: task.priority,
       status: task.status,
       leadId: task.leadId || task.relatedLeadId || "",
@@ -512,10 +531,21 @@ export function CalendarContainer() {
       // Validate date
       const dueDate = new Date(taskForm.dueDate);
       if (isNaN(dueDate.getTime())) {
-        toast({ 
-          title: "Data inválida", 
+        toast({
+          title: "Data inválida",
           description: "A data de vencimento é inválida.",
-          variant: "destructive" 
+          variant: "destructive"
+        });
+        return;
+      }
+
+      const startTime = taskForm.startTime ? new Date(taskForm.startTime) : dueDate;
+      const endTime = taskForm.endTime ? new Date(taskForm.endTime) : null;
+      if (endTime && !isNaN(endTime.getTime()) && endTime <= startTime) {
+        toast({
+          title: "Data inválida",
+          description: "A hora de fim deve ser posterior à hora de início.",
+          variant: "destructive",
         });
         return;
       }
@@ -524,11 +554,13 @@ export function CalendarContainer() {
         await updateTask(editingTask.id, {
           title: taskForm.title,
           description: taskForm.description || null,
-          due_date: dueDate.toISOString(),
+          due_date: startTime.toISOString(),
+          start_time: startTime.toISOString(),
+          end_time: endTime && !isNaN(endTime.getTime()) ? endTime.toISOString() : null,
           priority: taskForm.priority,
           status: taskForm.status,
           related_lead_id: taskForm.leadId || null,
-        });
+        } as any);
         toast({ title: "Tarefa atualizada com sucesso" });
       } else {
         const { supabase } = await import("@/integrations/supabase/client");
@@ -537,11 +569,13 @@ export function CalendarContainer() {
         await createTask({
           title: taskForm.title!,
           description: taskForm.description || null,
-          due_date: dueDate.toISOString(),
+          due_date: startTime.toISOString(),
+          start_time: startTime.toISOString(),
+          end_time: endTime && !isNaN(endTime.getTime()) ? endTime.toISOString() : null,
           priority: taskForm.priority || "medium",
           related_lead_id: taskForm.leadId || null,
           user_id: user?.id || "",
-        });
+        } as any);
         toast({ title: "Tarefa criada com sucesso" });
       }
       setShowTaskForm(false);

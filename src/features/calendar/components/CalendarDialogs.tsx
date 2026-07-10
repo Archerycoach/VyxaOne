@@ -98,9 +98,23 @@ export function CalendarDialogs({
                     id="event-start"
                     type="datetime-local"
                     value={eventForm.startTime || ""}
-                    onChange={(e) =>
-                      setEventForm({ ...eventForm, startTime: e.target.value })
-                    }
+                    onChange={(e) => {
+                      const newStartTime = e.target.value;
+                      // Só ao criar (não ao editar) o fim segue automaticamente
+                      // o início, 30 minutos depois — não queremos encurtar
+                      // um evento existente com uma duração já escolhida.
+                      if (!isEditing && newStartTime) {
+                        const start = new Date(newStartTime);
+                        if (!isNaN(start.getTime())) {
+                          const end = new Date(start.getTime() + 30 * 60 * 1000);
+                          const pad = (n: number) => String(n).padStart(2, "0");
+                          const endTime = `${end.getFullYear()}-${pad(end.getMonth() + 1)}-${pad(end.getDate())}T${pad(end.getHours())}:${pad(end.getMinutes())}`;
+                          setEventForm({ ...eventForm, startTime: newStartTime, endTime });
+                          return;
+                        }
+                      }
+                      setEventForm({ ...eventForm, startTime: newStartTime });
+                    }}
                     required
                   />
                 </div>
@@ -240,38 +254,61 @@ export function CalendarDialogs({
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="task-due-date">Data de Vencimento *</Label>
+                  <Label htmlFor="task-start">Data/Hora Início *</Label>
                   <Input
-                    id="task-due-date"
-                    type="date"
-                    value={taskForm.dueDate || ""}
+                    id="task-start"
+                    type="datetime-local"
+                    value={taskForm.startTime || ""}
+                    onChange={(e) => {
+                      const newStartTime = e.target.value;
+                      // Só ao criar (não ao editar) o fim segue automaticamente
+                      // o início, 30 minutos depois.
+                      if (!isTaskEditing && newStartTime) {
+                        const start = new Date(newStartTime);
+                        if (!isNaN(start.getTime())) {
+                          const end = new Date(start.getTime() + 30 * 60 * 1000);
+                          const pad = (n: number) => String(n).padStart(2, "0");
+                          const endTime = `${end.getFullYear()}-${pad(end.getMonth() + 1)}-${pad(end.getDate())}T${pad(end.getHours())}:${pad(end.getMinutes())}`;
+                          setTaskForm({ ...taskForm, startTime: newStartTime, endTime, dueDate: newStartTime });
+                          return;
+                        }
+                      }
+                      setTaskForm({ ...taskForm, startTime: newStartTime, dueDate: newStartTime });
+                    }}
+                    required
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="task-end">Data/Hora Fim *</Label>
+                  <Input
+                    id="task-end"
+                    type="datetime-local"
+                    value={taskForm.endTime || ""}
                     onChange={(e) =>
-                      setTaskForm({ ...taskForm, dueDate: e.target.value })
+                      setTaskForm({ ...taskForm, endTime: e.target.value })
                     }
                     required
                   />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Apenas a data é obrigatória
-                  </p>
                 </div>
-                <div>
-                  <Label htmlFor="task-priority">Prioridade</Label>
-                  <Select
-                    value={taskForm.priority || "medium"}
-                    onValueChange={(value) =>
-                      setTaskForm({ ...taskForm, priority: value as any })
-                    }
-                  >
-                    <SelectTrigger id="task-priority">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="low">Baixa</SelectItem>
-                      <SelectItem value="medium">Média</SelectItem>
-                      <SelectItem value="high">Alta</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+              </div>
+
+              <div>
+                <Label htmlFor="task-priority">Prioridade</Label>
+                <Select
+                  value={taskForm.priority || "medium"}
+                  onValueChange={(value) =>
+                    setTaskForm({ ...taskForm, priority: value as any })
+                  }
+                >
+                  <SelectTrigger id="task-priority">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="low">Baixa</SelectItem>
+                    <SelectItem value="medium">Média</SelectItem>
+                    <SelectItem value="high">Alta</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
               <div>

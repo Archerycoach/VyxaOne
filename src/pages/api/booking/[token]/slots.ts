@@ -19,7 +19,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const { data: consultant, error: consultantError } = await db
       .from("profiles")
-      .select("id, full_name, avatar_url")
+      .select("id, full_name, avatar_url, email, phone")
       .eq("booking_token", token)
       .maybeSingle();
 
@@ -39,7 +39,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (slotsError) throw slotsError;
 
     return res.status(200).json({
-      consultant: { full_name: consultant.full_name, avatar_url: consultant.avatar_url },
+      consultant: {
+        full_name: consultant.full_name,
+        avatar_url: consultant.avatar_url,
+        email: consultant.email || null,
+        phone: consultant.phone || null,
+      },
       slots: slots || [],
     });
   } catch (error: any) {
