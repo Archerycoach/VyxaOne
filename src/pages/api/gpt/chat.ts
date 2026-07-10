@@ -644,6 +644,10 @@ async function selectEmailCampaignAudience(params: {
   properties?: PropertyContext[];
   developments?: DevelopmentContext[];
   debugNotes?: DebugNote[];
+  // Texto extraído da brochura/link do imóvel a divulgar — quando presente
+  // e não houver critérios explícitos, a audiência deve ser inferida a
+  // partir das características deste imóvel (preço, tipologia, zona, tipo).
+  listingContent?: string | null;
 }): Promise<EmailCampaignAudienceResult> {
   const fallbackLeadIds = getFallbackAudienceLeadIds(
     params.leads,
@@ -653,6 +657,7 @@ async function selectEmailCampaignAudience(params: {
   const fallbackSummary =
     buildCampaignFilterSummary(params.criteria) ||
     (params.previousRecipientLeadIds?.length ? "a audiência afinada na conversa" : "o perfil pedido");
+  const hasListingContent = Boolean(params.listingContent?.trim());
 
   try {
     const aiResponse = await runAI({
@@ -661,14 +666,16 @@ async function selectEmailCampaignAudience(params: {
       messages: [
         {
           role: "system",
-          content:
-            "És um assistente imobiliário em português de Portugal. Seleciona as leads certas para uma campanha de email com base num pedido livre. Se o pedido apenas afinar o tom ou o texto e não introduzir novos critérios de audiência, reutiliza exatamente os IDs anteriores. Responde APENAS em JSON com as chaves filterSummary e selectedLeadIds.",
+          content: hasListingContent
+            ? "És um assistente imobiliário em português de Portugal. Seleciona as leads certas para uma campanha de email. Há um imóvel específico a divulgar em 'imovel_a_divulgar' — extrai dele o preço, tipologia, zona e tipo de imóvel, e usa isso como critério principal de seleção quando não houver 'criterios_inferidos' explícitos (ou combina os dois se ambos existirem). Só seleciona leads cujo orçamento máximo cubra o preço do imóvel e cuja tipologia/zona/objetivo (compra/investimento) sejam compatíveis — não incluas leads claramente incompatíveis (ex.: orçamento muito abaixo do preço, tipologia ou zona incompatível) só porque não há outros critérios. Se o pedido apenas afinar o tom ou o texto e não introduzir novos critérios de audiência, reutiliza exatamente os IDs anteriores. Responde APENAS em JSON com as chaves filterSummary e selectedLeadIds."
+            : "És um assistente imobiliário em português de Portugal. Seleciona as leads certas para uma campanha de email com base num pedido livre. Se o pedido apenas afinar o tom ou o texto e não introduzir novos critérios de audiência, reutiliza exatamente os IDs anteriores. Responde APENAS em JSON com as chaves filterSummary e selectedLeadIds.",
         },
         {
           role: "user",
           content: JSON.stringify({
             pedido: params.message,
             criterios_inferidos: params.criteria,
+            imovel_a_divulgar: params.listingContent?.trim() || null,
             historico_recente: (params.history || []).slice(-6),
             lead_ids_anteriores: params.previousRecipientLeadIds || [],
             leads_disponiveis: params.leads.map((lead) => ({
@@ -1346,6 +1353,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           properties,
           developments,
           debugNotes: debugRequested ? debugNotes : undefined,
+          listingContent: campaignContext?.listingContent || null,
         });
         const matchedLeadIdSet = new Set(audienceSelection.selectedLeadIds);
         const matchedLeads = campaignEligibleLeads.filter((lead) => matchedLeadIdSet.has(lead.id));

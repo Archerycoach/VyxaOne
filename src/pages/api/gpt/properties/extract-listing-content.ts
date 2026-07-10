@@ -68,14 +68,12 @@ async function extractFromDocument(documentBase64: string, documentName: string)
   }
 
   // PDF por omissão (também cobre quando o nome do ficheiro não vem preenchido).
-  const { PDFParse } = await import("pdf-parse");
-  const parser = new PDFParse({ data: buffer });
-  try {
-    const result = await parser.getText();
-    return result.text;
-  } finally {
-    await parser.destroy();
-  }
+  // pdf-parse@1 (e não a v2, que depende de DOMMatrix/canvas — indisponíveis
+  // fora do browser e por isso incompatível com uma rota de API em Node).
+  const pdfParseModule: any = await import("pdf-parse");
+  const pdfParse = typeof pdfParseModule === "function" ? pdfParseModule : pdfParseModule.default;
+  const result = await pdfParse(buffer);
+  return result.text;
 }
 
 async function extractFromUrl(sourceUrl: string): Promise<{ text: string; title?: string; image?: string }> {
