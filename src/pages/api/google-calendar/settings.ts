@@ -36,6 +36,10 @@ export default async function handler(
     // GET: Load settings
     if (req.method === "GET") {
       console.log("[Settings API] Loading settings for google_calendar");
+      // Nunca colocar em cache — esta chamada decide se o consultor consegue
+      // ligar o Google Calendar; dados desatualizados mostravam "configuração
+      // em falta" mesmo depois de o admin já ter corrigido.
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
 
       // Use 'as any' on the table selection to bypass complex Supabase type inference
       // that causes "excessively deep" errors when schema doesn't perfectly match
