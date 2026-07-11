@@ -427,7 +427,13 @@ export default async function handler(
               const lowerVal = mappedData[key].toLowerCase().trim();
               if (lowerVal === 'sim' || lowerVal === 'yes') {
                 mappedData[key] = true;
-              } else if (lowerVal === 'não' || lowerVal === 'nao' || lowerVal === 'no') {
+              } else if (
+                lowerVal === 'não' || lowerVal === 'nao' || lowerVal === 'no' ||
+                lowerVal === 'talvez' || lowerVal === 'maybe'
+              ) {
+                // "Talvez" é tratado como incerto, tal como "Não" — não é o
+                // mesmo que confirmar "Sim". A resposta original completa
+                // fica sempre preservada nas notas da lead (ver mais abaixo).
                 mappedData[key] = null;
               } else if (key === 'buy_purpose') {
                 // Normalize intent
@@ -442,6 +448,19 @@ export default async function handler(
                 else if (lowerVal.includes('comercial')) mappedData[key] = 'commercial';
                 else if (lowerVal.includes('loja')) mappedData[key] = 'store';
               }
+            }
+          }
+
+          // A limpeza acima só reconhece "sim"/"não"/"yes"/"no" — qualquer
+          // outra resposta (ex.: "Talvez", ou texto livre de um mapeamento
+          // personalizado) fica como string e falha ao gravar numa coluna
+          // booleana real da base de dados. Para os campos que sabemos que
+          // são booleanos, garantimos sempre um valor válido.
+          const booleanFields = ['has_property_to_sell', 'needs_financing', 'is_development'];
+          for (const field of booleanFields) {
+            if (typeof mappedData[field] === 'string') {
+              const lower = mappedData[field].toLowerCase().trim();
+              mappedData[field] = lower === 'true' || lower === 'sim' || lower === 'yes' || lower === '1';
             }
           }
 
