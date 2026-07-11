@@ -68,6 +68,7 @@ export function LeadsList({ leads, onEdit, onDelete, isLoading, onRefresh, onVie
     outcome: "",
   });
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
+  const [confirmAssignOpen, setConfirmAssignOpen] = useState(false);
   const [availableAgents, setAvailableAgents] = useState<any[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState("");
   const [currentUserRole, setCurrentUserRole] = useState<string>("");
@@ -176,6 +177,7 @@ export function LeadsList({ leads, onEdit, onDelete, isLoading, onRefresh, onVie
     setConvertDialogOpen(false);
     setInteractionDialogOpen(false);
     setAssignDialogOpen(false);
+    setConfirmAssignOpen(false);
     setTaskDialogOpen(false);
     setEventDialogOpen(false);
     setSelectedLead(null);
@@ -1103,13 +1105,37 @@ export function LeadsList({ leads, onEdit, onDelete, isLoading, onRefresh, onVie
               Cancelar
             </Button>
             <Button
-              onClick={handleAssignLead}
+              onClick={() => setConfirmAssignOpen(true)}
               disabled={!selectedAgentId}
               type="button"
             >
               Atribuir
             </Button>
           </DialogFooter>
+
+          <AlertDialog open={confirmAssignOpen} onOpenChange={setConfirmAssignOpen}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Confirmar atribuição</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {selectedAgentId === "unassigned"
+                    ? `A lead "${selectedLead?.name}" vai ficar sem agente atribuído.`
+                    : `A lead "${selectedLead?.name}" vai ser atribuída a ${availableAgents.find((a) => a.id === selectedAgentId)?.full_name || availableAgents.find((a) => a.id === selectedAgentId)?.email || ""}.`}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => {
+                    setConfirmAssignOpen(false);
+                    handleAssignLead();
+                  }}
+                >
+                  Atribuir
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </DialogContent>
       </Dialog>
 

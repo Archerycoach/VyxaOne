@@ -8,6 +8,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { UserCombobox } from "@/components/ui/user-combobox";
@@ -55,6 +65,10 @@ export function AssignLeadDialog({
   const [selectedShareUserId, setSelectedShareUserId] = useState<string>("");
   const [isSharing, setIsSharing] = useState(false);
   const [removingShareId, setRemovingShareId] = useState<string | null>(null);
+
+  // Confirmação antes de executar — evita transferências/partilhas por
+  // clique acidental. Guarda a ação pendente; null = nenhum pedido aberto.
+  const [confirmAction, setConfirmAction] = useState<"transfer" | "share" | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -175,6 +189,21 @@ export function AssignLeadDialog({
 
   const shareableUsers = users.filter((u) => !shares.some((s) => s.shared_with_user_id === u.id));
 
+  const confirmTargetUser = users.find(
+    (u) => u.id === (confirmAction === "transfer" ? selectedUserId : selectedShareUserId)
+  );
+  const confirmTargetName = confirmTargetUser?.full_name || confirmTargetUser?.email || "";
+
+  const handleConfirm = async () => {
+    const action = confirmAction;
+    setConfirmAction(null);
+    if (action === "transfer") {
+      await handleAssign();
+    } else if (action === "share") {
+      await handleShare();
+    }
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       {!isControlled && (
@@ -216,7 +245,7 @@ export function AssignLeadDialog({
                 emptyText="Nenhum utilizador disponível"
               />
             </div>
-            <Button onClick={handleAssign} disabled={isLoading || !selectedUserId} className="w-full">
+            <Button onClick={() => setConfirmAction("transfer")} disabled={isLoading || !selectedUserId} className="w-full">
               {isLoading ? "A transferir..." : "Transferir"}
             </Button>
           </TabsContent>
@@ -255,7 +284,7 @@ export function AssignLeadDialog({
                 emptyText="Nenhum utilizador disponível"
               />
             </div>
-            <Button onClick={handleShare} disabled={isSharing || !selectedShareUserId} className="w-full">
+            <Button onClick={() => setConfirmAction("share")} disabled={isSharing || !selectedShareUserId} className="w-full">
               {isSharing ? "A partilhar..." : "Partilhar"}
             </Button>
           </TabsContent>
@@ -266,6 +295,27 @@ export function AssignLeadDialog({
             Fechar
           </Button>
         </DialogFooter>
+
+        <AlertDialog open={confirmAction !== null} onOpenChange={(open) => !open && setConfirmAction(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {confirmAction === "transfer" ? "Confirmar transferência" : "Confirmar partilha"}
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                {confirmAction === "transfer"
+                  ? `A lead "${leadName}" vai ser transferida para ${confirmTargetName}. A lead passa a estar atribuída a essa pessoa.`
+                  : `A lead "${leadName}" vai ser partilhada com ${confirmTargetName}. Essa pessoa passa a poder ver e editar a lead, sem alterar a atribuição atual.`}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction onClick={handleConfirm}>
+                {confirmAction === "transfer" ? "Transferir" : "Partilhar"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </DialogContent>
     </Dialog>
   );

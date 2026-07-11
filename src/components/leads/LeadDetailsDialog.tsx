@@ -7,6 +7,16 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -40,7 +50,7 @@ import {
   History,
   Users
 } from "lucide-react";
-import { getLeadById } from "@/services/leadsService";
+import { getLeadById, assignLead } from "@/services/leadsService";
 import { AssignLeadDialog } from "./AssignLeadDialog";
 import { getInteractionsByLead, createInteraction } from "@/services/interactionsService";
 import { getNotesByLead, createNote } from "@/services/notesService";
@@ -113,6 +123,9 @@ export function LeadDetailsDialog({
   const [activityLogDialogOpen, setActivityLogDialogOpen] = useState(false);
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const [canAssignLead, setCanAssignLead] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [isReclaiming, setIsReclaiming] = useState(false);
+  const [confirmReclaimOpen, setConfirmReclaimOpen] = useState(false);
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
   const [drafting, setDrafting] = useState<string | null>(null);
   const [generatedDraft, setGeneratedDraft] = useState<{text: string, channel: 'whatsapp'|'email'} | null>(null);
@@ -166,6 +179,7 @@ export function LeadDetailsDialog({
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
+        setCurrentUserId(user.id);
         const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
         const role = profile?.role;
         const isOwnLead = (lead as any).user_id === user.id || (lead as any).assigned_to === user.id;
@@ -573,6 +587,23 @@ export function LeadDetailsDialog({
     }
   };
 
+  // O dono original da lead (quem a criou) pode recuperá-la para si em
+  // qualquer momento, mesmo que já tenha transferido/partilhado para outra
+  // pessoa — não altera leads.user_id, por isso a RLS já permite sempre.
+  const handleReclaimLead = async () => {
+    if (!leadId || !currentUserId) return;
+    setIsReclaiming(true);
+    try {
+      await assignLead(leadId, currentUserId);
+      toast({ title: "Lead recuperada com sucesso!" });
+      await handleAssignSuccess();
+    } catch (e: any) {
+      toast({ title: "Erro ao recuperar lead", description: e.message, variant: "destructive" });
+    } finally {
+      setIsReclaiming(false);
+    }
+  };
+
   const handleSaveQualification = async (updates: Record<string, unknown>) => {
     if (!leadId) return;
     try {
@@ -955,6 +986,39 @@ export function LeadDetailsDialog({
                             Transferir/Partilhar
                           </Button>
                         )}
+                        {currentUserId && (lead as any).user_id === currentUserId && (lead as any).assigned_to !== currentUserId && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 px-2 text-xs text-blue-600 hover:text-blue-700"
+                            disabled={isReclaiming}
+                            onClick={() => setConfirmReclaimOpen(true)}
+                          >
+                            {isReclaiming ? "A recuperar..." : "Recuperar para mim"}
+                          </Button>
+                        )}
+                        <AlertDialog open={confirmReclaimOpen} onOpenChange={setConfirmReclaimOpen}>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Recuperar lead</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                A lead &quot;{lead.name}&quot; vai voltar a ficar atribuída a si, deixando de estar
+                                atribuída a {(lead as any).assigned_user?.full_name || (lead as any).assigned_user?.email || "quem a tem atualmente"}.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => {
+                                  setConfirmReclaimOpen(false);
+                                  handleReclaimLead();
+                                }}
+                              >
+                                Recuperar
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
                       </div>
                     </div>
                   </div>
