@@ -303,7 +303,7 @@ export default function TeamPage() {
   const handleEditUser = (member: TeamMember) => {
     setEditingUser(member);
     setEditRole(member.role);
-    setEditManager(member.manager_id || "");
+    setEditManager(member.manager_id || "none");
   };
 
   const handleSaveEdit = async () => {
@@ -336,7 +336,7 @@ export default function TeamPage() {
       }
 
       // Update manager if consultant and manager changed
-      if (editRole === "consultant" && editManager !== (editingUser.manager_id || "")) {
+      if (editRole === "consultant" && editManager !== (editingUser.manager_id || "none")) {
         const response = await fetch("/api/team/assign-manager", {
           method: "POST",
           headers: {
@@ -345,7 +345,7 @@ export default function TeamPage() {
           },
           body: JSON.stringify({
             consultant_id: editingUser.user_id,
-            manager_id: editManager || null
+            manager_id: editManager === "none" ? null : editManager
           })
         });
 
@@ -919,7 +919,7 @@ export default function TeamPage() {
                     <SelectValue placeholder="Sem equipa atribuída" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Sem equipa atribuída</SelectItem>
+                    <SelectItem value="none">Sem equipa atribuída</SelectItem>
                     {teamLeads.map(tl => (
                       <SelectItem key={tl.user_id} value={tl.user_id}>
                         {tl.full_name}
