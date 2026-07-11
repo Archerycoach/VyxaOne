@@ -563,25 +563,46 @@ export function MetaFormsManagement({ integrationId, integrationName }: MetaForm
                 </CardDescription>
               </div>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleCheckWebhookStatus}
-              disabled={checkingStatus}
-              className="bg-white"
-            >
-              {checkingStatus ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  A verificar...
-                </>
-              ) : (
-                <>
-                  <AlertCircle className="h-4 w-4 mr-2" />
-                  Verificar Status
-                </>
-              )}
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleResubscribeWebhook}
+                disabled={resubscribing}
+                className="bg-white"
+              >
+                {resubscribing ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    A re-subscrever...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Re-subscrever Webhook
+                  </>
+                )}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleCheckWebhookStatus}
+                disabled={checkingStatus}
+                className="bg-white"
+              >
+                {checkingStatus ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    A verificar...
+                  </>
+                ) : (
+                  <>
+                    <AlertCircle className="h-4 w-4 mr-2" />
+                    Verificar Status
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="pt-0 space-y-4">
