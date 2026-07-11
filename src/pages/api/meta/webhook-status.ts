@@ -77,6 +77,7 @@ export default async function handler(
         subscribed: subscriptionStatus.subscribed,
         subscribed_fields: subscriptionStatus.fields,
         has_leadgen: subscriptionStatus.fields.includes("leadgen"),
+        error: subscriptionStatus.error,
       },
       logs: {
         recent: recentLogs || [],

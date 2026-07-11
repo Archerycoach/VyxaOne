@@ -465,14 +465,22 @@ export const subscribePageToWebhook = async (
 export const getPageWebhookSubscriptions = async (
   pageId: string,
   pageAccessToken: string
-): Promise<{ subscribed: boolean; fields: string[] }> => {
+): Promise<{ subscribed: boolean; fields: string[]; error?: string }> => {
   try {
     const response = await fetch(
-      `https://graph.facebook.com/v18.0/${pageId}/subscribed_apps?access_token=${pageAccessToken}`
+      `https://graph.facebook.com/v18.0/${pageId}/subscribed_apps?access_token=${encodeURIComponent(pageAccessToken)}`
     );
 
     const data = await response.json();
-    
+
+    // Um erro real da Meta (ex.: permissão insuficiente, token inválido)
+    // não deve ser confundido com "não subscrito" — sem isto, esconde-se a
+    // causa verdadeira e mostra-se sempre o mesmo diagnóstico genérico.
+    if (data.error) {
+      console.error("[Meta] Error checking webhook subscriptions:", data.error);
+      return { subscribed: false, fields: [], error: data.error.message };
+    }
+
     if (data.data && data.data.length > 0) {
       const app = data.data[0];
       return {
@@ -484,7 +492,7 @@ export const getPageWebhookSubscriptions = async (
     return { subscribed: false, fields: [] };
   } catch (error) {
     console.error("[Meta] Error checking webhook subscriptions:", error);
-    return { subscribed: false, fields: [] };
+    return { subscribed: false, fields: [], error: error instanceof Error ? error.message : "Unknown error" };
   }
 };
 

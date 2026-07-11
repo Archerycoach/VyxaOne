@@ -630,6 +630,11 @@ export function MetaFormsManagement({ integrationId, integrationName }: MetaForm
                         ⚠️ O campo "leadgen" não está subscrito! Clique em "Re-subscrever Webhook" acima.
                       </p>
                     )}
+                    {webhookStatus.webhook.error && (
+                      <p className="text-xs text-red-600 mt-1 font-medium">
+                        ⚠️ Erro da Meta ao verificar: {webhookStatus.webhook.error}
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
