@@ -62,6 +62,8 @@ import type { InteractionWithDetails } from "@/services/interactionsService";
 import type { LeadNote } from "@/services/notesService";
 import type { CalendarEvent, Task, Property } from "@/types";
 import { QuickContactDialog } from "./QuickContactDialog";
+import { QuickTaskDialog } from "@/components/QuickTaskDialog";
+import { QuickEventDialog } from "@/components/QuickEventDialog";
 import { LeadIdealistaPanel } from "./LeadIdealistaPanel";
 import { ContactAlertRequestsPanel } from "@/features/contacts/components/ContactAlertRequestsPanel";
 import { LeadActivityLogPanel } from "./LeadActivityLogPanel";
@@ -126,6 +128,8 @@ export function LeadDetailsDialog({
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [isReclaiming, setIsReclaiming] = useState(false);
   const [confirmReclaimOpen, setConfirmReclaimOpen] = useState(false);
+  const [taskDialogOpen, setTaskDialogOpen] = useState(false);
+  const [eventDialogOpen, setEventDialogOpen] = useState(false);
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
   const [drafting, setDrafting] = useState<string | null>(null);
   const [generatedDraft, setGeneratedDraft] = useState<{text: string, channel: 'whatsapp'|'email'} | null>(null);
@@ -587,6 +591,38 @@ export function LeadDetailsDialog({
     }
   };
 
+  const reloadEvents = async () => {
+    if (!leadId) return;
+    try {
+      setEvents(await getEventsByLead(leadId));
+    } catch (e) {
+      console.error("[LeadDetailsDialog] Falha ao recarregar eventos:", e);
+    }
+  };
+
+  const reloadTasks = async () => {
+    if (!leadId) return;
+    try {
+      const tasksData = await getTasksByLead(leadId);
+      setTasks(tasksData.map((t: any) => ({
+        id: t.id,
+        title: t.title || "",
+        description: t.description || "",
+        status: t.status || "pending",
+        priority: t.priority || "medium",
+        dueDate: t.due_date,
+        createdAt: t.created_at,
+        userId: t.user_id,
+        assignedTo: t.assigned_to,
+        completed: t.status === "completed",
+        leadId: t.related_lead_id,
+        relatedLeadId: t.related_lead_id,
+      })));
+    } catch (e) {
+      console.error("[LeadDetailsDialog] Falha ao recarregar tarefas:", e);
+    }
+  };
+
   // O dono original da lead (quem a criou) pode recuperá-la para si em
   // qualquer momento, mesmo que já tenha transferido/partilhado para outra
   // pessoa — não altera leads.user_id, por isso a RLS já permite sempre.
@@ -788,11 +824,10 @@ export function LeadDetailsDialog({
     <>
     <Dialog open={open} onOpenChange={handleMainDialogOpenChange}>
       <DialogContent
-        ref={dialogContentRef}
-        className="max-w-4xl max-h-[90vh] overflow-y-auto"
+        className="max-w-4xl max-h-[90vh] !flex flex-col gap-4 overflow-hidden"
         onCloseAutoFocus={(e) => e.preventDefault()}
       >
-        <DialogHeader>
+        <DialogHeader className="shrink-0">
           <DialogTitle className="flex items-center justify-between gap-2">
             <span className="flex items-center gap-2 min-w-0">
               <User className="h-5 w-5 shrink-0" />
@@ -876,6 +911,7 @@ export function LeadDetailsDialog({
           )}
         </DialogHeader>
 
+        <div ref={dialogContentRef} className="flex-1 min-h-0 overflow-y-auto">
         {isLoading ? (
           <div className="flex items-center justify-center py-12">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
@@ -1221,9 +1257,9 @@ export function LeadDetailsDialog({
                 </div>
                 
                 {properties.length === 0 ? (
-                  <div className="text-center py-12 text-gray-500 bg-gray-50 rounded-lg border border-dashed">
-                    <Home className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                    <p>Ainda não há imóveis associados a este proprietário</p>
+                  <div className="text-center py-6 text-gray-500 bg-gray-50 rounded-lg border border-dashed">
+                    <Home className="h-8 w-8 mx-auto mb-2 text-gray-300" />
+                    <p className="text-sm">Ainda não há imóveis associados a este proprietário</p>
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1288,9 +1324,9 @@ export function LeadDetailsDialog({
                 </CardContent>
               </Card>
               {interactions.length === 0 ? (
-                <div className="text-center py-12 text-gray-500">
-                  <MessageSquare className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                  <p>Sem interações registadas</p>
+                <div className="text-center py-6 text-gray-500">
+                  <MessageSquare className="h-8 w-8 mx-auto mb-2 text-gray-300" />
+                  <p className="text-sm">Sem interações registadas</p>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -1338,9 +1374,9 @@ export function LeadDetailsDialog({
                 </CardContent>
               </Card>
               {notes.length === 0 ? (
-                <div className="text-center py-12 text-gray-500">
-                  <FileText className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                  <p>Sem notas registadas</p>
+                <div className="text-center py-6 text-gray-500">
+                  <FileText className="h-8 w-8 mx-auto mb-2 text-gray-300" />
+                  <p className="text-sm">Sem notas registadas</p>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -1373,10 +1409,16 @@ export function LeadDetailsDialog({
             </TabsContent>
 
             <TabsContent value="events" className="space-y-4 mt-4">
+              <div className="flex justify-end">
+                <Button size="sm" onClick={() => setEventDialogOpen(true)}>
+                  <Calendar className="h-4 w-4 mr-2" />
+                  Criar Evento
+                </Button>
+              </div>
               {events.length === 0 ? (
-                <div className="text-center py-12 text-gray-500">
-                  <Calendar className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                  <p>Sem eventos agendados</p>
+                <div className="text-center py-6 text-gray-500">
+                  <Calendar className="h-8 w-8 mx-auto mb-2 text-gray-300" />
+                  <p className="text-sm">Sem eventos agendados</p>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -1423,10 +1465,16 @@ export function LeadDetailsDialog({
             </TabsContent>
 
             <TabsContent value="tasks" className="space-y-4 mt-4">
+              <div className="flex justify-end">
+                <Button size="sm" onClick={() => setTaskDialogOpen(true)}>
+                  <CheckSquare className="h-4 w-4 mr-2" />
+                  Criar Tarefa
+                </Button>
+              </div>
               {tasks.length === 0 ? (
-                <div className="text-center py-12 text-gray-500">
-                  <CheckSquare className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                  <p>Sem tarefas atribuídas</p>
+                <div className="text-center py-6 text-gray-500">
+                  <CheckSquare className="h-8 w-8 mx-auto mb-2 text-gray-300" />
+                  <p className="text-sm">Sem tarefas atribuídas</p>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -1484,6 +1532,7 @@ export function LeadDetailsDialog({
             <p>Não foi possível carregar os detalhes do lead</p>
           </div>
         )}
+        </div>
       </DialogContent>
     </Dialog>
 
@@ -1510,6 +1559,22 @@ export function LeadDetailsDialog({
           open={assignDialogOpen}
           onOpenChange={setAssignDialogOpen}
           onAssignSuccess={handleAssignSuccess}
+        />
+
+        <QuickTaskDialog
+          leadId={lead.id}
+          entityName={lead.name}
+          open={taskDialogOpen}
+          onOpenChange={setTaskDialogOpen}
+          onSuccess={reloadTasks}
+        />
+
+        <QuickEventDialog
+          leadId={lead.id}
+          entityName={lead.name}
+          open={eventDialogOpen}
+          onOpenChange={setEventDialogOpen}
+          onSuccess={reloadEvents}
         />
 
         <Dialog open={voiceNoteOpen} onOpenChange={setVoiceNoteOpen}>
