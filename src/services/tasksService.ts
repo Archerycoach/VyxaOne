@@ -426,6 +426,35 @@ export const manualSync = async () => {
   return data;
 };
 
+// Get users the current user can assign a task to (broker/admin: todos; team_lead: equipa+self; consultant: só self)
+export const getAssignableUsers = async (): Promise<{ id: string; name: string; email: string }[]> => {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return [];
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .single();
+
+  const role = (profile as any)?.role;
+  let query = supabase.from("profiles").select("id, full_name, email").order("full_name", { ascending: true });
+
+  if (role === "team_lead") {
+    query = query.or(`id.eq.${user.id},team_lead_id.eq.${user.id},manager_id.eq.${user.id}`);
+  } else if (role !== "broker" && role !== "admin") {
+    query = query.eq("id", user.id);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    console.error("[tasksService] Error fetching assignable users:", error);
+    return [];
+  }
+
+  return (data || []).map((p: any) => ({ id: p.id, name: p.full_name || p.email, email: p.email }));
+};
+
 // Get tasks by lead ID
 export const getTasksByLead = async (leadId: string): Promise<GlobalTask[]> => {
   console.log("[tasksService] Fetching tasks for lead:", leadId);

@@ -9,6 +9,7 @@ import { TaskDialogs } from "./TaskDialogs";
 import { useTasks, useTaskFilters, useTaskMutations } from "../hooks";
 import { getLeads } from "@/services/leadsService";
 import { getProperties } from "@/services/propertiesService";
+import { getAssignableUsers } from "@/services/tasksService";
 import type { Task } from "@/types";
 
 export function TasksContainer() {
@@ -65,7 +66,7 @@ export function TasksContainer() {
     dueDate: "",
     relatedLeadId: "none",
     relatedPropertyId: "none",
-    assignedTo: "",
+    assignedTo: "none",
   });
 
   // Notes dialog state
@@ -84,12 +85,14 @@ export function TasksContainer() {
 
   const loadSelectData = async () => {
     try {
-      const [leadsData, propertiesData] = await Promise.all([
+      const [leadsData, propertiesData, usersData] = await Promise.all([
         getLeads(),
         getProperties(),
+        getAssignableUsers(),
       ]);
       setLeads(leadsData);
       setProperties(propertiesData);
+      setUsers(usersData);
     } catch (error) {
       console.error("Error loading select data:", error);
     }
@@ -106,7 +109,7 @@ export function TasksContainer() {
         dueDate: task.dueDate ? new Date(task.dueDate).toISOString().split("T")[0] : "",
         relatedLeadId: task.leadId || "none",
         relatedPropertyId: task.propertyId || "none",
-        assignedTo: task.assignedTo || "",
+        assignedTo: task.assignedTo || "none",
       });
     } else {
       setEditingTask(null);
@@ -118,7 +121,7 @@ export function TasksContainer() {
         dueDate: "",
         relatedLeadId: "none",
         relatedPropertyId: "none",
-        assignedTo: "",
+        assignedTo: "none",
       });
     }
     setFormDialogOpen(true);
@@ -135,7 +138,7 @@ export function TasksContainer() {
         due_date: formData.dueDate || null,
         related_lead_id: formData.relatedLeadId === "none" ? null : formData.relatedLeadId,
         related_property_id: formData.relatedPropertyId === "none" ? null : formData.relatedPropertyId,
-        assigned_to: formData.assignedTo || null,
+        assigned_to: formData.assignedTo === "none" ? null : formData.assignedTo,
       };
 
       if (editingTask) {
