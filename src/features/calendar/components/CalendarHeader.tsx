@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { ChevronLeft, ChevronRight, Plus, Calendar as CalendarIcon, Link as LinkIcon } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, Calendar as CalendarIcon, Link as LinkIcon, ListChecks } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 
@@ -17,6 +17,7 @@ interface CalendarHeaderProps {
   onGoogleConnect: () => void;
   onGoogleSync: () => void;
   onGoogleDisconnect: () => void;
+  onShowSyncStatus?: () => void;
   onRefreshEvents?: () => void;
   onRefreshTasks?: () => void;
   // Sincronização automática (estado gerido pelo container)
@@ -38,6 +39,7 @@ export function CalendarHeader({
   onGoogleConnect,
   onGoogleSync,
   onGoogleDisconnect,
+  onShowSyncStatus,
   onRefreshEvents,
   onRefreshTasks,
   autoSyncEnabled,
@@ -115,6 +117,17 @@ export function CalendarHeader({
                   <CalendarIcon className="mr-2 h-4 w-4" />
                   {isSyncing ? "A sincronizar..." : "Sincronizar"}
                 </Button>
+
+                {onShowSyncStatus && (
+                  <Button
+                    variant="outline"
+                    onClick={onShowSyncStatus}
+                    title="Ver estado da sincronização"
+                  >
+                    <ListChecks className="mr-2 h-4 w-4" />
+                    Estado da sincronização
+                  </Button>
+                )}
 
                 {/* Interruptor de sincronização automática */}
                 {autoSyncEnabled !== null && autoSyncEnabled !== undefined && onToggleAutoSync && (

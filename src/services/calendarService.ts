@@ -256,6 +256,25 @@ export const createCalendarEvent = async (event: CalendarEventInsert & { contact
     // Don't throw - event was created locally, sync failure is non-critical
   }
 
+  // Rede de segurança: se o envio direto do browser não conseguiu criar o
+  // evento no Google (token expirado no contexto do browser, falha de rede,
+  // etc.), pedimos ao servidor para sincronizar. Esse caminho tem refresh de
+  // token robusto e é idempotente, garantindo que o evento acaba por chegar
+  // ao Google Calendar mesmo quando o push imediato falha.
+  if (!data.google_event_id) {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) {
+        await fetch("/api/google-calendar/sync", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+      }
+    } catch (fallbackError) {
+      console.error("[calendarService] ⚠️ Server-side sync fallback failed (non-critical):", fallbackError);
+    }
+  }
+
   return mapDbEventToFrontend(data);
 };
 

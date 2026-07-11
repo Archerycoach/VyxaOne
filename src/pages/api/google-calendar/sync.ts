@@ -252,13 +252,17 @@ async function syncEventsToGoogle(
   try {
     console.log("[syncEventsToGoogle] Fetching unsynchronized events...");
     
-    // Get events that haven't been synced to Google yet
+    // Get events that haven't been synced to Google yet. Inclui uma janela
+    // de 30 dias para trás (não só futuros): um evento criado para hoje de
+    // manhã, mas registado à tarde, ficava de fora e nunca chegava ao Google.
+    // Espelha a janela usada na importação (syncEventsFromGoogle).
+    const pastWindow = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
     const { data: rawEvents } = await supabaseAdmin
       .from("calendar_events")
       .select("*")
       .eq("user_id", userId)
       .is("google_event_id", null)
-      .gte("start_time", new Date().toISOString());
+      .gte("start_time", pastWindow);
     
     const events = rawEvents as any[] || [];
     console.log("[syncEventsToGoogle] Found", events.length, "events to sync");
@@ -379,14 +383,16 @@ async function syncTasksToGoogle(
   try {
     console.log("[syncTasksToGoogle] Fetching unsynchronized tasks...");
     
-    // Get tasks that haven't been synced to Google yet and have a due date
+    // Get tasks that haven't been synced yet and have a due date. Janela de
+    // 30 dias para trás (não só futuros), pela mesma razão dos eventos.
+    const pastWindow = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
     const { data: rawTasks } = await supabaseAdmin
       .from("tasks")
       .select("*")
       .eq("user_id", userId)
       .is("google_event_id", null)
       .not("due_date", "is", null)
-      .gte("due_date", new Date().toISOString());
+      .gte("due_date", pastWindow);
 
     const tasks = rawTasks as any[] || [];
     console.log("[syncTasksToGoogle] Found", tasks.length, "tasks to sync");

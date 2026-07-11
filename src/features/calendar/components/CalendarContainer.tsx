@@ -3,6 +3,7 @@ import { useRouter } from "next/router";
 import { CalendarHeader } from "./CalendarHeader";
 import { CalendarGrid } from "./CalendarGrid";
 import { CalendarDialogs } from "./CalendarDialogs";
+import { GoogleSyncStatusDialog } from "./GoogleSyncStatusDialog";
 import {
   useCalendarEvents,
   useCalendarTasks,
@@ -31,6 +32,9 @@ export function CalendarContainer() {
     connectGoogle,
     disconnectGoogle,
   } = useGoogleCalendarSync();
+
+  // Diálogo com o registo de que eventos/tarefas estão sincronizados com o Google.
+  const [syncStatusOpen, setSyncStatusOpen] = useState(false);
 
   // --- Sincronização automática (auto_sync) ---
   // Estado partilhado com o CalendarHeader (o interruptor) e usado para decidir
@@ -693,8 +697,20 @@ export function CalendarContainer() {
         onGoogleConnect={connectGoogle}
         onGoogleSync={syncWithGoogle}
         onGoogleDisconnect={disconnectGoogle}
+        onShowSyncStatus={() => setSyncStatusOpen(true)}
         autoSyncEnabled={autoSyncEnabled}
         onToggleAutoSync={handleToggleAutoSync}
+      />
+
+      <GoogleSyncStatusDialog
+        open={syncStatusOpen}
+        onOpenChange={setSyncStatusOpen}
+        onSync={async () => {
+          await syncWithGoogle();
+          await refetchEvents();
+          await refetchTasks();
+        }}
+        isSyncing={isSyncing}
       />
 
       <CalendarGrid
