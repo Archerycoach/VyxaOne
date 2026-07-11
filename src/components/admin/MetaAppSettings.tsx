@@ -34,7 +34,6 @@ const MASKED_SECRET = "••••••••••••••••";
 export function MetaAppSettings() {
   const [loading, setLoading] = useState(false);
   const [testing, setTesting] = useState(false);
-  const [syncing, setSyncing] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<"unknown" | "connected" | "error">("unknown");
   const [settings, setSettings] = useState<Partial<MetaAppSettings>>({
     app_id: "",
@@ -321,52 +320,11 @@ export function MetaAppSettings() {
       setConnectionStatus("error");
       toast({
         title: "❌ Erro de conexão",
-        description: "Não foi possível validar as credenciais. Verifique App ID e App Secret.",
+        description: error.message || "Não foi possível validar as credenciais. Verifique App ID e App Secret.",
         variant: "destructive",
       });
     } finally {
       setTesting(false);
-    }
-  };
-
-  const handleManualSync = async () => {
-    try {
-      if (!settings.is_active) {
-        toast({
-          title: "Integração desativada",
-          description: "Ative a integração primeiro para fazer sincronização.",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      setSyncing(true);
-
-      const response = await fetch("/api/meta/sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        toast({
-          title: "✅ Sincronização concluída",
-          description: `${data.leads_created || 0} leads criados, ${data.leads_skipped || 0} ignorados.`,
-        });
-        await loadStats();
-        await loadSyncHistory();
-      } else {
-        throw new Error("Sync failed");
-      }
-    } catch (error: any) {
-      console.error("Error syncing:", error);
-      toast({
-        title: "Erro",
-        description: "Erro ao executar sincronização manual.",
-        variant: "destructive",
-      });
-    } finally {
-      setSyncing(false);
     }
   };
 
@@ -620,7 +578,8 @@ export function MetaAppSettings() {
             <div className="flex gap-2">
               <Input
                 id="verify_token"
-                type="password"
+                type="text"
+                value={settings.verify_token === MASKED_SECRET ? "" : (settings.verify_token || "")}
                 onChange={(e) => setSettings({ ...settings, verify_token: e.target.value })}
                 placeholder="Gerar novo ou introduzir (••••••••)"
               />
@@ -803,18 +762,6 @@ export function MetaAppSettings() {
             <CheckCircle2 className="mr-2 h-4 w-4" />
             Testar Conexão
           </Button>
-
-          {settings.is_active && (
-            <Button 
-              variant="secondary" 
-              onClick={handleManualSync} 
-              disabled={syncing}
-            >
-              {syncing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              <RefreshCw className="mr-2 h-4 w-4" />
-              Sincronizar Agora
-            </Button>
-          )}
 
           <Button variant="outline" asChild>
             <Link
