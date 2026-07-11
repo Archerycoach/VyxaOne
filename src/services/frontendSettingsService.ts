@@ -140,9 +140,12 @@ export async function getFrontendSettings(): Promise<FrontendSettings> {
 }
 
 export async function updateFrontendSettings(settings: FrontendSettings): Promise<void> {
-  // Update each key
+  // "public" porque é a categoria usada por todas estas chaves (é o que
+  // permite a leitura sem autenticação nas páginas públicas via
+  // getPublicSettings()) — sem indicar a categoria aqui, upsertSettingByKey
+  // usa "general" por defeito e desativava essa leitura pública ao guardar.
   const promises = Object.entries(settings).map(([key, value]) => {
-    return frontendSettingsService.upsertSettingByKey(key, value);
+    return frontendSettingsService.upsertSettingByKey(key, value, "public");
   });
   await Promise.all(promises);
 }

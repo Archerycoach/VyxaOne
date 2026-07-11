@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import Head from "next/head";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -9,8 +9,15 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import { frontendSettingsService } from "@/services/frontendSettingsService";
 
 export default function FAQPage() {
+  const [settings, setSettings] = useState<Record<string, any>>({});
+
+  useEffect(() => {
+    frontendSettingsService.getPublicSettings().then(setSettings).catch(() => {});
+  }, []);
+
   const faqs = [
     {
       question: "Como posso começar a usar o Vyxa One?",
@@ -49,8 +56,8 @@ export default function FAQPage() {
   return (
     <>
       <Head>
-        <title>FAQ - Vyxa One</title>
-        <meta name="description" content="Perguntas frequentes sobre o Vyxa One" />
+        <title>{settings.seo_title_faq || "FAQ - Vyxa One"}</title>
+        <meta name="description" content={settings.seo_description_faq || "Perguntas frequentes sobre o Vyxa One"} />
       </Head>
 
       <div className="min-h-screen bg-slate-50">
@@ -68,7 +75,7 @@ export default function FAQPage() {
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
           <div className="text-center mb-16">
             <h1 className="text-5xl font-bold text-slate-900 mb-4">
-              Perguntas Frequentes
+              {settings.heading_faq || "Perguntas Frequentes"}
             </h1>
             <p className="text-xl text-slate-600">
               Respostas às dúvidas mais comuns

@@ -1,16 +1,23 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import Head from "next/head";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 import Image from "next/image";
+import { frontendSettingsService } from "@/services/frontendSettingsService";
 
 export default function TermsOfService() {
+  const [settings, setSettings] = useState<Record<string, any>>({});
+
+  useEffect(() => {
+    frontendSettingsService.getPublicSettings().then(setSettings).catch(() => {});
+  }, []);
+
   return (
     <>
       <Head>
-        <title>Termos de Serviço - Vyxa One CRM</title>
-        <meta name="description" content="Termos de Serviço do Vyxa One CRM" />
+        <title>{settings.seo_title_terms_of_service || "Termos de Serviço - Vyxa One CRM"}</title>
+        <meta name="description" content={settings.seo_description_terms_of_service || "Termos de Serviço do Vyxa One CRM"} />
       </Head>
 
       <div className="min-h-screen bg-white dark:bg-gray-900">
@@ -29,7 +36,7 @@ export default function TermsOfService() {
         <div className="container mx-auto px-4 py-12 max-w-4xl">
           <div className="bg-white rounded-lg shadow-sm p-8 md:p-12">
             <h1 className="text-4xl font-bold text-gray-900 mb-8">
-              Termos de Serviço
+              {settings.heading_terms_of_service || "Termos de Serviço"}
             </h1>
 
             <div className="prose prose-lg max-w-none">
@@ -163,7 +170,7 @@ export default function TermsOfService() {
                   Para questões relacionadas com estes Termos de Serviço, contacte-nos:
                 </p>
                 <div className="bg-gray-50 p-6 rounded-lg mt-4">
-                  <p className="text-gray-700"><strong>Email:</strong> suporte@vyxa.pt</p>
+                  <p className="text-gray-700"><strong>Email:</strong> {settings.contact_email || "suporte@vyxa.pt"}</p>
                 </div>
               </section>
             </div>

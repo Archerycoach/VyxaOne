@@ -1,10 +1,20 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import Head from "next/head";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, MessageCircle, Mail, Phone, Book } from "lucide-react";
+import { frontendSettingsService } from "@/services/frontendSettingsService";
 
 export default function SupportPage() {
+  const [settings, setSettings] = useState<Record<string, any>>({});
+
+  useEffect(() => {
+    frontendSettingsService.getPublicSettings().then(setSettings).catch(() => {});
+  }, []);
+
+  const contactEmail = settings.contact_email || "suporte@vyxa.pt";
+  const contactPhone = settings.contact_phone || "+351123456789";
+
   const supportOptions = [
     {
       icon: MessageCircle,
@@ -18,14 +28,14 @@ export default function SupportPage() {
       title: "Email",
       description: "Resposta em até 24 horas",
       action: "Enviar Email",
-      link: "mailto:suporte@vyxa.pt"
+      link: `mailto:${contactEmail}`
     },
     {
       icon: Phone,
       title: "Telefone",
       description: "Suporte prioritário para clientes Enterprise",
       action: "Ligar Agora",
-      link: "tel:+351123456789"
+      link: `tel:${contactPhone.replace(/\s/g, "")}`
     },
     {
       icon: Book,
@@ -39,8 +49,8 @@ export default function SupportPage() {
   return (
     <>
       <Head>
-        <title>Suporte Técnico - Vyxa One</title>
-        <meta name="description" content="Obtenha ajuda e suporte técnico do Vyxa One" />
+        <title>{settings.seo_title_support || "Suporte Técnico - Vyxa One"}</title>
+        <meta name="description" content={settings.seo_description_support || "Obtenha ajuda e suporte técnico do Vyxa One"} />
       </Head>
 
       <div className="min-h-screen bg-slate-50">
@@ -58,7 +68,7 @@ export default function SupportPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
           <div className="text-center mb-16">
             <h1 className="text-5xl font-bold text-slate-900 mb-4">
-              Suporte Técnico
+              {settings.heading_support || "Suporte Técnico"}
             </h1>
             <p className="text-xl text-slate-600">
               Estamos aqui para ajudar de várias formas

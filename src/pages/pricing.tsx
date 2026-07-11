@@ -1,10 +1,17 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import Head from "next/head";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, CheckCircle } from "lucide-react";
+import { frontendSettingsService } from "@/services/frontendSettingsService";
 
 export default function PricingPage() {
+  const [settings, setSettings] = useState<Record<string, any>>({});
+
+  useEffect(() => {
+    frontendSettingsService.getPublicSettings().then(setSettings).catch(() => {});
+  }, []);
+
   const plans = [
     {
       name: "Starter",
@@ -53,8 +60,8 @@ export default function PricingPage() {
   return (
     <>
       <Head>
-        <title>Preços - Vyxa One</title>
-        <meta name="description" content="Planos e preços do Vyxa One CRM" />
+        <title>{settings.seo_title_pricing || "Preços - Vyxa One"}</title>
+        <meta name="description" content={settings.seo_description_pricing || "Planos e preços do Vyxa One CRM"} />
       </Head>
 
       <div className="min-h-screen bg-slate-50">
@@ -72,7 +79,7 @@ export default function PricingPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
           <div className="text-center mb-16">
             <h1 className="text-5xl font-bold text-slate-900 mb-4">
-              Planos e Preços
+              {settings.heading_pricing || "Planos e Preços"}
             </h1>
             <p className="text-xl text-slate-600">
               Escolha o plano ideal para o seu negócio

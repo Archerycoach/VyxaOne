@@ -1,10 +1,17 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import Head from "next/head";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, BookOpen, Video, FileText } from "lucide-react";
+import { frontendSettingsService } from "@/services/frontendSettingsService";
 
 export default function DocumentationPage() {
+  const [settings, setSettings] = useState<Record<string, any>>({});
+
+  useEffect(() => {
+    frontendSettingsService.getPublicSettings().then(setSettings).catch(() => {});
+  }, []);
+
   const sections = [
     {
       icon: BookOpen,
@@ -29,8 +36,8 @@ export default function DocumentationPage() {
   return (
     <>
       <Head>
-        <title>Documentação - Vyxa One</title>
-        <meta name="description" content="Documentação e tutoriais do Vyxa One" />
+        <title>{settings.seo_title_documentation || "Documentação - Vyxa One"}</title>
+        <meta name="description" content={settings.seo_description_documentation || "Documentação e tutoriais do Vyxa One"} />
       </Head>
 
       <div className="min-h-screen bg-slate-50">
@@ -48,7 +55,7 @@ export default function DocumentationPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
           <div className="text-center mb-16">
             <h1 className="text-5xl font-bold text-slate-900 mb-4">
-              Documentação
+              {settings.heading_documentation || "Documentação"}
             </h1>
             <p className="text-xl text-slate-600">
               Tudo o que precisa de saber sobre o Vyxa One

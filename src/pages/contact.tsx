@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Head from "next/head";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -6,15 +6,21 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { ArrowLeft, Mail, Phone, MapPin } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { frontendSettingsService } from "@/services/frontendSettingsService";
 
 export default function ContactPage() {
   const { toast } = useToast();
+  const [settings, setSettings] = useState<Record<string, any>>({});
   const [formData, setFormData] = useState({
     name: "",
     email: "",
     phone: "",
     message: ""
   });
+
+  useEffect(() => {
+    frontendSettingsService.getPublicSettings().then(setSettings).catch(() => {});
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,8 +36,8 @@ export default function ContactPage() {
   return (
     <>
       <Head>
-        <title>Contacto - Vyxa One</title>
-        <meta name="description" content="Entre em contacto com a equipa Vyxa" />
+        <title>{settings.seo_title_contact || "Contacto - Vyxa One"}</title>
+        <meta name="description" content={settings.seo_description_contact || "Entre em contacto com a equipa Vyxa"} />
       </Head>
 
       <div className="min-h-screen bg-slate-50">
@@ -49,7 +55,7 @@ export default function ContactPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
           <div className="text-center mb-16">
             <h1 className="text-5xl font-bold text-slate-900 mb-4">
-              Entre em Contacto
+              {settings.heading_contact || "Entre em Contacto"}
             </h1>
             <p className="text-xl text-slate-600">
               Estamos aqui para ajudar
@@ -122,8 +128,8 @@ export default function ContactPage() {
                     </div>
                     <div>
                       <div className="font-semibold text-slate-900 mb-1">Email</div>
-                      <a href="mailto:suporte@vyxa.pt" className="text-blue-600 hover:underline">
-                        suporte@vyxa.pt
+                      <a href={`mailto:${settings.contact_email || "suporte@vyxa.pt"}`} className="text-blue-600 hover:underline">
+                        {settings.contact_email || "suporte@vyxa.pt"}
                       </a>
                     </div>
                   </div>
@@ -134,8 +140,8 @@ export default function ContactPage() {
                     </div>
                     <div>
                       <div className="font-semibold text-slate-900 mb-1">Telefone</div>
-                      <a href="tel:+351123456789" className="text-blue-600 hover:underline">
-                        +351 123 456 789
+                      <a href={`tel:${(settings.contact_phone || "+351 123 456 789").replace(/\s/g, "")}`} className="text-blue-600 hover:underline">
+                        {settings.contact_phone || "+351 123 456 789"}
                       </a>
                     </div>
                   </div>
@@ -147,7 +153,7 @@ export default function ContactPage() {
                     <div>
                       <div className="font-semibold text-slate-900 mb-1">Morada</div>
                       <p className="text-slate-600">
-                        Lisboa, Portugal
+                        {settings.company_address || "Lisboa, Portugal"}
                       </p>
                     </div>
                   </div>

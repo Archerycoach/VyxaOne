@@ -292,6 +292,7 @@ export default function LandingPage() {
                   <li><Link href="/about" className="hover:text-white transition-colors">Sobre Nós</Link></li>
                   <li><Link href="/contact" className="hover:text-white transition-colors">Contacto</Link></li>
                   <li><Link href="/privacy-policy" className="hover:text-white transition-colors">Política de Privacidade</Link></li>
+                  <li><Link href="/terms-of-service" className="hover:text-white transition-colors">Termos de Serviço</Link></li>
                 </ul>
               </div>
               

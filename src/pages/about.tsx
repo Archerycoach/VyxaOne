@@ -1,15 +1,22 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import Head from "next/head";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Target, Heart, Zap } from "lucide-react";
+import { frontendSettingsService } from "@/services/frontendSettingsService";
 
 export default function AboutPage() {
+  const [settings, setSettings] = useState<Record<string, any>>({});
+
+  useEffect(() => {
+    frontendSettingsService.getPublicSettings().then(setSettings).catch(() => {});
+  }, []);
+
   return (
     <>
       <Head>
-        <title>Sobre Nós - Vyxa One</title>
-        <meta name="description" content="Conheça a missão e valores da Vyxa" />
+        <title>{settings.seo_title_about || "Sobre Nós - Vyxa One"}</title>
+        <meta name="description" content={settings.seo_description_about || "Conheça a missão e valores da Vyxa"} />
       </Head>
 
       <div className="min-h-screen bg-slate-50">
@@ -27,7 +34,7 @@ export default function AboutPage() {
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
           <div className="text-center mb-16">
             <h1 className="text-5xl font-bold text-slate-900 mb-4">
-              Sobre o Vyxa One
+              {settings.heading_about || "Sobre o Vyxa One"}
             </h1>
             <p className="text-xl text-slate-600">
               Transformando a forma como os profissionais imobiliários trabalham
