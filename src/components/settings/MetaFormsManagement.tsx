@@ -305,11 +305,11 @@ export function MetaFormsManagement({ integrationId, integrationName }: MetaForm
 
       setConfigDialogOpen(false);
       loadForms();
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error saving config:", error);
       toast({
         title: "Erro",
-        description: "Erro ao salvar configuração.",
+        description: error?.message || "Erro ao salvar configuração.",
         variant: "destructive",
       });
     }
