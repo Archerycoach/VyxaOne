@@ -41,6 +41,7 @@ export function MetaAppSettings() {
     app_secret: "",
     verify_token: "",
     webhook_url: "",
+    login_config_id: "",
     is_active: false
   });
   const [notificationSettings, setNotificationSettings] = useState({
@@ -77,6 +78,7 @@ export function MetaAppSettings() {
           app_secret: MASKED_SECRET,
           verify_token: MASKED_SECRET,
           webhook_url: `${window.location.origin}/api/meta/webhook`,
+          login_config_id: data.login_config_id || "",
           is_active: data.is_active || false
         });
         
@@ -242,6 +244,7 @@ export function MetaAppSettings() {
             app_id: settings.app_id,
             app_secret: settings.app_secret,
             verify_token: settings.verify_token,
+            login_config_id: settings.login_config_id || null,
             is_active: settings.is_active,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
@@ -565,6 +568,21 @@ export function MetaAppSettings() {
               placeholder="Inserir novo secret para substituir (••••••••)"
             />
           </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="login_config_id">Configuration ID (Facebook Login for Business)</Label>
+          <Input
+            id="login_config_id"
+            value={settings.login_config_id || ""}
+            onChange={(e) => setSettings({ ...settings, login_config_id: e.target.value })}
+            placeholder="Ex: 853687890901682"
+          />
+          <p className="text-xs text-muted-foreground">
+            Painel da Meta → Facebook Login for Business → Configurations → o "Configuration ID" mostrado ao criar a
+            configuração. Determina as permissões pedidas no login — sem isto preenchido, o login usa o método antigo
+            (parâmetro "scope"), que pode já não ser aceite por apps criadas com Facebook Login for Business.
+          </p>
         </div>
 
         {/* Webhook Configuration */}
