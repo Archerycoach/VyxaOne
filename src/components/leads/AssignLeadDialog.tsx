@@ -9,14 +9,8 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { UserCombobox } from "@/components/ui/user-combobox";
 import { Users, X } from "lucide-react";
 import { getAllActiveUsersForLeadTransfer } from "@/services/profileService";
 import { assignLead, shareLead, unshareLead, getLeadShares } from "@/services/leadsService";
@@ -211,27 +205,16 @@ export function AssignLeadDialog({
 
           <TabsContent value="transfer" className="space-y-4 py-2">
             <div className="space-y-2">
-              <label htmlFor="user-select" className="text-sm font-medium">
+              <label className="text-sm font-medium">
                 Utilizador
               </label>
-              <Select value={selectedUserId} onValueChange={setSelectedUserId}>
-                <SelectTrigger id="user-select">
-                  <SelectValue placeholder="Selecione um utilizador" />
-                </SelectTrigger>
-                <SelectContent>
-                  {users.length === 0 ? (
-                    <div className="p-2 text-sm text-gray-500">
-                      Nenhum utilizador disponível
-                    </div>
-                  ) : (
-                    users.map((user) => (
-                      <SelectItem key={user.id} value={user.id}>
-                        {user.full_name || user.email}
-                      </SelectItem>
-                    ))
-                  )}
-                </SelectContent>
-              </Select>
+              <UserCombobox
+                users={users}
+                value={selectedUserId}
+                onChange={setSelectedUserId}
+                placeholder="Selecione um utilizador"
+                emptyText="Nenhum utilizador disponível"
+              />
             </div>
             <Button onClick={handleAssign} disabled={isLoading || !selectedUserId} className="w-full">
               {isLoading ? "A transferir..." : "Transferir"}
@@ -261,27 +244,16 @@ export function AssignLeadDialog({
               </div>
             )}
             <div className="space-y-2">
-              <label htmlFor="share-user-select" className="text-sm font-medium">
+              <label className="text-sm font-medium">
                 Partilhar com
               </label>
-              <Select value={selectedShareUserId} onValueChange={setSelectedShareUserId}>
-                <SelectTrigger id="share-user-select">
-                  <SelectValue placeholder="Selecione um utilizador" />
-                </SelectTrigger>
-                <SelectContent>
-                  {shareableUsers.length === 0 ? (
-                    <div className="p-2 text-sm text-gray-500">
-                      Nenhum utilizador disponível
-                    </div>
-                  ) : (
-                    shareableUsers.map((user) => (
-                      <SelectItem key={user.id} value={user.id}>
-                        {user.full_name || user.email}
-                      </SelectItem>
-                    ))
-                  )}
-                </SelectContent>
-              </Select>
+              <UserCombobox
+                users={shareableUsers}
+                value={selectedShareUserId}
+                onChange={setSelectedShareUserId}
+                placeholder="Selecione um utilizador"
+                emptyText="Nenhum utilizador disponível"
+              />
             </div>
             <Button onClick={handleShare} disabled={isSharing || !selectedShareUserId} className="w-full">
               {isSharing ? "A partilhar..." : "Partilhar"}

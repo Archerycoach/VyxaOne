@@ -31,6 +31,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { UserCombobox } from "@/components/ui/user-combobox";
 import { Search, Edit, Trash2, Phone, Mail, Euro, Calendar, MessageCircle, UserCheck, FileText, Eye, Clock, CalendarDays, CheckCircle, Users, User, DollarSign, MapPin, Home, BedDouble, Bath, Ruler, Banknote, MessageSquare, Plus } from "lucide-react";
 import type { LeadWithContacts } from "@/services/leadsService";
 import { assignLead, getArchivedLeads } from "@/services/leadsService";
@@ -40,7 +41,7 @@ import type { InteractionWithDetails } from "@/services/interactionsService";
 import { getLeadRecentInteractionState } from "@/lib/leadInteractionHighlight";
 import { getLeadQualification } from "@/lib/leadQualification";
 import { useToast } from "@/hooks/use-toast";
-import { getUserProfile, getUsersForAssignment } from "@/services/profileService";
+import { getUserProfile, getAllActiveUsersForLeadTransfer } from "@/services/profileService";
 import { QuickTaskDialog } from "@/components/QuickTaskDialog";
 import { QuickEventDialog } from "@/components/QuickEventDialog";
 
@@ -70,6 +71,7 @@ export function LeadsList({ leads, onEdit, onDelete, isLoading, onRefresh, onVie
   const [availableAgents, setAvailableAgents] = useState<any[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState("");
   const [currentUserRole, setCurrentUserRole] = useState<string>("");
+  const [currentUserId, setCurrentUserId] = useState<string>("");
   const { toast } = useToast();
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
   const [eventDialogOpen, setEventDialogOpen] = useState(false);
@@ -103,6 +105,7 @@ export function LeadsList({ leads, onEdit, onDelete, isLoading, onRefresh, onVie
       if (profile) {
         console.log("[LeadsList] Setting role to:", profile.role);
         setCurrentUserRole(profile.role);
+        setCurrentUserId(profile.id);
       }
     } catch (error) {
       console.error("[LeadsList] Error loading user role:", error);
@@ -365,7 +368,7 @@ export function LeadsList({ leads, onEdit, onDelete, isLoading, onRefresh, onVie
       setSelectedLead(lead);
       setSelectedAgentId(lead.assigned_to || "");
       
-      const agents = await getUsersForAssignment();
+      const agents = await getAllActiveUsersForLeadTransfer();
       setAvailableAgents(agents);
       setAssignDialogOpen(true);
     } catch (error: any) {
@@ -398,9 +401,15 @@ export function LeadsList({ leads, onEdit, onDelete, isLoading, onRefresh, onVie
     });
   }, [selectedLead, selectedAgentId, toast, onRefresh, executeOperation, resetAllStates]);
 
-  const canAssignLeads = currentUserRole === "admin" || currentUserRole === "team_lead";
-  
-  console.log("[LeadsList] Current user role:", currentUserRole, "Can assign leads:", canAssignLeads);
+  const canAssignLead = useCallback((lead: any) => {
+    return (
+      currentUserRole === "admin" ||
+      currentUserRole === "broker" ||
+      currentUserRole === "team_lead" ||
+      lead.user_id === currentUserId ||
+      lead.assigned_to === currentUserId
+    );
+  }, [currentUserRole, currentUserId]);
 
   const handleTaskClick = useCallback((lead: LeadWithContacts) => {
     setSelectedLeadForTask(lead);
@@ -880,7 +889,7 @@ export function LeadsList({ leads, onEdit, onDelete, isLoading, onRefresh, onVie
                       <span className="text-xs">Ver</span>
                     </Button>
 
-                    {canAssignLeads && (
+                    {canAssignLead(lead) && (
                       <Button
                         variant="outline"
                         size="sm"
@@ -1074,30 +1083,13 @@ export function LeadsList({ leads, onEdit, onDelete, isLoading, onRefresh, onVie
               </div>
 
               <div>
-                <Label htmlFor="agent">Agente</Label>
-                <Select
+                <Label>Agente</Label>
+                <UserCombobox
+                  users={[{ id: "unassigned", full_name: "Nenhum (não atribuído)", email: "" }, ...availableAgents]}
                   value={selectedAgentId}
-                  onValueChange={setSelectedAgentId}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione um agente" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="unassigned">Nenhum (não atribuído)</SelectItem>
-                    {availableAgents.map((agent) => (
-                      <SelectItem key={agent.id} value={agent.id}>
-                        <div className="flex items-center gap-2">
-                          <span>{agent.full_name || agent.email}</span>
-                          {agent.role === "team_lead" && (
-                            <Badge variant="outline" className="text-xs">
-                              Team Lead
-                            </Badge>
-                          )}
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  onChange={setSelectedAgentId}
+                  placeholder="Selecione um agente"
+                />
               </div>
             </div>
           )}

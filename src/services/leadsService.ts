@@ -111,7 +111,12 @@ const getSharedLeadIds = async (userId: string): Promise<string[]> => {
     .select("lead_id")
     .eq("shared_with_user_id", userId);
 
-  if (error) throw error;
+  if (error) {
+    // Não deixar a lista de leads inteira falhar por causa desta partilha
+    // opcional (ex: migração da tabela lead_shares ainda não corrida).
+    console.error("[leadsService] Error fetching shared lead ids:", error);
+    return [];
+  }
   return (data || []).map((row: any) => row.lead_id);
 };
 

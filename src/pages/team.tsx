@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { UserCombobox } from "@/components/ui/user-combobox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Switch } from "@/components/ui/switch";
@@ -857,18 +858,12 @@ export default function TeamPage() {
             ) : (
               <div>
                 <Label htmlFor="consultant">Consultor</Label>
-                <Select value={selectedConsultantId} onValueChange={setSelectedConsultantId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione um consultor" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {unassignedConsultants.map((consultant) => (
-                      <SelectItem key={consultant.id} value={consultant.id}>
-                        {consultant.full_name} ({consultant.email})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <UserCombobox
+                  users={unassignedConsultants}
+                  value={selectedConsultantId}
+                  onChange={setSelectedConsultantId}
+                  placeholder="Selecione um consultor"
+                />
               </div>
             )}
           </div>
