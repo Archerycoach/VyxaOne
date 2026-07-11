@@ -256,17 +256,21 @@ export const createOrUpdateFormConfig = async (config: Partial<MetaFormConfig>) 
 
     if (error) throw error;
     return { ...config, id: (data as any).id } as MetaFormConfig;
-  } else {
-    // Create new
-    const { data, error } = await supabase
-      .from("meta_form_configs" as any)
-      .insert(dbPayload)
-      .select()
-      .single();
-
-    if (error) throw error;
-    return { ...config, id: (data as any).id } as MetaFormConfig;
   }
+
+  // Sem "id" localmente não significa que não exista já uma configuração
+  // guardada para este formulário — há uma constraint única em
+  // (user_id, form_id), por isso usamos upsert em vez de assumir que é
+  // sempre uma criação nova (evita "duplicate key value" quando já existe
+  // uma configuração de uma sessão anterior).
+  const { data, error } = await supabase
+    .from("meta_form_configs" as any)
+    .upsert(dbPayload, { onConflict: "user_id,form_id" })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return { ...config, id: (data as any).id } as MetaFormConfig;
 };
 
 export const deleteFormConfig = async (configId: string) => {
