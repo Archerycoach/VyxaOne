@@ -106,7 +106,24 @@ export function useGoogleCalendarSync() {
   }, [checkConfiguration, checkConnection]);
 
   const syncWithGoogle = useCallback(async () => {
-    if (!isConfigured) {
+    // Não confiar apenas no estado "isConfigured" — é atualizado por uma
+    // chamada assíncrona ao montar, e clicar em sincronizar antes dessa
+    // chamada terminar mostrava sempre este erro por engano, mesmo com tudo
+    // corretamente configurado. Verificamos de novo, em direto, antes de
+    // decidir bloquear.
+    let configured = isConfigured;
+    try {
+      const response = await fetch("/api/google-calendar/settings");
+      if (response.ok) {
+        const settings = await response.json();
+        configured = !!settings.clientId;
+        setIsConfigured(configured);
+      }
+    } catch (error) {
+      console.error("[useGoogleCalendarSync] Erro ao reverificar configuração:", error);
+    }
+
+    if (!configured) {
       toast({
         title: "⚙️ Configuração necessária",
         description: "A integração com Google Calendar precisa ser configurada por um administrador",
