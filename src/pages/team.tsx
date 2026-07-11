@@ -15,6 +15,7 @@ import { Users, UserPlus, Shield, Award, User, Mail, Calendar, TrendingUp, Edit2
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { getTeamMode, setTeamMode, getLeadVisibilityGrants, grantLeadVisibility, revokeLeadVisibility } from "@/services/leadVisibilityService";
+import { getUnassignedConsultants, sendTeamInvitation, type UnassignedConsultant } from "@/services/teamInvitationService";
 
 interface TeamMember {
   user_id: string;
@@ -47,6 +48,13 @@ export default function TeamPage() {
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteFullName, setInviteFullName] = useState("");
   const [inviting, setInviting] = useState(false);
+
+  // Convidar consultor sem equipa para a própria equipa (team lead)
+  const [showTeamInviteDialog, setShowTeamInviteDialog] = useState(false);
+  const [unassignedConsultants, setUnassignedConsultants] = useState<UnassignedConsultant[]>([]);
+  const [selectedConsultantId, setSelectedConsultantId] = useState<string>("");
+  const [loadingUnassigned, setLoadingUnassigned] = useState(false);
+  const [sendingInvite, setSendingInvite] = useState(false);
 
   // Edit dialog
   const [editingUser, setEditingUser] = useState<TeamMember | null>(null);
@@ -191,6 +199,48 @@ export default function TeamPage() {
       });
     } finally {
       setSavingSharing((prev) => ({ ...prev, [key]: false }));
+    }
+  };
+
+  const handleOpenTeamInviteDialog = async () => {
+    setShowTeamInviteDialog(true);
+    setSelectedConsultantId("");
+    setLoadingUnassigned(true);
+    try {
+      const consultants = await getUnassignedConsultants();
+      setUnassignedConsultants(consultants);
+    } catch (error: any) {
+      console.error("Error loading unassigned consultants:", error);
+      toast({
+        title: "Erro",
+        description: error.message || "Não foi possível carregar os consultores sem equipa.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingUnassigned(false);
+    }
+  };
+
+  const handleSendTeamInvitation = async () => {
+    if (!selectedConsultantId) return;
+
+    setSendingInvite(true);
+    try {
+      await sendTeamInvitation(selectedConsultantId);
+      toast({
+        title: "Convite enviado",
+        description: "O consultor vai receber uma notificação para aceitar ou rejeitar o convite.",
+      });
+      setShowTeamInviteDialog(false);
+    } catch (error: any) {
+      console.error("Error sending team invitation:", error);
+      toast({
+        title: "Erro ao enviar convite",
+        description: error.message || "Não foi possível enviar o convite.",
+        variant: "destructive",
+      });
+    } finally {
+      setSendingInvite(false);
     }
   };
 
@@ -546,6 +596,16 @@ export default function TeamPage() {
                 </CardTitle>
                 <div className="flex items-center gap-4 text-sm text-muted-foreground">
                   <span>{groups[teamLead.user_id]?.length || 0} consultores</span>
+                  {currentUserId === teamLead.user_id && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleOpenTeamInviteDialog}
+                    >
+                      <UserPlus className="h-4 w-4 mr-2" />
+                      Convidar Consultor
+                    </Button>
+                  )}
                   {canEdit && (
                     <Button
                       variant="ghost"
@@ -774,6 +834,54 @@ export default function TeamPage() {
             </Button>
             <Button onClick={handleInviteUser} disabled={inviting}>
               {inviting ? "A enviar..." : "Enviar Convite"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Team Invite Dialog */}
+      <Dialog open={showTeamInviteDialog} onOpenChange={setShowTeamInviteDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Convidar Consultor para a Equipa</DialogTitle>
+            <DialogDescription>
+              O consultor recebe uma notificação para aceitar ou rejeitar. Se aceitar, passa automaticamente a
+              fazer parte da sua equipa.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {loadingUnassigned ? (
+              <p className="text-sm text-muted-foreground">A carregar consultores...</p>
+            ) : unassignedConsultants.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Não há consultores sem equipa disponíveis para convidar.</p>
+            ) : (
+              <div>
+                <Label htmlFor="consultant">Consultor</Label>
+                <Select value={selectedConsultantId} onValueChange={setSelectedConsultantId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione um consultor" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {unassignedConsultants.map((consultant) => (
+                      <SelectItem key={consultant.id} value={consultant.id}>
+                        {consultant.full_name} ({consultant.email})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowTeamInviteDialog(false)}
+              disabled={sendingInvite}
+            >
+              Cancelar
+            </Button>
+            <Button onClick={handleSendTeamInvitation} disabled={sendingInvite || !selectedConsultantId}>
+              {sendingInvite ? "A enviar..." : "Enviar Convite"}
             </Button>
           </DialogFooter>
         </DialogContent>

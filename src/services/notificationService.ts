@@ -2,16 +2,17 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
 import { getUserWithRetry } from "@/lib/supabaseRetry";
 
-export type NotificationType = 
-  | 'lead_assigned' 
-  | 'lead_overdue' 
-  | 'task_due' 
-  | 'property_match' 
+export type NotificationType =
+  | 'lead_assigned'
+  | 'lead_overdue'
+  | 'task_due'
+  | 'property_match'
   | 'system'
   | 'message'
-  | 'info' 
-  | 'success' 
-  | 'warning' 
+  | 'team_invitation'
+  | 'info'
+  | 'success'
+  | 'warning'
   | 'error';
 
 export interface Notification {

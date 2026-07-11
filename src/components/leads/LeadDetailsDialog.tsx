@@ -37,9 +37,11 @@ import {
   Send,
   Mic,
   Bell,
-  History
+  History,
+  Users
 } from "lucide-react";
 import { getLeadById } from "@/services/leadsService";
+import { AssignLeadDialog } from "./AssignLeadDialog";
 import { getInteractionsByLead, createInteraction } from "@/services/interactionsService";
 import { getNotesByLead, createNote } from "@/services/notesService";
 import { getEventsByLead } from "@/services/calendarService";
@@ -109,6 +111,8 @@ export function LeadDetailsDialog({
   const [contactPrefsDialogOpen, setContactPrefsDialogOpen] = useState(false);
   const [alertRequestsDialogOpen, setAlertRequestsDialogOpen] = useState(false);
   const [activityLogDialogOpen, setActivityLogDialogOpen] = useState(false);
+  const [assignDialogOpen, setAssignDialogOpen] = useState(false);
+  const [canAssignLead, setCanAssignLead] = useState(false);
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
   const [drafting, setDrafting] = useState<string | null>(null);
   const [generatedDraft, setGeneratedDraft] = useState<{text: string, channel: 'whatsapp'|'email'} | null>(null);
@@ -152,6 +156,22 @@ export function LeadDetailsDialog({
   useEffect(() => {
     if (!open) return;
     getMessageSnippets().then(setSnippets).catch((err) => console.error("[LeadDetailsDialog] Erro ao carregar respostas rápidas:", err));
+  }, [open]);
+
+  // Só broker/admin/team_lead podem reatribuir a lead a outro consultor.
+  useEffect(() => {
+    if (!open) return;
+    (async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
+        const role = profile?.role;
+        setCanAssignLead(role === "broker" || role === "admin" || role === "team_lead");
+      } catch (err) {
+        console.error("[LeadDetailsDialog] Erro ao verificar permissão de atribuição:", err);
+      }
+    })();
   }, [open]);
 
   useEffect(() => {
@@ -541,6 +561,16 @@ export function LeadDetailsDialog({
     }
   };
 
+  const handleAssignSuccess = async () => {
+    if (!leadId) return;
+    try {
+      const updatedLead = await getLeadById(leadId);
+      setLead(updatedLead);
+    } catch (e: any) {
+      console.error("[LeadDetailsDialog] Falha ao atualizar lead após reatribuição:", e);
+    }
+  };
+
   const handleSaveQualification = async (updates: Record<string, unknown>) => {
     if (!leadId) return;
     try {
@@ -903,6 +933,27 @@ export function LeadDetailsDialog({
                     <div>
                       <p className="text-sm text-gray-500">Telefone</p>
                       <p className="font-medium">{lead.phone || "-"}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Users className="h-4 w-4 text-gray-400" />
+                    <div className="flex-1">
+                      <p className="text-sm text-gray-500">Atribuído a</p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium">
+                          {(lead as any).assigned_user?.full_name || (lead as any).assigned_user?.email || "Não atribuída"}
+                        </p>
+                        {canAssignLead && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 px-2 text-xs text-purple-600 hover:text-purple-700"
+                            onClick={() => setAssignDialogOpen(true)}
+                          >
+                            Reatribuir
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -1374,6 +1425,15 @@ export function LeadDetailsDialog({
               getLeadById(leadId).then(setLead);
             }
           }}
+        />
+
+        <AssignLeadDialog
+          leadId={lead.id}
+          leadName={lead.name}
+          currentAssignedUserId={(lead as any).assigned_to}
+          open={assignDialogOpen}
+          onOpenChange={setAssignDialogOpen}
+          onAssignSuccess={handleAssignSuccess}
         />
 
         <Dialog open={voiceNoteOpen} onOpenChange={setVoiceNoteOpen}>

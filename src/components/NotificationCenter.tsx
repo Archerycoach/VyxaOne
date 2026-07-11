@@ -15,6 +15,7 @@ import {
   getUnreadCount,
   type Notification,
 } from "@/services/notificationService";
+import { acceptTeamInvitation, declineTeamInvitation } from "@/services/teamInvitationService";
 import { useToast } from "@/hooks/use-toast";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -27,6 +28,7 @@ export function NotificationCenter() {
   const [loading, setLoading] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [respondingInvitationId, setRespondingInvitationId] = useState<string | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -142,6 +144,42 @@ export function NotificationCenter() {
     }
   };
 
+  const handleRespondInvitation = async (notification: Notification, accept: boolean) => {
+    const invitationId = notification.data?.invitationId;
+    if (!invitationId) return;
+
+    setRespondingInvitationId(notification.id);
+    try {
+      if (accept) {
+        await acceptTeamInvitation(invitationId);
+      } else {
+        await declineTeamInvitation(invitationId);
+      }
+
+      await markNotificationAsRead(notification.id);
+      setNotifications(prev =>
+        prev.map(n => (n.id === notification.id ? { ...n, read: true } : n))
+      );
+      setUnreadCount(prev => Math.max(0, prev - 1));
+
+      toast({
+        title: accept ? "Convite aceite" : "Convite rejeitado",
+        description: accept
+          ? "Já faz parte desta equipa."
+          : "O convite foi rejeitado.",
+      });
+    } catch (error: any) {
+      console.error("Error responding to team invitation:", error);
+      toast({
+        title: "Erro",
+        description: error.message || "Não foi possível responder ao convite.",
+        variant: "destructive",
+      });
+    } finally {
+      setRespondingInvitationId(null);
+    }
+  };
+
   const getNotificationIcon = (type: string) => {
     switch (type) {
       case "lead_assigned":
@@ -154,6 +192,8 @@ export function NotificationCenter() {
         return "🏠";
       case "message":
         return "💬";
+      case "team_invitation":
+        return "👥";
       default:
         return "🔔";
     }
@@ -217,7 +257,7 @@ export function NotificationCenter() {
                         <p className="font-medium text-sm">
                           {notification.title}
                         </p>
-                        {!notification.read && (
+                        {!notification.read && notification.type !== "team_invitation" && (
                           <Button
                             variant="ghost"
                             size="sm"
@@ -231,6 +271,27 @@ export function NotificationCenter() {
                       <p className="text-sm text-gray-600 mt-1">
                         {notification.message}
                       </p>
+                      {notification.type === "team_invitation" && !notification.read && (
+                        <div className="flex gap-2 mt-2">
+                          <Button
+                            size="sm"
+                            className="h-7 text-xs"
+                            disabled={respondingInvitationId === notification.id}
+                            onClick={() => handleRespondInvitation(notification, true)}
+                          >
+                            Aceitar
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs"
+                            disabled={respondingInvitationId === notification.id}
+                            onClick={() => handleRespondInvitation(notification, false)}
+                          >
+                            Rejeitar
+                          </Button>
+                        </div>
+                      )}
                       <p className="text-xs text-gray-400 mt-2">
                         {formatDistanceToNow(new Date(notification.created_at), {
                           addSuffix: true,
