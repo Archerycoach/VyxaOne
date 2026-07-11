@@ -16,9 +16,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Users } from "lucide-react";
-import { getUsersForAssignment } from "@/services/profileService";
-import { assignLead } from "@/services/leadsService";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Users, X } from "lucide-react";
+import { getAllActiveUsersForLeadTransfer } from "@/services/profileService";
+import { assignLead, shareLead, unshareLead, getLeadShares } from "@/services/leadsService";
 import { useToast } from "@/hooks/use-toast";
 
 interface AssignLeadDialogProps {
@@ -55,18 +56,24 @@ export function AssignLeadDialog({
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
 
+  // Partilha
+  const [shares, setShares] = useState<{ id: string; shared_with_user_id: string; full_name: string | null; email: string | null }[]>([]);
+  const [selectedShareUserId, setSelectedShareUserId] = useState<string>("");
+  const [isSharing, setIsSharing] = useState(false);
+  const [removingShareId, setRemovingShareId] = useState<string | null>(null);
+
   useEffect(() => {
     if (isOpen) {
       loadUsers();
+      loadShares();
     }
   }, [isOpen]);
 
   const loadUsers = async () => {
     try {
-      const fetchedUsers = await getUsersForAssignment();
-      setUsers(fetchedUsers);
-      
-      // Pre-select current assigned user if exists
+      const fetchedUsers = await getAllActiveUsersForLeadTransfer();
+      setUsers(fetchedUsers as any);
+
       if (currentAssignedUserId) {
         setSelectedUserId(currentAssignedUserId);
       }
@@ -80,11 +87,20 @@ export function AssignLeadDialog({
     }
   };
 
+  const loadShares = async () => {
+    try {
+      const fetchedShares = await getLeadShares(leadId);
+      setShares(fetchedShares);
+    } catch (error: any) {
+      console.error("Error loading lead shares:", error);
+    }
+  };
+
   const handleAssign = async () => {
     if (!selectedUserId) {
       toast({
         title: "Selecione um utilizador",
-        description: "Por favor selecione um utilizador para atribuir esta lead.",
+        description: "Por favor selecione um utilizador para transferir esta lead.",
         variant: "destructive",
       });
       return;
@@ -93,12 +109,12 @@ export function AssignLeadDialog({
     setIsLoading(true);
     try {
       await assignLead(leadId, selectedUserId);
-      
+
       const assignedUser = users.find(u => u.id === selectedUserId);
-      
+
       toast({
-        title: "Lead atribuída com sucesso!",
-        description: `Lead "${leadName}" foi atribuída a ${assignedUser?.full_name || assignedUser?.email}.`,
+        title: "Lead transferida com sucesso!",
+        description: `Lead "${leadName}" foi transferida para ${assignedUser?.full_name || assignedUser?.email}.`,
       });
 
       setIsOpen(false);
@@ -106,8 +122,8 @@ export function AssignLeadDialog({
     } catch (error: any) {
       console.error("Error assigning lead:", error);
       toast({
-        title: "Erro ao atribuir lead",
-        description: error.message || "Não foi possível atribuir a lead.",
+        title: "Erro ao transferir lead",
+        description: error.message || "Não foi possível transferir a lead.",
         variant: "destructive",
       });
     } finally {
@@ -115,14 +131,55 @@ export function AssignLeadDialog({
     }
   };
 
-  const getRoleBadge = (role: string) => {
-    const roleLabels: Record<string, string> = {
-      admin: "Admin",
-      team_lead: "Team Lead",
-      agent: "Agente",
-    };
-    return roleLabels[role] || role;
+  const handleShare = async () => {
+    if (!selectedShareUserId) {
+      toast({
+        title: "Selecione um utilizador",
+        description: "Por favor selecione um utilizador para partilhar esta lead.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsSharing(true);
+    try {
+      await shareLead(leadId, selectedShareUserId);
+      toast({ title: "Lead partilhada com sucesso!" });
+      setSelectedShareUserId("");
+      await loadShares();
+      onAssignSuccess?.();
+    } catch (error: any) {
+      console.error("Error sharing lead:", error);
+      toast({
+        title: "Erro ao partilhar lead",
+        description: error.message || "Não foi possível partilhar a lead.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSharing(false);
+    }
   };
+
+  const handleUnshare = async (userId: string, shareId: string) => {
+    setRemovingShareId(shareId);
+    try {
+      await unshareLead(leadId, userId);
+      setShares((prev) => prev.filter((s) => s.id !== shareId));
+      toast({ title: "Partilha removida" });
+      onAssignSuccess?.();
+    } catch (error: any) {
+      console.error("Error removing share:", error);
+      toast({
+        title: "Erro ao remover partilha",
+        description: error.message || "Não foi possível remover a partilha.",
+        variant: "destructive",
+      });
+    } finally {
+      setRemovingShareId(null);
+    }
+  };
+
+  const shareableUsers = users.filter((u) => !shares.some((s) => s.shared_with_user_id === u.id));
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
@@ -140,58 +197,101 @@ export function AssignLeadDialog({
       )}
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>Atribuir Lead</DialogTitle>
+          <DialogTitle>Gerir Lead &quot;{leadName}&quot;</DialogTitle>
           <DialogDescription>
-            Selecione um utilizador para atribuir a lead &quot;{leadName}&quot;.
+            Transfira a lead para outro utilizador, ou partilhe-a mantendo o seu acesso atual.
           </DialogDescription>
         </DialogHeader>
-        <div className="grid gap-4 py-4">
-          <div className="space-y-2">
-            <label htmlFor="user-select" className="text-sm font-medium">
-              Utilizador
-            </label>
-            <Select value={selectedUserId} onValueChange={setSelectedUserId}>
-              <SelectTrigger id="user-select">
-                <SelectValue placeholder="Selecione um utilizador" />
-              </SelectTrigger>
-              <SelectContent>
-                {users.length === 0 ? (
-                  <div className="p-2 text-sm text-gray-500">
-                    Nenhum utilizador disponível
-                  </div>
-                ) : (
-                  users.map((user) => (
-                    <SelectItem key={user.id} value={user.id}>
-                      <div className="flex flex-col">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium">
-                            {user.full_name || user.email}
-                          </span>
-                          <span className="text-xs text-gray-500">
-                            ({getRoleBadge(user.role)})
-                          </span>
-                        </div>
-                        <span className="text-xs text-gray-500">
-                          {user.email}
-                        </span>
-                      </div>
-                    </SelectItem>
-                  ))
-                )}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
+
+        <Tabs defaultValue="transfer">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="transfer">Transferir</TabsTrigger>
+            <TabsTrigger value="share">Partilhar</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="transfer" className="space-y-4 py-2">
+            <div className="space-y-2">
+              <label htmlFor="user-select" className="text-sm font-medium">
+                Utilizador
+              </label>
+              <Select value={selectedUserId} onValueChange={setSelectedUserId}>
+                <SelectTrigger id="user-select">
+                  <SelectValue placeholder="Selecione um utilizador" />
+                </SelectTrigger>
+                <SelectContent>
+                  {users.length === 0 ? (
+                    <div className="p-2 text-sm text-gray-500">
+                      Nenhum utilizador disponível
+                    </div>
+                  ) : (
+                    users.map((user) => (
+                      <SelectItem key={user.id} value={user.id}>
+                        {user.full_name || user.email}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button onClick={handleAssign} disabled={isLoading || !selectedUserId} className="w-full">
+              {isLoading ? "A transferir..." : "Transferir"}
+            </Button>
+          </TabsContent>
+
+          <TabsContent value="share" className="space-y-4 py-2">
+            {shares.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Partilhada com</p>
+                <div className="space-y-1">
+                  {shares.map((share) => (
+                    <div key={share.id} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
+                      <span>{share.full_name || share.email}</span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 w-6 p-0"
+                        disabled={removingShareId === share.id}
+                        onClick={() => handleUnshare(share.shared_with_user_id, share.id)}
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="space-y-2">
+              <label htmlFor="share-user-select" className="text-sm font-medium">
+                Partilhar com
+              </label>
+              <Select value={selectedShareUserId} onValueChange={setSelectedShareUserId}>
+                <SelectTrigger id="share-user-select">
+                  <SelectValue placeholder="Selecione um utilizador" />
+                </SelectTrigger>
+                <SelectContent>
+                  {shareableUsers.length === 0 ? (
+                    <div className="p-2 text-sm text-gray-500">
+                      Nenhum utilizador disponível
+                    </div>
+                  ) : (
+                    shareableUsers.map((user) => (
+                      <SelectItem key={user.id} value={user.id}>
+                        {user.full_name || user.email}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button onClick={handleShare} disabled={isSharing || !selectedShareUserId} className="w-full">
+              {isSharing ? "A partilhar..." : "Partilhar"}
+            </Button>
+          </TabsContent>
+        </Tabs>
+
         <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => setIsOpen(false)}
-            disabled={isLoading}
-          >
-            Cancelar
-          </Button>
-          <Button onClick={handleAssign} disabled={isLoading || !selectedUserId}>
-            {isLoading ? "A atribuir..." : "Atribuir"}
+          <Button variant="outline" onClick={() => setIsOpen(false)}>
+            Fechar
           </Button>
         </DialogFooter>
       </DialogContent>

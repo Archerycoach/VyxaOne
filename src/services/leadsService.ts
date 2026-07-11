@@ -103,6 +103,26 @@ const getSharedVisibilityUserIds = async (consultantId: string, teamLeadId: stri
   return Array.from(extraIds);
 };
 
+// Leads partilhadas diretamente com este utilizador (tabela lead_shares) —
+// dá acesso a leads específicas sem alterar o assigned_to original.
+const getSharedLeadIds = async (userId: string): Promise<string[]> => {
+  const { data, error } = await supabase
+    .from("lead_shares" as any)
+    .select("lead_id")
+    .eq("shared_with_user_id", userId);
+
+  if (error) throw error;
+  return (data || []).map((row: any) => row.lead_id);
+};
+
+const applyVisibilityOrSharedFilter = (query: any, visibleUserIds: string[], sharedLeadIds: string[]) => {
+  const orParts = [`assigned_to.in.(${visibleUserIds.join(",")})`];
+  if (sharedLeadIds.length > 0) {
+    orParts.push(`id.in.(${sharedLeadIds.join(",")})`);
+  }
+  return query.or(orParts.join(","));
+};
+
 // Get all leads with proper visibility rules
 export const getLeads = async (useCache = false) => {
   try {
@@ -138,18 +158,21 @@ export const getLeads = async (useCache = false) => {
       // Admins/brokers see all leads - no filter needed
       console.log("[leadsService] Admin/broker user - fetching all leads");
     } else if (profile.role === "team_lead") {
-      // Team leads see their leads + their team members' leads
+      // Team leads see their leads + their team members' leads + leads partilhadas diretamente com eles
       const teamMemberIds = await getTeamMemberIds(profile.id);
       const visibleUserIds = [profile.id, ...teamMemberIds];
+      const sharedLeadIds = await getSharedLeadIds(profile.id);
       console.log("[leadsService] Team lead - visible user IDs:", visibleUserIds);
-      query = query.in("assigned_to", visibleUserIds);
+      query = applyVisibilityOrSharedFilter(query, visibleUserIds, sharedLeadIds);
     } else {
       // Agents see their own leads, plus any leads shared with them (ver
-      // migração 20260711140000_add_lead_visibility_sharing.sql).
+      // migração 20260711140000_add_lead_visibility_sharing.sql) e leads
+      // partilhadas diretamente (lead_shares).
       const sharedIds = await getSharedVisibilityUserIds(profile.id, profile.team_lead_id);
       const visibleUserIds = [profile.id, ...sharedIds];
+      const sharedLeadIds = await getSharedLeadIds(profile.id);
       console.log("[leadsService] Agent - visible user IDs:", visibleUserIds);
-      query = query.in("assigned_to", visibleUserIds);
+      query = applyVisibilityOrSharedFilter(query, visibleUserIds, sharedLeadIds);
     }
 
     const { data, error } = await query.order("created_at", { ascending: false });
@@ -486,12 +509,14 @@ export const getArchivedLeads = async (useCache = false): Promise<Lead[]> => {
     } else if (profile.role === "team_lead") {
       const teamMemberIds = await getTeamMemberIds(profile.id);
       const visibleUserIds = [profile.id, ...teamMemberIds];
-      query = query.in("assigned_to", visibleUserIds);
+      const sharedLeadIds = await getSharedLeadIds(profile.id);
+      query = applyVisibilityOrSharedFilter(query, visibleUserIds, sharedLeadIds);
     } else {
       // Agents see their own archived leads, plus any shared with them.
       const sharedIds = await getSharedVisibilityUserIds(profile.id, profile.team_lead_id);
       const visibleUserIds = [profile.id, ...sharedIds];
-      query = query.in("assigned_to", visibleUserIds);
+      const sharedLeadIds = await getSharedLeadIds(profile.id);
+      query = applyVisibilityOrSharedFilter(query, visibleUserIds, sharedLeadIds);
     }
 
     const { data, error } = await query.order("archived_at", { ascending: false });
@@ -633,34 +658,88 @@ export const getLeadStats = async () => {
   return stats;
 };
 
-// Assign lead to user
+// Assign (transfer) lead to another user
 export const assignLead = async (leadId: string, userId: string): Promise<void> => {
-  // Verify current user has permission to assign
   const profile = await getCurrentUserProfile();
-  
-  if (profile.role !== "admin" && profile.role !== "broker" && profile.role !== "team_lead") {
-    throw new Error("Não tem permissão para atribuir leads");
-  }
 
-  // If team_lead, verify they can assign to this user
-  if (profile.role === "team_lead") {
+  const { data: lead, error: leadError } = await supabase
+    .from("leads")
+    .select("user_id, assigned_to")
+    .eq("id", leadId)
+    .single();
+
+  if (leadError) throw leadError;
+
+  const isOwnLead = (lead as any)?.user_id === profile.id || (lead as any)?.assigned_to === profile.id;
+
+  if (profile.role === "team_lead" && !isOwnLead) {
+    // Team lead a gerir uma lead que não é dele: só pode fazê-lo dentro da sua equipa
     const teamMemberIds = await getTeamMemberIds(profile.id);
     const canAssignToUser = userId === profile.id || teamMemberIds.includes(userId);
-    
     if (!canAssignToUser) {
       throw new Error("Não pode atribuir leads a utilizadores fora da sua equipa");
     }
+  } else if (profile.role !== "admin" && profile.role !== "broker" && !isOwnLead) {
+    throw new Error("Só pode transferir leads que lhe pertencem ou lhe estão atribuídas");
   }
 
   // Cast query builder to bypass type checking
   const query: any = supabase.from("leads");
-  
-  const { error } = await query
+
+  const { data: updated, error } = await query
     .update({ assigned_to: userId })
-    .eq("id", leadId);
+    .eq("id", leadId)
+    .select("id");
 
   if (error) throw error;
+  if (!updated || updated.length === 0) {
+    throw new Error("Não foi possível transferir a lead — sem permissão para esta operação.");
+  }
 
   // Invalidar caches relacionados
   CacheManager.invalidateLeadsRelated();
+};
+
+// Partilhar uma lead com outro utilizador, mantendo o assigned_to original
+export const shareLead = async (leadId: string, userId: string): Promise<void> => {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Não autenticado");
+
+  const { error } = await supabase
+    .from("lead_shares" as any)
+    .upsert(
+      { lead_id: leadId, shared_with_user_id: userId, shared_by_user_id: user.id },
+      { onConflict: "lead_id,shared_with_user_id" }
+    );
+
+  if (error) throw error;
+  CacheManager.invalidateLeadsRelated();
+};
+
+// Remover a partilha de uma lead com um utilizador
+export const unshareLead = async (leadId: string, userId: string): Promise<void> => {
+  const { error } = await supabase
+    .from("lead_shares" as any)
+    .delete()
+    .eq("lead_id", leadId)
+    .eq("shared_with_user_id", userId);
+
+  if (error) throw error;
+  CacheManager.invalidateLeadsRelated();
+};
+
+// Listar com quem uma lead está partilhada
+export const getLeadShares = async (leadId: string): Promise<{ id: string; shared_with_user_id: string; full_name: string | null; email: string | null }[]> => {
+  const { data, error } = await supabase
+    .from("lead_shares" as any)
+    .select("id, shared_with_user_id, profiles:shared_with_user_id(full_name, email)")
+    .eq("lead_id", leadId);
+
+  if (error) throw error;
+  return (data || []).map((row: any) => ({
+    id: row.id,
+    shared_with_user_id: row.shared_with_user_id,
+    full_name: row.profiles?.full_name || null,
+    email: row.profiles?.email || null,
+  }));
 };

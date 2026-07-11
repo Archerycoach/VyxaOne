@@ -21,7 +21,9 @@ export const getCurrentUserProfile = async () => {
   return profile;
 };
 
-// Get users that can be assigned leads (based on current user role)
+// Get users that can be assigned leads (based on current user role) — usado
+// pela configuração de atribuição automática de formulários Meta e por
+// workflows de automação, onde o âmbito por equipa continua a fazer sentido.
 export const getUsersForAssignment = async (): Promise<Profile[]> => {
   const profile = await getCurrentUserProfile();
 
@@ -40,10 +42,10 @@ export const getUsersForAssignment = async (): Promise<Profile[]> => {
       .select("id")
       .eq("team_lead_id", profile.id)
       .eq("role", "consultant");
-    
+
     const teamMemberIds = teamMembers?.map(m => m.id) || [];
     const assignableIds = [profile.id, ...teamMemberIds];
-    
+
     query = query.in("id", assignableIds);
   } else {
     // Agents can only see themselves (though they shouldn't have assign permission)
@@ -51,6 +53,22 @@ export const getUsersForAssignment = async (): Promise<Profile[]> => {
   }
 
   const { data, error } = await query.order("full_name", { ascending: true });
+
+  if (error) throw error;
+  return data || [];
+};
+
+// Qualquer utilizador ativo do sistema, para transferir/partilhar uma lead
+// própria com quem quiser (decisão explícita: sem restrição de equipa aqui).
+export const getAllActiveUsersForLeadTransfer = async (): Promise<Profile[]> => {
+  const profile = await getCurrentUserProfile();
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("is_active", true)
+    .neq("id", profile.id)
+    .order("full_name", { ascending: true });
 
   if (error) throw error;
   return data || [];

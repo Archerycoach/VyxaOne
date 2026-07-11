@@ -158,21 +158,23 @@ export function LeadDetailsDialog({
     getMessageSnippets().then(setSnippets).catch((err) => console.error("[LeadDetailsDialog] Erro ao carregar respostas rápidas:", err));
   }, [open]);
 
-  // Só broker/admin/team_lead podem reatribuir a lead a outro consultor.
+  // Broker/admin/team_lead podem reatribuir qualquer lead; qualquer
+  // utilizador pode transferir/partilhar uma lead que é sua (dono ou atribuído).
   useEffect(() => {
-    if (!open) return;
+    if (!open || !lead) return;
     (async () => {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
         const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
         const role = profile?.role;
-        setCanAssignLead(role === "broker" || role === "admin" || role === "team_lead");
+        const isOwnLead = (lead as any).user_id === user.id || (lead as any).assigned_to === user.id;
+        setCanAssignLead(role === "broker" || role === "admin" || role === "team_lead" || isOwnLead);
       } catch (err) {
         console.error("[LeadDetailsDialog] Erro ao verificar permissão de atribuição:", err);
       }
     })();
-  }, [open]);
+  }, [open, lead]);
 
   useEffect(() => {
     // Only fetch if dialog is open, we have a leadId, and we're not already fetching
@@ -950,7 +952,7 @@ export function LeadDetailsDialog({
                             className="h-6 px-2 text-xs text-purple-600 hover:text-purple-700"
                             onClick={() => setAssignDialogOpen(true)}
                           >
-                            Reatribuir
+                            Transferir/Partilhar
                           </Button>
                         )}
                       </div>
