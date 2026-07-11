@@ -9,9 +9,12 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Users, UserPlus, Shield, Award, User, Mail, Calendar, TrendingUp, Edit2, CheckCircle2 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Users, UserPlus, Shield, Award, User, Mail, Calendar, TrendingUp, Edit2, CheckCircle2, Share2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
+import { getTeamMode, setTeamMode, getLeadVisibilityGrants, grantLeadVisibility, revokeLeadVisibility } from "@/services/leadVisibilityService";
 
 interface TeamMember {
   user_id: string;
@@ -30,8 +33,15 @@ export default function TeamPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
-  
+
+  // Partilha de leads por equipa: modo equipa (todos veem tudo) + partilhas
+  // pontuais de um team lead para consultores específicos, por team lead.
+  const [teamModes, setTeamModes] = useState<Record<string, boolean>>({});
+  const [leadGrants, setLeadGrants] = useState<Record<string, Set<string>>>({});
+  const [savingSharing, setSavingSharing] = useState<Record<string, boolean>>({});
+
   // Invite dialog
   const [showInviteDialog, setShowInviteDialog] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
@@ -66,6 +76,7 @@ export default function TeamPage() {
 
       const role = profile?.role;
       setCurrentUserRole(role || null);
+      setCurrentUserId(session.user.id);
 
       // Only broker, admin, and team_lead can access this page
       if (role !== "broker" && role !== "admin" && role !== "team_lead") {
@@ -73,7 +84,8 @@ export default function TeamPage() {
         return;
       }
 
-      await loadTeamMembers();
+      const members = await loadTeamMembers();
+      await loadSharingState(members, role || "", session.user.id);
       setLoading(false);
     } catch (error: any) {
       console.error("Error checking auth:", error);
@@ -81,7 +93,7 @@ export default function TeamPage() {
     }
   };
 
-  const loadTeamMembers = async () => {
+  const loadTeamMembers = async (): Promise<TeamMember[]> => {
     try {
       const { data, error } = await supabase.rpc("get_team_overview" as any);
 
@@ -92,12 +104,93 @@ export default function TeamPage() {
           description: "Não foi possível carregar a equipa.",
           variant: "destructive"
         });
-        return;
+        return [];
       }
 
-      setTeamMembers((data as any[]) || []);
+      const members = (data as any[]) || [];
+      setTeamMembers(members);
+      return members;
     } catch (error) {
       console.error("Error in loadTeamMembers:", error);
+      return [];
+    }
+  };
+
+  // Só quem pode gerir a partilha desta equipa: o próprio team lead (para a
+  // sua equipa), ou o broker/admin (para qualquer equipa).
+  const canManageSharing = (teamLeadId: string) =>
+    currentUserRole === "broker" || currentUserRole === "admin" || currentUserId === teamLeadId;
+
+  const loadSharingState = async (members: TeamMember[], role: string, userId: string) => {
+    const teamLeadIds = members
+      .filter((m) => m.role === "team_lead")
+      .map((m) => m.user_id)
+      .filter((id) => role === "broker" || role === "admin" || id === userId);
+
+    if (teamLeadIds.length === 0) return;
+
+    try {
+      const modeEntries = await Promise.all(
+        teamLeadIds.map(async (id) => [id, await getTeamMode(id)] as const)
+      );
+      const grantEntries = await Promise.all(
+        teamLeadIds.map(async (id) => [id, new Set(await getLeadVisibilityGrants(id))] as const)
+      );
+
+      setTeamModes(Object.fromEntries(modeEntries));
+      setLeadGrants(Object.fromEntries(grantEntries));
+    } catch (error) {
+      console.error("Error loading lead sharing state:", error);
+    }
+  };
+
+  const handleToggleTeamMode = async (teamLeadId: string, enabled: boolean) => {
+    setSavingSharing((prev) => ({ ...prev, [teamLeadId]: true }));
+    try {
+      await setTeamMode(enabled, teamLeadId);
+      setTeamModes((prev) => ({ ...prev, [teamLeadId]: enabled }));
+      toast({
+        title: enabled ? "Modo Equipa ativado" : "Modo Equipa desativado",
+        description: enabled
+          ? "Todos os consultores desta equipa passam a ver as leads uns dos outros."
+          : "Cada consultor volta a ver apenas as suas próprias leads (e as partilhas individuais, se existirem).",
+      });
+    } catch (error: any) {
+      console.error("Error toggling team mode:", error);
+      toast({
+        title: "Erro",
+        description: error.message || "Não foi possível atualizar o Modo Equipa.",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingSharing((prev) => ({ ...prev, [teamLeadId]: false }));
+    }
+  };
+
+  const handleToggleGrant = async (teamLeadId: string, consultantId: string, checked: boolean) => {
+    const key = `${teamLeadId}:${consultantId}`;
+    setSavingSharing((prev) => ({ ...prev, [key]: true }));
+    try {
+      if (checked) {
+        await grantLeadVisibility(consultantId, teamLeadId);
+      } else {
+        await revokeLeadVisibility(consultantId, teamLeadId);
+      }
+      setLeadGrants((prev) => {
+        const next = new Set(prev[teamLeadId] || []);
+        if (checked) next.add(consultantId);
+        else next.delete(consultantId);
+        return { ...prev, [teamLeadId]: next };
+      });
+    } catch (error: any) {
+      console.error("Error toggling lead visibility grant:", error);
+      toast({
+        title: "Erro",
+        description: error.message || "Não foi possível atualizar a partilha.",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingSharing((prev) => ({ ...prev, [key]: false }));
     }
   };
 
@@ -525,6 +618,57 @@ export default function TeamPage() {
                     ))}
                   </TableBody>
                 </Table>
+              </CardContent>
+            )}
+            {groups[teamLead.user_id]?.length > 0 && canManageSharing(teamLead.user_id) && (
+              <CardContent className="border-t pt-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <Share2 className="h-4 w-4 text-muted-foreground" />
+                  <h4 className="text-sm font-semibold">Partilha de Leads da Equipa</h4>
+                </div>
+
+                <div className="flex items-center justify-between rounded-lg border p-3 mb-3">
+                  <div>
+                    <Label htmlFor={`team-mode-${teamLead.user_id}`} className="text-sm font-medium">
+                      Modo Equipa
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Todos os consultores desta equipa passam a ver as leads uns dos outros.
+                    </p>
+                  </div>
+                  <Switch
+                    id={`team-mode-${teamLead.user_id}`}
+                    checked={!!teamModes[teamLead.user_id]}
+                    disabled={!!savingSharing[teamLead.user_id]}
+                    onCheckedChange={(checked) => handleToggleTeamMode(teamLead.user_id, checked)}
+                  />
+                </div>
+
+                {!teamModes[teamLead.user_id] && (
+                  <div className="space-y-2">
+                    <p className="text-xs text-muted-foreground">
+                      Ou escolha individualmente quem pode ver as leads de {teamLead.full_name.split(" ")[0]}:
+                    </p>
+                    {groups[teamLead.user_id].map((consultant) => {
+                      const key = `${teamLead.user_id}:${consultant.user_id}`;
+                      return (
+                        <div key={consultant.user_id} className="flex items-center gap-2">
+                          <Checkbox
+                            id={`grant-${key}`}
+                            checked={leadGrants[teamLead.user_id]?.has(consultant.user_id) || false}
+                            disabled={!!savingSharing[key]}
+                            onCheckedChange={(checked) =>
+                              handleToggleGrant(teamLead.user_id, consultant.user_id, checked === true)
+                            }
+                          />
+                          <Label htmlFor={`grant-${key}`} className="text-sm font-normal cursor-pointer">
+                            {consultant.full_name} pode ver as minhas leads
+                          </Label>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </CardContent>
             )}
           </Card>

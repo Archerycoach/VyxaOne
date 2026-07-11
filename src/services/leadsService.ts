@@ -67,6 +67,42 @@ const getTeamMemberIds = async (teamLeadId: string): Promise<string[]> => {
   return (data || []).map(p => p.id);
 };
 
+// Para um consultor: donos adicionais cujas leads deve também poder ver —
+// team leads que lhe deram partilha explícita (lead_visibility_grants), e,
+// se o seu próprio team lead tiver ativado o "modo equipa", o team lead e
+// todos os colegas dessa equipa. Ver migração
+// 20260711140000_add_lead_visibility_sharing.sql — isto espelha, do lado do
+// cliente, o que get_visible_user_ids() já permite via RLS.
+const getSharedVisibilityUserIds = async (consultantId: string, teamLeadId: string | null): Promise<string[]> => {
+  const extraIds = new Set<string>();
+
+  const { data: grants, error: grantsError } = await supabase
+    .from("lead_visibility_grants" as any)
+    .select("team_lead_id")
+    .eq("consultant_id", consultantId);
+
+  if (grantsError) throw grantsError;
+  (grants || []).forEach((row: any) => extraIds.add(row.team_lead_id));
+
+  if (teamLeadId) {
+    const { data: teamLeadProfile, error: teamLeadError } = await supabase
+      .from("profiles" as any)
+      .select("team_shares_all_leads")
+      .eq("id", teamLeadId)
+      .single();
+
+    if (teamLeadError) throw teamLeadError;
+
+    if ((teamLeadProfile as any)?.team_shares_all_leads) {
+      extraIds.add(teamLeadId);
+      const siblingIds = await getTeamMemberIds(teamLeadId);
+      siblingIds.forEach((id) => extraIds.add(id));
+    }
+  }
+
+  return Array.from(extraIds);
+};
+
 // Get all leads with proper visibility rules
 export const getLeads = async (useCache = false) => {
   try {
@@ -108,9 +144,12 @@ export const getLeads = async (useCache = false) => {
       console.log("[leadsService] Team lead - visible user IDs:", visibleUserIds);
       query = query.in("assigned_to", visibleUserIds);
     } else {
-      // Agents see only their own leads
-      console.log("[leadsService] Agent - fetching own leads only");
-      query = query.eq("assigned_to", profile.id);
+      // Agents see their own leads, plus any leads shared with them (ver
+      // migração 20260711140000_add_lead_visibility_sharing.sql).
+      const sharedIds = await getSharedVisibilityUserIds(profile.id, profile.team_lead_id);
+      const visibleUserIds = [profile.id, ...sharedIds];
+      console.log("[leadsService] Agent - visible user IDs:", visibleUserIds);
+      query = query.in("assigned_to", visibleUserIds);
     }
 
     const { data, error } = await query.order("created_at", { ascending: false });
@@ -119,7 +158,7 @@ export const getLeads = async (useCache = false) => {
       console.log("[leadsService] ❌ Error fetching leads:", error);
       throw error;
     }
-    
+
     const leads = data || [];
     console.log("[leadsService] ✅ Leads fetched successfully:", leads.length);
     
@@ -449,8 +488,10 @@ export const getArchivedLeads = async (useCache = false): Promise<Lead[]> => {
       const visibleUserIds = [profile.id, ...teamMemberIds];
       query = query.in("assigned_to", visibleUserIds);
     } else {
-      // Agents see only their own archived leads
-      query = query.eq("assigned_to", profile.id);
+      // Agents see their own archived leads, plus any shared with them.
+      const sharedIds = await getSharedVisibilityUserIds(profile.id, profile.team_lead_id);
+      const visibleUserIds = [profile.id, ...sharedIds];
+      query = query.in("assigned_to", visibleUserIds);
     }
 
     const { data, error } = await query.order("archived_at", { ascending: false });
