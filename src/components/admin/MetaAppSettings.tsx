@@ -62,6 +62,10 @@ export function MetaAppSettings() {
   const { toast } = useToast();
 
   useEffect(() => {
+    // O Webhook URL é sempre o mesmo endpoint fixo da app — mostra-se logo,
+    // independentemente de o carregamento de loadSettings() abaixo ter ou
+    // não uma configuração já guardada para preencher os outros campos.
+    setSettings((prev) => ({ ...prev, webhook_url: `${window.location.origin}/api/meta/webhook` }));
     loadSettings();
     loadStats();
     loadSyncHistory();
@@ -70,6 +74,7 @@ export function MetaAppSettings() {
   const loadSettings = async () => {
     try {
       setLoading(true);
+      const webhookUrl = `${window.location.origin}/api/meta/webhook`;
       const data = await getMetaAppSettings();
       if (data) {
         setSettings({
@@ -77,11 +82,11 @@ export function MetaAppSettings() {
           app_id: data.app_id || "",
           app_secret: MASKED_SECRET,
           verify_token: MASKED_SECRET,
-          webhook_url: `${window.location.origin}/api/meta/webhook`,
+          webhook_url: webhookUrl,
           login_config_id: data.login_config_id || "",
           is_active: data.is_active || false
         });
-        
+
         if (data.is_active && data.app_id) {
           setConnectionStatus("connected");
         }
@@ -129,6 +134,8 @@ export function MetaAppSettings() {
             });
           }
         }
+      } else {
+        setSettings((prev) => ({ ...prev, webhook_url: webhookUrl }));
       }
     } catch (error) {
       console.error("Error loading Meta settings:", error);
