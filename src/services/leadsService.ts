@@ -205,6 +205,30 @@ export const getAllLeads = async (useCache = false): Promise<Lead[]> => {
   return getLeads(useCache);
 };
 
+// Leads que o utilizador atual criou/possui (user_id) mas que já transferiu
+// para outra pessoa (assigned_to diferente de si). Serve para o dono original
+// as encontrar e poder recuperá-las. A RLS já permite ver estas leads porque
+// user_id continua a ser o próprio.
+export const getTransferredLeads = async (): Promise<Lead[]> => {
+  const profile = await getCurrentUserProfile();
+
+  const { data, error } = await supabase
+    .from("leads")
+    .select(`
+      *,
+      contact:contacts!leads_contact_id_fkey(id, name, email, phone),
+      assigned_user:profiles!leads_assigned_to_fkey(id, full_name, email)
+    `)
+    .is("archived_at", null)
+    .eq("user_id", profile.id)
+    .not("assigned_to", "is", null)
+    .neq("assigned_to", profile.id)
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+  return (data || []) as unknown as Lead[];
+};
+
 // Get single lead with full details
 export const getLead = async (id: string): Promise<LeadWithDetails | null> => {
   const { data, error } = await supabase
@@ -663,43 +687,42 @@ export const getLeadStats = async () => {
   return stats;
 };
 
-// Assign (transfer) lead to another user
-export const assignLead = async (leadId: string, userId: string): Promise<void> => {
-  const profile = await getCurrentUserProfile();
+// Assign (transfer) lead to another user. Passa por uma função SECURITY
+// DEFINER (transfer_lead) porque o WITH CHECK da RLS de UPDATE rejeitaria a
+// transferência para alguém fora da visibilidade de quem transfere — ver
+// migração 20260711220000_transfer_lead_function.sql. A função valida o
+// acesso à lead atual antes de mudar o assigned_to.
+export const assignLead = async (leadId: string, userId: string | null): Promise<void> => {
+  // "unassigned" (usado pelo seletor da grelha) significa deixar sem atribuição.
+  const newAssignedTo = userId && userId !== "unassigned" ? userId : null;
 
-  const { data: lead, error: leadError } = await supabase
+  // Estado anterior, para registar quem transferiu para quem (auditoria).
+  const { data: previous } = await supabase
     .from("leads")
-    .select("user_id, assigned_to")
+    .select("assigned_to")
     .eq("id", leadId)
     .single();
 
-  if (leadError) throw leadError;
+  const { error } = await supabase.rpc("transfer_lead" as any, {
+    p_lead_id: leadId,
+    p_new_assigned_to: newAssignedTo,
+  });
 
-  const isOwnLead = (lead as any)?.user_id === profile.id || (lead as any)?.assigned_to === profile.id;
-
-  if (profile.role === "team_lead" && !isOwnLead) {
-    // Team lead a gerir uma lead que não é dele: só pode fazê-lo dentro da sua equipa
-    const teamMemberIds = await getTeamMemberIds(profile.id);
-    const canAssignToUser = userId === profile.id || teamMemberIds.includes(userId);
-    if (!canAssignToUser) {
-      throw new Error("Não pode atribuir leads a utilizadores fora da sua equipa");
+  if (error) {
+    if (error.message?.includes("not_authorized")) {
+      throw new Error("Não tem permissão para transferir esta lead.");
     }
-  } else if (profile.role !== "admin" && profile.role !== "broker" && !isOwnLead) {
-    throw new Error("Só pode transferir leads que lhe pertencem ou lhe estão atribuídas");
+    throw error;
   }
 
-  // Cast query builder to bypass type checking
-  const query: any = supabase.from("leads");
-
-  const { data: updated, error } = await query
-    .update({ assigned_to: userId })
-    .eq("id", leadId)
-    .select("id");
-
-  if (error) throw error;
-  if (!updated || updated.length === 0) {
-    throw new Error("Não foi possível transferir a lead — sem permissão para esta operação.");
-  }
+  // Registo de auditoria: quem fez a reatribuição fica no lead_activity_log.
+  logLeadActivity({
+    leadId,
+    action: "reassigned",
+    fieldName: "assigned_to",
+    oldValue: (previous as any)?.assigned_to ?? null,
+    newValue: newAssignedTo,
+  });
 
   // Invalidar caches relacionados
   CacheManager.invalidateLeadsRelated();

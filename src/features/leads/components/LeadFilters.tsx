@@ -10,6 +10,8 @@ interface LeadFiltersProps {
   onFilterChange: (value: string) => void;
   showArchived: boolean;
   onToggleArchived: () => void;
+  showTransferred: boolean;
+  onToggleTransferred: () => void;
 }
 
 export function LeadFilters({
@@ -19,6 +21,8 @@ export function LeadFilters({
   onFilterChange,
   showArchived,
   onToggleArchived,
+  showTransferred,
+  onToggleTransferred,
 }: LeadFiltersProps) {
   return (
     <div className="space-y-6">
@@ -54,7 +58,14 @@ export function LeadFilters({
         >
           Vendedores
         </Button>
-        <div className="ml-auto">
+        <div className="ml-auto flex gap-2">
+          <Button
+            variant={showTransferred ? "default" : "outline"}
+            onClick={onToggleTransferred}
+            className={showTransferred ? "bg-purple-600 hover:bg-purple-700" : ""}
+          >
+            {showTransferred ? "Ver Ativas" : "Transferidas por mim"}
+          </Button>
           <Button
             variant={showArchived ? "default" : "outline"}
             onClick={onToggleArchived}

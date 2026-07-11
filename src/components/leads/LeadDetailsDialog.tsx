@@ -1299,11 +1299,16 @@ export function LeadDetailsDialog({
                       <CardContent className="pt-4">
                         <div className="flex items-start justify-between">
                           <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-2">
+                            <div className="flex items-center gap-2 mb-2 flex-wrap">
                               <Badge>{interaction.interaction_type}</Badge>
                               <span className="text-sm text-gray-500">
                                 {formatDate(interaction.interaction_date)}
                               </span>
+                              {(interaction as any).user && (
+                                <span className="text-sm text-gray-500">
+                                  · por {(interaction as any).user.full_name || (interaction as any).user.email}
+                                </span>
+                              )}
                             </div>
                             <p className="text-sm text-gray-700">{interaction.content || "-"}</p>
                           </div>
@@ -1344,11 +1349,16 @@ export function LeadDetailsDialog({
                       <CardContent className="pt-4">
                         <div className="flex items-start justify-between">
                           <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-2">
+                            <div className="flex items-center gap-2 mb-2 flex-wrap">
                               <span className="text-sm font-medium">Nota</span>
                               <span className="text-sm text-gray-500">
                                 {formatDate(note.created_at)}
                               </span>
+                              {(note as any).author && (
+                                <span className="text-sm text-gray-500">
+                                  · por {(note as any).author.full_name || (note as any).author.email}
+                                </span>
+                              )}
                             </div>
                             <p className="text-sm text-gray-700 whitespace-pre-wrap">
                               {note.note}

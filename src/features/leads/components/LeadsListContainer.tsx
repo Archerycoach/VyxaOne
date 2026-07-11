@@ -9,6 +9,16 @@ import { LeadDetailsDialog } from "@/components/leads/LeadDetailsDialog";
 import { AssignLeadDialog } from "@/components/leads/AssignLeadDialog";
 import { QuickContactDialog } from "@/components/leads/QuickContactDialog";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { LayoutGrid, List, Edit, MoreVertical, Eye, Mail, MessageSquare, MessageCircle, CalendarDays, StickyNote, UserCheck, Phone, Trash2, Users, ArrowDownAZ, ArrowUpZA, Download } from "lucide-react";
 import {
   DropdownMenu,
@@ -64,8 +74,19 @@ export function LeadsListContainer({
 
   // Filter states
   const [showArchived, setShowArchived] = useState(false);
+  const [showTransferred, setShowTransferred] = useState(false);
   const [sortField, setSortField] = useState<string>("created_at");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+
+  // Arquivadas e transferidas são vistas mutuamente exclusivas com a lista ativa.
+  const toggleArchived = () => {
+    setShowArchived((prev) => !prev);
+    setShowTransferred(false);
+  };
+  const toggleTransferred = () => {
+    setShowTransferred((prev) => !prev);
+    setShowArchived(false);
+  };
   
   // View mode state with localStorage persistence
   const [viewMode, setViewMode] = useState<"grid" | "list">(() => {
@@ -117,8 +138,8 @@ export function LeadsListContainer({
     }
   };
 
-  // Fetch leads data with archived support
-  const { leads, isLoading, error, refetch } = useLeads(showArchived);
+  // Fetch leads data with archived / transferred support
+  const { leads, isLoading, error, refetch } = useLeads(showArchived, showTransferred);
 
   // Stabilize refetch callback
   const stableRefetch = async () => {
@@ -358,6 +379,22 @@ export function LeadsListContainer({
     await assign(selectedLead.id, selectedAgent);
     setAssignDialogOpen(false);
     setSelectedAgent("");
+  };
+
+  // Recuperar uma lead transferida: volta a ficar atribuída ao dono original
+  // (o utilizador atual). user_id nunca mudou, por isso a RLS já permite.
+  const [reclaimTarget, setReclaimTarget] = useState<LeadWithContacts | null>(null);
+  const [isReclaiming, setIsReclaiming] = useState(false);
+  const handleReclaim = async () => {
+    if (!reclaimTarget || !userId) return;
+    setIsReclaiming(true);
+    try {
+      await assign(reclaimTarget.id, userId);
+      setReclaimTarget(null);
+      await debouncedRefetch();
+    } finally {
+      setIsReclaiming(false);
+    }
   };
 
   const handleTask = (lead: LeadWithContacts) => {
@@ -705,7 +742,7 @@ export function LeadsListContainer({
 
   return (
     <div className="space-y-6">
-      {!showArchived && (
+      {!showArchived && !showTransferred && (
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
           <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm flex flex-col items-center justify-center transition-all hover:shadow-md">
             <span className="text-xs text-gray-500 font-medium uppercase tracking-wider mb-1">Total</span>
@@ -755,7 +792,9 @@ export function LeadsListContainer({
           filterType={filterType}
           onFilterChange={setFilterType}
           showArchived={showArchived}
-          onToggleArchived={() => setShowArchived(!showArchived)}
+          onToggleArchived={toggleArchived}
+          showTransferred={showTransferred}
+          onToggleTransferred={toggleTransferred}
         />
 
         <div className="flex gap-4 items-center flex-wrap sm:flex-nowrap">
@@ -818,7 +857,39 @@ export function LeadsListContainer({
         </div>
       </div>
 
-      {filteredLeads.length === 0 ? (
+      {showTransferred ? (
+        sortedLeads.length === 0 ? (
+          <div className="text-center py-12 text-gray-500">
+            <p>Não transferiu nenhuma lead. As leads que transferir para outros utilizadores aparecem aqui, para as poder recuperar.</p>
+          </div>
+        ) : (
+          <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-200">
+            {sortedLeads.map((lead) => (
+              <div key={lead.id} className="flex items-center justify-between gap-4 px-4 py-3">
+                <div
+                  className="min-w-0 flex-1 cursor-pointer"
+                  onClick={() => handleViewDetails(lead)}
+                >
+                  <p className="font-medium text-gray-900 truncate">{lead.name}</p>
+                  <p className="text-sm text-gray-500 truncate">
+                    Atribuída a {lead.assigned_user?.full_name || lead.assigned_user?.email || "outro utilizador"}
+                    {lead.email ? ` · ${lead.email}` : ""}
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0 text-blue-600 border-blue-200 hover:bg-blue-50"
+                  onClick={() => setReclaimTarget(lead)}
+                >
+                  <UserCheck className="h-4 w-4 mr-1" />
+                  Recuperar
+                </Button>
+              </div>
+            ))}
+          </div>
+        )
+      ) : filteredLeads.length === 0 ? (
         <div className="text-center py-12 text-gray-500">
           {searchTerm || filterType !== "all" ? (
             <p>Nenhum lead encontrado com os filtros aplicados.</p>
@@ -1131,6 +1202,24 @@ export function LeadsListContainer({
           onSuccess={() => {}}
         />
       )}
+
+      <AlertDialog open={reclaimTarget !== null} onOpenChange={(open) => !open && setReclaimTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Recuperar lead</AlertDialogTitle>
+            <AlertDialogDescription>
+              A lead &quot;{reclaimTarget?.name}&quot; vai voltar a ficar atribuída a si, deixando de estar
+              atribuída a {reclaimTarget?.assigned_user?.full_name || reclaimTarget?.assigned_user?.email || "quem a tem atualmente"}.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isReclaiming}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleReclaim} disabled={isReclaiming}>
+              {isReclaiming ? "A recuperar..." : "Recuperar"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

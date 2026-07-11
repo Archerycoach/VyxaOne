@@ -26,6 +26,11 @@ export interface InteractionWithDetails extends Interaction {
     title: string;
     reference_code: string | null;
   } | null;
+  user?: {
+    id: string;
+    full_name: string | null;
+    email: string | null;
+  } | null;
 }
 
 /**
@@ -93,6 +98,11 @@ export async function getInteractionsByLead(leadId: string): Promise<Interaction
         id,
         title,
         reference_code
+      ),
+      user:profiles!interactions_user_id_fkey (
+        id,
+        full_name,
+        email
       )
     `)
     .eq("lead_id", leadId)
@@ -103,11 +113,12 @@ export async function getInteractionsByLead(leadId: string): Promise<Interaction
     throw new Error("Failed to fetch lead interactions");
   }
 
-  return (data || []).map((interaction) => ({
+  return (data || []).map((interaction: any) => ({
     ...interaction,
     lead: interaction.leads || null,
     contact: interaction.contacts || null,
     property: interaction.properties || null,
+    user: interaction.user || null,
   }));
 }
 

@@ -11,6 +11,7 @@ export interface LeadNote {
   lead_id: string | null;
   created_by: string;
   google_event_id?: string | null;
+  author?: { full_name: string | null; email: string | null } | null;
 }
 
 export interface LeadNoteInsert {
@@ -32,7 +33,7 @@ export interface LeadNoteUpdate {
 export async function getNotesByLead(leadId: string): Promise<LeadNote[]> {
   const { data, error } = await supabase
     .from("lead_notes" as any)
-    .select("*")
+    .select("*, author:profiles!lead_notes_created_by_fkey(full_name, email)")
     .eq("lead_id", leadId)
     .order("created_at", { ascending: false });
 
