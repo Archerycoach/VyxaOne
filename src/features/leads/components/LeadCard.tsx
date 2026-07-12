@@ -542,14 +542,13 @@ export function LeadCard({
         </div>
 
         <div className="text-xs text-gray-500 mt-3 pt-2 border-t">
-          {lead.last_contact_date ? (
-            <>
-              <div className="font-medium text-blue-700">📞 Último contacto: {formatDate(lead.last_contact_date)}</div>
-              <div className="mt-1 text-gray-400">📅 Criado: {formatDate(lead.created_at)}</div>
-            </>
-          ) : (
-            <>📅 {formatDate(lead.created_at)}</>
+          <div className="font-medium text-blue-700">
+            🔄 Última ação: {formatDate(lead.last_activity_date || lead.last_contact_date || lead.created_at)}
+          </div>
+          {lead.last_contact_date && (
+            <div className="mt-1 text-gray-500">📞 Último contacto: {formatDate(lead.last_contact_date)}</div>
           )}
+          <div className="mt-1 text-gray-400">📅 Criado: {formatDate(lead.created_at)}</div>
         </div>
 
         <QuickContactDialog
@@ -846,14 +845,13 @@ export function LeadCard({
       )}
 
       <div className="text-xs text-gray-500">
-        {lead.last_contact_date ? (
-          <>
-            <div className="font-medium text-blue-700 mb-1">📞 Último contacto: {formatDate(lead.last_contact_date)}</div>
-            <div className="text-gray-400">📅 Criado: {formatDate(lead.created_at)}</div>
-          </>
-        ) : (
-          <>📅 Criado a {formatDate(lead.created_at)}</>
+        <div className="font-medium text-blue-700 mb-1">
+          🔄 Última ação: {formatDate(lead.last_activity_date || lead.last_contact_date || lead.created_at)}
+        </div>
+        {lead.last_contact_date && (
+          <div className="text-gray-500 mb-1">📞 Último contacto: {formatDate(lead.last_contact_date)}</div>
         )}
+        <div className="text-gray-400">📅 Criado: {formatDate(lead.created_at)}</div>
       </div>
 
       <QuickContactDialog

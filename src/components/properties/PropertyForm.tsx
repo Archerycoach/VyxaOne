@@ -16,6 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { UserCombobox } from "@/components/ui/user-combobox";
 import { useToast } from "@/hooks/use-toast";
 import { createProperty, updateProperty } from "@/services/propertiesService";
 import { supabase } from "@/integrations/supabase/client";
@@ -397,23 +398,14 @@ export function PropertyForm({
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="lead_id">Lead Associada (opcional)</Label>
-              <Select
+              <UserCombobox
+                users={[{ id: "none", name: "Nenhuma", email: "" }, ...leads.map((l) => ({ id: l.id, name: l.name, email: l.email || "" }))]}
                 value={formData.lead_id}
-                onValueChange={(value) => setFormData({ ...formData, lead_id: value, contact_id: value === "none" ? "none" : "none" })}
+                onChange={(value) => setFormData({ ...formData, lead_id: value, contact_id: value !== "none" ? "none" : formData.contact_id })}
+                placeholder={loadingData ? "A carregar..." : "Selecione uma lead"}
+                emptyText="Nenhuma lead encontrada"
                 disabled={loadingData}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder={loadingData ? "A carregar..." : "Selecione uma lead"} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Nenhuma</SelectItem>
-                  {leads.map((lead) => (
-                    <SelectItem key={lead.id} value={lead.id}>
-                      {lead.name} {lead.email ? `(${lead.email})` : ""}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              />
             </div>
             
             <div className="space-y-2">
@@ -430,23 +422,14 @@ export function PropertyForm({
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="contact_id">Contacto Associado (opcional)</Label>
-              <Select
+              <UserCombobox
+                users={[{ id: "none", name: "Nenhum", email: "" }, ...contacts.map((c) => ({ id: c.id, name: c.name, email: c.email || "" }))]}
                 value={formData.contact_id}
-                onValueChange={(value) => setFormData({ ...formData, contact_id: value, lead_id: value === "none" ? "none" : "none" })}
+                onChange={(value) => setFormData({ ...formData, contact_id: value, lead_id: value !== "none" ? "none" : formData.lead_id })}
+                placeholder={loadingData ? "A carregar..." : "Selecione um contacto"}
+                emptyText="Nenhum contacto encontrado"
                 disabled={loadingData}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder={loadingData ? "A carregar..." : "Selecione um contacto"} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Nenhum</SelectItem>
-                  {contacts.map((contact) => (
-                    <SelectItem key={contact.id} value={contact.id}>
-                      {contact.name} {contact.email ? `(${contact.email})` : ""}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              />
             </div>
           </div>
 
