@@ -10,7 +10,7 @@ import { Loader2, MapPin, BedDouble, Bath, Ruler, Phone, Mail, CheckCircle2 } fr
 interface LandingData {
   type: "property" | "development";
   entity: Record<string, any>;
-  agent: { name: string | null; email: string | null; phone: string | null } | null;
+  agent: { name: string | null; email: string | null; phone: string | null; avatar: string | null } | null;
 }
 
 function formatPrice(value?: number | null) {
@@ -155,7 +155,13 @@ export default function LandingPage() {
                     <>
                       <h2 className="font-semibold text-slate-900 mb-1">Tenho interesse</h2>
                       {data.agent?.name && (
-                        <p className="text-sm text-slate-500 mb-4">Fale com {data.agent.name}</p>
+                        <div className="flex items-center gap-3 mb-4">
+                          {data.agent.avatar && (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={data.agent.avatar} alt={data.agent.name} className="h-10 w-10 rounded-full object-cover" />
+                          )}
+                          <p className="text-sm text-slate-500">Fale com {data.agent.name}</p>
+                        </div>
                       )}
                       <form onSubmit={handleSubmit} className="space-y-3">
                         {/* honeypot escondido */}

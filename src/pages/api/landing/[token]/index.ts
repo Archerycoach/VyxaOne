@@ -48,7 +48,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   // Contacto do agente responsável (o utilizador dono do registo).
   const { data: agent } = await (supabaseAdmin.from("profiles") as any)
-    .select("full_name, email, phone")
+    .select("full_name, email, phone, avatar_url")
     .eq("id", entity.user_id)
     .maybeSingle();
 
@@ -69,6 +69,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   return res.status(200).json({
     type: entityType,
     entity: safe,
-    agent: agent ? { name: agent.full_name, email: agent.email, phone: agent.phone } : null,
+    agent: agent ? { name: agent.full_name, email: agent.email, phone: agent.phone, avatar: agent.avatar_url } : null,
   });
 }

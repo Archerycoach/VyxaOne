@@ -6,8 +6,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
-import { ArrowLeft, User, Lock, Building2, Bell, Save, Loader2, Mail, Facebook, Calendar, Bot, Activity, Zap, FileText, Globe, Sparkles, CheckCircle2, XCircle, MessageCircle, Trash2, Kanban } from "lucide-react";
+import { ArrowLeft, User, Lock, Building2, Bell, Save, Loader2, Mail, Facebook, Calendar, Bot, Activity, Zap, FileText, Globe, Sparkles, CheckCircle2, XCircle, MessageCircle, Trash2, Kanban, ImagePlus } from "lucide-react";
 import { getUserProfile, updateUserProfile } from "@/services/profileService";
+import { updateUserAvatar } from "@/services/imageUploadService";
 import { updatePassword, getSession, signOut } from "@/services/authService";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -21,6 +22,7 @@ import { ReactivationTemplatesManagement } from "@/components/settings/Reactivat
 import { NotionAccountConnection } from "@/components/settings/NotionAccountConnection";
 import { PipelineStagesSettings } from "@/components/settings/PipelineStagesSettings";
 import { TwoFactorSettings } from "@/components/settings/TwoFactorSettings";
+import { PersonalLandingSettings } from "@/components/settings/PersonalLandingSettings";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
 
 const REQUIRED_GOOGLE_SCOPES = [
@@ -61,6 +63,28 @@ export default function Settings() {
   // Daily Digest Settings
   const [digestSettings, setDigestSettings] = useState<any>(null);
   const [loadingDigest, setLoadingDigest] = useState(false);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast({ title: "Erro", description: "Selecione uma imagem.", variant: "destructive" });
+      return;
+    }
+    setAvatarUploading(true);
+    try {
+      const result = await updateUserAvatar(file);
+      if (!result.success || !result.url) throw new Error(result.error || "Falha no upload");
+      setProfile((prev: any) => (prev ? { ...prev, avatar_url: result.url } : prev));
+      toast({ title: "Foto de perfil atualizada" });
+    } catch (err: any) {
+      toast({ title: "Erro ao carregar foto", description: err.message, variant: "destructive" });
+    } finally {
+      setAvatarUploading(false);
+    }
+  };
   
   // Auth check
   const [authChecking, setAuthChecking] = useState(true);
@@ -420,6 +444,10 @@ export default function Settings() {
               <Building2 className="h-4 w-4 mr-2" />
               Empresa
             </TabsTrigger>
+            <TabsTrigger value="personal-landing">
+              <Globe className="h-4 w-4 mr-2" />
+              Landing Pessoal
+            </TabsTrigger>
             <TabsTrigger value="smtp">
               <Mail className="h-4 w-4 mr-2" />
               SMTP
@@ -477,6 +505,26 @@ export default function Settings() {
                 <CardDescription>Atualize os seus dados de perfil</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
+                <div className="flex items-center gap-4">
+                  {profile?.avatar_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={profile.avatar_url} alt="Foto de perfil" className="h-16 w-16 rounded-full object-cover border" />
+                  ) : (
+                    <div className="h-16 w-16 rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
+                      <User className="h-7 w-7" />
+                    </div>
+                  )}
+                  <div>
+                    <Label className="block mb-1">Foto de Perfil</Label>
+                    <label className={`inline-flex items-center gap-2 text-sm px-3 py-1.5 border rounded-md cursor-pointer hover:bg-slate-50 ${avatarUploading ? "opacity-50 pointer-events-none" : ""}`}>
+                      {avatarUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
+                      {avatarUploading ? "A carregar..." : "Carregar foto"}
+                      <input type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} disabled={avatarUploading} />
+                    </label>
+                    <p className="text-xs text-slate-500 mt-1">Aparece nas landing pages dos seus imóveis.</p>
+                  </div>
+                </div>
+
                 <div className="space-y-2">
                   <Label>Nome Completo</Label>
                   <Input 
@@ -600,6 +648,10 @@ export default function Settings() {
             <div className="mt-6">
               <TwoFactorSettings />
             </div>
+          </TabsContent>
+
+          <TabsContent value="personal-landing">
+            <PersonalLandingSettings />
           </TabsContent>
 
           <TabsContent value="company">

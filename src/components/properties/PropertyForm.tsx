@@ -20,9 +20,10 @@ import { UserCombobox } from "@/components/ui/user-combobox";
 import { useToast } from "@/hooks/use-toast";
 import { createProperty, updateProperty } from "@/services/propertiesService";
 import { supabase } from "@/integrations/supabase/client";
-import { Wand2, Globe, Copy, Loader2 } from "lucide-react";
+import { Wand2, Globe, Copy, Loader2, ImagePlus, X } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { getOrCreateLandingLink, setLandingPublished as apiSetLandingPublished, getLandingState } from "@/services/landingService";
+import { addPropertyImage, removePropertyImage } from "@/services/imageUploadService";
 import type { Property } from "@/types";
 
 // Tipos simplificados para os seletores
@@ -91,6 +92,58 @@ export function PropertyForm({
   const [landingPublished, setLandingPublished] = useState(false);
   const [landingLink, setLandingLink] = useState<string>("");
   const [landingBusy, setLandingBusy] = useState(false);
+
+  // Galeria de fotos do imóvel (para a landing page). Máx. 5.
+  const [gallery, setGallery] = useState<string[]>([]);
+  const [galleryBusy, setGalleryBusy] = useState(false);
+
+  useEffect(() => {
+    if (open && property?.id) {
+      setGallery((property as any).images || []);
+    } else {
+      setGallery([]);
+    }
+  }, [open, property?.id]);
+
+  const handleGalleryUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !property?.id) return;
+    if (gallery.length >= 5) {
+      toast({ title: "Limite atingido", description: "Máximo de 5 fotos por imóvel.", variant: "destructive" });
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      toast({ title: "Erro", description: "Selecione uma imagem.", variant: "destructive" });
+      return;
+    }
+    setGalleryBusy(true);
+    try {
+      const result = await addPropertyImage(file, property.id, false);
+      if (!result.success || !result.url) throw new Error(result.error || "Falha no upload");
+      setGallery((prev) => [...prev, result.url!]);
+      toast({ title: "Foto adicionada" });
+    } catch (err: any) {
+      toast({ title: "Erro ao adicionar foto", description: err.message, variant: "destructive" });
+    } finally {
+      setGalleryBusy(false);
+    }
+  };
+
+  const handleGalleryRemove = async (url: string) => {
+    if (!property?.id) return;
+    setGalleryBusy(true);
+    try {
+      const result = await removePropertyImage(property.id, url, false);
+      if (!result.success) throw new Error(result.error || "Falha ao remover");
+      setGallery((prev) => prev.filter((u) => u !== url));
+      toast({ title: "Foto removida" });
+    } catch (err: any) {
+      toast({ title: "Erro ao remover foto", description: err.message, variant: "destructive" });
+    } finally {
+      setGalleryBusy(false);
+    }
+  };
 
   useEffect(() => {
     if (open && property?.id) {
@@ -617,6 +670,39 @@ export function PropertyForm({
               rows={4}
             />
           </div>
+
+          {property?.id && (
+            <div className="border rounded-lg p-4 space-y-3">
+              <Label className="flex items-center gap-2 text-base">
+                <ImagePlus className="h-4 w-4 text-blue-600" />
+                Fotos do imóvel (máx. 5)
+              </Label>
+              <p className="text-sm text-muted-foreground">Estas fotos aparecem na landing page pública.</p>
+              <div className="flex flex-wrap gap-3">
+                {gallery.map((url) => (
+                  <div key={url} className="relative h-24 w-24 rounded-md overflow-hidden border group">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={url} alt="Foto do imóvel" className="h-full w-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => handleGalleryRemove(url)}
+                      disabled={galleryBusy}
+                      className="absolute top-1 right-1 bg-black/60 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+                {gallery.length < 5 && (
+                  <label className={`h-24 w-24 rounded-md border-2 border-dashed flex flex-col items-center justify-center cursor-pointer text-slate-400 hover:border-blue-400 hover:text-blue-500 ${galleryBusy ? "opacity-50 pointer-events-none" : ""}`}>
+                    {galleryBusy ? <Loader2 className="h-5 w-5 animate-spin" /> : <ImagePlus className="h-5 w-5" />}
+                    <span className="text-xs mt-1">Adicionar</span>
+                    <input type="file" accept="image/*" className="hidden" onChange={handleGalleryUpload} disabled={galleryBusy} />
+                  </label>
+                )}
+              </div>
+            </div>
+          )}
 
           {property?.id && (
             <div className="border rounded-lg p-4 bg-slate-50 space-y-3">
