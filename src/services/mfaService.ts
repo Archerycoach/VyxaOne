@@ -23,8 +23,10 @@ export const listVerifiedTotpFactors = async (): Promise<{ id: string; friendlyN
 
 // Inicia a inscrição de um novo fator TOTP. Devolve o QR/segredo para o
 // utilizador registar na app autenticadora. Só fica ativo depois de
-// verifyTotpEnrollment com um código válido.
-export const enrollTotp = async (friendlyName = "Autenticador"): Promise<TotpEnrollment> => {
+// verifyTotpEnrollment com um código válido. `issuer` é o nome mostrado na
+// app autenticadora (ex: "Vyxa One") — sem ele, o QR mostra um valor sem
+// significado.
+export const enrollTotp = async (issuer = "Vyxa One", friendlyName = "Autenticador"): Promise<TotpEnrollment> => {
   // Limpar qualquer fator "unverified" pendente de uma tentativa anterior,
   // senão o Supabase recusa nova inscrição com o mesmo nome.
   const { data: existing } = await supabase.auth.mfa.listFactors();
@@ -36,6 +38,7 @@ export const enrollTotp = async (friendlyName = "Autenticador"): Promise<TotpEnr
   const { data, error } = await supabase.auth.mfa.enroll({
     factorType: "totp",
     friendlyName,
+    issuer,
   });
   if (error) throw error;
 

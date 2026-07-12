@@ -23,6 +23,7 @@ import {
   unenrollFactor,
   type TotpEnrollment,
 } from "@/services/mfaService";
+import { frontendSettingsService } from "@/services/frontendSettingsService";
 
 export function TwoFactorSettings() {
   const { toast } = useToast();
@@ -59,7 +60,15 @@ export function TwoFactorSettings() {
   const handleStartEnroll = async () => {
     setEnrolling(true);
     try {
-      const result = await enrollTotp();
+      // Nome mostrado na app autenticadora = nome da aplicação (definições).
+      let appName = "Vyxa One";
+      try {
+        const settings = await frontendSettingsService.getPublicSettings();
+        if (settings?.app_name) appName = settings.app_name;
+      } catch {
+        /* usa o nome por defeito */
+      }
+      const result = await enrollTotp(appName);
       setEnrollment(result);
       setCode("");
     } catch (err: any) {
