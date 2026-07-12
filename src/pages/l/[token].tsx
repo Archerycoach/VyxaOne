@@ -1,11 +1,11 @@
-import { useEffect, useState } from "react";
-import { useRouter } from "next/router";
+import { useState } from "react";
 import Head from "next/head";
+import type { GetServerSideProps } from "next";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Loader2, MapPin, BedDouble, Bath, Ruler, Phone, Mail, CheckCircle2 } from "lucide-react";
+import { MapPin, BedDouble, Bath, Ruler, Phone, Mail, CheckCircle2, MessageCircle } from "lucide-react";
 
 interface FormQuestion {
   id: string;
@@ -22,35 +22,43 @@ interface LandingData {
   questions: FormQuestion[];
 }
 
+interface PageProps {
+  data: LandingData | null;
+  url: string;
+  token: string;
+}
+
 function formatPrice(value?: number | null) {
   if (!value) return null;
   return new Intl.NumberFormat("pt-PT", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(value);
 }
 
-export default function LandingPage() {
-  const router = useRouter();
-  const { token } = router.query;
+// Renderização no servidor: garante que os meta tags de SEO/partilha (Open
+// Graph) estão no HTML inicial — os scrapers do WhatsApp/Facebook não correm
+// JavaScript, por isso a pré-visualização só funciona assim.
+export const getServerSideProps: GetServerSideProps<PageProps> = async (ctx) => {
+  const token = ctx.params?.token as string;
+  const host = ctx.req.headers.host;
+  const protocol = host?.includes("localhost") ? "http" : "https";
+  const origin = `${protocol}://${host}`;
+  const url = `${origin}/l/${token}`;
 
-  const [data, setData] = useState<LandingData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [notFound, setNotFound] = useState(false);
+  try {
+    const res = await fetch(`${origin}/api/landing/${token}`);
+    if (!res.ok) return { props: { data: null, url, token } };
+    const data = (await res.json()) as LandingData;
+    return { props: { data, url, token } };
+  } catch {
+    return { props: { data: null, url, token } };
+  }
+};
 
+export default function LandingPage({ data, url, token }: PageProps) {
   const [form, setForm] = useState({ name: "", email: "", phone: "", message: "", company: "" });
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [sent, setSent] = useState(false);
   const [formError, setFormError] = useState("");
-
-  useEffect(() => {
-    if (!token || typeof token !== "string") return;
-    fetch(`/api/landing/${token}`)
-      .then(async (r) => {
-        if (!r.ok) { setNotFound(true); return; }
-        setData(await r.json());
-      })
-      .catch(() => setNotFound(true))
-      .finally(() => setLoading(false));
-  }, [token]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,7 +67,6 @@ export default function LandingPage() {
       setFormError("Indique o seu nome e email ou telefone.");
       return;
     }
-    // Validar perguntas obrigatórias.
     const missing = (data?.questions || []).find((q) => q.required && !answers[q.id]?.trim());
     if (missing) {
       setFormError(`Preencha: ${missing.label}`);
@@ -84,15 +91,7 @@ export default function LandingPage() {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
-      </div>
-    );
-  }
-
-  if (notFound || !data) {
+  if (!data) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4 text-center">
         <div>
@@ -110,16 +109,39 @@ export default function LandingPage() {
   const location = [e.address, e.district, e.city].filter(Boolean).join(", ");
   const gallery: string[] = [e.main_image_url, ...(e.images || [])].filter(Boolean);
 
+  // SEO automático: título e descrição compostos a partir dos dados do imóvel.
+  const seoTitle = [title, price, e.city].filter(Boolean).join(" · ");
+  const seoDescription = (e.description
+    ? String(e.description)
+    : `${title}${location ? ` em ${location}` : ""}${price ? ` — ${price}` : ""}. Peça mais informações.`
+  ).slice(0, 200);
+  const ogImage = gallery[0] || "";
+
+  // CTA de WhatsApp para o agente (se tiver telefone).
+  const waPhone = data.agent?.phone ? data.agent.phone.replace(/[^0-9]/g, "") : "";
+  const waHref = waPhone
+    ? `https://wa.me/${waPhone.startsWith("351") ? waPhone : "351" + waPhone}?text=${encodeURIComponent(`Olá, tenho interesse em "${title}".`)}`
+    : "";
+
   return (
     <>
       <Head>
-        <title>{title}</title>
-        {e.description && <meta name="description" content={String(e.description).slice(0, 160)} />}
+        <title>{seoTitle}</title>
+        <meta name="description" content={seoDescription} />
+        <link rel="canonical" href={url} />
+        <meta property="og:type" content="website" />
+        <meta property="og:title" content={seoTitle} />
+        <meta property="og:description" content={seoDescription} />
+        <meta property="og:url" content={url} />
+        {ogImage && <meta property="og:image" content={ogImage} />}
+        <meta name="twitter:card" content={ogImage ? "summary_large_image" : "summary"} />
+        <meta name="twitter:title" content={seoTitle} />
+        <meta name="twitter:description" content={seoDescription} />
+        {ogImage && <meta name="twitter:image" content={ogImage} />}
       </Head>
       <div className="min-h-screen bg-slate-50">
         <div className="max-w-5xl mx-auto px-4 py-8">
           <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-            {/* Galeria */}
             {gallery.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-1">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -136,7 +158,6 @@ export default function LandingPage() {
             )}
 
             <div className="p-6 md:p-8 grid md:grid-cols-3 gap-8">
-              {/* Detalhes */}
               <div className="md:col-span-2 space-y-4">
                 <div>
                   <h1 className="text-3xl font-bold text-slate-900">{title}</h1>
@@ -156,13 +177,31 @@ export default function LandingPage() {
                   </div>
                 )}
 
+                {/* CTA — visível de imediato, especialmente em telemóvel */}
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <a href="#contacto">
+                    <Button className="gap-2">Tenho interesse</Button>
+                  </a>
+                  {waHref && (
+                    <a href={waHref} target="_blank" rel="noopener noreferrer">
+                      <Button variant="outline" className="gap-2 text-green-700 border-green-200 hover:bg-green-50">
+                        <MessageCircle className="h-4 w-4" /> WhatsApp
+                      </Button>
+                    </a>
+                  )}
+                  {data.agent?.phone && (
+                    <a href={`tel:${data.agent.phone}`}>
+                      <Button variant="outline" className="gap-2"><Phone className="h-4 w-4" /> Ligar</Button>
+                    </a>
+                  )}
+                </div>
+
                 {e.description && (
                   <div className="prose max-w-none text-slate-700 whitespace-pre-wrap">{e.description}</div>
                 )}
               </div>
 
-              {/* Formulário de contacto */}
-              <div className="md:col-span-1">
+              <div className="md:col-span-1" id="contacto">
                 <div className="border rounded-lg p-5 bg-slate-50 sticky top-8">
                   {sent ? (
                     <div className="text-center py-6">
@@ -183,16 +222,7 @@ export default function LandingPage() {
                         </div>
                       )}
                       <form onSubmit={handleSubmit} className="space-y-3">
-                        {/* honeypot escondido */}
-                        <input
-                          type="text"
-                          name="company"
-                          value={form.company}
-                          onChange={(ev) => setForm({ ...form, company: ev.target.value })}
-                          className="hidden"
-                          tabIndex={-1}
-                          autoComplete="off"
-                        />
+                        <input type="text" name="company" value={form.company} onChange={(ev) => setForm({ ...form, company: ev.target.value })} className="hidden" tabIndex={-1} autoComplete="off" />
                         <div>
                           <Label htmlFor="name">Nome *</Label>
                           <Input id="name" value={form.name} onChange={(ev) => setForm({ ...form, name: ev.target.value })} required />
@@ -234,7 +264,7 @@ export default function LandingPage() {
                         </div>
                         {formError && <p className="text-sm text-red-600">{formError}</p>}
                         <Button type="submit" className="w-full" disabled={submitting}>
-                          {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Enviar"}
+                          {submitting ? "A enviar..." : "Enviar"}
                         </Button>
                       </form>
                       {(data.agent?.phone || data.agent?.email) && (

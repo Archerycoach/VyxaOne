@@ -7,31 +7,63 @@ const TABLE: Record<LandingEntityType, string> = {
   development: "developments",
 };
 
-// Token aleatório não previsível para o URL público (mesmo padrão de
-// leads.portal_token — ver portalService.ts).
+// Token aleatório não previsível (usado na landing pessoal e como sufixo).
 function generateSecureToken(): string {
   const bytes = new Uint8Array(32);
   crypto.getRandomValues(bytes);
   return Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-// Gera (uma vez) e devolve o URL da landing page. Não publica — só cria o link.
+// Sufixo curto aleatório (6 chars) para garantir unicidade do slug.
+function shortSuffix(): string {
+  const bytes = new Uint8Array(3);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// Transforma um texto num slug legível para URL: minúsculas, sem acentos,
+// só letras/números/hífens. Ex: "Moradia T3 - Alcochete" -> "moradia-t3-alcochete".
+function slugify(text: string): string {
+  return (text || "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60) || "pagina";
+}
+
+// Gera um token/slug atrativo a partir de um nome + sufixo curto único.
+function buildSlug(name: string): string {
+  return `${slugify(name)}-${shortSuffix()}`;
+}
+
+// Gera (uma vez) e devolve o URL da landing page, com um slug legível a partir
+// do título/nome. Não publica — só cria o link.
 export async function getOrCreateLandingLink(entityType: LandingEntityType, id: string): Promise<string> {
+  const nameField = entityType === "property" ? "title" : "name";
   const { data, error } = await supabase
     .from(TABLE[entityType] as any)
-    .select("landing_token")
+    .select(`landing_token, ${nameField}`)
     .eq("id", id)
     .single();
   if (error) throw error;
 
   let token = (data as any)?.landing_token as string | null;
   if (!token) {
-    token = generateSecureToken();
-    const { error: updErr } = await supabase
-      .from(TABLE[entityType] as any)
-      .update({ landing_token: token } as any)
-      .eq("id", id);
-    if (updErr) throw updErr;
+    const baseName = (data as any)?.[nameField] || "imovel";
+    // Tenta gravar um slug único (o sufixo aleatório torna colisões improváveis;
+    // ainda assim, repete-se em caso de conflito com a constraint UNIQUE).
+    for (let attempt = 0; attempt < 4 && !token; attempt++) {
+      const candidate = buildSlug(baseName);
+      const { error: updErr } = await supabase
+        .from(TABLE[entityType] as any)
+        .update({ landing_token: candidate } as any)
+        .eq("id", id);
+      if (!updErr) { token = candidate; break; }
+      if (!String(updErr.message || "").toLowerCase().includes("duplicate")) throw updErr;
+    }
+    if (!token) token = generateSecureToken(); // fallback improvável
   }
   return `${window.location.origin}/l/${token}`;
 }
@@ -97,13 +129,18 @@ export async function setPersonalLandingPublished(published: boolean): Promise<v
 
 export async function getOrCreatePersonalLandingLink(): Promise<string> {
   const id = await currentUserId();
-  const { data, error } = await supabase.from("profiles").select("landing_token").eq("id", id).single();
+  const { data, error } = await supabase.from("profiles").select("landing_token, full_name").eq("id", id).single();
   if (error) throw error;
   let token = (data as any)?.landing_token as string | null;
   if (!token) {
-    token = generateSecureToken();
-    const { error: updErr } = await supabase.from("profiles").update({ landing_token: token } as any).eq("id", id);
-    if (updErr) throw updErr;
+    const baseName = (data as any)?.full_name || "consultor";
+    for (let attempt = 0; attempt < 4 && !token; attempt++) {
+      const candidate = buildSlug(baseName);
+      const { error: updErr } = await supabase.from("profiles").update({ landing_token: candidate } as any).eq("id", id);
+      if (!updErr) { token = candidate; break; }
+      if (!String(updErr.message || "").toLowerCase().includes("duplicate")) throw updErr;
+    }
+    if (!token) token = generateSecureToken();
   }
   return `${window.location.origin}/consultor/${token}`;
 }

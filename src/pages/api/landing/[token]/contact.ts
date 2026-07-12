@@ -12,7 +12,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // Honeypot anti-spam: bots preenchem o campo escondido "company".
   if (company) return res.status(200).json({ success: true });
 
-  if (!token || token.length < 16) return res.status(404).json({ error: "Not found" });
+  if (!token || token.length < 6) return res.status(404).json({ error: "Not found" });
   if (!name || (!email && !phone)) {
     return res.status(400).json({ error: "Nome e (email ou telefone) são obrigatórios" });
   }
