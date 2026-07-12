@@ -20,6 +20,7 @@ import { MessageSnippetsManagement } from "@/components/settings/MessageSnippets
 import { ReactivationTemplatesManagement } from "@/components/settings/ReactivationTemplatesManagement";
 import { NotionAccountConnection } from "@/components/settings/NotionAccountConnection";
 import { PipelineStagesSettings } from "@/components/settings/PipelineStagesSettings";
+import { TwoFactorSettings } from "@/components/settings/TwoFactorSettings";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
 
 const REQUIRED_GOOGLE_SCOPES = [
@@ -595,6 +596,10 @@ export default function Settings() {
                 </form>
               </CardContent>
             </Card>
+
+            <div className="mt-6">
+              <TwoFactorSettings />
+            </div>
           </TabsContent>
 
           <TabsContent value="company">

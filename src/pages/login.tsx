@@ -5,9 +5,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Building2, Mail, Lock, Loader2 } from "lucide-react";
+import { Building2, Mail, Lock, Loader2, ShieldCheck } from "lucide-react";
 import { signInWithEmail, signUpWithEmail, signInWithGoogle, getCurrentUser } from "@/services/authService";
 import { supabase } from "@/integrations/supabase/client";
+import { getMfaStatus, getPrimaryVerifiedFactorId, challengeAndVerifyTotp } from "@/services/mfaService";
 import Link from "next/link";
 import { ThemeSwitch } from "@/components/ThemeSwitch";
 import { useToast } from "@/hooks/use-toast";
@@ -35,6 +36,12 @@ export default function Login() {
   
   const [success, setSuccess] = useState("");
 
+  // Passo de 2FA: quando a conta tem 2FA ativo, após a palavra-passe é pedido
+  // o código da app autenticadora antes de entrar.
+  const [mfaStep, setMfaStep] = useState(false);
+  const [mfaCode, setMfaCode] = useState("");
+  const [mfaFactorId, setMfaFactorId] = useState<string | null>(null);
+
   useEffect(() => {
     checkAuth();
   }, []);
@@ -42,13 +49,46 @@ export default function Login() {
   const checkAuth = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        router.push("/dashboard");
+      if (!session) return;
+
+      // Sessão existente mas com 2FA por completar (ex: refresh a meio do
+      // desafio) — mostra o passo do código em vez de entrar.
+      const status = await getMfaStatus();
+      if (status.precisa2FA) {
+        setMfaFactorId(await getPrimaryVerifiedFactorId());
+        setMfaStep(true);
+        return;
       }
+
+      router.push("/dashboard");
     } catch (error) {
       console.error("Error checking existing session:", error);
       // User needs to login, stay on login page
     }
+  };
+
+  const handleVerifyMfa = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!mfaFactorId) return;
+    setLoading(true);
+    setError("");
+    try {
+      await challengeAndVerifyTotp(mfaFactorId, mfaCode);
+      toast({ title: "Sucesso!", description: "Autenticação concluída." });
+      window.location.href = "/dashboard";
+    } catch (err: any) {
+      setError(err.message || "Código inválido. Tente novamente.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCancelMfa = async () => {
+    // Não completou o 2FA — termina a sessão parcial e volta ao início.
+    await supabase.auth.signOut();
+    setMfaStep(false);
+    setMfaCode("");
+    setMfaFactorId(null);
   };
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -104,16 +144,26 @@ export default function Login() {
         }
       }
 
+      // Se a conta tem 2FA ativo, a sessão da palavra-passe fica em AAL1 e é
+      // preciso o código da app autenticadora para a elevar a AAL2.
+      const mfa = await getMfaStatus();
+      if (mfa.precisa2FA) {
+        setMfaFactorId(await getPrimaryVerifiedFactorId());
+        setMfaStep(true);
+        setLoading(false);
+        return;
+      }
+
       toast({
         title: "Sucesso!",
         description: "Login realizado com sucesso",
       });
 
       console.log("Login: Redirecting to dashboard...");
-      
+
       // Hard redirect para garantir que a sessão seja carregada corretamente
       window.location.href = "/dashboard";
-      
+
       console.log("Login: Redirect initiated");
     } catch (err: any) {
       console.error("Login: Unexpected error:", err);
@@ -208,12 +258,53 @@ export default function Login() {
 
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl text-center">Bem-vindo</CardTitle>
+          <CardTitle className="text-2xl text-center">
+            {mfaStep ? "Verificação em duas etapas" : "Bem-vindo"}
+          </CardTitle>
           <CardDescription className="text-center">
-            Entre na sua conta ou crie uma nova
+            {mfaStep ? "Introduza o código da sua app autenticadora" : "Entre na sua conta ou crie uma nova"}
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {mfaStep ? (
+            <form onSubmit={handleVerifyMfa} className="space-y-4">
+              {error && (
+                <div className="mb-2 p-3 bg-red-50 border border-red-200 rounded-lg">
+                  <p className="text-sm text-red-600">{error}</p>
+                </div>
+              )}
+              <div className="flex justify-center">
+                <div className="w-14 h-14 bg-green-100 text-green-600 rounded-full flex items-center justify-center">
+                  <ShieldCheck className="w-7 h-7" />
+                </div>
+              </div>
+              <div>
+                <Label htmlFor="mfa-code">Código de 6 dígitos</Label>
+                <Input
+                  id="mfa-code"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  placeholder="000000"
+                  value={mfaCode}
+                  onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, ""))}
+                  className="mt-1 tracking-[0.3em] text-center text-lg"
+                  autoFocus
+                  disabled={loading}
+                />
+              </div>
+              <Button
+                type="submit"
+                className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+                disabled={loading || mfaCode.length !== 6}
+              >
+                {loading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />A verificar...</> : "Verificar"}
+              </Button>
+              <Button type="button" variant="ghost" className="w-full" onClick={handleCancelMfa} disabled={loading}>
+                Cancelar
+              </Button>
+            </form>
+          ) : (
           <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "login" | "signup")}>
             <TabsList className="grid w-full grid-cols-2 mb-6">
               <TabsTrigger value="login">Entrar</TabsTrigger>
@@ -382,6 +473,7 @@ export default function Login() {
               </form>
             </TabsContent>
           </Tabs>
+          )}
         </CardContent>
       </Card>
 

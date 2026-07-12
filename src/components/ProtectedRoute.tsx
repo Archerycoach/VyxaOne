@@ -38,6 +38,21 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
           return;
         }
 
+        // 2FA: se a conta tem fator inscrito mas a sessão ainda está em AAL1
+        // (código por introduzir), envia para o login para completar o desafio.
+        try {
+          const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+          if (mounted && aal?.nextLevel === "aal2" && aal.currentLevel === "aal1") {
+            setLoading(false);
+            if (router.pathname !== '/login') {
+              router.push("/login");
+            }
+            return;
+          }
+        } catch (mfaErr) {
+          console.error("[ProtectedRoute] Erro ao verificar AAL:", mfaErr);
+        }
+
         // Check roles
         if (allowedRoles && allowedRoles.length > 0) {
           const { data: profileRaw, error: profileError } = await supabase
