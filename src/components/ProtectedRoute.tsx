@@ -148,9 +148,13 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
             className="w-full"
             onClick={async () => {
               if (userId) {
+                const { data: { session: currentSession } } = await supabase.auth.getSession();
                 await fetch("/api/auth/clear-relogin", {
                   method: "POST",
-                  headers: { "Content-Type": "application/json" },
+                  headers: {
+                    "Content-Type": "application/json",
+                    ...(currentSession?.access_token ? { Authorization: `Bearer ${currentSession.access_token}` } : {}),
+                  },
                   body: JSON.stringify({ userId })
                 });
               }

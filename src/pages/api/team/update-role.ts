@@ -39,7 +39,21 @@ export default async function handler(
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    // Use the SQL function to update role (it has permission checks)
+    // Verificar o role do CHAMADOR aqui — a RPC corre via service-role, onde
+    // auth.uid() é NULL, por isso a verificação interna dela não protege o
+    // chamador. Sem isto, qualquer utilizador autenticado poderia mudar o seu
+    // próprio role (escalonamento de privilégios).
+    const { data: callerProfile } = await supabaseAdmin
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single();
+
+    if (!callerProfile || (callerProfile.role !== "admin" && callerProfile.role !== "broker")) {
+      return res.status(403).json({ error: "Apenas administradores podem alterar roles" });
+    }
+
+    // Use the SQL function to update role
     const { error: updateError } = await supabaseAdmin.rpc("update_user_role", {
       target_user_id,
       new_role
