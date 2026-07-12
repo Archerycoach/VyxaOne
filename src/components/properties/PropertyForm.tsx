@@ -20,7 +20,9 @@ import { UserCombobox } from "@/components/ui/user-combobox";
 import { useToast } from "@/hooks/use-toast";
 import { createProperty, updateProperty } from "@/services/propertiesService";
 import { supabase } from "@/integrations/supabase/client";
-import { Wand2 } from "lucide-react";
+import { Wand2, Globe, Copy, Loader2 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { getOrCreateLandingLink, setLandingPublished as apiSetLandingPublished, getLandingState } from "@/services/landingService";
 import type { Property } from "@/types";
 
 // Tipos simplificados para os seletores
@@ -84,6 +86,51 @@ export function PropertyForm({
   const [generatingDesc, setGeneratingDesc] = useState(false);
   const [descKeywords, setDescKeywords] = useState("");
   const [showAiDialog, setShowAiDialog] = useState(false);
+
+  // Landing page pública (só disponível ao editar um imóvel já criado)
+  const [landingPublished, setLandingPublished] = useState(false);
+  const [landingLink, setLandingLink] = useState<string>("");
+  const [landingBusy, setLandingBusy] = useState(false);
+
+  useEffect(() => {
+    if (open && property?.id) {
+      getLandingState("property", property.id)
+        .then((s) => setLandingPublished(s.published))
+        .catch(() => {});
+    } else {
+      setLandingPublished(false);
+      setLandingLink("");
+    }
+  }, [open, property?.id]);
+
+  const handleToggleLanding = async (next: boolean) => {
+    if (!property?.id) return;
+    setLandingBusy(true);
+    try {
+      if (next && !landingLink) {
+        setLandingLink(await getOrCreateLandingLink("property", property.id));
+      }
+      await apiSetLandingPublished("property", property.id, next);
+      setLandingPublished(next);
+      toast({ title: next ? "Landing page publicada" : "Landing page despublicada" });
+    } catch (err: any) {
+      toast({ title: "Erro", description: err.message || "Não foi possível atualizar a landing page.", variant: "destructive" });
+    } finally {
+      setLandingBusy(false);
+    }
+  };
+
+  const handleCopyLanding = async () => {
+    if (!property?.id) return;
+    try {
+      const link = landingLink || (await getOrCreateLandingLink("property", property.id));
+      setLandingLink(link);
+      await navigator.clipboard.writeText(link);
+      toast({ title: "Link copiado", description: link });
+    } catch (err: any) {
+      toast({ title: "Erro ao copiar link", variant: "destructive" });
+    }
+  };
   const [propertyImage, setPropertyImage] = useState<string | null>(null);
   const [showImageDialog, setShowImageDialog] = useState(false);
 
@@ -570,6 +617,29 @@ export function PropertyForm({
               rows={4}
             />
           </div>
+
+          {property?.id && (
+            <div className="border rounded-lg p-4 bg-slate-50 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5 pr-4">
+                  <Label className="flex items-center gap-2 text-base">
+                    <Globe className="h-4 w-4 text-blue-600" />
+                    Landing Page Pública
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    Publique uma página pública deste imóvel com formulário de contacto.
+                  </p>
+                </div>
+                <Switch checked={landingPublished} onCheckedChange={handleToggleLanding} disabled={landingBusy} />
+              </div>
+              {landingPublished && (
+                <Button type="button" variant="outline" size="sm" onClick={handleCopyLanding} className="gap-2">
+                  {landingBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Copy className="h-4 w-4" />}
+                  Copiar link
+                </Button>
+              )}
+            </div>
+          )}
 
           <div className="flex justify-end gap-2 pt-4">
             <Button

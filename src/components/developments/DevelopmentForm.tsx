@@ -19,6 +19,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { createDevelopment, updateDevelopment } from "@/services/developmentsService";
+import { getOrCreateLandingLink, setLandingPublished as apiSetLandingPublished, getLandingState } from "@/services/landingService";
+import { Switch } from "@/components/ui/switch";
+import { Globe, Copy, Loader2 } from "lucide-react";
 import type { Development, DevelopmentStatus } from "@/types";
 
 interface DevelopmentFormProps {
@@ -85,6 +88,51 @@ export function DevelopmentForm({ development, open, onOpenChange, onSuccess }: 
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState<DevelopmentFormState>(initialFormState);
+
+  // Landing page pública (só ao editar um empreendimento já criado)
+  const [landingPublished, setLandingPublished] = useState(false);
+  const [landingLink, setLandingLink] = useState<string>("");
+  const [landingBusy, setLandingBusy] = useState(false);
+
+  useEffect(() => {
+    if (open && development?.id) {
+      getLandingState("development", development.id)
+        .then((s) => setLandingPublished(s.published))
+        .catch(() => {});
+    } else {
+      setLandingPublished(false);
+      setLandingLink("");
+    }
+  }, [open, development?.id]);
+
+  const handleToggleLanding = async (next: boolean) => {
+    if (!development?.id) return;
+    setLandingBusy(true);
+    try {
+      if (next && !landingLink) {
+        setLandingLink(await getOrCreateLandingLink("development", development.id));
+      }
+      await apiSetLandingPublished("development", development.id, next);
+      setLandingPublished(next);
+      toast({ title: next ? "Landing page publicada" : "Landing page despublicada" });
+    } catch (err: any) {
+      toast({ title: "Erro", description: err.message || "Não foi possível atualizar a landing page.", variant: "destructive" });
+    } finally {
+      setLandingBusy(false);
+    }
+  };
+
+  const handleCopyLanding = async () => {
+    if (!development?.id) return;
+    try {
+      const link = landingLink || (await getOrCreateLandingLink("development", development.id));
+      setLandingLink(link);
+      await navigator.clipboard.writeText(link);
+      toast({ title: "Link copiado", description: link });
+    } catch {
+      toast({ title: "Erro ao copiar link", variant: "destructive" });
+    }
+  };
 
   useEffect(() => {
     if (development) {
@@ -416,6 +464,29 @@ export function DevelopmentForm({ development, open, onOpenChange, onSuccess }: 
               rows={5}
             />
           </div>
+
+          {development?.id && (
+            <div className="border rounded-lg p-4 bg-slate-50 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5 pr-4">
+                  <Label className="flex items-center gap-2 text-base">
+                    <Globe className="h-4 w-4 text-blue-600" />
+                    Landing Page Pública
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    Publique uma página pública deste empreendimento com formulário de contacto.
+                  </p>
+                </div>
+                <Switch checked={landingPublished} onCheckedChange={handleToggleLanding} disabled={landingBusy} />
+              </div>
+              {landingPublished && (
+                <Button type="button" variant="outline" size="sm" onClick={handleCopyLanding} className="gap-2">
+                  {landingBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Copy className="h-4 w-4" />}
+                  Copiar link
+                </Button>
+              )}
+            </div>
+          )}
 
           <div className="flex justify-end gap-2 border-t pt-4">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>

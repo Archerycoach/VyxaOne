@@ -258,6 +258,13 @@ export const addPropertyImage = async (
       updateData.main_image_url = uploadResult.url;
     } else {
       const currentImages = property?.images || [];
+      // Máximo de 5 fotos por imóvel (para a landing page e geração de descrição).
+      if (currentImages.length >= 5) {
+        return {
+          success: false,
+          error: "Máximo de 5 fotos por imóvel. Remova uma antes de adicionar outra.",
+        };
+      }
       updateData.images = [...currentImages, uploadResult.url!];
     }
 
