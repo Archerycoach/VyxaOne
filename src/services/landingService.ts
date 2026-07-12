@@ -38,6 +38,12 @@ function buildSlug(name: string): string {
   return `${slugify(name)}-${shortSuffix()}`;
 }
 
+// Tokens antigos eram 64 caracteres hexadecimais (sem hífens). Estes são
+// substituídos por um slug legível quando o link é (re)gerado.
+function isLegacyToken(token: string | null | undefined): boolean {
+  return !!token && /^[0-9a-f]{64}$/i.test(token);
+}
+
 // Gera (uma vez) e devolve o URL da landing page, com um slug legível a partir
 // do título/nome. Não publica — só cria o link.
 export async function getOrCreateLandingLink(entityType: LandingEntityType, id: string): Promise<string> {
@@ -50,7 +56,8 @@ export async function getOrCreateLandingLink(entityType: LandingEntityType, id: 
   if (error) throw error;
 
   let token = (data as any)?.landing_token as string | null;
-  if (!token) {
+  if (!token || isLegacyToken(token)) {
+    token = null; // força regeneração de tokens hex antigos como slug legível
     const baseName = (data as any)?.[nameField] || "imovel";
     // Tenta gravar um slug único (o sufixo aleatório torna colisões improváveis;
     // ainda assim, repete-se em caso de conflito com a constraint UNIQUE).
@@ -132,7 +139,8 @@ export async function getOrCreatePersonalLandingLink(): Promise<string> {
   const { data, error } = await supabase.from("profiles").select("landing_token, full_name").eq("id", id).single();
   if (error) throw error;
   let token = (data as any)?.landing_token as string | null;
-  if (!token) {
+  if (!token || isLegacyToken(token)) {
+    token = null; // força regeneração de tokens hex antigos como slug legível
     const baseName = (data as any)?.full_name || "consultor";
     for (let attempt = 0; attempt < 4 && !token; attempt++) {
       const candidate = buildSlug(baseName);
