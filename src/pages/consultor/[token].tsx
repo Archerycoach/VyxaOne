@@ -51,9 +51,9 @@ export default function AgentLandingPage() {
           <div className="max-w-4xl mx-auto px-4 py-12 flex flex-col sm:flex-row items-center gap-6 text-center sm:text-left">
             {a.avatar ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={a.avatar} alt={a.name || ""} className="h-28 w-28 rounded-full object-cover border-4 border-white/30" />
+              <img src={a.avatar} alt={a.name || ""} className="h-44 w-44 rounded-full object-cover object-top border-4 border-white/30 shadow-lg shrink-0" />
             ) : (
-              <div className="h-28 w-28 rounded-full bg-white/20 flex items-center justify-center text-3xl font-bold">
+              <div className="h-44 w-44 rounded-full bg-white/20 flex items-center justify-center text-4xl font-bold shrink-0">
                 {(a.name || "?").charAt(0)}
               </div>
             )}

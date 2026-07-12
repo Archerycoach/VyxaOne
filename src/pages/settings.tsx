@@ -23,6 +23,7 @@ import { NotionAccountConnection } from "@/components/settings/NotionAccountConn
 import { PipelineStagesSettings } from "@/components/settings/PipelineStagesSettings";
 import { TwoFactorSettings } from "@/components/settings/TwoFactorSettings";
 import { PersonalLandingSettings } from "@/components/settings/PersonalLandingSettings";
+import { FormQuestionsSettings } from "@/components/settings/FormQuestionsSettings";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
 
 const REQUIRED_GOOGLE_SCOPES = [
@@ -448,6 +449,10 @@ export default function Settings() {
               <Globe className="h-4 w-4 mr-2" />
               Landing Pessoal
             </TabsTrigger>
+            <TabsTrigger value="form-questions">
+              <FileText className="h-4 w-4 mr-2" />
+              Formulários
+            </TabsTrigger>
             <TabsTrigger value="smtp">
               <Mail className="h-4 w-4 mr-2" />
               SMTP
@@ -652,6 +657,10 @@ export default function Settings() {
 
           <TabsContent value="personal-landing">
             <PersonalLandingSettings />
+          </TabsContent>
+
+          <TabsContent value="form-questions">
+            <FormQuestionsSettings />
           </TabsContent>
 
           <TabsContent value="company">

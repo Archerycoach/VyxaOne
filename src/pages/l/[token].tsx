@@ -7,10 +7,19 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Loader2, MapPin, BedDouble, Bath, Ruler, Phone, Mail, CheckCircle2 } from "lucide-react";
 
+interface FormQuestion {
+  id: string;
+  label: string;
+  field_type: "text" | "textarea" | "select" | "number" | "phone";
+  options: string[];
+  required: boolean;
+}
+
 interface LandingData {
   type: "property" | "development";
   entity: Record<string, any>;
   agent: { name: string | null; email: string | null; phone: string | null; avatar: string | null } | null;
+  questions: FormQuestion[];
 }
 
 function formatPrice(value?: number | null) {
@@ -27,6 +36,7 @@ export default function LandingPage() {
   const [notFound, setNotFound] = useState(false);
 
   const [form, setForm] = useState({ name: "", email: "", phone: "", message: "", company: "" });
+  const [answers, setAnswers] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [sent, setSent] = useState(false);
   const [formError, setFormError] = useState("");
@@ -49,12 +59,21 @@ export default function LandingPage() {
       setFormError("Indique o seu nome e email ou telefone.");
       return;
     }
+    // Validar perguntas obrigatórias.
+    const missing = (data?.questions || []).find((q) => q.required && !answers[q.id]?.trim());
+    if (missing) {
+      setFormError(`Preencha: ${missing.label}`);
+      return;
+    }
     setSubmitting(true);
     try {
+      const answerPayload = (data?.questions || [])
+        .map((q) => ({ label: q.label, answer: answers[q.id] || "" }))
+        .filter((a) => a.answer);
       const r = await fetch(`/api/landing/${token}/contact`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...form, answers: answerPayload }),
       });
       if (!r.ok) throw new Error();
       setSent(true);
@@ -186,6 +205,29 @@ export default function LandingPage() {
                           <Label htmlFor="phone">Telefone</Label>
                           <Input id="phone" value={form.phone} onChange={(ev) => setForm({ ...form, phone: ev.target.value })} />
                         </div>
+                        {(data.questions || []).map((q) => (
+                          <div key={q.id}>
+                            <Label>{q.label}{q.required ? " *" : ""}</Label>
+                            {q.field_type === "textarea" ? (
+                              <Textarea rows={2} value={answers[q.id] || ""} onChange={(ev) => setAnswers((p) => ({ ...p, [q.id]: ev.target.value }))} />
+                            ) : q.field_type === "select" ? (
+                              <select
+                                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs"
+                                value={answers[q.id] || ""}
+                                onChange={(ev) => setAnswers((p) => ({ ...p, [q.id]: ev.target.value }))}
+                              >
+                                <option value="">Selecione…</option>
+                                {q.options.map((o) => <option key={o} value={o}>{o}</option>)}
+                              </select>
+                            ) : (
+                              <Input
+                                type={q.field_type === "number" ? "number" : q.field_type === "phone" ? "tel" : "text"}
+                                value={answers[q.id] || ""}
+                                onChange={(ev) => setAnswers((p) => ({ ...p, [q.id]: ev.target.value }))}
+                              />
+                            )}
+                          </div>
+                        ))}
                         <div>
                           <Label htmlFor="message">Mensagem</Label>
                           <Textarea id="message" rows={3} value={form.message} onChange={(ev) => setForm({ ...form, message: ev.target.value })} />

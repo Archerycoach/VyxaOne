@@ -38,6 +38,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     if (slotsError) throw slotsError;
 
+    // Perguntas personalizadas do formulário de reserva deste consultor.
+    const { data: questions } = await db
+      .from("form_questions")
+      .select("id, label, field_type, options, required")
+      .eq("user_id", consultant.id)
+      .eq("form_type", "booking")
+      .order("sort_order", { ascending: true });
+
     return res.status(200).json({
       consultant: {
         full_name: consultant.full_name,
@@ -46,6 +54,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         phone: consultant.phone || null,
       },
       slots: slots || [],
+      questions: questions || [],
     });
   } catch (error: any) {
     console.error("[booking/slots] Erro:", error);

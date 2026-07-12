@@ -52,6 +52,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     .eq("id", entity.user_id)
     .maybeSingle();
 
+  // Perguntas personalizadas do formulário de contacto (do dono/agente).
+  const { data: questions } = await (supabaseAdmin.from("form_questions" as any) as any)
+    .select("id, label, field_type, options, required")
+    .eq("user_id", entity.user_id)
+    .eq("form_type", "landing")
+    .order("sort_order", { ascending: true });
+
   // Registar a visita (agregada por dia). Best-effort — nunca bloqueia a página.
   try {
     await supabaseAdmin.rpc("increment_landing_stat" as any, {
@@ -70,5 +77,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     type: entityType,
     entity: safe,
     agent: agent ? { name: agent.full_name, email: agent.email, phone: agent.phone, avatar: agent.avatar_url } : null,
+    questions: questions || [],
   });
 }
