@@ -73,7 +73,7 @@ export default function UseCasesPage() {
               {settings.heading_use_cases || "Casos de Uso"}
             </h1>
             <p className="text-xl text-slate-600 max-w-3xl mx-auto">
-              Descubra como o Vyxa One se adapta ao seu modelo de negócio
+              {settings.intro_use_cases || "Descubra como o Vyxa One se adapta ao seu modelo de negócio"}
             </p>
           </div>
 

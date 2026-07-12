@@ -17,9 +17,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const channelId = req.headers["x-goog-channel-id"] as string;
     const resourceState = req.headers["x-goog-resource-state"] as string;
     const resourceId = req.headers["x-goog-resource-id"] as string;
+    const channelToken = req.headers["x-goog-channel-token"] as string | undefined;
 
     if (!channelId) {
       return res.status(400).json({ error: "Invalid webhook" });
+    }
+
+    // Verificação do token do canal: se GOOGLE_CALENDAR_WEBHOOK_TOKEN estiver
+    // definido, o Google tem de devolver o mesmo valor no header
+    // x-goog-channel-token (definido ao criar o "watch"). Isto impede que um
+    // pedido forjado, mesmo conhecendo um channel_id, dispare sincronizações.
+    // Se não estiver definido, mantém-se o comportamento anterior (não bloqueia)
+    // para não partir canais já existentes.
+    const expectedToken = process.env.GOOGLE_CALENDAR_WEBHOOK_TOKEN;
+    if (expectedToken) {
+      if (channelToken !== expectedToken) {
+        console.error("[webhook] ❌ Channel token inválido — pedido rejeitado");
+        return res.status(401).json({ error: "Invalid channel token" });
+      }
+    } else {
+      console.warn("[webhook] ⚠️ GOOGLE_CALENDAR_WEBHOOK_TOKEN não definido — verificação de token do canal desativada");
     }
 
     console.log("[webhook] ===== WEBHOOK RECEIVED =====");

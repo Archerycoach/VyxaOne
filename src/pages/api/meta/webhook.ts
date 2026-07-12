@@ -212,9 +212,11 @@ export default async function handler(
         return res.status(400).json({ error: "Invalid JSON" });
       }
 
-      // Verificação de assinatura em MODO OBSERVAÇÃO: regista o resultado
-      // mas não bloqueia nenhum pedido enquanto não confirmarmos, com
-      // tráfego real da Meta, que a verificação está correta.
+      // Verificação de assinatura HMAC-SHA256 da Meta. Se a assinatura for
+      // inválida, o pedido é rejeitado (pode ser forjado). Quando não há
+      // app_secret configurado nem header, não é possível verificar e o
+      // pedido segue (setups antigos sem secret) — mas com app_secret
+      // configurado, uma assinatura errada bloqueia.
       const { data: appSettings } = await supabase
         .from("meta_app_settings")
         .select("app_secret")
@@ -224,9 +226,19 @@ export default async function handler(
       const signatureValid = verifyMetaSignature(rawBody, signatureHeader, appSettings?.app_secret);
 
       if (signatureValid === false) {
-        console.error("[Meta Webhook] ⚠️ SIGNATURE MISMATCH — payload pode não vir da Meta (modo observação: não bloqueado ainda)", {
+        console.error("[Meta Webhook] ❌ SIGNATURE MISMATCH — pedido rejeitado (payload não vem da Meta)", {
           hasHeader: !!signatureHeader,
         });
+        try {
+          await supabase.from("meta_webhook_logs").insert({
+            page_id: "REJECTED",
+            leadgen_id: "REJECTED",
+            status: "error",
+            webhook_payload: body,
+            error_message: "Rejeitado - assinatura inválida (x-hub-signature-256)",
+          });
+        } catch { /* best-effort */ }
+        return res.status(401).json({ error: "Invalid signature" });
       } else if (signatureValid === true) {
         console.log("[Meta Webhook] ✅ Signature verified");
       } else {
@@ -255,9 +267,7 @@ export default async function handler(
           leadgen_id: "RAW_HIT",
           status: "debug",
           webhook_payload: body,
-          error_message: signatureValid === false
-            ? "Raw hit received - SIGNATURE_MISMATCH"
-            : signatureValid === true
+          error_message: signatureValid === true
             ? "Raw hit received - signature_ok"
             : "Raw hit received - signature_not_checked"
         });

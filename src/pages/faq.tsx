@@ -78,7 +78,7 @@ export default function FAQPage() {
               {settings.heading_faq || "Perguntas Frequentes"}
             </h1>
             <p className="text-xl text-slate-600">
-              Respostas às dúvidas mais comuns
+              {settings.intro_faq || "Respostas às dúvidas mais comuns"}
             </p>
           </div>
 

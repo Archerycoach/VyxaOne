@@ -82,7 +82,7 @@ export default function PricingPage() {
               {settings.heading_pricing || "Planos e Preços"}
             </h1>
             <p className="text-xl text-slate-600">
-              Escolha o plano ideal para o seu negócio
+              {settings.intro_pricing || "Escolha o plano ideal para o seu negócio"}
             </p>
           </div>
 

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { Save, Mail, Phone, MapPin, FileText } from "lucide-react";
 import {
@@ -19,15 +20,17 @@ import { LeadColumnsSettings } from "@/components/admin/LeadColumnsSettings";
 // sufixo das chaves em frontend_settings (seo_title_<slug>,
 // seo_description_<slug>, heading_<slug>), criadas na migração
 // 20260711160000_fix_frontend_settings_admin_role_and_seed_pages.sql.
-const STATIC_PAGES: Array<{ slug: string; label: string; path: string }> = [
-  { slug: "about", label: "Sobre Nós", path: "/about" },
-  { slug: "contact", label: "Contacto", path: "/contact" },
-  { slug: "pricing", label: "Preços", path: "/pricing" },
-  { slug: "use_cases", label: "Casos de Uso", path: "/use-cases" },
-  { slug: "faq", label: "FAQ", path: "/faq" },
-  { slug: "documentation", label: "Documentação", path: "/documentation" },
-  { slug: "support", label: "Suporte", path: "/support" },
-  { slug: "features", label: "Funcionalidades", path: "/features" },
+// hasIntro: páginas de marketing que têm um parágrafo de introdução editável
+// por baixo do título. As páginas legais não têm (o conteúdo é jurídico).
+const STATIC_PAGES: Array<{ slug: string; label: string; path: string; hasIntro?: boolean }> = [
+  { slug: "about", label: "Sobre Nós", path: "/about", hasIntro: true },
+  { slug: "contact", label: "Contacto", path: "/contact", hasIntro: true },
+  { slug: "pricing", label: "Preços", path: "/pricing", hasIntro: true },
+  { slug: "use_cases", label: "Casos de Uso", path: "/use-cases", hasIntro: true },
+  { slug: "faq", label: "FAQ", path: "/faq", hasIntro: true },
+  { slug: "documentation", label: "Documentação", path: "/documentation", hasIntro: true },
+  { slug: "support", label: "Suporte", path: "/support", hasIntro: true },
+  { slug: "features", label: "Funcionalidades", path: "/features", hasIntro: true },
   { slug: "privacy_policy", label: "Política de Privacidade", path: "/privacy-policy" },
   { slug: "terms_of_service", label: "Termos de Serviço", path: "/terms-of-service" },
   { slug: "data_deletion", label: "Eliminação de Dados", path: "/data-deletion" },
@@ -231,6 +234,18 @@ export default function FrontendSettingsPage() {
                           onChange={(e) => setField(`heading_${page.slug}`, e.target.value)}
                         />
                       </div>
+                      {page.hasIntro && (
+                        <div className="space-y-2">
+                          <Label htmlFor={`intro_${page.slug}`}>Texto de Introdução</Label>
+                          <Textarea
+                            id={`intro_${page.slug}`}
+                            value={settings[`intro_${page.slug}`] || ""}
+                            onChange={(e) => setField(`intro_${page.slug}`, e.target.value)}
+                            rows={2}
+                            placeholder="Frase mostrada por baixo do título principal"
+                          />
+                        </div>
+                      )}
                     </AccordionContent>
                   </AccordionItem>
                 ))}

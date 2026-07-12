@@ -100,7 +100,7 @@ export default function FeaturesPage() {
               {settings.heading_features || "Funcionalidades Completas"}
             </h1>
             <p className="text-xl text-slate-600 max-w-3xl mx-auto">
-              Tudo o que precisa para gerir o seu negócio imobiliário de forma eficiente e profissional
+              {settings.intro_features || "Tudo o que precisa para gerir o seu negócio imobiliário de forma eficiente e profissional"}
             </p>
           </div>
 

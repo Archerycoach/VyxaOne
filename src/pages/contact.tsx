@@ -58,7 +58,7 @@ export default function ContactPage() {
               {settings.heading_contact || "Entre em Contacto"}
             </h1>
             <p className="text-xl text-slate-600">
-              Estamos aqui para ajudar
+              {settings.intro_contact || "Estamos aqui para ajudar"}
             </p>
           </div>
 

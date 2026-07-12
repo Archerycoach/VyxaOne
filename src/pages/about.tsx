@@ -37,7 +37,7 @@ export default function AboutPage() {
               {settings.heading_about || "Sobre o Vyxa One"}
             </h1>
             <p className="text-xl text-slate-600">
-              Transformando a forma como os profissionais imobiliários trabalham
+              {settings.intro_about || "Transformando a forma como os profissionais imobiliários trabalham"}
             </p>
           </div>
 

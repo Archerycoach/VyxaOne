@@ -58,7 +58,7 @@ export default function DocumentationPage() {
               {settings.heading_documentation || "Documentação"}
             </h1>
             <p className="text-xl text-slate-600">
-              Tudo o que precisa de saber sobre o Vyxa One
+              {settings.intro_documentation || "Tudo o que precisa de saber sobre o Vyxa One"}
             </p>
           </div>
 

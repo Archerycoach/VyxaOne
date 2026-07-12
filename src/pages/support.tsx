@@ -71,7 +71,7 @@ export default function SupportPage() {
               {settings.heading_support || "Suporte Técnico"}
             </h1>
             <p className="text-xl text-slate-600">
-              Estamos aqui para ajudar de várias formas
+              {settings.intro_support || "Estamos aqui para ajudar de várias formas"}
             </p>
           </div>
 

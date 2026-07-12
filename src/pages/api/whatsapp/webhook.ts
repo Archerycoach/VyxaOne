@@ -183,9 +183,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(400).json({ error: "Invalid JSON" });
       }
 
-      // Verificação de assinatura em MODO OBSERVAÇÃO: só regista o
-      // resultado, não bloqueia nenhum pedido. Só é possível verificar se o
-      // "App Secret" tiver sido configurado em /admin/integrations.
+      // Verificação de assinatura HMAC-SHA256. Uma assinatura inválida
+      // rejeita o pedido (pode ser forjado). Sem app_secret configurado nem
+      // header, não é possível verificar e o pedido segue.
       try {
         const { data: waSettings } = await supabaseAdmin
           .from("integration_settings")
@@ -198,9 +198,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const signatureValid = verifyMetaSignature(rawBody, signatureHeader, appSecret);
 
         if (signatureValid === false) {
-          console.error("[WhatsApp Webhook] ⚠️ SIGNATURE MISMATCH — payload pode não vir da Meta (modo observação: não bloqueado ainda)", {
+          console.error("[WhatsApp Webhook] ❌ SIGNATURE MISMATCH — pedido rejeitado (payload não vem da Meta)", {
             hasHeader: !!signatureHeader,
           });
+          return res.status(401).json({ error: "Invalid signature" });
         } else if (signatureValid === true) {
           console.log("[WhatsApp Webhook] ✅ Signature verified");
         } else {
