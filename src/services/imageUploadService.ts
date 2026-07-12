@@ -258,6 +258,13 @@ export const addPropertyImage = async (
       updateData.main_image_url = uploadResult.url;
     } else {
       const currentImages = property?.images || [];
+      // Máximo de 5 fotos por imóvel (para a landing page e geração de descrição).
+      if (currentImages.length >= 5) {
+        return {
+          success: false,
+          error: "Máximo de 5 fotos por imóvel. Remova uma antes de adicionar outra.",
+        };
+      }
       updateData.images = [...currentImages, uploadResult.url!];
     }
 
@@ -335,6 +342,68 @@ export const removePropertyImage = async (
       success: false,
       error: "Erro inesperado ao remover imagem.",
     };
+  }
+};
+
+/**
+ * Adicionar imagem a um empreendimento (máx. 5). Reutiliza o mesmo bucket de
+ * storage dos imóveis; atualiza a coluna images[] da tabela developments.
+ */
+export const addDevelopmentImage = async (
+  file: File,
+  developmentId: string
+): Promise<UploadResult> => {
+  try {
+    const uploadResult = await uploadImage(file, "property", developmentId);
+    if (!uploadResult.success) return uploadResult;
+
+    const { data: dev } = await (supabase.from("developments") as any)
+      .select("images")
+      .eq("id", developmentId)
+      .single();
+
+    const currentImages: string[] = dev?.images || [];
+    if (currentImages.length >= 5) {
+      return { success: false, error: "Máximo de 5 fotos por empreendimento. Remova uma antes de adicionar outra." };
+    }
+
+    const { error: updateError } = await (supabase.from("developments") as any)
+      .update({ images: [...currentImages, uploadResult.url!] })
+      .eq("id", developmentId);
+
+    if (updateError) return { success: false, error: "Erro ao atualizar o empreendimento com a nova imagem." };
+    return uploadResult;
+  } catch (error) {
+    console.error("❌ Erro ao adicionar imagem ao empreendimento:", error);
+    return { success: false, error: "Erro inesperado ao adicionar imagem." };
+  }
+};
+
+/** Remove uma imagem de um empreendimento (storage + coluna images[]). */
+export const removeDevelopmentImage = async (
+  developmentId: string,
+  imageUrl: string
+): Promise<{ success: boolean; error?: string }> => {
+  try {
+    const filePath = imageUrl.split("/").slice(-2).join("/");
+    const deleteResult = await deleteImage(filePath, "property");
+    if (!deleteResult.success) return deleteResult;
+
+    const { data: dev } = await (supabase.from("developments") as any)
+      .select("images")
+      .eq("id", developmentId)
+      .single();
+
+    if (dev?.images) {
+      const updatedImages = dev.images.filter((img: string) => img !== imageUrl);
+      await (supabase.from("developments") as any)
+        .update({ images: updatedImages })
+        .eq("id", developmentId);
+    }
+    return { success: true };
+  } catch (error) {
+    console.error("❌ Erro ao remover imagem do empreendimento:", error);
+    return { success: false, error: "Erro inesperado ao remover imagem." };
   }
 };
 

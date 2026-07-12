@@ -9,9 +9,18 @@ interface Slot {
   end_time: string;
 }
 
+interface BookingQuestion {
+  id: string;
+  label: string;
+  field_type: "text" | "textarea" | "select" | "number" | "phone";
+  options: string[];
+  required: boolean;
+}
+
 interface BookingData {
   consultant: { full_name: string; avatar_url: string | null; email: string | null; phone: string | null };
   slots: Slot[];
+  questions: BookingQuestion[];
 }
 
 function formatDayLabel(iso: string): string {
@@ -34,6 +43,7 @@ export default function BookingPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [answers, setAnswers] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [confirmed, setConfirmed] = useState(false);
@@ -59,10 +69,19 @@ export default function BookingPage() {
   const handleConfirm = async () => {
     if (!selectedSlot || !name.trim() || !email.trim() || typeof token !== "string") return;
 
+    const missing = (data?.questions || []).find((q) => q.required && !answers[q.id]?.trim());
+    if (missing) {
+      setSubmitError(`Preencha: ${missing.label}`);
+      return;
+    }
+
     setSubmitting(true);
     setSubmitError(null);
 
     try {
+      const answerPayload = (data?.questions || [])
+        .map((q) => ({ label: q.label, answer: answers[q.id] || "" }))
+        .filter((a) => a.answer);
       const res = await fetch(`/api/booking/${token}/confirm`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -71,6 +90,7 @@ export default function BookingPage() {
           name: name.trim(),
           email: email.trim(),
           phone: phone.trim() || null,
+          answers: answerPayload,
         }),
       });
       const json = await res.json();
@@ -229,6 +249,30 @@ export default function BookingPage() {
                     onChange={(e) => setPhone(e.target.value)}
                     style={{ padding: "10px 14px", borderRadius: 8, border: "1px solid #E8E0D2", fontSize: 14, background: "#000000", color: "#FFFFFF" }}
                   />
+
+                  {(data.questions || []).map((q) => {
+                    const inputStyle = { padding: "10px 14px", borderRadius: 8, border: "1px solid #E8E0D2", fontSize: 14, background: "#000000", color: "#FFFFFF", width: "100%" as const };
+                    return (
+                      <div key={q.id} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                        <label style={{ fontSize: 13, color: "#555" }}>{q.label}{q.required ? " *" : ""}</label>
+                        {q.field_type === "textarea" ? (
+                          <textarea rows={2} value={answers[q.id] || ""} onChange={(e) => setAnswers((p) => ({ ...p, [q.id]: e.target.value }))} style={inputStyle} />
+                        ) : q.field_type === "select" ? (
+                          <select value={answers[q.id] || ""} onChange={(e) => setAnswers((p) => ({ ...p, [q.id]: e.target.value }))} style={inputStyle}>
+                            <option value="">Selecione…</option>
+                            {q.options.map((o) => <option key={o} value={o}>{o}</option>)}
+                          </select>
+                        ) : (
+                          <input
+                            type={q.field_type === "number" ? "number" : q.field_type === "phone" ? "tel" : "text"}
+                            value={answers[q.id] || ""}
+                            onChange={(e) => setAnswers((p) => ({ ...p, [q.id]: e.target.value }))}
+                            style={inputStyle}
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
 
                   {submitError && <p style={{ color: "#B3403E", fontSize: 13 }}>{submitError}</p>}
 

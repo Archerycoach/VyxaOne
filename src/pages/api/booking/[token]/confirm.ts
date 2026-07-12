@@ -12,11 +12,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   const token = req.query.token as string;
-  const { eventId, name, email, phone } = req.body as {
+  const { eventId, name, email, phone, answers } = req.body as {
     eventId?: string;
     name?: string;
     email?: string;
     phone?: string;
+    answers?: { label: string; answer: string }[];
   };
 
   if (!token || token.length < 10) {
@@ -61,6 +62,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       .ilike("email", email.trim())
       .maybeSingle();
 
+    // Respostas às perguntas personalizadas do formulário de reserva.
+    const cleanAnswers: { label: string; answer: string }[] = Array.isArray(answers)
+      ? answers
+          .filter((a: any) => a && a.label && a.answer !== undefined && a.answer !== "")
+          .map((a: any) => ({ label: String(a.label), answer: String(a.answer) }))
+      : [];
+    const answersNote = cleanAnswers.length > 0
+      ? "Respostas do formulário:\n" + cleanAnswers.map((a) => `- ${a.label}: ${a.answer}`).join("\n")
+      : null;
+
     let leadId: string = existingLead?.id;
 
     if (!leadId) {
@@ -74,6 +85,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           phone: phone?.trim() || null,
           source: "Agendamento Online",
           status: "new",
+          notes: answersNote,
+          custom_fields: cleanAnswers.length > 0 ? { form_answers: cleanAnswers } : null,
         })
         .select("id")
         .single();
