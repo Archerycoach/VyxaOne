@@ -1,12 +1,16 @@
-import { useEffect, useState } from "react";
-import { useRouter } from "next/router";
 import Head from "next/head";
 import Link from "next/link";
-import { Loader2, Phone, Mail, MapPin } from "lucide-react";
+import type { GetServerSideProps } from "next";
+import { Phone, Mail, MapPin } from "lucide-react";
 
 interface AgentLanding {
   agent: { name: string | null; email: string | null; phone: string | null; avatar: string | null; headline: string | null; bio: string | null };
   listings: Array<{ title: string; price: number | null; city: string | null; image: string | null; token: string; kind: string }>;
+}
+
+interface PageProps {
+  data: AgentLanding | null;
+  url: string;
 }
 
 function formatPrice(v?: number | null) {
@@ -14,25 +18,24 @@ function formatPrice(v?: number | null) {
   return new Intl.NumberFormat("pt-PT", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(v);
 }
 
-export default function AgentLandingPage() {
-  const router = useRouter();
-  const { token } = router.query;
-  const [data, setData] = useState<AgentLanding | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [notFound, setNotFound] = useState(false);
-
-  useEffect(() => {
-    if (!token || typeof token !== "string") return;
-    fetch(`/api/consultor/${token}`)
-      .then(async (r) => { if (!r.ok) { setNotFound(true); return; } setData(await r.json()); })
-      .catch(() => setNotFound(true))
-      .finally(() => setLoading(false));
-  }, [token]);
-
-  if (loading) {
-    return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="h-8 w-8 animate-spin text-blue-600" /></div>;
+// Renderização no servidor para SEO/partilha (Open Graph) no HTML inicial.
+export const getServerSideProps: GetServerSideProps<PageProps> = async (ctx) => {
+  const token = ctx.params?.token as string;
+  const host = ctx.req.headers.host;
+  const protocol = host?.includes("localhost") ? "http" : "https";
+  const origin = `${protocol}://${host}`;
+  const url = `${origin}/consultor/${token}`;
+  try {
+    const res = await fetch(`${origin}/api/consultor/${token}`);
+    if (!res.ok) return { props: { data: null, url } };
+    return { props: { data: (await res.json()) as AgentLanding, url } };
+  } catch {
+    return { props: { data: null, url } };
   }
-  if (notFound || !data) {
+};
+
+export default function AgentLandingPage({ data, url }: PageProps) {
+  if (!data) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4 text-center">
         <div><h1 className="text-2xl font-bold text-slate-900">Página não disponível</h1>
@@ -42,11 +45,27 @@ export default function AgentLandingPage() {
   }
 
   const a = data.agent;
+  const seoTitle = [a.name, a.headline].filter(Boolean).join(" — ") || "Consultor Imobiliário";
+  const seoDescription = (a.bio || a.headline || `${a.name} — consultor imobiliário. Veja os imóveis disponíveis e contacte diretamente.`).slice(0, 200);
+  const ogImage = a.avatar || "";
+
   return (
     <>
-      <Head><title>{a.name || "Consultor"}</title>{a.headline && <meta name="description" content={a.headline} />}</Head>
+      <Head>
+        <title>{seoTitle}</title>
+        <meta name="description" content={seoDescription} />
+        <link rel="canonical" href={url} />
+        <meta property="og:type" content="profile" />
+        <meta property="og:title" content={seoTitle} />
+        <meta property="og:description" content={seoDescription} />
+        <meta property="og:url" content={url} />
+        {ogImage && <meta property="og:image" content={ogImage} />}
+        <meta name="twitter:card" content={ogImage ? "summary" : "summary"} />
+        <meta name="twitter:title" content={seoTitle} />
+        <meta name="twitter:description" content={seoDescription} />
+        {ogImage && <meta name="twitter:image" content={ogImage} />}
+      </Head>
       <div className="min-h-screen bg-slate-50">
-        {/* Hero */}
         <div className="bg-gradient-to-br from-blue-600 to-indigo-700 text-white">
           <div className="max-w-4xl mx-auto px-4 py-12 flex flex-col sm:flex-row items-center gap-6 text-center sm:text-left">
             {a.avatar ? (
