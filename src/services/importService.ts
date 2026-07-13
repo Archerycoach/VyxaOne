@@ -81,30 +81,27 @@ const parseBudget = (value: any): number | null => {
   return isNaN(number) ? null : number;
 };
 
-// Normaliza um telefone para o formato aceite pela constraint da BD
-// (^\+?[0-9\s\-()]{9,20}$). Devolve null quando o valor é ambíguo ou
-// irreparável — nunca inventamos um número (um número errado num CRM é pior
-// que nenhum). Retorna { value, dropped } para podermos avisar o utilizador.
-const PHONE_RE = /^\+?[0-9\s\-()]{9,20}$/;
+// Normaliza um telefone para "+" opcional seguido só de dígitos
+// (ex.: "+351 914 700 599" -> "+351914700599"). Removemos espaços, hífens e
+// parênteses de propósito: a constraint da BD em produção só aceita dígitos,
+// por isso este formato canónico é sempre aceite. Devolve null quando o valor
+// é ambíguo ou irreparável — nunca inventamos um número (um número errado num
+// CRM é pior que nenhum). Retorna { value, dropped } para avisar o utilizador.
 const sanitizePhone = (value: any): { value: string | null; dropped: boolean } => {
   if (value === null || value === undefined) return { value: null, dropped: false };
   const original = String(value).trim();
   if (!original) return { value: null, dropped: false };
 
   const plusCount = (original.match(/\+/g) || []).length;
-  // Remove caracteres fora do conjunto aceite (letras, "_", ".", "/", etc.)
-  let cleaned = original.replace(/[^0-9+\s\-()]/g, "");
-  const leadingPlus = cleaned.trimStart().startsWith("+");
-  cleaned = cleaned.replace(/\+/g, "");
-  if (leadingPlus) cleaned = "+" + cleaned;
-  cleaned = cleaned.replace(/\s+/g, " ").trim();
+  const hasPlus = original.trimStart().startsWith("+");
+  const digits = original.replace(/[^0-9]/g, "");
 
-  const digits = (cleaned.match(/[0-9]/g) || []).length;
   // Vários "+" = vários números colados → ambíguo, não adivinhamos.
-  if (plusCount > 1 || digits < 9 || !PHONE_RE.test(cleaned)) {
+  // Fora de 9–20 dígitos → curto/irreparável ou vários números juntos.
+  if (plusCount > 1 || digits.length < 9 || digits.length > 20) {
     return { value: null, dropped: true };
   }
-  return { value: cleaned, dropped: false };
+  return { value: (hasPlus ? "+" : "") + digits, dropped: false };
 };
 
 // Valida o email contra a constraint da BD; se não for válido, devolve null
@@ -167,6 +164,9 @@ export const importLeads = async (data: any[]): Promise<ImportResult> => {
 
       const lead: LeadInsert = {
         user_id: user.id,
+        // Sem assigned_to a lead não passa o filtro de visibilidade do getLeads
+        // (assigned_to.in.(...)) e não apareceria na aplicação após importar.
+        assigned_to: user.id,
         name: row.name || row.Nome || "Sem Nome",
         email: sanitizeEmail(row.email ?? row.Email),
         phone,
