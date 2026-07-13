@@ -7,6 +7,7 @@ export type ImportResult = {
   success: number;
   errors: any[];
   total?: number;
+  warnings?: string[];
 };
 
 type LeadInsert = Database["public"]["Tables"]["leads"]["Insert"];
@@ -67,18 +68,52 @@ const parseDate = (value: any): string | null => {
   return null;
 };
 
-// Parse budget (handles currency symbols and thousands separators)
+// Parse budget (handles currency symbols, labels like "Até", and separators)
 const parseBudget = (value: any): number | null => {
-  if (!value) return null;
-  
-  // Remove currency symbols and spaces
-  const cleanValue = String(value)
-    .replace(/[€$£\s]/g, "")
-    .replace(/\./g, "") // Remove thousands separator (.)
-    .replace(/,/g, "."); // Convert decimal separator (,) to (.)
-  
-  const number = parseFloat(cleanValue);
+  if (value === null || value === undefined || value === "") return null;
+  if (typeof value === "number") return isNaN(value) ? null : value;
+
+  // Mantém só dígitos e separadores (remove "Até", "€", espaços, etc.)
+  let s = String(value).replace(/[^0-9.,]/g, "");
+  if (!s) return null;
+  s = s.replace(/\./g, "").replace(/,/g, "."); // milhares "." fora; decimal "," -> "."
+  const number = parseFloat(s);
   return isNaN(number) ? null : number;
+};
+
+// Normaliza um telefone para o formato aceite pela constraint da BD
+// (^\+?[0-9\s\-()]{9,20}$). Devolve null quando o valor é ambíguo ou
+// irreparável — nunca inventamos um número (um número errado num CRM é pior
+// que nenhum). Retorna { value, dropped } para podermos avisar o utilizador.
+const PHONE_RE = /^\+?[0-9\s\-()]{9,20}$/;
+const sanitizePhone = (value: any): { value: string | null; dropped: boolean } => {
+  if (value === null || value === undefined) return { value: null, dropped: false };
+  const original = String(value).trim();
+  if (!original) return { value: null, dropped: false };
+
+  const plusCount = (original.match(/\+/g) || []).length;
+  // Remove caracteres fora do conjunto aceite (letras, "_", ".", "/", etc.)
+  let cleaned = original.replace(/[^0-9+\s\-()]/g, "");
+  const leadingPlus = cleaned.trimStart().startsWith("+");
+  cleaned = cleaned.replace(/\+/g, "");
+  if (leadingPlus) cleaned = "+" + cleaned;
+  cleaned = cleaned.replace(/\s+/g, " ").trim();
+
+  const digits = (cleaned.match(/[0-9]/g) || []).length;
+  // Vários "+" = vários números colados → ambíguo, não adivinhamos.
+  if (plusCount > 1 || digits < 9 || !PHONE_RE.test(cleaned)) {
+    return { value: null, dropped: true };
+  }
+  return { value: cleaned, dropped: false };
+};
+
+// Valida o email contra a constraint da BD; se não for válido, devolve null
+// (importa a lead na mesma, sem email).
+const EMAIL_RE = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
+const sanitizeEmail = (value: any): string | null => {
+  if (value === null || value === undefined) return null;
+  const s = String(value).trim();
+  return s && EMAIL_RE.test(s) ? s : null;
 };
 
 // Normalize lead type
@@ -107,50 +142,74 @@ const normalizeStatus = (value: any): "new" | "contacted" | "qualified" | "propo
   if (normalized.includes("negociação") || normalized === "negotiation") return "negotiation";
   if (normalized.includes("ganho") || normalized === "won") return "won";
   if (normalized.includes("perdido") || normalized === "lost") return "lost";
-  
+  // Estados comuns exportados de outros CRMs
+  if (normalized.includes("progresso") || normalized.includes("pausado")) return "contacted";
+
   return "new";
 };
 
-export const importLeads = async (data: any[]) => {
+export const importLeads = async (data: any[]): Promise<ImportResult> => {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error("Not authenticated");
 
   const leadsToInsert: LeadInsert[] = [];
   const errors: any[] = [];
+  const warnings: string[] = [];
 
-  for (const row of data) {
+  data.forEach((row, idx) => {
+    const line = idx + 2; // +1 cabeçalho, +1 para base 1
     try {
-      // Basic mapping for V2 schema
+      const rawPhone = row.phone ?? row.Telefone ?? null;
+      const { value: phone, dropped } = sanitizePhone(rawPhone);
+      if (dropped) {
+        warnings.push(`Linha ${line}: telefone "${String(rawPhone).trim()}" inválido — lead importada sem telefone.`);
+      }
+
       const lead: LeadInsert = {
         user_id: user.id,
         name: row.name || row.Nome || "Sem Nome",
-        email: row.email || row.Email || null,
-        phone: row.phone || row.Telefone || null,
+        email: sanitizeEmail(row.email ?? row.Email),
+        phone,
         notes: row.notes || row.Notas || null,
-        lead_type: (row.lead_type || row.Tipo || "buyer").toLowerCase() as "buyer" | "seller" | "both",
-        status: (row.status || row.Estado || "new").toLowerCase() as "new" | "contacted" | "qualified" | "proposal" | "negotiation" | "won" | "lost",
-        budget: row.budget,
-        // Removed property_type
-        // Location and typology removed for V2 compatibility
-      };
+        lead_type: normalizeLeadType(
+          row.lead_type ?? row.Tipo ?? row["Tipo (comprador/vendedor)"]
+        ),
+        status: normalizeStatus(row.status ?? row.Estado),
+        budget: parseBudget(row.budget ?? row.Orcamento ?? row["Orçamento"]),
+      } as LeadInsert;
 
-      // Validate required fields
       if (!lead.name) {
         throw new Error("Nome é obrigatório");
       }
 
-      leadsToInsert.push(lead as any); // Cast to any
+      leadsToInsert.push(lead as any);
     } catch (error: any) {
-      errors.push({ row, error: error.message });
+      errors.push({ line, error: error.message });
+    }
+  });
+
+  // Insere em blocos; se um bloco falhar (constraint inesperada), reprocessa
+  // linha-a-linha para isolar a(s) linha(s) problemática(s) sem perder o resto.
+  let success = 0;
+  const CHUNK = 100;
+  for (let i = 0; i < leadsToInsert.length; i += CHUNK) {
+    const chunk = leadsToInsert.slice(i, i + CHUNK);
+    const { error } = await supabase.from("leads").insert(chunk);
+    if (!error) {
+      success += chunk.length;
+      continue;
+    }
+    for (const lead of chunk) {
+      const { error: rowError } = await supabase.from("leads").insert(lead);
+      if (rowError) {
+        errors.push({ line: `(${(lead as any).name})`, error: rowError.message });
+      } else {
+        success++;
+      }
     }
   }
 
-  if (leadsToInsert.length > 0) {
-    const { error } = await supabase.from("leads").insert(leadsToInsert);
-    if (error) throw error;
-  }
-
-  return { success: leadsToInsert.length, errors };
+  return { success, errors, total: data.length, warnings };
 };
 
 export const importProperties = async (data: any[]) => {

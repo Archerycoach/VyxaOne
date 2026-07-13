@@ -304,6 +304,22 @@ export default function Leads() {
                 </AlertDescription>
               </Alert>
 
+              {/* Warnings (leads importadas mas com dados corrigidos) */}
+              {importResult.warnings && importResult.warnings.length > 0 && (
+                <div>
+                  <h3 className="font-semibold text-amber-600 mb-2">
+                    ⚠️ {importResult.warnings.length} avisos (leads importadas na mesma):
+                  </h3>
+                  <div className="space-y-2 max-h-60 overflow-y-auto">
+                    {importResult.warnings.map((w, idx) => (
+                      <Alert key={idx} className="border-amber-200 bg-amber-50">
+                        <AlertDescription className="text-sm text-amber-800">{w}</AlertDescription>
+                      </Alert>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Errors */}
               {importResult.errors.length > 0 && (
                 <div>
@@ -314,12 +330,7 @@ export default function Leads() {
                     {importResult.errors.map((error, idx) => (
                       <Alert key={idx} className="border-red-200 bg-red-50">
                         <AlertDescription className="text-sm text-red-800">
-                          <strong>Linha {error.row}:</strong> {error.error}
-                          {error.data && (
-                            <div className="mt-1 text-xs text-red-600">
-                              Dados: {JSON.stringify(error.data, null, 2)}
-                            </div>
-                          )}
+                          <strong>Linha {error.line}:</strong> {error.error}
                         </AlertDescription>
                       </Alert>
                     ))}
