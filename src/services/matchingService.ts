@@ -68,7 +68,10 @@ export const findMatchesForLead = async (
 
   // Filtrar em memória para evitar erros de tipos excessivamente profundos
   let internalProperties = allProperties || [];
-  
+
+  // Imóveis já vendidos não devem ser sugeridos/associados a leads.
+  internalProperties = internalProperties.filter(p => p.status !== "sold");
+
   if (lead.property_type) {
     internalProperties = internalProperties.filter(p => p.property_type === lead.property_type);
   }
@@ -141,7 +144,7 @@ export const findMatchesForLead = async (
  * Calcula score de matching entre uma lead e um imóvel
  * Pesos: orçamento 35%, localização 30%, tipologia/quartos 20%, área 15%
  */
-const calculateMatchScore = (
+export const calculateMatchScore = (
   lead: any,
   property: any,
   source: 'internal' | 'idealista'

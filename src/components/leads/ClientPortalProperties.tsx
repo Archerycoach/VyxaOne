@@ -4,7 +4,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { UserCombobox } from "@/components/ui/user-combobox";
-import { Loader2, Plus, X, Target, Home, Link as LinkIcon } from "lucide-react";
+import { Loader2, Plus, X, Target, Home, Link as LinkIcon, Download } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { findMatchesForLead } from "@/services/matchingService";
 import { getProperties } from "@/services/propertiesService";
@@ -41,6 +42,7 @@ export function ClientPortalProperties({ leadId }: Props) {
   const [extImage, setExtImage] = useState("");
   const [extPrice, setExtPrice] = useState("");
   const [addingExt, setAddingExt] = useState(false);
+  const [importingExt, setImportingExt] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -86,6 +88,44 @@ export function ClientPortalProperties({ leadId }: Props) {
     if (!manualId) return;
     await handleAddProperty(manualId);
     setManualId("");
+  };
+
+  // Usa a mesma extração de link dos "Emails por Procura" para preencher
+  // Título/Preço/Imagem a partir do URL. Só preenche os campos — o link só é
+  // adicionado ao portal quando o consultor clicar em "Adicionar link".
+  const handleImportExternal = async () => {
+    const url = extUrl.trim();
+    if (!url) {
+      toast({ title: "Cole primeiro o link", variant: "destructive" });
+      return;
+    }
+    setImportingExt(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch("/api/gpt/properties/extract-listing-content", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token || ""}`,
+        },
+        body: JSON.stringify({ sourceUrl: url }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Não foi possível ler o link");
+
+      if (data.sourceTitle) setExtTitle(data.sourceTitle);
+      if (data.sourceImage) setExtImage(data.sourceImage);
+      if (data.sourcePrice) setExtPrice(String(data.sourcePrice));
+
+      toast({
+        title: "Link lido",
+        description: "Reveja os campos preenchidos e clique em Adicionar link.",
+      });
+    } catch (err: any) {
+      toast({ title: "Erro ao ler o link", description: err.message, variant: "destructive" });
+    } finally {
+      setImportingExt(false);
+    }
   };
 
   const handleAddExternal = async () => {
@@ -141,7 +181,7 @@ export function ClientPortalProperties({ leadId }: Props) {
 
   const pendingSuggestions = suggestions.filter((s) => !addedIds.has(s.property?.id));
   const manualOptions = allProps
-    .filter((p) => !addedIds.has(p.id))
+    .filter((p) => !addedIds.has(p.id) && p.status !== "sold")
     .map((p) => ({ id: p.id, name: p.title, email: [p.city, formatPrice(p.price)].filter(Boolean).join(" · ") }));
 
   return (
@@ -199,11 +239,19 @@ export function ClientPortalProperties({ leadId }: Props) {
       {/* Adicionar link externo */}
       <div className="space-y-2 border rounded-lg p-3 bg-slate-50">
         <h3 className="font-semibold text-slate-900 flex items-center gap-2"><LinkIcon className="h-4 w-4 text-blue-600" /> Adicionar link externo</h3>
-        <p className="text-sm text-muted-foreground">Ex: um anúncio no Idealista. Aparece no portal como os restantes imóveis.</p>
+        <p className="text-sm text-muted-foreground">Ex: um anúncio no Idealista. Cole o link e clique em Importar para preencher automaticamente o título e o preço. Aparece no portal como os restantes imóveis.</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div className="sm:col-span-2">
+            <Label className="text-xs">Link (URL) *</Label>
+            <div className="flex gap-2">
+              <Input value={extUrl} onChange={(e) => setExtUrl(e.target.value)} placeholder="https://…" />
+              <Button type="button" variant="outline" onClick={handleImportExternal} disabled={importingExt || !extUrl.trim()}>
+                {importingExt ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Download className="h-4 w-4 mr-1" /> Importar</>}
+              </Button>
+            </div>
+          </div>
           <div><Label className="text-xs">Título *</Label><Input value={extTitle} onChange={(e) => setExtTitle(e.target.value)} placeholder="Ex: T2 no centro de Lisboa" /></div>
           <div><Label className="text-xs">Preço (€)</Label><Input type="number" value={extPrice} onChange={(e) => setExtPrice(e.target.value)} /></div>
-          <div className="sm:col-span-2"><Label className="text-xs">Link (URL) *</Label><Input value={extUrl} onChange={(e) => setExtUrl(e.target.value)} placeholder="https://…" /></div>
           <div className="sm:col-span-2"><Label className="text-xs">Imagem (URL, opcional)</Label><Input value={extImage} onChange={(e) => setExtImage(e.target.value)} placeholder="https://…/foto.jpg" /></div>
         </div>
         <div className="flex justify-end">

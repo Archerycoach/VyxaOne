@@ -40,8 +40,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     if (sourceUrl) {
-      const { text, title, image } = await extractFromUrl(sourceUrl);
-      return res.status(200).json({ success: true, text: truncate(text), sourceTitle: title, sourceImage: image });
+      const { text, title, image, price } = await extractFromUrl(sourceUrl);
+      return res.status(200).json({ success: true, text: truncate(text), sourceTitle: title, sourceImage: image, sourcePrice: price });
     }
 
     return res.status(400).json({ error: "Envie um documento (documentBase64) ou um link (sourceUrl)." });
@@ -76,7 +76,7 @@ async function extractFromDocument(documentBase64: string, documentName: string)
   return result.text;
 }
 
-async function extractFromUrl(sourceUrl: string): Promise<{ text: string; title?: string; image?: string }> {
+async function extractFromUrl(sourceUrl: string): Promise<{ text: string; title?: string; image?: string; price?: number }> {
   const response = await fetch(sourceUrl, {
     headers: {
       "User-Agent": "Mozilla/5.0 (compatible; VyxaOneBot/1.0; +https://vyxa.pt)",
@@ -95,11 +95,36 @@ async function extractFromUrl(sourceUrl: string): Promise<{ text: string; title?
     $('meta[property="og:title"]').attr("content") || $("title").text() || undefined;
   const description = $('meta[property="og:description"]').attr("content") || undefined;
   const image = $('meta[property="og:image"]').attr("content") || undefined;
+  const price = extractPrice($, description);
 
   $("script, style, nav, footer, header").remove();
   const bodyText = $("body").text();
 
   const text = [description, bodyText].filter(Boolean).join("\n\n");
 
-  return { text, title, image };
+  return { text, title, image, price };
+}
+
+// Tenta descobrir o preço do imóvel: primeiro pelas meta tags de e-commerce
+// (mais fiáveis), depois procurando um valor em euros no título/descrição/corpo.
+function extractPrice($: any, description?: string): number | undefined {
+  const metaPrice =
+    $('meta[property="product:price:amount"]').attr("content") ||
+    $('meta[property="og:price:amount"]').attr("content");
+  if (metaPrice) {
+    const n = Number(String(metaPrice).replace(/[^\d.]/g, ""));
+    if (!isNaN(n) && n >= 1000) return Math.round(n);
+  }
+
+  // Procura padrões "€ 350.000" ou "350.000 €" (separador de milhares "." em pt-PT).
+  const haystack = [description, $('meta[property="og:title"]').attr("content"), $("body").text()]
+    .filter(Boolean)
+    .join(" ");
+  const matches = haystack.matchAll(/(?:€|EUR)\s*([\d.\s]{4,})|([\d.\s]{4,})\s*(?:€|EUR)/gi);
+  for (const m of matches) {
+    const raw = (m[1] || m[2] || "").replace(/[\s.]/g, "");
+    const n = Number(raw);
+    if (!isNaN(n) && n >= 1000 && n <= 100000000) return n;
+  }
+  return undefined;
 }

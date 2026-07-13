@@ -603,6 +603,21 @@ export default function Settings() {
                   />
                 </div>
 
+                <div className="flex items-center justify-between border rounded-md p-4 bg-slate-50">
+                  <div className="space-y-0.5 pr-4">
+                    <Label className="text-base">Adicionar imóveis correspondentes automaticamente ao portal</Label>
+                    <p className="text-sm text-muted-foreground">
+                      Todos os dias, os seus imóveis que correspondam ao perfil de procura de uma lead são
+                      adicionados automaticamente ao Portal do Cliente dessa lead, e o cliente é alertado por email.
+                      Continua a poder adicionar ou remover imóveis manualmente.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={!!(profile as any)?.auto_portal_matches}
+                    onCheckedChange={(v) => setProfile((prev: any) => (prev ? { ...prev, auto_portal_matches: v } : prev))}
+                  />
+                </div>
+
                 <Button onClick={updateProfile} disabled={loading}>
                   <Save className="mr-2 h-4 w-4" />
                   {loading ? "A guardar..." : "Guardar Alterações"}

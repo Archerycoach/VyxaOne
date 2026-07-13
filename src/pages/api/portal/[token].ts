@@ -38,7 +38,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const [matchesResult, externalResult, eventsResult, documentsResult, profileResult] = await Promise.all([
       db
         .from("property_matches")
-        .select("match_score, match_reasons, property:properties(id, title, address, city, price, bedrooms, bathrooms, area, main_image_url, reference_code, property_type)")
+        .select("match_score, match_reasons, property:properties(id, title, address, city, price, bedrooms, bathrooms, area, main_image_url, reference_code, property_type, status)")
         .eq("lead_id", lead.id)
         .order("match_score", { ascending: false })
         .limit(12),
@@ -84,10 +84,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       })
     );
 
+    // Imóveis que entretanto foram vendidos deixam de aparecer ao cliente,
+    // mesmo que já tivessem sido adicionados ao portal (a curadoria mantém-se,
+    // apenas não é mostrada — se o estado voltar atrás, reaparece).
+    const matches = ((matchesResult.data || []) as any[]).filter(
+      (m) => m.property && m.property.status !== "sold"
+    );
+
     return res.status(200).json({
       leadName: lead.name,
       consultant: profileResult.data || null,
-      matches: matchesResult.data || [],
+      matches,
       externalListings: externalResult.data || [],
       upcomingEvents: eventsResult.data || [],
       documents,
