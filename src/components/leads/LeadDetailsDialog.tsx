@@ -884,11 +884,6 @@ export function LeadDetailsDialog({
                     <Home className="h-4 w-4 mr-2 text-slate-600" />
                     Avaliação de Imóvel
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleCopyPortalLink} disabled={generatingPortalLink}>
-                    {generatingPortalLink ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <LinkIcon className="h-4 w-4 mr-2 text-blue-600" />}
-                    Copiar Link do Portal do Cliente
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={handleRunAutomations} disabled={isRunningAutomations}>
                     {isRunningAutomations ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2 text-indigo-600" />}
                     Executar Automações
@@ -1522,6 +1517,16 @@ export function LeadDetailsDialog({
             </TabsContent>
 
             <TabsContent value="portal" className="space-y-4 mt-4">
+              <div className="flex items-center justify-between gap-3 rounded-md border bg-slate-50 px-3 py-2">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-slate-900">Link do Portal do Cliente</p>
+                  <p className="text-xs text-muted-foreground">Envie este link ao cliente para ele ver os imóveis selecionados.</p>
+                </div>
+                <Button variant="outline" size="sm" onClick={handleCopyPortalLink} disabled={generatingPortalLink}>
+                  {generatingPortalLink ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <LinkIcon className="h-4 w-4 mr-2 text-blue-600" />}
+                  Copiar link
+                </Button>
+              </div>
               <ClientPortalProperties leadId={lead.id} />
             </TabsContent>
 
