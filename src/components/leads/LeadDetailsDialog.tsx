@@ -62,6 +62,7 @@ import type { InteractionWithDetails } from "@/services/interactionsService";
 import type { LeadNote } from "@/services/notesService";
 import type { CalendarEvent, Task, Property } from "@/types";
 import { QuickContactDialog } from "./QuickContactDialog";
+import { ClientPortalProperties } from "./ClientPortalProperties";
 import { QuickTaskDialog } from "@/components/QuickTaskDialog";
 import { QuickEventDialog } from "@/components/QuickEventDialog";
 import { LeadIdealistaPanel } from "./LeadIdealistaPanel";
@@ -949,6 +950,7 @@ export function LeadDetailsDialog({
               <TabsTrigger value="notes">Notas ({notes.length})</TabsTrigger>
               <TabsTrigger value="events">Eventos ({events.length})</TabsTrigger>
               <TabsTrigger value="tasks">Tarefas ({tasks.length})</TabsTrigger>
+              <TabsTrigger value="portal">Portal Cliente</TabsTrigger>
               <TabsTrigger value="timeline">Cronologia</TabsTrigger>
 
               <button
@@ -1517,6 +1519,10 @@ export function LeadDetailsDialog({
                   ))}
                 </div>
               )}
+            </TabsContent>
+
+            <TabsContent value="portal" className="space-y-4 mt-4">
+              <ClientPortalProperties leadId={lead.id} />
             </TabsContent>
 
             <TabsContent value="timeline" className="space-y-4 mt-4">

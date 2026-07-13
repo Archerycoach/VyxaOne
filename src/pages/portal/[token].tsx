@@ -39,10 +39,19 @@ interface PortalDocument {
   url: string | null;
 }
 
+interface PortalExternalListing {
+  id: string;
+  title: string;
+  url: string;
+  image_url: string | null;
+  price: number | null;
+}
+
 interface PortalData {
   leadName: string;
   consultant: { full_name: string; email: string; phone: string | null; avatar_url: string | null } | null;
   matches: PortalMatch[];
+  externalListings: PortalExternalListing[];
   upcomingEvents: PortalEvent[];
   documents: PortalDocument[];
 }
@@ -223,10 +232,31 @@ export default function ClientPortalPage() {
             {/* Matched properties */}
             <section style={{ marginBottom: 48 }}>
               <SectionTitle icon={<Home size={18} />}>Imóveis para si</SectionTitle>
-              {data.matches.length === 0 ? (
+              {data.matches.length === 0 && (data.externalListings || []).length === 0 ? (
                 <EmptyNote>Ainda estamos a preparar as melhores opções para si — em breve terá novidades aqui.</EmptyNote>
               ) : (
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 16 }}>
+                  {(data.externalListings || []).map((ext) => (
+                    <a
+                      key={ext.id}
+                      href={ext.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ background: "#FFFFFF", border: "1px solid #E8E0D2", borderRadius: 14, overflow: "hidden", textDecoration: "none", color: "inherit" }}
+                    >
+                      <div style={{ height: 150, background: ext.image_url ? `url(${ext.image_url}) center/cover` : "#E8E0D2", display: "flex", alignItems: "flex-end" }}>
+                        {ext.price != null && (
+                          <span style={{ background: "#1A2B3C", color: "#F6F1E8", fontSize: 15, fontWeight: 600, padding: "5px 12px", borderRadius: "0 8px 0 0" }}>
+                            {formatCurrency(ext.price)}
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ padding: "14px 16px" }}>
+                        <p style={{ fontFamily: "'Fraunces', serif", fontSize: 17, fontWeight: 500, margin: "0 0 4px", lineHeight: 1.3 }}>{ext.title}</p>
+                        <p style={{ color: "#3B6E8F", fontSize: 12.5, margin: 0 }}>Ver anúncio →</p>
+                      </div>
+                    </a>
+                  ))}
                   {data.matches.map((match, i) => {
                     const p = match.property;
                     if (!p) return null;

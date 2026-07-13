@@ -30,7 +30,9 @@ export type AutomatedEmailSource =
   | "workflow_automation"
   | "meta_auto_reply"
   | "booking_confirmation"
-  | "landing_monthly_report";
+  | "landing_monthly_report"
+  | "portal_new_property"
+  | "portal_invite";
 
 export interface EmailAttachment {
   filename?: string;

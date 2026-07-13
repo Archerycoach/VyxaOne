@@ -35,13 +35,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(404).json({ error: "Link não encontrado ou expirado" });
     }
 
-    const [matchesResult, eventsResult, documentsResult, profileResult] = await Promise.all([
+    const [matchesResult, externalResult, eventsResult, documentsResult, profileResult] = await Promise.all([
       db
         .from("property_matches")
         .select("match_score, match_reasons, property:properties(id, title, address, city, price, bedrooms, bathrooms, area, main_image_url, reference_code, property_type)")
         .eq("lead_id", lead.id)
         .order("match_score", { ascending: false })
         .limit(12),
+      db
+        .from("portal_external_listings")
+        .select("id, title, url, image_url, price")
+        .eq("lead_id", lead.id)
+        .order("created_at", { ascending: false }),
       db
         .from("calendar_events")
         .select("id, title, start_time, location, event_type")
@@ -83,6 +88,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       leadName: lead.name,
       consultant: profileResult.data || null,
       matches: matchesResult.data || [],
+      externalListings: externalResult.data || [],
       upcomingEvents: eventsResult.data || [],
       documents,
     });

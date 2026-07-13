@@ -589,6 +589,20 @@ export default function Settings() {
                   </p>
                 </div>
 
+                <div className="flex items-center justify-between border rounded-md p-4 bg-slate-50">
+                  <div className="space-y-0.5 pr-4">
+                    <Label className="text-base">Convite automático de portal a novas leads</Label>
+                    <p className="text-sm text-muted-foreground">
+                      Quando uma lead nova chega com email, envia-lhe automaticamente o link do Portal do Cliente,
+                      onde encontrará os imóveis que selecionar para ela.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={!!profile?.auto_portal_invite}
+                    onCheckedChange={(v) => setProfile((prev: any) => (prev ? { ...prev, auto_portal_invite: v } : prev))}
+                  />
+                </div>
+
                 <Button onClick={updateProfile} disabled={loading}>
                   <Save className="mr-2 h-4 w-4" />
                   {loading ? "A guardar..." : "Guardar Alterações"}
