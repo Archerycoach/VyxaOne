@@ -234,6 +234,13 @@ export function ClientPortalProperties({ leadId }: Props) {
             <Plus className="h-4 w-4 mr-1" /> Adicionar
           </Button>
         </div>
+        {manualOptions.length === 0 && (
+          <p className="text-xs text-muted-foreground">
+            {allProps.length === 0
+              ? "Ainda não tem imóveis no CRM. Crie imóveis em Imóveis, ou adicione um link externo abaixo."
+              : "Todos os seus imóveis disponíveis já estão no portal (ou estão vendidos). Pode adicionar um link externo abaixo."}
+          </p>
+        )}
       </div>
 
       {/* Adicionar link externo */}
