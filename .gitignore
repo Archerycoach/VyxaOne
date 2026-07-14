@@ -36,6 +36,10 @@ yarn-error.log*
 # vercel
 .vercel
 
+# connection strings das bases de dados (replicação de migrações) — NUNCA commitar
+scripts/db-targets.local.txt
+schema.sql
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

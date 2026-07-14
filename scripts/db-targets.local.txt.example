@@ -1,0 +1,10 @@
+# MODELO — copia este ficheiro para "db-targets.local.txt" (sem .example) e
+# preenche com as connection strings reais. O ficheiro real está no .gitignore
+# e NUNCA deve ser commitado (contém passwords).
+#
+# Uma connection string do Session pooler por linha (porta 5432).
+# Linhas em branco e as que começam por # são ignoradas.
+#
+# Exemplo:
+# postgresql://postgres.REF_PRODUCAO:PASS@aws-0-eu-west-1.pooler.supabase.com:5432/postgres
+# postgresql://postgres.REF_INSTANCIA2:PASS@aws-0-eu-west-1.pooler.supabase.com:5432/postgres

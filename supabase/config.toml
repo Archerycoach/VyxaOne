@@ -1,0 +1,10 @@
+# Configuração mínima do Supabase CLI para este repositório.
+# Serve para o CLI reconhecer a pasta como um projeto e encontrar as migrações
+# em supabase/migrations/. As ligações às bases de dados são passadas por
+# --db-url no pipeline (ver .github/workflows/db-migrate.yml), por isso não é
+# preciso "linkar" um projeto específico aqui.
+project_id = "vyxaone"
+
+[db]
+# Versão do Postgres da Supabase (produção usa a 15).
+major_version = 15
