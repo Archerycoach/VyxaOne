@@ -231,6 +231,21 @@ export const importLeads = async (data: any[]): Promise<ImportResult> => {
   const errors: any[] = [];
   const warnings: string[] = [];
 
+  // As leads importadas são dados migrados/antigos: devem aparecer no FIM da
+  // lista (ordenada por created_at desc). Ancoramos o created_at delas
+  // imediatamente antes da lead mais antiga já existente deste utilizador —
+  // datas realistas (não um ano fictício) e a ordem do ficheiro é preservada.
+  const { data: oldestLead } = await supabase
+    .from("leads")
+    .select("created_at")
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  const anchorMs = (oldestLead as any)?.created_at
+    ? new Date((oldestLead as any).created_at).getTime()
+    : Date.now();
+
   data.forEach((row, idx) => {
     const line = idx + 2; // +1 cabeçalho, +1 para base 1
     try {
@@ -297,6 +312,14 @@ export const importLeads = async (data: any[]): Promise<ImportResult> => {
       if (!lead.name) {
         throw new Error("Nome é obrigatório");
       }
+
+      // created_at antigo (antes da lead mais antiga existente), mantendo a
+      // ordem do ficheiro: a primeira linha fica a mais antiga de todas.
+      const createdAt = new Date(anchorMs - (data.length - idx) * 1000).toISOString();
+      (lead as any).created_at = createdAt;
+      // Leads migradas: primeiro contacto tido como já feito, para não
+      // dispararem os alertas de "primeiro contacto em falta".
+      (lead as any).first_contact_at = createdAt;
 
       leadsToInsert.push(lead as any);
     } catch (error: any) {
