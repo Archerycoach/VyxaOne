@@ -58,21 +58,54 @@ export const getUsersForAssignment = async (): Promise<Profile[]> => {
   return data || [];
 };
 
-// Qualquer utilizador ativo do sistema, para transferir/partilhar uma lead
-// própria com quem quiser (decisão explícita: sem restrição de equipa aqui).
-export const getAllActiveUsersForLeadTransfer = async (): Promise<Profile[]> => {
+// Membros da MESMA equipa/agência do utilizador atual, para transferir ou
+// partilhar uma lead. Numa instância partilhada (pública) com várias agências
+// na mesma base de dados, isto NUNCA pode devolver utilizadores de outras
+// equipas — evita enviar uma lead a alguém que não se conhece / de outro
+// cliente. O âmbito é definido pela hierarquia (team_lead_id / manager_id).
+export const getTeamMembersForTransfer = async (): Promise<Profile[]> => {
   const profile = await getCurrentUserProfile();
+
+  const ids = new Set<string>();
+
+  if (profile.role === "admin" || profile.role === "broker") {
+    // A sua agência: team_leads que gere (+ consultores desses) e consultores
+    // diretamente sob si.
+    const { data: leads } = await supabase.from("profiles").select("id").eq("manager_id", profile.id);
+    const leadIds = (leads || []).map((l: any) => l.id);
+    leadIds.forEach((id: string) => ids.add(id));
+    if (leadIds.length > 0) {
+      const { data: sub } = await supabase.from("profiles").select("id").in("team_lead_id", leadIds);
+      (sub || []).forEach((c: any) => ids.add(c.id));
+    }
+    const { data: direct } = await supabase.from("profiles").select("id").eq("team_lead_id", profile.id);
+    (direct || []).forEach((c: any) => ids.add(c.id));
+  } else {
+    // team_lead: a sua equipa. consultor: os colegas da mesma equipa + o líder.
+    const anchor = profile.role === "team_lead" ? profile.id : profile.team_lead_id;
+    if (anchor) {
+      ids.add(anchor);
+      const { data: peers } = await supabase.from("profiles").select("id").eq("team_lead_id", anchor);
+      (peers || []).forEach((c: any) => ids.add(c.id));
+    }
+  }
+
+  ids.delete(profile.id); // nunca a si próprio
+  if (ids.size === 0) return [];
 
   const { data, error } = await supabase
     .from("profiles")
     .select("*")
+    .in("id", Array.from(ids))
     .eq("is_active", true)
-    .neq("id", profile.id)
     .order("full_name", { ascending: true });
 
   if (error) throw error;
   return data || [];
 };
+
+// Alias mantido por compatibilidade — agora com âmbito de equipa (ver acima).
+export const getAllActiveUsersForLeadTransfer = getTeamMembersForTransfer;
 
 // Get profile by ID
 export const getProfile = async (userId: string): Promise<Profile | null> => {
