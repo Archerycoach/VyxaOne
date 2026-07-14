@@ -62,7 +62,7 @@ export function useGoogleCalendarSync() {
         console.error("[useGoogleCalendarSync] Erro de user:", userError);
         setIsConnected(false);
         setSyncSettings(null);
-        return;
+        return false;
       }
 
       console.log("[useGoogleCalendarSync] User id atual:", user.id);
@@ -79,7 +79,7 @@ export function useGoogleCalendarSync() {
         console.log("[useGoogleCalendarSync] Sem integração encontrada ou erro de leitura");
         setIsConnected(false);
         setSyncSettings(null);
-        return;
+        return false;
       }
 
       // Check if token is still valid
@@ -95,10 +95,12 @@ export function useGoogleCalendarSync() {
       
       // Se o registo existe, o utilizador está conectado
       setIsConnected(true);
+      return true;
     } catch (error) {
       console.error("Error checking Google Calendar connection:", error);
       setIsConnected(false);
       setSyncSettings(null);
+      return false;
     } finally {
       setLoading(false);
     }
@@ -136,7 +138,11 @@ export function useGoogleCalendarSync() {
       return;
     }
 
-    if (!isConnected) {
+    // Reverificar a ligação em direto (tal como fazemos acima com "configured").
+    // Logo após o OAuth, o estado "isConnected" pode ainda estar desatualizado
+    // no closure — mostrava este erro por engano mesmo com a conta já ligada.
+    const connectedNow = await checkConnection();
+    if (!connectedNow) {
       toast({
         title: "🔌 Conexão necessária",
         description: "Você precisa conectar sua conta Google primeiro",
