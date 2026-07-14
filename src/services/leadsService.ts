@@ -252,7 +252,9 @@ export const getLead = async (id: string): Promise<LeadWithDetails | null> => {
 export const getLeadById = getLead;
 
 // Create new lead
-export const createLead = async (lead: LeadInsert): Promise<Lead> => {
+export const createLead = async (leadInput: LeadInsert): Promise<Lead> => {
+  // Estado <-> fase do pipeline consistentes desde a criação.
+  const lead = syncPipelineFields(leadInput as any, (leadInput as any).lead_type) as LeadInsert;
   console.log("[leadsService] createLead called with:", lead);
   const { data, error } = await supabase
     .from("leads")
@@ -323,7 +325,41 @@ export const createLead = async (lead: LeadInsert): Promise<Lead> => {
 };
 
 // Update lead
-export const updateLead = async (id: string, updates: Partial<LeadUpdate>) => {
+// Mantém `status`, `buyer_status` e `seller_status` sincronizados: os três
+// campos usam o mesmo vocabulário (ids das fases do pipeline). Ao mudar a fase
+// (arrastar no board) ou o "Estado do Pipeline" (formulário), propagamos o
+// valor para os outros campos — assim o estado da lead corresponde sempre à
+// fase em que ela está. Para leads "both", o pipeline de comprador é o que
+// espelha o `status` (o de vendedor evolui de forma independente).
+export const syncPipelineFields = <
+  T extends { status?: string | null; buyer_status?: string | null; seller_status?: string | null }
+>(
+  update: T,
+  leadType: string | null | undefined
+): T => {
+  const hasStatus = "status" in update && update.status != null;
+  const hasBuyer = "buyer_status" in update && update.buyer_status != null;
+  const hasSeller = "seller_status" in update && update.seller_status != null;
+  if (!hasStatus && !hasBuyer && !hasSeller) return update;
+
+  const out: any = { ...update };
+  const type = leadType || "buyer";
+
+  if (type === "seller") {
+    const stage = hasSeller ? out.seller_status : out.status;
+    if (stage != null) { out.status = stage; out.seller_status = stage; }
+  } else if (type === "both") {
+    if (hasBuyer) out.status = out.buyer_status;
+    else if (hasStatus) out.buyer_status = out.status;
+    // seller_status evolui de forma independente para leads "both"
+  } else {
+    const stage = hasBuyer ? out.buyer_status : out.status;
+    if (stage != null) { out.status = stage; out.buyer_status = stage; }
+  }
+  return out;
+};
+
+export const updateLead = async (id: string, rawUpdates: Partial<LeadUpdate>) => {
   // Get current lead (linha completa) para comparar atribuição, estado do
   // pipeline e qualificação antes/depois da atualização.
   const { data: currentLead } = await supabase
@@ -331,6 +367,12 @@ export const updateLead = async (id: string, updates: Partial<LeadUpdate>) => {
     .select("*")
     .eq("id", id)
     .single();
+
+  // Sincroniza estado <-> fase do pipeline antes de gravar.
+  const updates = syncPipelineFields(
+    rawUpdates,
+    (rawUpdates as any).lead_type ?? (currentLead as any)?.lead_type
+  );
 
   // Deteta a PRIMEIRA transição para "won" (negócio fechado) e fixa
   // "won_at" nesse preciso momento, incluído na mesma atualização. Nunca

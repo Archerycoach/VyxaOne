@@ -88,11 +88,15 @@ export function PipelineBoard({ leads, onLeadMove, onLeadClick, onLeadDelete, is
       const currentStatus = (lead as any)[statusField] || lead.status;
       if (currentStatus === stageId) return true;
       
-      // Fallback: If this is the first column, and the lead's status doesn't match ANY column in the current pipeline, put it here
+      // Fallback: se esta é a primeira coluna e o estado da lead não bate com
+      // NENHUMA fase do pipeline atual, mostra-a aqui — exceto estados
+      // terminais (ganho/perdido/fechado/vendido), que não pertencem a uma
+      // fase ativa e não devem aparecer disfarçados de "Nova Lead".
       if (isFirstStage) {
         const stagesList = pipelineView === "buyer" ? buyerStages : sellerStages;
         const existsInPipeline = stagesList.some(s => s.id === currentStatus);
-        if (!existsInPipeline) return true;
+        const terminalStatuses = ["won", "lost", "closed", "sold", "ganho", "perdido"];
+        if (!existsInPipeline && !terminalStatuses.includes(String(currentStatus))) return true;
       }
       
       return false;
