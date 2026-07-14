@@ -47,13 +47,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const { data: existing } = await db
         .from("property_matches").select("id").eq("lead_id", leadId).eq("property_id", propertyId).maybeSingle();
       if (!existing) {
-        await db.from("property_matches").insert({ lead_id: leadId, property_id: propertyId, status: "shared" });
+        const { error: insertError } = await db
+          .from("property_matches")
+          .insert({ lead_id: leadId, property_id: propertyId, status: "shared" });
+        // Sem esta verificação, um erro (ex.: constraint de status) era
+        // silenciado e o endpoint devolvia "sucesso" sem nada ter sido gravado.
+        if (insertError) {
+          console.error("[portal/add-item] Falha ao inserir property_match:", insertError);
+          return res.status(500).json({ error: `Não foi possível adicionar o imóvel: ${insertError.message}` });
+        }
       }
       const { data: prop } = await db.from("properties").select("title").eq("id", propertyId).maybeSingle();
       itemTitle = prop?.title || "novo imóvel";
     } else {
       if (!external?.title || !external?.url) return res.status(400).json({ error: "Título e link são obrigatórios" });
-      await db.from("portal_external_listings").insert({
+      const { error: insertError } = await db.from("portal_external_listings").insert({
         lead_id: leadId,
         user_id: lead.user_id,
         title: external.title,
@@ -61,6 +69,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         image_url: external.image_url || null,
         price: external.price ?? null,
       });
+      if (insertError) {
+        console.error("[portal/add-item] Falha ao inserir link externo:", insertError);
+        return res.status(500).json({ error: `Não foi possível adicionar o link: ${insertError.message}` });
+      }
       itemTitle = external.title;
     }
   } catch (err: any) {
