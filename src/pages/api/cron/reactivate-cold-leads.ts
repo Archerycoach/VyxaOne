@@ -127,7 +127,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
               tls: { rejectUnauthorized: smtpSettings.reject_unauthorized ?? true },
             });
 
-            const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://vyxa.pt";
+            const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://www.vyxa.pt";
             
             // Generate a consent token if none exists
             let token = lead.consent_token;

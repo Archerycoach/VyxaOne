@@ -318,7 +318,7 @@ async function sendEmailReactivation(
   supabaseAdmin: any,
   results: ProcessingResults
 ): Promise<void> {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://vyxa.pt";
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://www.vyxa.pt";
   
   // Generate consent token if needed
   let token = lead.consent_token;

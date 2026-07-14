@@ -33,7 +33,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     const results = [];
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.vyxa.ai";
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://www.vyxa.pt";
 
     for (const settings of digestSettings) {
       const user = settings.profiles;
