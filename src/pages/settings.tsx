@@ -26,12 +26,16 @@ import { PersonalLandingSettings } from "@/components/settings/PersonalLandingSe
 import { FormQuestionsSettings } from "@/components/settings/FormQuestionsSettings";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
 
+// Least-privilege scopes (Google OAuth verification): apenas o necessário.
+// calendar.events -> criar/ler/atualizar/apagar eventos;
+// calendar.freebusy -> consulta de disponibilidade (agendamento por IA).
+// NÃO pedimos o "calendar" amplo (acesso total/apagar calendários).
 const REQUIRED_GOOGLE_SCOPES = [
   "openid",
   "email",
   "profile",
-  "https://www.googleapis.com/auth/calendar",
   "https://www.googleapis.com/auth/calendar.events",
+  "https://www.googleapis.com/auth/calendar.freebusy",
   "https://www.googleapis.com/auth/userinfo.email",
 ];
 

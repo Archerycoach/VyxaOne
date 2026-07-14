@@ -130,7 +130,58 @@ export default function PrivacyPolicy() {
               </section>
 
               <section className="mb-8">
-                <h2 className="text-2xl font-semibold text-gray-900 mb-4">5. Segurança dos Dados</h2>
+                <h2 className="text-2xl font-semibold text-gray-900 mb-4">5. Serviços de API do Google (Google Calendar)</h2>
+                <p className="text-gray-700 leading-relaxed mb-4">
+                  Se optar por ligar a sua conta Google, o Vyxa One CRM acede a dados da API do Google
+                  exclusivamente para operar a funcionalidade de sincronização de agenda que você ativou.
+                </p>
+
+                <h3 className="text-xl font-semibold text-gray-800 mb-3 mt-6">5.1 Dados Google que acedemos</h3>
+                <ul className="list-disc pl-6 text-gray-700 space-y-2">
+                  <li>Eventos do seu Google Calendar (escopo <code>calendar.events</code>), para ler, criar, atualizar e apagar eventos como parte da sincronização.</li>
+                  <li>Informação de disponibilidade "livre/ocupado" (escopo <code>calendar.freebusy</code>), para sugerir horários no agendamento assistido.</li>
+                  <li>O endereço de email da conta Google ligada (escopo <code>userinfo.email</code>), para identificar a ligação.</li>
+                </ul>
+                <p className="text-gray-700 leading-relaxed mt-4">
+                  Não pedimos acesso total ao Google Calendar: aplicamos o princípio do menor privilégio,
+                  solicitando apenas os escopos necessários às funcionalidades acima.
+                </p>
+
+                <h3 className="text-xl font-semibold text-gray-800 mb-3 mt-6">5.2 Como usamos estes dados</h3>
+                <p className="text-gray-700 leading-relaxed">
+                  Os dados do Google são usados apenas para fornecer a funcionalidade de sincronização
+                  bidirecional entre o Vyxa One CRM e o seu Google Calendar e o agendamento assistido.
+                  Não os utilizamos para publicidade, e não desenvolvemos, melhoramos ou treinamos
+                  modelos de IA/ML com dados de utilizador das APIs do Google.
+                </p>
+
+                <h3 className="text-xl font-semibold text-gray-800 mb-3 mt-6">5.3 Partilha</h3>
+                <p className="text-gray-700 leading-relaxed">
+                  Não vendemos nem transferimos dados de utilizador das APIs do Google a terceiros,
+                  exceto o processamento estritamente necessário para operar o serviço (por exemplo,
+                  o nosso fornecedor de alojamento e base de dados).
+                </p>
+
+                <h3 className="text-xl font-semibold text-gray-800 mb-3 mt-6">5.4 Retenção e eliminação</h3>
+                <p className="text-gray-700 leading-relaxed">
+                  Guardamos os tokens de acesso e atualização (encriptados) e os identificadores de eventos
+                  sincronizados apenas enquanto a ligação estiver ativa. Pode revogar o acesso a qualquer
+                  momento desligando a integração nas definições do Vyxa One CRM, ou em
+                  {" "}
+                  <a href="https://myaccount.google.com/permissions" className="text-blue-600 underline" target="_blank" rel="noopener noreferrer">myaccount.google.com/permissions</a>.
+                  Ao desligar, eliminamos os tokens e cessamos qualquer acesso futuro à sua conta Google.
+                </p>
+
+                <h3 className="text-xl font-semibold text-gray-800 mb-3 mt-6">5.5 Limited Use</h3>
+                <p className="text-gray-700 leading-relaxed">
+                  A utilização e transferência, pelo Vyxa One CRM, de informação recebida das APIs do Google
+                  cumprem a <a href="https://developers.google.com/terms/api-services-user-data-policy" className="text-blue-600 underline" target="_blank" rel="noopener noreferrer">Google API Services User Data Policy</a>,
+                  incluindo os requisitos de Limited Use.
+                </p>
+              </section>
+
+              <section className="mb-8">
+                <h2 className="text-2xl font-semibold text-gray-900 mb-4">6. Segurança dos Dados</h2>
                 <p className="text-gray-700 leading-relaxed mb-4">
                   Implementamos medidas de segurança técnicas e organizacionais para proteger as suas informações:
                 </p>
@@ -145,7 +196,7 @@ export default function PrivacyPolicy() {
               </section>
 
               <section className="mb-8">
-                <h2 className="text-2xl font-semibold text-gray-900 mb-4">6. Os Seus Direitos</h2>
+                <h2 className="text-2xl font-semibold text-gray-900 mb-4">7. Os Seus Direitos</h2>
                 <p className="text-gray-700 leading-relaxed mb-4">
                   De acordo com as leis de proteção de dados aplicáveis, você tem os seguintes direitos:
                 </p>
@@ -163,7 +214,7 @@ export default function PrivacyPolicy() {
               </section>
 
               <section className="mb-8">
-                <h2 className="text-2xl font-semibold text-gray-900 mb-4">7. Retenção de Dados</h2>
+                <h2 className="text-2xl font-semibold text-gray-900 mb-4">8. Retenção de Dados</h2>
                 <p className="text-gray-700 leading-relaxed">
                   Mantemos as suas informações pessoais pelo tempo necessário para:
                 </p>
@@ -179,7 +230,7 @@ export default function PrivacyPolicy() {
               </section>
 
               <section className="mb-8">
-                <h2 className="text-2xl font-semibold text-gray-900 mb-4">8. Cookies e Tecnologias Similares</h2>
+                <h2 className="text-2xl font-semibold text-gray-900 mb-4">9. Cookies e Tecnologias Similares</h2>
                 <p className="text-gray-700 leading-relaxed mb-4">
                   Utilizamos cookies e tecnologias similares para:
                 </p>
@@ -196,7 +247,7 @@ export default function PrivacyPolicy() {
               </section>
 
               <section className="mb-8">
-                <h2 className="text-2xl font-semibold text-gray-900 mb-4">9. Alterações à Política de Privacidade</h2>
+                <h2 className="text-2xl font-semibold text-gray-900 mb-4">10. Alterações à Política de Privacidade</h2>
                 <p className="text-gray-700 leading-relaxed">
                   Podemos atualizar esta Política de Privacidade periodicamente. Notificaremos sobre alterações 
                   significativas através de email ou através de um aviso destacado na plataforma. A continuação 
@@ -205,7 +256,7 @@ export default function PrivacyPolicy() {
               </section>
 
               <section className="mb-8">
-                <h2 className="text-2xl font-semibold text-gray-900 mb-4">10. Contacto</h2>
+                <h2 className="text-2xl font-semibold text-gray-900 mb-4">11. Contacto</h2>
                 <p className="text-gray-700 leading-relaxed mb-4">
                   Se tiver questões, dúvidas ou solicitações relacionadas com esta Política de Privacidade ou com 
                   o tratamento das suas informações pessoais, por favor contacte-nos:
@@ -217,7 +268,7 @@ export default function PrivacyPolicy() {
               </section>
 
               <section className="mb-8">
-                <h2 className="text-2xl font-semibold text-gray-900 mb-4">11. Conformidade Legal</h2>
+                <h2 className="text-2xl font-semibold text-gray-900 mb-4">12. Conformidade Legal</h2>
                 <p className="text-gray-700 leading-relaxed">
                   Esta Política de Privacidade está em conformidade com:
                 </p>

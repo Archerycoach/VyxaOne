@@ -229,7 +229,7 @@ export default function Integrations() {
             client_id: googleCalendar.client_id.trim(),
             client_secret: googleCalendar.client_secret.trim(),
             redirect_uri: `${window.location.origin}/api/google-calendar/callback`.trim(),
-            scopes: ["https://www.googleapis.com/auth/calendar"]
+            scopes: ["https://www.googleapis.com/auth/calendar.events", "https://www.googleapis.com/auth/calendar.freebusy"]
           },
           is_active: googleCalendar.enabled
         })
