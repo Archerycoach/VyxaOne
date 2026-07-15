@@ -10,6 +10,7 @@ export interface MetaAppSettings {
   app_secret: string;
   verify_token: string;
   webhook_url?: string;
+  webhook_peers?: string;
   login_config_id?: string;
   is_active: boolean;
   created_at?: string;

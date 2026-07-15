@@ -53,8 +53,10 @@ function verifyMetaSignature(rawBody: Buffer, signatureHeader: string | undefine
  * Requer o MESMO app_secret configurado em todas (é o mesmo Meta App).
  * O header x-vyxa-forwarded evita loops (um reencaminhamento não é reenviado).
  */
-async function forwardToPeers(rawBody: Buffer, signatureHeader: string | undefined): Promise<void> {
-  const peers = (process.env.META_WEBHOOK_PEERS || "")
+async function forwardToPeers(rawBody: Buffer, signatureHeader: string | undefined, peersStr: string | null | undefined): Promise<void> {
+  // Peers gerido no painel de admin (meta_app_settings.webhook_peers), com
+  // fallback para a env META_WEBHOOK_PEERS.
+  const peers = (peersStr || process.env.META_WEBHOOK_PEERS || "")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
@@ -255,7 +257,7 @@ export default async function handler(
       // configurado, uma assinatura errada bloqueia.
       const { data: appSettings } = await supabase
         .from("meta_app_settings")
-        .select("app_secret")
+        .select("app_secret, webhook_peers")
         .single();
 
       const signatureHeader = req.headers["x-hub-signature-256"] as string | undefined;
@@ -299,7 +301,7 @@ export default async function handler(
       // Fan-out para as outras instâncias — só se este pedido veio da Meta
       // (não é já um reencaminhamento). Cada instância processa as suas páginas.
       if (req.headers["x-vyxa-forwarded"] !== "1") {
-        await forwardToPeers(rawBody, signatureHeader);
+        await forwardToPeers(rawBody, signatureHeader, (appSettings as any)?.webhook_peers);
       }
 
       // ALWAYS log the raw hit to DB so we know it reached us

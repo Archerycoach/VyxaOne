@@ -40,6 +40,7 @@ export function MetaAppSettings() {
     app_secret: "",
     verify_token: "",
     webhook_url: "",
+    webhook_peers: "",
     login_config_id: "",
     is_active: false
   });
@@ -82,6 +83,7 @@ export function MetaAppSettings() {
           app_secret: MASKED_SECRET,
           verify_token: MASKED_SECRET,
           webhook_url: webhookUrl,
+          webhook_peers: data.webhook_peers || "",
           login_config_id: data.login_config_id || "",
           is_active: data.is_active || false
         });
@@ -250,6 +252,7 @@ export function MetaAppSettings() {
             app_id: settings.app_id,
             app_secret: settings.app_secret,
             verify_token: settings.verify_token,
+            webhook_peers: settings.webhook_peers || null,
             login_config_id: settings.login_config_id || null,
             is_active: settings.is_active,
             created_at: new Date().toISOString(),
@@ -570,6 +573,20 @@ export function MetaAppSettings() {
             </div>
             <p className="text-xs text-muted-foreground">
               Configure este URL no painel de Webhooks da sua Meta App.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="webhook_peers">Instâncias-peer (fan-out)</Label>
+            <Input
+              id="webhook_peers"
+              value={settings.webhook_peers || ""}
+              onChange={(e) => setSettings({ ...settings, webhook_peers: e.target.value })}
+              placeholder="https://crm.vyxa.pt/api/meta/webhook, https://abc.vyxa.pt/api/meta/webhook"
+            />
+            <p className="text-xs text-muted-foreground">
+              Preencher <strong>apenas na instância de entrada</strong> (para onde a Meta aponta). URLs das
+              outras instâncias separados por vírgula — o webhook é reencaminhado para cada uma. Deixar vazio nas restantes.
             </p>
           </div>
 
