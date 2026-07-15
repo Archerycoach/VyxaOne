@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useState } from "react";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 
 export default function App({ Component, pageProps }: AppProps) {
   // Create QueryClient instance with useState to ensure it persists across renders
@@ -27,6 +28,7 @@ export default function App({ Component, pageProps }: AppProps) {
           <Component {...pageProps} />
         </ErrorBoundary>
         <Toaster />
+        <SpeedInsights />
       </ThemeProvider>
     </QueryClientProvider>
   );
