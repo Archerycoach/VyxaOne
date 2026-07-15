@@ -4,6 +4,7 @@ import { sendWhatsAppTemplate } from "@/services/whatsappService";
 import { hasValidWhatsAppConsent } from "@/services/consentService";
 import nodemailer from "nodemailer";
 import { appendSignature } from "@/lib/server/emailSignature";
+import { deriveAppUrl } from "@/lib/server/appUrl";
 import crypto from "crypto";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -127,8 +128,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
               tls: { rejectUnauthorized: smtpSettings.reject_unauthorized ?? true },
             });
 
-            const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://www.vyxa.pt";
-            
+            const appUrl = deriveAppUrl(req);
+
             // Generate a consent token if none exists
             let token = lead.consent_token;
             if (!token) {

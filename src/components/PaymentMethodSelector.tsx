@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -51,6 +51,21 @@ export function PaymentMethodSelector({
   const [error, setError] = useState<string | null>(null);
   const [multibancoRef, setMultibancoRef] = useState<MultibancoReference | null>(null);
   const [mbwaySuccess, setMbwaySuccess] = useState(false);
+  const [pubKey, setPubKey] = useState("");
+  const [methods, setMethods] = useState<{ stripe: boolean; mbway: boolean; multibanco: boolean }>({ stripe: false, mbway: false, multibanco: false });
+  const [configLoaded, setConfigLoaded] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    fetch("/api/payment/public-config")
+      .then((r) => r.json())
+      .then((cfg) => {
+        setPubKey(cfg.stripePublishableKey || "");
+        setMethods(cfg.methods || { stripe: false, mbway: false, multibanco: false });
+      })
+      .catch(() => setMethods({ stripe: false, mbway: false, multibanco: false }))
+      .finally(() => setConfigLoaded(true));
+  }, [isOpen]);
 
   // Format phone number for Portugal
   const formatPhone = (value: string) => {
@@ -82,8 +97,8 @@ export function PaymentMethodSelector({
         throw new Error(data.error || "Erro ao criar sessão de pagamento");
       }
 
-      // Redirect to Stripe Checkout
-      const stripe = await loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || "");
+      // Redirect to Stripe Checkout (chave pública vinda da config de pagamento)
+      const stripe = await loadStripe(pubKey || process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || "");
       if (!stripe) {
         throw new Error("Erro ao carregar Stripe");
       }
@@ -202,8 +217,14 @@ export function PaymentMethodSelector({
 
         {!selectedMethod && (
           <div className="grid gap-4 py-4">
-            {/* Stripe - Cartão */}
-            <Card 
+            {!configLoaded ? (
+              <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+            ) : !methods.stripe && !methods.mbway && !methods.multibanco ? (
+              <div className="text-center text-sm text-muted-foreground py-8">Nenhum método de pagamento está configurado.</div>
+            ) : (
+            <>
+            {methods.stripe && (
+            <Card
               className="cursor-pointer hover:border-blue-500 transition-all hover:shadow-md"
               onClick={() => handleMethodSelect("stripe")}
             >
@@ -223,9 +244,10 @@ export function PaymentMethodSelector({
                 </div>
               </CardContent>
             </Card>
+            )}
 
-            {/* MBWay */}
-            <Card 
+            {methods.mbway && (
+            <Card
               className="cursor-pointer hover:border-green-500 transition-all hover:shadow-md"
               onClick={() => handleMethodSelect("mbway")}
             >
@@ -242,9 +264,10 @@ export function PaymentMethodSelector({
                 <div className="text-2xl font-bold text-green-600">MB</div>
               </CardContent>
             </Card>
+            )}
 
-            {/* Multibanco */}
-            <Card 
+            {methods.multibanco && (
+            <Card
               className="cursor-pointer hover:border-orange-500 transition-all hover:shadow-md"
               onClick={() => handleMethodSelect("multibanco")}
             >
@@ -260,6 +283,9 @@ export function PaymentMethodSelector({
                 </div>
               </CardContent>
             </Card>
+            )}
+            </>
+            )}
           </div>
         )}
 

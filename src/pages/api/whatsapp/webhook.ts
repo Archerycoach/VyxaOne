@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { buffer } from "micro";
 import crypto from "crypto";
 import { sendWhatsAppMessage } from "@/services/whatsappService";
+import { deriveAppUrl } from "@/lib/server/appUrl";
 import { getGoogleCalendarFreeBusy, syncEventToGoogle } from "@/lib/googleCalendar";
 import { recordOptOut } from "@/services/consentService";
 import { calculateLeadScore } from "@/services/leadScoringService";
@@ -568,7 +569,7 @@ Formato OBRIGATÓRIO do JSON:
                           .limit(5);
 
                         if (documents && documents.length > 0) {
-                          const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://www.vyxa.pt";
+                          const appUrl = deriveAppUrl(req);
                           const docLinks = documents.map(doc => `📄 ${doc.name}: ${appUrl}${doc.file_path}`).join('\n\n');
                           const docMessage = `Aqui estão os documentos que mencionei:\n\n${docLinks}`;
                           

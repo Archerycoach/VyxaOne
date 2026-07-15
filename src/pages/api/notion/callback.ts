@@ -1,5 +1,6 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import { createClient } from "@supabase/supabase-js";
+import { deriveAppUrl } from "@/lib/server/appUrl";
 
 // Initialize Supabase Admin client to bypass RLS
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -46,7 +47,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const clientId = settings.client_id;
     const clientSecret = settings.client_secret;
-    const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/notion/callback`;
+    const redirectUri = `${deriveAppUrl(req)}/api/notion/callback`;
 
     // Exchange code for token
     const tokenResponse = await fetch("https://api.notion.com/v1/oauth/token", {

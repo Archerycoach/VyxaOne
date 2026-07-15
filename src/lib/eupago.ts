@@ -1,10 +1,12 @@
 import axios from "axios";
+import { getPaymentConfig } from "@/lib/server/paymentConfig";
 
 const EUPAGO_API_URL = "https://clientes.eupago.pt/api/v1.02";
 
-// Get Eupago API key from environment
-const getEupagoApiKey = () => {
-  return process.env.EUPAGO_API_KEY || "";
+// Chave EuPago gerida em Admin › Definições de Pagamento (BD), com fallback env.
+const getEupagoApiKey = async () => {
+  const { eupagoApiKey } = await getPaymentConfig();
+  return eupagoApiKey || "";
 };
 
 // Eupago API client
@@ -22,7 +24,7 @@ export const eupago = {
     description: string;
   }) => {
     try {
-      const apiKey = getEupagoApiKey();
+      const apiKey = await getEupagoApiKey();
       
       if (!apiKey) {
         throw new Error("Eupago não está configurado. Configure EUPAGO_API_KEY no .env");
@@ -63,7 +65,7 @@ export const eupago = {
     description: string;
   }) => {
     try {
-      const apiKey = getEupagoApiKey();
+      const apiKey = await getEupagoApiKey();
       
       if (!apiKey) {
         throw new Error("Eupago não está configurado");
@@ -96,7 +98,7 @@ export const eupago = {
   // Check payment status
   checkPaymentStatus: async (reference: string) => {
     try {
-      const apiKey = getEupagoApiKey();
+      const apiKey = await getEupagoApiKey();
       
       if (!apiKey) {
         throw new Error("Eupago não está configurado");
@@ -121,11 +123,11 @@ export const eupago = {
 };
 
 // Verify Eupago webhook signature
-export const verifyEupagoWebhook = (payload: any, signature: string): boolean => {
-  const apiKey = getEupagoApiKey();
-  
+export const verifyEupagoWebhook = async (payload: any, _signature: string): Promise<boolean> => {
+  const apiKey = await getEupagoApiKey();
+
   if (!apiKey) {
-    throw new Error("EUPAGO_API_KEY não configurado");
+    throw new Error("Chave EuPago não configurada");
   }
 
   // Eupago uses API key verification in the payload

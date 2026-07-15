@@ -14,7 +14,7 @@ export default async function handler(
 
   // Verify the request actually comes from EuPago (shared API key in payload),
   // instead of trusting the body blindly.
-  if (!verifyEupagoWebhook(req.body, req.body?.chave)) {
+  if (!(await verifyEupagoWebhook(req.body, req.body?.chave))) {
     console.error("Eupago webhook: invalid or missing 'chave' in payload");
     return res.status(401).json({ error: "Invalid webhook signature" });
   }
@@ -98,6 +98,16 @@ export default async function handler(
               current_period_end: nextMonth.toISOString(),
             });
         }
+
+        // Sincronizar o perfil (que o SubscriptionGuard lê).
+        await (supabaseAdmin as any)
+          .from("profiles")
+          .update({
+            subscription_status: "active",
+            subscription_plan: planId,
+            subscription_end_date: nextMonth.toISOString(),
+          })
+          .eq("id", payment.user_id);
       }
     } else {
       // Update as failed or cancelled

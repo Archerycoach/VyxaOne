@@ -39,6 +39,11 @@ export default async function handler(
         await handleCheckoutCompleted(session);
         break;
       }
+      case "customer.subscription.created": {
+        const subscription = event.data.object as any;
+        await handleSubscriptionCreated(subscription);
+        break;
+      }
       case "customer.subscription.updated": {
         const subscription = event.data.object as any;
         await handleSubscriptionUpdated(subscription);
@@ -85,6 +90,23 @@ async function handleCheckoutCompleted(session: any) {
   // Subscription will be created by customer.subscription.created event
 }
 
+// Sincroniza os campos de subscrição no perfil (que o SubscriptionGuard lê).
+async function syncProfileForStripe(
+  userId: string,
+  planId: string | null,
+  active: boolean,
+  endDateIso: string | null
+) {
+  await supabaseAdmin
+    .from("profiles")
+    .update({
+      subscription_status: active ? "active" : "expired",
+      subscription_plan: active ? planId : null,
+      subscription_end_date: active ? endDateIso : null,
+    })
+    .eq("id", userId);
+}
+
 // Handle subscription created
 async function handleSubscriptionCreated(subscription: any) {
   const userId = subscription.metadata?.userId;
@@ -98,25 +120,26 @@ async function handleSubscriptionCreated(subscription: any) {
   const startDate = new Date(subscription.current_period_start * 1000);
   const endDate = new Date(subscription.current_period_end * 1000);
   const trialEnd = subscription.trial_end ? new Date(subscription.trial_end * 1000) : null;
+  const status = subscription.status === "trialing" ? "trialing" : "active";
 
-  // Create subscription in Supabase
+  // Colunas alinhadas com a tabela subscriptions (current_period_*, trial_end).
   const { error } = await supabaseAdmin.from("subscriptions").insert({
     user_id: userId,
     plan_id: planId,
-    status: subscription.status === "trialing" ? "trial" : "active",
-    start_date: startDate.toISOString(),
-    end_date: endDate.toISOString(),
-    trial_end_date: trialEnd?.toISOString(),
+    status,
+    current_period_start: startDate.toISOString(),
+    current_period_end: endDate.toISOString(),
+    trial_end: trialEnd?.toISOString() || null,
     stripe_subscription_id: subscription.id,
-    stripe_customer_id: subscription.customer as string,
-    auto_renew: true,
   });
 
   if (error) {
     console.error("Error creating subscription:", error);
-  } else {
-    console.log(`Subscription created for user ${userId}`);
   }
+
+  // Conceder acesso: sincronizar o perfil (o guard lê estes campos).
+  await syncProfileForStripe(userId, planId, true, endDate.toISOString());
+  console.log(`Subscription created + perfil sincronizado para ${userId}`);
 }
 
 // Handle subscription updated
@@ -148,6 +171,17 @@ async function handleSubscriptionUpdated(subscription: any) {
   } else {
     console.log(`Subscription updated: ${subscription.id}`);
   }
+
+  const active = status === "active" || status === "trialing";
+  const userId = subscription.metadata?.userId;
+  if (userId) {
+    await syncProfileForStripe(
+      userId,
+      subscription.metadata?.planId || null,
+      active,
+      new Date(subscription.current_period_end * 1000).toISOString()
+    );
+  }
 }
 
 // Handle subscription deleted
@@ -165,6 +199,11 @@ async function handleSubscriptionDeleted(subscription: any) {
     console.error("Error cancelling subscription:", error);
   } else {
     console.log(`Subscription cancelled: ${subscription.id}`);
+  }
+
+  const userId = subscription.metadata?.userId;
+  if (userId) {
+    await syncProfileForStripe(userId, null, false, null);
   }
 }
 

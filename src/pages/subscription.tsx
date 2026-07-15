@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Check, AlertTriangle, Calendar, CreditCard, Loader2, Sparkles, KeyRound } from "lucide-react";
 import SEO from "@/components/SEO";
 import { getSubscriptionPlans, type SubscriptionPlan } from "@/services/subscriptionService";
+import { PaymentMethodSelector } from "@/components/PaymentMethodSelector";
 
 export default function SubscriptionPage() {
   const router = useRouter();
@@ -18,6 +19,8 @@ export default function SubscriptionPage() {
   const [loading, setLoading] = useState(true);
   const [subscribing, setSubscribing] = useState<string | null>(null);
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [payingPlan, setPayingPlan] = useState<SubscriptionPlan | null>(null);
   const [trialInfo, setTrialInfo] = useState<{
     isInTrial: boolean;
     daysRemaining: number;
@@ -41,6 +44,7 @@ export default function SubscriptionPage() {
         data: { user },
       } = await supabase.auth.getUser();
       if (!user) return;
+      setUserId(user.id);
 
       // Load plans from database
       const dbPlans = await getSubscriptionPlans();
@@ -85,24 +89,14 @@ export default function SubscriptionPage() {
     }
   };
 
-  const handleSubscribe = async (planId: string) => {
-    try {
-      setSubscribing(planId);
-
-      // TODO: Integrate with Stripe/Eupago
-      toast({
-        title: "Em desenvolvimento",
-        description: "A integração de pagamentos estará disponível em breve.",
-      });
-    } catch (error) {
-      toast({
-        title: "Erro",
-        description: "Não foi possível processar a subscrição.",
-        variant: "destructive",
-      });
-    } finally {
-      setSubscribing(null);
+  const handleSubscribe = (planId: string) => {
+    const plan = plans.find((p) => p.id === planId);
+    if (!plan) return;
+    if (!userId) {
+      toast({ title: "Sessão inválida", description: "Volte a entrar para subscrever.", variant: "destructive" });
+      return;
     }
+    setPayingPlan(plan);
   };
 
   if (loading) {
@@ -272,6 +266,21 @@ export default function SubscriptionPage() {
             </p>
           </div>
         </div>
+
+        {payingPlan && userId && (
+          <PaymentMethodSelector
+            isOpen={!!payingPlan}
+            onClose={() => setPayingPlan(null)}
+            userId={userId}
+            planId={payingPlan.id}
+            planName={payingPlan.name}
+            planPrice={payingPlan.price}
+            onSuccess={() => {
+              setPayingPlan(null);
+              loadSubscriptionData();
+            }}
+          />
+        )}
       </Layout>
     </ProtectedRoute>
   );

@@ -1,23 +1,20 @@
 import Stripe from "stripe";
+import { getPaymentConfig } from "@/lib/server/paymentConfig";
 
-// Initialize Stripe with environment variable
-const getStripeClient = () => {
-  const secretKey = process.env.STRIPE_SECRET_KEY;
-  
-  if (!secretKey) {
-    console.warn("STRIPE_SECRET_KEY not configured");
+// Cliente Stripe com a chave secreta gerida em Admin › Definições de Pagamento
+// (BD), com fallback para env. Assíncrono porque lê a config da BD.
+const getStripeClient = async () => {
+  const { stripeSecretKey } = await getPaymentConfig();
+
+  if (!stripeSecretKey) {
+    console.warn("Chave secreta do Stripe não configurada (Admin › Definições de Pagamento)");
     return null;
   }
 
-  return new Stripe(secretKey, {
+  return new Stripe(stripeSecretKey, {
     apiVersion: "2025-02-24.acacia",
     typescript: true,
   });
-};
-
-// Get publishable key for client-side
-export const getStripePublishableKey = () => {
-  return process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || "";
 };
 
 // Create a Stripe checkout session for subscription
@@ -27,18 +24,20 @@ export const createStripeCheckoutSession = async ({
   planName,
   amount,
   interval,
+  appUrl,
 }: {
   userId: string;
   planId: string;
   planName: string;
   amount: number;
   interval: "month" | "year";
+  appUrl: string;
 }) => {
   try {
-    const stripe = getStripeClient();
-    
+    const stripe = await getStripeClient();
+
     if (!stripe) {
-      throw new Error("Stripe não está configurado. Configure STRIPE_SECRET_KEY no .env");
+      throw new Error("Stripe não está configurado. Configure a chave em Admin › Definições de Pagamento.");
     }
 
     const session = await stripe.checkout.sessions.create({
@@ -60,14 +59,15 @@ export const createStripeCheckoutSession = async ({
           quantity: 1,
         },
       ],
-      success_url: `${process.env.NEXT_PUBLIC_APP_URL}/subscription?success=true&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/subscription?canceled=true`,
+      success_url: `${appUrl}/subscription?success=true&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${appUrl}/subscription?canceled=true`,
       metadata: {
         userId,
         planId,
       },
+      // Sem trial no Stripe: o período de teste é gerido pela app (trial_ends_at
+      // configurável). Quem subscreve começa uma subscrição paga de imediato.
       subscription_data: {
-        trial_period_days: 14,
         metadata: {
           userId,
           planId,
@@ -93,8 +93,8 @@ export const createStripeCustomer = async ({
   userId: string;
 }) => {
   try {
-    const stripe = getStripeClient();
-    
+    const stripe = await getStripeClient();
+
     if (!stripe) {
       throw new Error("Stripe não está configurado");
     }
@@ -119,7 +119,7 @@ export const verifyStripeWebhook = async (
   payload: string | Buffer,
   signature: string
 ): Promise<Stripe.Event> => {
-  const stripe = getStripeClient();
+  const stripe = await getStripeClient();
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
   
   if (!stripe || !webhookSecret) {

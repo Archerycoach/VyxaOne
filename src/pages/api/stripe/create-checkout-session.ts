@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { createStripeCheckoutSession } from "@/lib/stripe";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { deriveAppUrl } from "@/lib/server/appUrl";
 
 export default async function handler(
   req: NextApiRequest,
@@ -56,6 +57,7 @@ export default async function handler(
       planName: plan.name,
       amount: plan.price,
       interval,
+      appUrl: deriveAppUrl(req),
     });
 
     return res.status(200).json(session);

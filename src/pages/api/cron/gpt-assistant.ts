@@ -1,6 +1,7 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import { createClient } from "@supabase/supabase-js";
 import { runAI } from "@/lib/ai/provider";
+import { deriveAppUrl } from "@/lib/server/appUrl";
 import { getDailyOrganizerPrompt } from "@/lib/ai/prompts/dailyOrganizer";
 import nodemailer from "nodemailer";
 import { logEmailInteractionServer } from "@/lib/emailInteractionLogger";
@@ -33,7 +34,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     const results = [];
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://www.vyxa.pt";
+    const baseUrl = deriveAppUrl(req);
 
     for (const settings of digestSettings) {
       const user = settings.profiles;
