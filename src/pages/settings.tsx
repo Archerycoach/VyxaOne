@@ -52,6 +52,12 @@ function buildGoogleScopeString(scopes: unknown) {
 export default function Settings() {
   const router = useRouter();
   const { toast } = useToast();
+  // Permite abrir uma tab específica por URL, ex.: /settings?tab=gpt-agent
+  const [activeTab, setActiveTab] = useState<string>("profile");
+  useEffect(() => {
+    const t = router.query.tab;
+    if (typeof t === "string" && t.length > 0) setActiveTab(t);
+  }, [router.query.tab]);
   const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
   const [settings, setSettings] = useState<any>(null);
@@ -435,7 +441,7 @@ export default function Settings() {
           </div>
         </div>
 
-        <Tabs defaultValue="profile" className="space-y-6">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <TabsList className="flex flex-wrap w-full justify-start h-auto gap-1 p-1">
             <TabsTrigger value="profile">
               <User className="h-4 w-4 mr-2" />

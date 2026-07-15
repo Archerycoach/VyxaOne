@@ -18,7 +18,8 @@ import {
   Palette,
   Plug,
   Mail,
-  FileText
+  FileText,
+  Bot
 } from "lucide-react";
 import { getAllUsers } from "@/services/adminService";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
@@ -94,6 +95,14 @@ export default function AdminDashboard() {
       href: "/admin/subscriptions",
       color: "text-green-600",
       bgColor: "bg-green-50",
+    },
+    {
+      title: "Chave de IA (Agência)",
+      description: "Configurar a chave de IA integrada usada pelos planos com IA",
+      icon: Bot,
+      href: "/settings?tab=gpt-agent",
+      color: "text-indigo-600",
+      bgColor: "bg-indigo-50",
     },
     {
       title: "Métodos de Pagamento",

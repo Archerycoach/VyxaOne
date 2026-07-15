@@ -118,7 +118,7 @@ async function notifyAdminsMissingIntegratedAiKey(supabase: any, requesterUserId
         title: INTEGRATED_AI_MISSING_TITLE,
         message:
           "Um utilizador com plano de IA integrada tentou usar a IA, mas ainda não há chave de IA da agência configurada. Configure-a em Definições > IA para ativar a IA integrada.",
-        data: { kind: "integrated_ai_key_missing", requester_user_id: requesterUserId, action_url: "/settings" },
+        data: { kind: "integrated_ai_key_missing", requester_user_id: requesterUserId, action_url: "/settings?tab=gpt-agent" },
       });
     }
   } catch (error) {

@@ -240,12 +240,17 @@ export default function UsersManagement() {
       setIsEditDialogOpen(false);
       setSelectedUser(null);
 
-      // Refresh users list
-      const usersResult = await getAllUsers();
+      // Refresh users list e a lista de team-leads (um utilizador pode ter
+      // acabado de ser promovido/despromovido a Team Lead).
+      const [usersResult, teamLeadsData] = await Promise.all([
+        getAllUsers(),
+        getTeamLeads().catch(() => teamLeads),
+      ]);
       if (usersResult.data) {
         setUsers(usersResult.data);
         setFilteredUsers(usersResult.data);
       }
+      setTeamLeads(teamLeadsData || []);
     } catch (error) {
       console.error("Error updating role:", error);
       toast({
@@ -608,25 +613,33 @@ export default function UsersManagement() {
                   </Select>
                 </div>
 
-                {selectedUser?.role === 'consultant' && (
+                {selectedUser && selectedUser.role !== 'admin' && selectedUser.role !== 'team_lead' && (
                   <div>
                     <Label htmlFor="edit-team-lead">Team Lead</Label>
-                    <Select
-                      value={selectedUser?.team_lead_id || "none"}
-                      onValueChange={handleUpdateTeamLead}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione um Team Lead" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">Nenhum</SelectItem>
-                        {teamLeads.map((lead) => (
-                          <SelectItem key={lead.id} value={lead.id}>
-                            {lead.full_name || lead.email}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    {teamLeads.length === 0 ? (
+                      <p className="text-sm text-muted-foreground border rounded-md p-3">
+                        Ainda não há nenhum utilizador com o papel <strong>Team Lead</strong>. Para poder
+                        atribuir um team-lead a este consultor, defina primeiro outro utilizador com o
+                        role <strong>Team Lead</strong> (no campo Role, aqui ou noutro utilizador).
+                      </p>
+                    ) : (
+                      <Select
+                        value={selectedUser?.team_lead_id || "none"}
+                        onValueChange={handleUpdateTeamLead}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecione um Team Lead" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Nenhum</SelectItem>
+                          {teamLeads.map((lead) => (
+                            <SelectItem key={lead.id} value={lead.id}>
+                              {lead.full_name || lead.email}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
                   </div>
                 )}
 
