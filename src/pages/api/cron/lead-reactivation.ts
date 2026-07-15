@@ -4,7 +4,7 @@ import { sendWhatsAppTemplate } from "@/services/whatsappService";
 import { hasValidWhatsAppConsent } from "@/services/consentService";
 import { sendClientEmail } from "@/lib/server/sendClientEmail";
 import { logEmailInteractionServer } from "@/lib/emailInteractionLogger";
-import crypto from "crypto";
+import { buildReactivationEmail } from "@/lib/server/reactivationEmail";
 
 /**
  * Cron Job: Lead Reactivation & Follow-up
@@ -284,130 +284,26 @@ async function sendWhatsAppReactivation(
 }
 
 /**
- * Send Email reactivation with opt-in link
+ * Send Email reactivation with opt-in link.
+ * A renderização (escolha de template + variáveis + links opt-in/unsubscribe)
+ * está centralizada em buildReactivationEmail, partilhada com a ferramenta de
+ * teste de envios (/api/reactivation/test-send) para garantir que o teste é
+ * idêntico ao envio real.
  */
-const OPT_IN_BUTTON_STYLE =
-  "display:inline-block;padding:12px 24px;background-color:#2563eb;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:bold;";
-
-/**
- * Garante que o link de autorização ({{link_optin}}) tem sempre o aspeto de
- * botão, mesmo que o editor visual de texto (Definições > Envios
- * Automáticos) tenha removido o estilo original ao guardar a mensagem — os
- * editores de texto normais só preservam formatação básica (negrito, cor,
- * links simples), não estilos personalizados como o de um botão.
- * Aplica-se sempre no momento do envio, independentemente do que o
- * consultor escreveu à volta do link.
- */
-function styleOptInButton(html: string): string {
-  return html.replace(
-    /<a\s+([^>]*?)href="\{\{link_optin\}\}"([^>]*)>/gi,
-    (_match, before: string, after: string) => {
-      const cleanedBefore = before.replace(/style="[^"]*"/gi, "").trim();
-      const cleanedAfter = after.replace(/style="[^"]*"/gi, "").trim();
-      const attrs = [cleanedBefore, `href="{{link_optin}}"`, `style="${OPT_IN_BUTTON_STYLE}"`, cleanedAfter]
-        .filter(Boolean)
-        .join(" ");
-      return `<a ${attrs}>`;
-    }
-  );
-}
-
 async function sendEmailReactivation(
   lead: LeadToProcess,
   attemptNumber: number,
   supabaseAdmin: any,
   results: ProcessingResults
 ): Promise<void> {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://www.vyxa.pt";
-  
-  // Generate consent token if needed
-  let token = lead.consent_token;
-  if (!token) {
-    token = crypto.randomUUID();
-    await supabaseAdmin.from("leads").update({ consent_token: token }).eq("id", lead.id);
+  const built = await buildReactivationEmail({ supabaseAdmin, lead, attemptNumber });
+
+  if (!built) {
+    console.error(`[Lead Reactivation] Email template para tentativa ${attemptNumber} não encontrado`);
+    throw new Error(`Template de reativação (tentativa ${attemptNumber}) não encontrado`);
   }
 
-  // Generate email unsubscribe token if needed
-  let emailUnsubToken = lead.email_unsub_token;
-  if (!emailUnsubToken) {
-    emailUnsubToken = crypto.randomUUID();
-    await supabaseAdmin.from("leads").update({ email_unsub_token: emailUnsubToken }).eq("id", lead.id);
-  }
-
-  const optInUrl = `${appUrl}/optin/${token}`;
-  const optOutUrl = `${appUrl}/unsubscribe/${emailUnsubToken}`;
-  
-  // Get agent profile for template variables
-  const { data: profile } = await supabaseAdmin
-    .from("profiles")
-    .select("full_name, company_name")
-    .eq("id", lead.user_id)
-    .maybeSingle();
-  
-  const consultor = profile?.full_name || "Consultor Imobiliário";
-  const empresa = profile?.company_name || "VYXA";
-  
-  const procuraType = lead.buy_purpose || "imóvel";
-  const procuraLoc = lead.location_preference ? ` em ${lead.location_preference}` : "";
-  const procuraStr = `${procuraType}${procuraLoc}`.trim();
-
-  // Select template based on attempt number
-  const templateName = attemptNumber === 1 ? 'optin_inicial' : 
-                       attemptNumber === 2 ? 'optin_lembrete_2' : 
-                       'optin_lembrete_final';
-
-  // Procura, por esta ordem: 1) a versão personalizada deste consultor,
-  // 2) a versão partilhada por defeito (user_id vazio), 3) qualquer registo
-  // com este nome (compatibilidade com configurações anteriores a esta
-  // funcionalidade). Cada consultor pode agora ter o seu próprio texto —
-  // ver Definições > Envios Automáticos > Personalizar Textos de Reativação.
-  let template: { subject: string; html_body: string } | null = null;
-
-  const { data: ownTemplate } = await supabaseAdmin
-    .from("email_templates")
-    .select("subject, html_body")
-    .eq("name", templateName)
-    .eq("user_id", lead.user_id)
-    .maybeSingle();
-  template = ownTemplate;
-
-  if (!template) {
-    const { data: sharedTemplate } = await supabaseAdmin
-      .from("email_templates")
-      .select("subject, html_body")
-      .eq("name", templateName)
-      .is("user_id", null)
-      .maybeSingle();
-    template = sharedTemplate;
-  }
-
-  if (!template) {
-    const { data: anyTemplate } = await supabaseAdmin
-      .from("email_templates")
-      .select("subject, html_body")
-      .eq("name", templateName)
-      .limit(1)
-      .maybeSingle();
-    template = anyTemplate;
-  }
-  
-  if (!template) {
-    console.error(`[Lead Reactivation] Email template ${templateName} not found`);
-    throw new Error(`Template ${templateName} not found`);
-  }
-
-  // Render template variables
-  const html = styleOptInButton(template.html_body)
-    .replace(/\{\{nome\}\}/g, lead.name || 'Cliente')
-    .replace(/\{\{procura\}\}/g, procuraStr)
-    .replace(/\{\{consultor\}\}/g, consultor)
-    .replace(/\{\{empresa\}\}/g, empresa)
-    .replace(/\{\{link_optin\}\}/g, optInUrl)
-    .replace(/\{\{link_unsubscribe\}\}/g, optOutUrl);
-    
-  const subject = template.subject
-    .replace(/\{\{nome\}\}/g, lead.name || 'Cliente')
-    .replace(/\{\{procura\}\}/g, procuraStr);
+  const { subject, html, templateName } = built;
 
   const sendResult = await sendClientEmail({
     supabaseAdmin,

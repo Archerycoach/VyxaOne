@@ -63,7 +63,23 @@ export interface SendClientEmailResult {
   success: boolean;
   error?: string;
   imapSaved: boolean;
+  /** true quando o envio foi deliberadamente suprimido (opt-out / do_not_contact). */
+  suppressed?: boolean;
 }
+
+/**
+ * Fontes de marketing/distribuição — respeitam o opt-out de email da lead
+ * (email_opt_out). As restantes fontes são transacionais (a lead pediu ou
+ * espera a mensagem: confirmação de marcação, auto-resposta, portais) e só são
+ * bloqueadas pela marca deliberada do_not_contact.
+ */
+const MARKETING_EMAIL_SOURCES: ReadonlySet<AutomatedEmailSource> = new Set<AutomatedEmailSource>([
+  "lead_reactivation",
+  "contact_alerts",
+  "property_matcher",
+  "workflow_automation",
+  "landing_monthly_report",
+]);
 
 interface SmtpSettingsRow {
   smtp_host: string;
@@ -94,6 +110,31 @@ interface BuiltMailOptions {
 
 export async function sendClientEmail(params: SendClientEmailParams): Promise<SendClientEmailResult> {
   const { supabaseAdmin, userId, leadId, leadName, source, to, subject } = params;
+
+  // Exclusão de listas de distribuição: antes de enviar qualquer email
+  // automático a uma lead, respeitar a marca do_not_contact (bloqueia sempre)
+  // e o email_opt_out (bloqueia fontes de marketing/distribuição).
+  if (leadId) {
+    const { data: leadFlags } = await supabaseAdmin
+      .from("leads")
+      .select("email_opt_out, do_not_contact")
+      .eq("id", leadId)
+      .maybeSingle();
+
+    const doNotContact = !!leadFlags?.do_not_contact;
+    const emailOptOut = !!leadFlags?.email_opt_out;
+
+    if (doNotContact || (emailOptOut && MARKETING_EMAIL_SOURCES.has(source))) {
+      const reason = doNotContact
+        ? "Suprimido: lead marcada como 'não contactar' (do_not_contact)."
+        : "Suprimido: lead com opt-out de email (excluída de listas de distribuição).";
+      await logAutomatedEmail(supabaseAdmin, {
+        userId, leadId, leadName, source, to, subject, htmlBody: params.html,
+        status: "suppressed", errorMessage: reason, imapSaved: false,
+      });
+      return { success: false, error: reason, imapSaved: false, suppressed: true };
+    }
+  }
 
   const { data: smtpSettings } = await supabaseAdmin
     .from("user_smtp_settings")
@@ -211,7 +252,7 @@ interface LogAutomatedEmailParams {
   to: string;
   subject: string;
   htmlBody?: string;
-  status: "sent" | "failed";
+  status: "sent" | "failed" | "suppressed";
   errorMessage?: string;
   imapSaved: boolean;
 }

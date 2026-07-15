@@ -69,7 +69,7 @@ export default function OptInPage({ valid, companyName, token }: OptInPageProps)
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
 
-  const consentText = `Aceito receber mensagens da ${companyName} no WhatsApp sobre a minha procura imobiliária e oportunidades semelhantes.`;
+  const consentText = `Aceito receber comunicações da ${companyName} por WhatsApp e email sobre a minha procura imobiliária e oportunidades semelhantes.`;
 
   const handleSubmit = async () => {
     if (!accepted) return;
@@ -122,7 +122,7 @@ export default function OptInPage({ valid, companyName, token }: OptInPageProps)
             <CheckCircle2 className="w-16 h-16 text-green-500 mx-auto mb-4" />
             <CardTitle className="text-2xl text-slate-800">Obrigado!</CardTitle>
             <CardDescription className="text-base mt-2">
-              O seu consentimento foi registado com sucesso. A partir de agora, enviaremos as melhores oportunidades diretamente para o seu WhatsApp.
+              O seu consentimento foi registado com sucesso. A partir de agora, enviaremos as melhores oportunidades para o seu WhatsApp e email.
             </CardDescription>
           </CardHeader>
         </Card>
@@ -134,9 +134,9 @@ export default function OptInPage({ valid, companyName, token }: OptInPageProps)
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
       <Card className="w-full max-w-md shadow-lg border-0">
         <CardHeader>
-          <CardTitle className="text-2xl text-slate-800">Comunicação via WhatsApp</CardTitle>
+          <CardTitle className="text-2xl text-slate-800">Comunicação via WhatsApp e email</CardTitle>
           <CardDescription className="text-base mt-2 text-slate-600 leading-relaxed">
-            Para sua conveniência e de forma mais ágil, gostaríamos de continuar a comunicar consigo sobre imóveis através do WhatsApp.
+            Para sua conveniência e de forma mais ágil, gostaríamos de continuar a comunicar consigo sobre imóveis através do WhatsApp e do email.
           </CardDescription>
         </CardHeader>
         <CardContent>

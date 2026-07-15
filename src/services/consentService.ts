@@ -43,18 +43,19 @@ export async function hasValidWhatsAppConsent(leadId: string, supabaseClient = s
 }
 
 export async function recordConsent(
-  leadId: string, 
-  userId: string, 
-  status: "granted" | "revoked" | "pending", 
+  leadId: string,
+  userId: string,
+  status: "granted" | "revoked" | "pending",
   source: string = "system",
   supabaseClient = supabase,
   consentText?: string,
-  evidenceRef?: string
+  evidenceRef?: string,
+  channel: "whatsapp" | "email" = "whatsapp"
 ): Promise<void> {
   const updates: any = {
     lead_id: leadId,
     user_id: userId,
-    channel: "whatsapp",
+    channel,
     status,
     source,
     updated_at: new Date().toISOString()
@@ -74,7 +75,7 @@ export async function recordConsent(
     .from("lead_consents" as any)
     .select("id")
     .eq("lead_id", leadId)
-    .eq("channel", "whatsapp")
+    .eq("channel", channel)
     .maybeSingle();
 
   if (existing) {

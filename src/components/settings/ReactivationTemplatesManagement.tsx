@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
-import { Loader2, RotateCcw, Save } from "lucide-react";
+import { Loader2, RotateCcw, Save, Send, ExternalLink } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -27,6 +27,20 @@ interface TemplateState {
 
 const EMPTY_STATE: TemplateState = { subject: "", html_body: "", isCustomized: false, loading: true, saving: false };
 
+interface TestResult {
+  to: string;
+  subject: string;
+  optInUrl: string;
+  optOutUrl: string;
+  note?: string;
+}
+
+const ATTEMPT_OPTIONS: { value: 1 | 2 | 3; label: string }[] = [
+  { value: 1, label: "1ª — Inicial" },
+  { value: 2, label: "2ª — Lembrete" },
+  { value: 3, label: "3ª — Final" },
+];
+
 export function ReactivationTemplatesManagement() {
   const { toast } = useToast();
   const [userId, setUserId] = useState<string | null>(null);
@@ -35,6 +49,12 @@ export function ReactivationTemplatesManagement() {
     optin_lembrete_2: { ...EMPTY_STATE },
     optin_lembrete_final: { ...EMPTY_STATE },
   });
+
+  // Painel de teste de envios
+  const [testEmail, setTestEmail] = useState("");
+  const [testAttempt, setTestAttempt] = useState<1 | 2 | 3>(1);
+  const [testSending, setTestSending] = useState(false);
+  const [testResult, setTestResult] = useState<TestResult | null>(null);
 
   const loadAll = async (uid: string) => {
     for (const name of REACTIVATION_TEMPLATE_NAMES) {
@@ -62,10 +82,62 @@ export function ReactivationTemplatesManagement() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
       setUserId(user.id);
+      if (user.email) setTestEmail(user.email);
       await loadAll(user.id);
     };
     init();
   }, []);
+
+  const handleTestSend = async () => {
+    const email = testEmail.trim();
+    if (!email) {
+      toast({ title: "Indique o email da lead de teste", variant: "destructive" });
+      return;
+    }
+    setTestSending(true);
+    setTestResult(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error("Sessão expirada. Volte a entrar.");
+
+      const res = await fetch("/api/reactivation/test-send", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ email, attemptNumber: testAttempt }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Falha ao enviar o email de teste.");
+
+      // Envio suprimido de propósito (opt-out / não-contactar): avisar, não tratar como sucesso.
+      if (data.suppressed) {
+        toast({
+          title: "Envio suprimido",
+          description: data.message || "Esta lead está excluída das listas de distribuição.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setTestResult({
+        to: data.to,
+        subject: data.subject,
+        optInUrl: data.optInUrl,
+        optOutUrl: data.optOutUrl,
+        note: data.note,
+      });
+      toast({
+        title: "✅ Email de teste enviado",
+        description: `Enviado para ${data.to}. Verifique a caixa de entrada e teste os links.`,
+      });
+    } catch (error: any) {
+      toast({ title: "Erro ao enviar teste", description: error.message, variant: "destructive" });
+    } finally {
+      setTestSending(false);
+    }
+  };
 
   const updateField = (name: ReactivationTemplateName, field: "subject" | "html_body", value: string) => {
     setTemplates((prev) => ({ ...prev, [name]: { ...prev[name], [field]: value } }));
@@ -110,6 +182,7 @@ export function ReactivationTemplatesManagement() {
   };
 
   return (
+    <div className="space-y-6">
     <Card>
       <CardHeader>
         <CardTitle>Personalizar Textos de Reativação</CardTitle>
@@ -176,5 +249,80 @@ export function ReactivationTemplatesManagement() {
         })}
       </CardContent>
     </Card>
+
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Send className="h-4 w-4" /> Testar Envio
+        </CardTitle>
+        <CardDescription>
+          Envia o email de reativação real (mesmo template e mesmos links) para uma lead sua de teste,
+          <strong> sem alterar o estado da lead</strong>. Dica: crie uma lead com o seu próprio email e teste aqui —
+          depois pode clicar nos links recebidos para validar o opt-in e o unsubscribe.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label htmlFor="test-email" className="text-xs">Email da lead de teste</Label>
+            <Input
+              id="test-email"
+              type="email"
+              value={testEmail}
+              onChange={(e) => setTestEmail(e.target.value)}
+              placeholder="lead-teste@exemplo.pt"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Tentativa / template</Label>
+            <div className="flex gap-2">
+              {ATTEMPT_OPTIONS.map((opt) => (
+                <Button
+                  key={opt.value}
+                  type="button"
+                  size="sm"
+                  variant={testAttempt === opt.value ? "default" : "outline"}
+                  onClick={() => setTestAttempt(opt.value)}
+                >
+                  {opt.label}
+                </Button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <Button onClick={handleTestSend} disabled={testSending}>
+          {testSending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Send className="h-4 w-4 mr-2" />}
+          Enviar email de teste
+        </Button>
+
+        {testResult && (
+          <div className="border rounded-md p-3 text-sm space-y-2 bg-gray-50">
+            <p><span className="font-medium">Enviado para:</span> {testResult.to}</p>
+            <p><span className="font-medium">Assunto:</span> {testResult.subject}</p>
+            {testResult.note && <p className="text-amber-700">{testResult.note}</p>}
+            <div className="flex flex-col gap-1 pt-1">
+              <a
+                href={testResult.optInUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-blue-600 hover:underline break-all"
+              >
+                <ExternalLink className="h-3.5 w-3.5 shrink-0" /> Link de opt-in
+              </a>
+              <a
+                href={testResult.optOutUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-blue-600 hover:underline break-all"
+              >
+                <ExternalLink className="h-3.5 w-3.5 shrink-0" /> Link de unsubscribe
+              </a>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+    </div>
   );
 }

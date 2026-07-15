@@ -21,7 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
-import { Mail, MessageCircle, CheckCircle2, XCircle, RefreshCw } from "lucide-react";
+import { Mail, MessageCircle, CheckCircle2, XCircle, RefreshCw, Ban } from "lucide-react";
 
 interface AutomatedEmailLogRow {
   id: string;
@@ -209,6 +209,7 @@ export default function AutomatedSendsLogPage() {
                   <SelectItem value="all">Todos os estados</SelectItem>
                   <SelectItem value="sent">Enviado</SelectItem>
                   <SelectItem value="failed">Falhou</SelectItem>
+                  <SelectItem value="suppressed">Suprimido</SelectItem>
                 </SelectContent>
               </Select>
             </CardContent>
@@ -260,6 +261,10 @@ export default function AutomatedSendsLogPage() {
                           {row.status === "sent" ? (
                             <Badge className="bg-green-100 text-green-700 border-green-200" variant="outline">
                               <CheckCircle2 className="h-3 w-3 mr-1" /> Enviado
+                            </Badge>
+                          ) : row.status === "suppressed" ? (
+                            <Badge className="bg-amber-100 text-amber-700 border-amber-200" variant="outline" title={row.error_message || undefined}>
+                              <Ban className="h-3 w-3 mr-1" /> Suprimido
                             </Badge>
                           ) : (
                             <Badge className="bg-red-100 text-red-700 border-red-200" variant="outline" title={row.error_message || undefined}>

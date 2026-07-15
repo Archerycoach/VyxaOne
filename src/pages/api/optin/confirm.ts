@@ -34,23 +34,40 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
     const evidenceRef = `token:${token}|ip:${ip}`;
 
-    // Record formal consent
+    // Record formal consent — a autorização cobre AMBOS os canais (WhatsApp e
+    // email). Guardamos um registo por canal em lead_consents.
     await recordConsent(
-      lead.id, 
-      lead.user_id, 
-      "granted", 
-      "landing_optin", 
+      lead.id,
+      lead.user_id,
+      "granted",
+      "landing_optin",
       supabaseAdmin,
       consentText,
-      evidenceRef
+      evidenceRef,
+      "whatsapp"
     );
 
-    // Update lead state: clear token (single-use), reset state to enter cadence
+    await recordConsent(
+      lead.id,
+      lead.user_id,
+      "granted",
+      "landing_optin",
+      supabaseAdmin,
+      consentText,
+      evidenceRef,
+      "email"
+    );
+
+    // Update lead state: clear token (single-use), reset state to enter cadence.
+    // Como a lead autorizou explicitamente email, anulamos qualquer opt-out de
+    // email anterior (volta a poder receber comunicações).
     await supabaseAdmin.from("leads").update({
       follow_up_state: "new",
       archive_reason: null,
       reactivation_attempts: 0,
       consent_token: null, // Token becomes invalid after use
+      email_opt_out: false,
+      email_opted_out_at: null,
       updated_at: new Date().toISOString()
     }).eq("id", lead.id);
 
@@ -59,7 +76,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       lead_id: lead.id,
       user_id: lead.user_id,
       interaction_type: "note",
-      content: `A lead deu consentimento expresso (Opt-in) para WhatsApp via Landing Page. Evidência: ${evidenceRef}`,
+      content: `A lead deu consentimento expresso (Opt-in) para WhatsApp e email via Landing Page. Evidência: ${evidenceRef}`,
       interaction_date: new Date().toISOString()
     });
 
