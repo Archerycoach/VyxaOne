@@ -16,6 +16,12 @@ const getEupago = async (): Promise<{ apiKey: string; baseUrl: string }> => {
   };
 };
 
+// A API REST v1.02 da EuPago autentica pelo cabeçalho Authorization: ApiKey.
+// (Enviar só a `chave` no corpo — estilo antigo — devolve 401.)
+const eupagoAuth = (apiKey: string) => ({
+  headers: { Authorization: `ApiKey ${apiKey}`, "Content-Type": "application/json" },
+});
+
 export const eupago = {
   // Create MBWay payment
   createMBWayPayment: async ({
@@ -41,7 +47,7 @@ export const eupago = {
         alias: phone,
         id: reference,
         descricao: description,
-      });
+      }, eupagoAuth(apiKey));
 
       if (response.data.estado === "ok") {
         return {
@@ -79,7 +85,7 @@ export const eupago = {
         valor: amount.toFixed(2),
         id: reference,
         descricao: description,
-      });
+      }, eupagoAuth(apiKey));
 
       if (response.data.estado === "ok") {
         return {
@@ -125,7 +131,7 @@ export const eupago = {
         descricao: description,
         url_retorno: successUrl,
         url_cancelamento: failUrl,
-      });
+      }, eupagoAuth(apiKey));
 
       // A EuPago devolve o URL do formulário de cartão em `url` (ou `redirect`).
       const url = response.data.url || response.data.redirect || response.data.link;
@@ -150,7 +156,7 @@ export const eupago = {
       const response = await axios.post(`${baseUrl}/pedido/info`, {
         chave: apiKey,
         referencia: reference,
-      });
+      }, eupagoAuth(apiKey));
 
       return {
         status: response.data.estado,
