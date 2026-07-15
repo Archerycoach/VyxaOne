@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
-import { ArrowLeft, User, Lock, Building2, Bell, Save, Loader2, Mail, Facebook, Calendar, Bot, Activity, Zap, FileText, Globe, Sparkles, CheckCircle2, XCircle, MessageCircle, Trash2, Kanban, ImagePlus } from "lucide-react";
+import { ArrowLeft, User, Lock, Building2, Save, Loader2, Mail, Facebook, Calendar, Bot, Activity, Zap, FileText, Globe, Sparkles, CheckCircle2, XCircle, MessageCircle, Trash2, Kanban, ImagePlus } from "lucide-react";
 import { getUserProfile, updateUserProfile } from "@/services/profileService";
 import { updateUserAvatar } from "@/services/imageUploadService";
 import { updatePassword, getSession, signOut } from "@/services/authService";
@@ -60,6 +60,12 @@ export default function Settings() {
   }, [router.query.tab]);
   const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
+  // Tabs de nível agência: só admin/broker. Consultores não os veem nem lá chegam por deep-link.
+  const isAdminOrBroker = profile?.role === "admin" || profile?.role === "broker";
+  const ADMIN_ONLY_TABS = ["company", "pipeline", "form-questions"];
+  // Tab efetiva: para quem não é admin/broker, uma tab restrita nunca fica ativa
+  // (evita render do conteúdo mesmo antes de o perfil carregar).
+  const effectiveTab = !isAdminOrBroker && ADMIN_ONLY_TABS.includes(activeTab) ? "profile" : activeTab;
   const [settings, setSettings] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -441,7 +447,7 @@ export default function Settings() {
           </div>
         </div>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+        <Tabs value={effectiveTab} onValueChange={setActiveTab} className="space-y-6">
           <TabsList className="flex flex-wrap w-full justify-start h-auto gap-1 p-1">
             <TabsTrigger value="profile">
               <User className="h-4 w-4 mr-2" />
@@ -451,18 +457,22 @@ export default function Settings() {
               <Lock className="h-4 w-4 mr-2" />
               Segurança
             </TabsTrigger>
-            <TabsTrigger value="company">
-              <Building2 className="h-4 w-4 mr-2" />
-              Empresa
-            </TabsTrigger>
+            {isAdminOrBroker && (
+              <TabsTrigger value="company">
+                <Building2 className="h-4 w-4 mr-2" />
+                Empresa
+              </TabsTrigger>
+            )}
             <TabsTrigger value="personal-landing">
               <Globe className="h-4 w-4 mr-2" />
               Landing Pessoal
             </TabsTrigger>
-            <TabsTrigger value="form-questions">
-              <FileText className="h-4 w-4 mr-2" />
-              Formulários
-            </TabsTrigger>
+            {isAdminOrBroker && (
+              <TabsTrigger value="form-questions">
+                <FileText className="h-4 w-4 mr-2" />
+                Formulários
+              </TabsTrigger>
+            )}
             <TabsTrigger value="smtp">
               <Mail className="h-4 w-4 mr-2" />
               SMTP
@@ -471,10 +481,12 @@ export default function Settings() {
               <FileText className="h-4 w-4 mr-2" />
               Assinatura
             </TabsTrigger>
-            <TabsTrigger value="pipeline">
-              <Kanban className="h-4 w-4 mr-2" />
-              Pipeline
-            </TabsTrigger>
+            {isAdminOrBroker && (
+              <TabsTrigger value="pipeline">
+                <Kanban className="h-4 w-4 mr-2" />
+                Pipeline
+              </TabsTrigger>
+            )}
             <TabsTrigger value="meta">
               <Facebook className="h-4 w-4 mr-2" />
               Meta
@@ -499,17 +511,9 @@ export default function Settings() {
               <MessageCircle className="h-4 w-4 mr-2" />
               Respostas Rápidas
             </TabsTrigger>
-            <TabsTrigger value="portals">
-              <Globe className="h-4 w-4 mr-2" />
-              Portais
-            </TabsTrigger>
             <TabsTrigger value="notion">
               <FileText className="h-4 w-4 mr-2" />
               Notion
-            </TabsTrigger>
-            <TabsTrigger value="daily-digest">
-              <Bell className="h-4 w-4 mr-2" />
-              Resumo Diário
             </TabsTrigger>
           </TabsList>
 

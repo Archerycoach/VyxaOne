@@ -12,6 +12,36 @@ const getMonthsFromBillingInterval = (billingInterval: string | null | undefined
   return 1;
 };
 
+/**
+ * Reflete o estado de uma subscrição nos campos do perfil, que são os que o
+ * SubscriptionGuard lê para conceder/bloquear acesso. Sem isto, mexer na tabela
+ * `subscriptions` (criar/estender/estado) não altera o acesso efetivo do user.
+ * Best-effort: nunca lança.
+ */
+const syncProfileFromSubscription = async (subscriptionId: string): Promise<void> => {
+  try {
+    const { data: sub } = await supabase
+      .from("subscriptions")
+      .select("user_id, status, plan_id, current_period_end")
+      .eq("id", subscriptionId)
+      .maybeSingle();
+
+    if (!sub?.user_id) return;
+
+    const active = sub.status === "active" || sub.status === "trialing";
+    await supabase
+      .from("profiles")
+      .update({
+        subscription_status: active ? "active" : "expired",
+        subscription_plan: active ? sub.plan_id : null,
+        subscription_end_date: active ? sub.current_period_end : null,
+      })
+      .eq("id", sub.user_id);
+  } catch (error) {
+    console.error("Error syncing profile from subscription:", error);
+  }
+};
+
 export interface SubscriptionWithPlan extends Omit<Subscription, 'plan_id'> {
   plan_id: string;
   subscription_plans: SubscriptionPlan | null;
@@ -116,6 +146,8 @@ export const createSubscription = async (
       throw error;
     }
 
+    if (data?.id) await syncProfileFromSubscription(data.id);
+
     return data;
   } catch (error) {
     console.error("Error in createSubscription:", error);
@@ -137,6 +169,7 @@ export const updateSubscriptionStatus = async (
     return false;
   }
 
+  await syncProfileFromSubscription(subscriptionId);
   return true;
 };
 
@@ -166,6 +199,7 @@ export const activateSubscription = async (
     return false;
   }
 
+  await syncProfileFromSubscription(subscriptionId);
   return true;
 };
 
@@ -203,6 +237,7 @@ export const extendSubscription = async (
       return false;
     }
 
+    await syncProfileFromSubscription(subscriptionId);
     return true;
   } catch (error) {
     console.error("Error in extendSubscription:", error);
