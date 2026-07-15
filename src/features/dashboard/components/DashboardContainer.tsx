@@ -26,6 +26,7 @@ import { useRouter } from "next/router";
 import { ScopeSelector } from "@/components/ScopeSelector";
 import { supabase } from "@/integrations/supabase/client";
 import { AiAssistantCard } from "./AiAssistantCard";
+import { RadarWidget } from "@/components/radar/RadarWidget";
 
 interface TeamMember {
   id: string;
@@ -134,6 +135,8 @@ export function DashboardContainer() {
       </div>
 
       <AiAssistantCard />
+
+      <RadarWidget />
 
       {/* Top Stats Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">

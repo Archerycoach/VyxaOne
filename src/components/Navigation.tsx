@@ -42,6 +42,7 @@ import {
   Mail,
   Palette,
   Banknote,
+  Radar,
 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
@@ -123,6 +124,7 @@ export function Navigation() {
     { icon: Building2, label: "Imóveis", path: "/properties" },
     { icon: Building2, label: "Empreendimentos", path: "/developments" },
     { icon: Users, label: "Contactos", path: "/contacts" },
+    { icon: Radar, label: "Radar", path: "/radar" },
     { icon: Calendar, label: "Agenda", path: "/calendar" },
     { icon: CheckSquare, label: "Tarefas", path: "/tasks" },
     { icon: Sparkles, label: "Idealista", path: "/idealista" },

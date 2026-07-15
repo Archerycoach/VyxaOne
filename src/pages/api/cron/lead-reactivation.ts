@@ -115,7 +115,18 @@ export default async function handler(
       throw error;
     }
 
-    const leadsToProcess = (leadsToProcessRaw || []).filter((lead: LeadToProcess) => enabledUserIds.has(lead.user_id));
+    // Excluir leads em acompanhamento ativo (Radar) — estão a ser trabalhadas
+    // e não devem entrar na reativação/auto-arquivo.
+    const { data: radarRows } = await supabaseAdmin
+      .from("radar_items")
+      .select("entity_id")
+      .eq("entity_type", "lead")
+      .is("resolved_at", null);
+    const radarLeadIds = new Set<string>((radarRows || []).map((r: { entity_id: string }) => r.entity_id));
+
+    const leadsToProcess = (leadsToProcessRaw || []).filter(
+      (lead: LeadToProcess) => enabledUserIds.has(lead.user_id) && !radarLeadIds.has(lead.id)
+    );
 
     console.log(`[Lead Reactivation] Found ${leadsToProcess.length} leads to evaluate (de ${leadsToProcessRaw?.length || 0} candidatas, filtradas por autorização)`);
 

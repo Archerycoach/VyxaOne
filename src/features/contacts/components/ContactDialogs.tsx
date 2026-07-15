@@ -22,6 +22,7 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { ContactAlertRequestsPanel } from "./ContactAlertRequestsPanel";
+import { RadarToggleButton } from "@/components/radar/RadarToggleButton";
 import {
   Plus,
   Trash2,
@@ -465,7 +466,13 @@ export function ContactDialogs({
           <DialogHeader>
             <DialogTitle>Detalhes do Contacto - {selectedContact?.name}</DialogTitle>
           </DialogHeader>
-          
+
+          {selectedContact && (
+            <div className="pt-1">
+              <RadarToggleButton entityType="contact" entityId={selectedContact.id} entityName={selectedContact.name} />
+            </div>
+          )}
+
           <div className="flex-1 overflow-y-auto space-y-6">
             {/* Contact Information */}
             <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">

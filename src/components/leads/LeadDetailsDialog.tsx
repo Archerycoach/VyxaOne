@@ -62,6 +62,7 @@ import type { InteractionWithDetails } from "@/services/interactionsService";
 import type { LeadNote } from "@/services/notesService";
 import type { CalendarEvent, Task, Property } from "@/types";
 import { QuickContactDialog } from "./QuickContactDialog";
+import { RadarToggleButton } from "@/components/radar/RadarToggleButton";
 import { ClientPortalProperties } from "./ClientPortalProperties";
 import { QuickTaskDialog } from "@/components/QuickTaskDialog";
 import { QuickEventDialog } from "@/components/QuickEventDialog";
@@ -867,6 +868,8 @@ export function LeadDetailsDialog({
                 <Phone className="h-4 w-4 mr-2" />
                 Registar Contacto
               </Button>
+
+              <RadarToggleButton entityType="lead" entityId={lead.id} entityName={lead.name} />
 
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>

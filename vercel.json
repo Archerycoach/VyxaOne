@@ -23,6 +23,10 @@
       "schedule": "0 9 * * *"
     },
     {
+      "path": "/api/cron/radar-nudges",
+      "schedule": "30 7 * * *"
+    },
+    {
       "path": "/api/cron/stale-lead-checks",
       "schedule": "45 8 * * *"
     },
