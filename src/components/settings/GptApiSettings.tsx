@@ -66,14 +66,20 @@ const PROVIDERS = {
 };
 
 const formatDate = (dateString: string) => {
-  return new Intl.DateTimeFormat('pt-PT', { 
-    day: '2-digit', 
-    month: '2-digit', 
+  return new Intl.DateTimeFormat('pt-PT', {
+    day: '2-digit',
+    month: '2-digit',
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit'
   }).format(new Date(dateString));
 };
+
+// Modelos OpenAI recentes (gpt-5*, o1/o3/o4) usam max_completion_tokens em vez
+// de max_tokens (igual à lógica do provider real em lib/ai/provider.ts).
+const isNewOpenAiModel = (model: string) => /^(gpt-5|o1|o3|o4)/i.test(model);
+const openAiTokenLimit = (model: string, n: number) =>
+  isNewOpenAiModel(model) ? { max_completion_tokens: n } : { max_tokens: n };
 
 export function GptApiSettings() {
   const { toast } = useToast();
@@ -240,7 +246,7 @@ export function GptApiSettings() {
         const response = await fetch("https://api.openai.com/v1/chat/completions", {
           method: "POST",
           headers: { "Content-Type": "application/json", "Authorization": `Bearer ${orgApiKey}` },
-          body: JSON.stringify({ model: orgModel, messages: [{ role: "user", content: "Teste" }], max_tokens: 5 }),
+          body: JSON.stringify({ model: orgModel, messages: [{ role: "user", content: "Teste" }], ...openAiTokenLimit(orgModel, 5) }),
         });
         success = response.ok;
         if (!success) errorMessage = (await response.json())?.error?.message || "Erro desconhecido";
@@ -374,7 +380,7 @@ export function GptApiSettings() {
           body: JSON.stringify({
             model,
             messages: [{ role: "user", content: "Teste" }],
-            max_tokens: 5,
+            ...openAiTokenLimit(model, 5),
           }),
         });
         success = response.ok;
