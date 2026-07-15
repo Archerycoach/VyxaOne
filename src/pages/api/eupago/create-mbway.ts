@@ -82,8 +82,9 @@ export default async function handler(
         currency: "EUR",
         status: "pending",
         payment_method: "mbway",
-        provider_transaction_id: payment.reference,
+        payment_reference: payment.reference,
         metadata: {
+          plan_id: planId,
           phone,
           ...payment
         }

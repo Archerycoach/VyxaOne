@@ -45,6 +45,42 @@ function verifyMetaSignature(rawBody: Buffer, signatureHeader: string | undefine
 }
 
 /**
+ * Fan-out multi-instância: uma Meta App só tem UM callback URL, mas há várias
+ * instâncias (BDs separadas). A instância que recebe da Meta reencaminha o
+ * payload EM BRUTO (com a assinatura original) para as instâncias-peer
+ * definidas em META_WEBHOOK_PEERS (URLs separados por vírgula). Cada instância
+ * processa apenas as páginas que existem na sua BD; as outras ignoram.
+ * Requer o MESMO app_secret configurado em todas (é o mesmo Meta App).
+ * O header x-vyxa-forwarded evita loops (um reencaminhamento não é reenviado).
+ */
+async function forwardToPeers(rawBody: Buffer, signatureHeader: string | undefined): Promise<void> {
+  const peers = (process.env.META_WEBHOOK_PEERS || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (peers.length === 0) return;
+
+  await Promise.allSettled(
+    peers.map(async (url) => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 4000);
+      try {
+        const headers: Record<string, string> = {
+          "content-type": "application/json",
+          "x-vyxa-forwarded": "1",
+        };
+        if (signatureHeader) headers["x-hub-signature-256"] = signatureHeader;
+        await fetch(url, { method: "POST", headers, body: rawBody, signal: controller.signal });
+      } catch (e) {
+        console.error("[Meta Webhook] Falha ao reencaminhar para peer:", url, e);
+      } finally {
+        clearTimeout(timer);
+      }
+    })
+  );
+}
+
+/**
  * Deteta consentimento de WhatsApp a partir das respostas do formulário da
  * Meta. Prioriza o mapeamento explícito (campo CRM "whatsapp_optin",
  * configurável em Definições > Integrações > Meta); só cai para a deteção
@@ -258,6 +294,12 @@ export default async function handler(
       if (!body || !body.entry) {
         console.error("[Meta Webhook] Invalid payload - missing entry");
         return res.status(400).json({ error: "Invalid payload" });
+      }
+
+      // Fan-out para as outras instâncias — só se este pedido veio da Meta
+      // (não é já um reencaminhamento). Cada instância processa as suas páginas.
+      if (req.headers["x-vyxa-forwarded"] !== "1") {
+        await forwardToPeers(rawBody, signatureHeader);
       }
 
       // ALWAYS log the raw hit to DB so we know it reached us

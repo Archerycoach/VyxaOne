@@ -5,7 +5,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { CreditCard, Smartphone, Building2, Loader2, CheckCircle2, XCircle } from "lucide-react";
-import { loadStripe } from "@stripe/stripe-js";
 import { supabase } from "@/integrations/supabase/client";
 
 async function getAuthHeaders(): Promise<Record<string, string>> {
@@ -27,7 +26,7 @@ interface PaymentMethodSelectorProps {
   onSuccess?: () => void;
 }
 
-type PaymentMethod = "stripe" | "mbway" | "multibanco" | null;
+type PaymentMethod = "card" | "mbway" | "multibanco" | null;
 
 interface MultibancoReference {
   entity: string;
@@ -51,8 +50,7 @@ export function PaymentMethodSelector({
   const [error, setError] = useState<string | null>(null);
   const [multibancoRef, setMultibancoRef] = useState<MultibancoReference | null>(null);
   const [mbwaySuccess, setMbwaySuccess] = useState(false);
-  const [pubKey, setPubKey] = useState("");
-  const [methods, setMethods] = useState<{ stripe: boolean; mbway: boolean; multibanco: boolean }>({ stripe: false, mbway: false, multibanco: false });
+  const [methods, setMethods] = useState<{ card: boolean; mbway: boolean; multibanco: boolean }>({ card: false, mbway: false, multibanco: false });
   const [configLoaded, setConfigLoaded] = useState(false);
 
   useEffect(() => {
@@ -60,10 +58,9 @@ export function PaymentMethodSelector({
     fetch("/api/payment/public-config")
       .then((r) => r.json())
       .then((cfg) => {
-        setPubKey(cfg.stripePublishableKey || "");
-        setMethods(cfg.methods || { stripe: false, mbway: false, multibanco: false });
+        setMethods(cfg.methods || { card: false, mbway: false, multibanco: false });
       })
-      .catch(() => setMethods({ stripe: false, mbway: false, multibanco: false }))
+      .catch(() => setMethods({ card: false, mbway: false, multibanco: false }))
       .finally(() => setConfigLoaded(true));
   }, [isOpen]);
 
@@ -79,13 +76,13 @@ export function PaymentMethodSelector({
     return value;
   };
 
-  // Handle Stripe payment
-  const handleStripePayment = async () => {
+  // Handle Credit Card payment (via EuPago — redireciona para o formulário de cartão)
+  const handleCardPayment = async () => {
     try {
       setIsLoading(true);
       setError(null);
 
-      const response = await fetch("/api/stripe/create-checkout-session", {
+      const response = await fetch("/api/eupago/create-creditcard", {
         method: "POST",
         headers: await getAuthHeaders(),
         body: JSON.stringify({ userId, planId }),
@@ -93,26 +90,14 @@ export function PaymentMethodSelector({
 
       const data = await response.json();
 
-      if (!response.ok) {
-        throw new Error(data.error || "Erro ao criar sessão de pagamento");
+      if (!response.ok || !data.url) {
+        throw new Error(data.error || "Erro ao iniciar pagamento por cartão");
       }
 
-      // Redirect to Stripe Checkout (chave pública vinda da config de pagamento)
-      const stripe = await loadStripe(pubKey || process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || "");
-      if (!stripe) {
-        throw new Error("Erro ao carregar Stripe");
-      }
-
-      const { error: stripeError } = await stripe.redirectToCheckout({
-        sessionId: data.sessionId,
-      });
-
-      if (stripeError) {
-        throw new Error(stripeError.message);
-      }
+      // Encaminha para o formulário de cartão seguro da EuPago.
+      window.location.href = data.url;
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Erro desconhecido");
-    } finally {
       setIsLoading(false);
     }
   };
@@ -219,14 +204,14 @@ export function PaymentMethodSelector({
           <div className="grid gap-4 py-4">
             {!configLoaded ? (
               <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
-            ) : !methods.stripe && !methods.mbway && !methods.multibanco ? (
+            ) : !methods.card && !methods.mbway && !methods.multibanco ? (
               <div className="text-center text-sm text-muted-foreground py-8">Nenhum método de pagamento está configurado.</div>
             ) : (
             <>
-            {methods.stripe && (
+            {methods.card && (
             <Card
               className="cursor-pointer hover:border-blue-500 transition-all hover:shadow-md"
-              onClick={() => handleMethodSelect("stripe")}
+              onClick={() => handleMethodSelect("card")}
             >
               <CardContent className="flex items-center gap-4 p-6">
                 <div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-100">
@@ -235,7 +220,7 @@ export function PaymentMethodSelector({
                 <div className="flex-1">
                   <h3 className="font-semibold">Cartão de Crédito/Débito</h3>
                   <p className="text-sm text-muted-foreground">
-                    Visa, Mastercard, Amex - Pagamento seguro via Stripe
+                    Visa, Mastercard - Pagamento seguro via EuPago
                   </p>
                 </div>
                 <div className="flex gap-2">
@@ -289,17 +274,17 @@ export function PaymentMethodSelector({
           </div>
         )}
 
-        {/* Stripe Payment */}
-        {selectedMethod === "stripe" && !isLoading && (
+        {/* Card Payment (EuPago) */}
+        {selectedMethod === "card" && !isLoading && (
           <div className="space-y-4 py-4">
             <div className="rounded-lg border bg-blue-50 p-4">
               <div className="flex items-start gap-3">
                 <CreditCard className="h-5 w-5 text-blue-600 mt-0.5" />
                 <div className="flex-1">
-                  <h4 className="font-medium text-blue-900">Pagamento Seguro via Stripe</h4>
+                  <h4 className="font-medium text-blue-900">Pagamento Seguro por Cartão</h4>
                   <p className="text-sm text-blue-700 mt-1">
-                    Será redirecionado para o checkout seguro do Stripe. 
-                    Seus dados de pagamento são protegidos com criptografia de nível bancário.
+                    Será redirecionado para o formulário de cartão seguro da EuPago.
+                    Os seus dados de pagamento são protegidos com encriptação de nível bancário.
                   </p>
                 </div>
               </div>
@@ -318,8 +303,8 @@ export function PaymentMethodSelector({
               <Button variant="outline" onClick={handleBack} className="flex-1">
                 Voltar
               </Button>
-              <Button onClick={handleStripePayment} className="flex-1">
-                Continuar para Stripe
+              <Button onClick={handleCardPayment} className="flex-1">
+                Continuar para pagamento
               </Button>
             </div>
           </div>
@@ -499,11 +484,11 @@ export function PaymentMethodSelector({
         )}
 
         {/* Loading State */}
-        {isLoading && selectedMethod === "stripe" && (
+        {isLoading && selectedMethod === "card" && (
           <div className="flex flex-col items-center justify-center py-12">
             <Loader2 className="h-12 w-12 animate-spin text-blue-600" />
             <p className="text-sm text-muted-foreground mt-4">
-              Redirecionando para checkout seguro...
+              A redirecionar para o pagamento seguro...
             </p>
           </div>
         )}

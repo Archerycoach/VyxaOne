@@ -12,12 +12,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
   try {
     const cfg = await getPaymentConfig();
+    const eupagoReady = cfg.eupagoEnabled && !!cfg.eupagoApiKey;
     return res.status(200).json({
-      stripePublishableKey: cfg.stripePublicKey,
+      // Consolidado num só gateway (EuPago): cartão, MBWay e Multibanco.
       methods: {
-        stripe: cfg.stripeEnabled && !!cfg.stripeSecretKey && !!cfg.stripePublicKey,
-        mbway: cfg.eupagoEnabled && cfg.mbwayEnabled && !!cfg.eupagoApiKey,
-        multibanco: cfg.eupagoEnabled && !!cfg.eupagoApiKey,
+        card: eupagoReady,
+        mbway: eupagoReady && cfg.mbwayEnabled,
+        multibanco: eupagoReady,
       },
       testMode: cfg.testMode,
     });

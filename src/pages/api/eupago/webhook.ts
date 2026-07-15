@@ -26,7 +26,7 @@ export default async function handler(
     const { data: payment, error: fetchError } = await (supabaseAdmin as any)
       .from("payment_history")
       .select("*")
-      .eq("provider_transaction_id", referencia)
+      .eq("payment_reference", referencia)
       .single();
 
     if (fetchError || !payment) {

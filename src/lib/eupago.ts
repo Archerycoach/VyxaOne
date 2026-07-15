@@ -1,15 +1,21 @@
 import axios from "axios";
 import { getPaymentConfig } from "@/lib/server/paymentConfig";
 
-const EUPAGO_API_URL = "https://clientes.eupago.pt/api/v1.02";
+// URL de PRODUÇÃO e de SANDBOX da EuPago. A escolha depende do test_mode da
+// config (Admin › Definições de Pagamento). Usar a chave de sandbox contra o
+// URL de produção devolve 401 — daí escolhermos o URL certo por modo.
+const EUPAGO_PROD_URL = "https://clientes.eupago.pt/api/v1.02";
+const EUPAGO_SANDBOX_URL = "https://sandbox.eupago.pt/api/v1.02";
 
-// Chave EuPago gerida em Admin › Definições de Pagamento (BD), com fallback env.
-const getEupagoApiKey = async () => {
-  const { eupagoApiKey } = await getPaymentConfig();
-  return eupagoApiKey || "";
+// Chave + URL base geridas em Admin › Definições de Pagamento (BD), fallback env.
+const getEupago = async (): Promise<{ apiKey: string; baseUrl: string }> => {
+  const { eupagoApiKey, testMode } = await getPaymentConfig();
+  return {
+    apiKey: eupagoApiKey || "",
+    baseUrl: testMode ? EUPAGO_SANDBOX_URL : EUPAGO_PROD_URL,
+  };
 };
 
-// Eupago API client
 export const eupago = {
   // Create MBWay payment
   createMBWayPayment: async ({
@@ -23,14 +29,13 @@ export const eupago = {
     reference: string;
     description: string;
   }) => {
-    try {
-      const apiKey = await getEupagoApiKey();
-      
-      if (!apiKey) {
-        throw new Error("Eupago não está configurado. Configure EUPAGO_API_KEY no .env");
-      }
+    const { apiKey, baseUrl } = await getEupago();
+    if (!apiKey) {
+      throw new Error("Chave EuPago não configurada (Admin › Definições de Pagamento).");
+    }
 
-      const response = await axios.post(`${EUPAGO_API_URL}/mbway/create`, {
+    try {
+      const response = await axios.post(`${baseUrl}/mbway/create`, {
         chave: apiKey,
         valor: amount.toFixed(2),
         alias: phone,
@@ -45,12 +50,11 @@ export const eupago = {
           reference: response.data.referencia,
           message: response.data.mensagem,
         };
-      } else {
-        throw new Error(response.data.mensagem || "Erro ao criar pagamento MBWay");
       }
+      throw new Error(response.data.mensagem || "Erro ao criar pagamento MBWay");
     } catch (error: any) {
-      console.error("Error creating MBWay payment:", error);
-      throw new Error(`Erro MBWay: ${error.message}`);
+      console.error("Error creating MBWay payment:", error?.response?.data || error.message);
+      throw new Error(`Erro MBWay: ${error?.response?.data?.mensagem || error.message}`);
     }
   },
 
@@ -64,14 +68,13 @@ export const eupago = {
     reference: string;
     description: string;
   }) => {
-    try {
-      const apiKey = await getEupagoApiKey();
-      
-      if (!apiKey) {
-        throw new Error("Eupago não está configurado");
-      }
+    const { apiKey, baseUrl } = await getEupago();
+    if (!apiKey) {
+      throw new Error("Chave EuPago não configurada.");
+    }
 
-      const response = await axios.post(`${EUPAGO_API_URL}/multibanco/create`, {
+    try {
+      const response = await axios.post(`${baseUrl}/multibanco/create`, {
         chave: apiKey,
         valor: amount.toFixed(2),
         id: reference,
@@ -86,25 +89,65 @@ export const eupago = {
           amount: response.data.valor,
           expiryDate: response.data.data_fim,
         };
-      } else {
-        throw new Error(response.data.mensagem || "Erro ao criar referência Multibanco");
       }
+      throw new Error(response.data.mensagem || "Erro ao criar referência Multibanco");
     } catch (error: any) {
-      console.error("Error creating Multibanco reference:", error);
-      throw new Error(`Erro Multibanco: ${error.message}`);
+      console.error("Error creating Multibanco reference:", error?.response?.data || error.message);
+      throw new Error(`Erro Multibanco: ${error?.response?.data?.mensagem || error.message}`);
+    }
+  },
+
+  // Create Credit Card payment (redirect flow — EuPago devolve um URL para onde
+  // o cliente é encaminhado para introduzir os dados do cartão).
+  createCreditCardPayment: async ({
+    amount,
+    reference,
+    description,
+    successUrl,
+    failUrl,
+  }: {
+    amount: number;
+    reference: string;
+    description: string;
+    successUrl: string;
+    failUrl: string;
+  }) => {
+    const { apiKey, baseUrl } = await getEupago();
+    if (!apiKey) {
+      throw new Error("Chave EuPago não configurada.");
+    }
+
+    try {
+      const response = await axios.post(`${baseUrl}/creditcard/create`, {
+        chave: apiKey,
+        valor: amount.toFixed(2),
+        id: reference,
+        descricao: description,
+        url_retorno: successUrl,
+        url_cancelamento: failUrl,
+      });
+
+      // A EuPago devolve o URL do formulário de cartão em `url` (ou `redirect`).
+      const url = response.data.url || response.data.redirect || response.data.link;
+      if (response.data.estado === "ok" && url) {
+        return { success: true, url, reference: response.data.referencia };
+      }
+      throw new Error(response.data.mensagem || "Erro ao criar pagamento por cartão");
+    } catch (error: any) {
+      console.error("Error creating credit card payment:", error?.response?.data || error.message);
+      throw new Error(`Erro cartão: ${error?.response?.data?.mensagem || error.message}`);
     }
   },
 
   // Check payment status
   checkPaymentStatus: async (reference: string) => {
-    try {
-      const apiKey = await getEupagoApiKey();
-      
-      if (!apiKey) {
-        throw new Error("Eupago não está configurado");
-      }
+    const { apiKey, baseUrl } = await getEupago();
+    if (!apiKey) {
+      throw new Error("Chave EuPago não configurada.");
+    }
 
-      const response = await axios.post(`${EUPAGO_API_URL}/pedido/info`, {
+    try {
+      const response = await axios.post(`${baseUrl}/pedido/info`, {
         chave: apiKey,
         referencia: reference,
       });
@@ -116,20 +159,17 @@ export const eupago = {
         paidDate: response.data.data_pagamento,
       };
     } catch (error: any) {
-      console.error("Error checking payment status:", error);
+      console.error("Error checking payment status:", error?.response?.data || error.message);
       throw new Error(`Erro ao verificar status: ${error.message}`);
     }
   },
 };
 
-// Verify Eupago webhook signature
+// Verify Eupago webhook signature (a EuPago usa a própria chave no payload)
 export const verifyEupagoWebhook = async (payload: any, _signature: string): Promise<boolean> => {
-  const apiKey = await getEupagoApiKey();
-
+  const { apiKey } = await getEupago();
   if (!apiKey) {
     throw new Error("Chave EuPago não configurada");
   }
-
-  // Eupago uses API key verification in the payload
   return payload.chave === apiKey;
 };
