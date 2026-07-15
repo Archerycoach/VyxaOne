@@ -6,6 +6,7 @@ import { Layout } from "@/components/Layout";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import SEO from "@/components/SEO";
 import { supabase } from "@/integrations/supabase/client";
+import { isAiAvailableForCurrentUser } from "@/lib/ai/clientAvailability";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -108,8 +109,8 @@ export default function AiEmailCampaignsPage() {
           return;
         }
 
-        const keysRes = await (supabase.from("gpt_api_keys" as any).select("id").eq("user_id", user.id).limit(1) as any);
-        setHasGptConnection(Boolean(keysRes.data && keysRes.data.length > 0));
+        // IA disponível: chave pessoal OU plano com IA integrada (chave da agência).
+        setHasGptConnection(await isAiAvailableForCurrentUser());
       } catch (error) {
         console.error("Erro ao verificar ligação GPT:", error);
         setHasGptConnection(false);

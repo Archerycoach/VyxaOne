@@ -4,6 +4,7 @@ import { Layout } from "@/components/Layout";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import SEO from "@/components/SEO";
 import { supabase } from "@/integrations/supabase/client";
+import { isAiAvailableForCurrentUser } from "@/lib/ai/clientAvailability";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -88,9 +89,8 @@ export default function AiAgentPage() {
         (supabase.from("ai_tasks" as any).select("*").eq("user_id", user.id).order("created_at", { ascending: false }) as unknown as Promise<{ data: AiTask[] }>)
       ]);
 
-      // Check for GPT connection
-      const keysRes = await (supabase.from("gpt_api_keys" as any).select("id").eq("user_id", user.id).limit(1) as any);
-      setHasGptConnection(keysRes.data && keysRes.data.length > 0);
+      // IA disponível: chave pessoal OU plano com IA integrada (chave da agência).
+      setHasGptConnection(await isAiAvailableForCurrentUser());
 
       if (reportsRes.data) setReports(reportsRes.data);
       if (tasksRes.data) setTasks(tasksRes.data);
