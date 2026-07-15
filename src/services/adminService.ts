@@ -542,6 +542,46 @@ export const assignAgentToTeamLead = async (agentId: string, teamLeadId: string 
   await logActivity(agentId, "assign_agent_to_team_lead", "profile", agentId, JSON.stringify({ team_lead_id: teamLeadId }));
 };
 
+// Isentar (ou reativar a obrigação de) subscrição para um utilizador (admin only).
+export const setUserSubscriptionExempt = async (userId: string, exempt: boolean) => {
+  const isAdminUser = await isAdmin();
+  if (!isAdminUser) {
+    throw new Error("Apenas administradores podem isentar utilizadores de subscrição");
+  }
+
+  const { error } = await supabase
+    .from("profiles")
+    .update({ subscription_exempt: exempt } as any)
+    .eq("id", userId);
+
+  if (error) throw error;
+
+  await logActivity(userId, "set_user_subscription_exempt", "profile", userId, JSON.stringify({ subscription_exempt: exempt }));
+};
+
+// Definir manualmente a data de fim de acesso de um utilizador (admin only).
+// Com data -> marca a subscrição como ativa até essa data.
+// Sem data (null) -> remove o acesso manual (volta a depender de trial/subscrição).
+export const setUserSubscriptionEnd = async (userId: string, endDate: string | null) => {
+  const isAdminUser = await isAdmin();
+  if (!isAdminUser) {
+    throw new Error("Apenas administradores podem alterar o acesso");
+  }
+
+  const updates: any = endDate
+    ? { subscription_status: "active", subscription_end_date: endDate }
+    : { subscription_status: "expired", subscription_end_date: null };
+
+  const { error } = await supabase
+    .from("profiles")
+    .update(updates)
+    .eq("id", userId);
+
+  if (error) throw error;
+
+  await logActivity(userId, "set_user_subscription_end", "profile", userId, JSON.stringify(updates));
+};
+
 // Toggle WhatsApp module for user
 export const toggleWhatsappModule = async (userId: string, enabled: boolean) => {
   const isAdminUser = await isAdmin();

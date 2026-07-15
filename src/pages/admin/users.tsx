@@ -26,8 +26,9 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { Search, UserPlus, Trash2, Edit, Mail, Phone, RefreshCw, MessageCircle } from "lucide-react";
-import { getAllUsers, createUser, deleteUser, updateUserRole, getTeamLeads, assignAgentToTeamLead, toggleWhatsappModule } from "@/services/adminService";
+import { Search, UserPlus, Trash2, Edit, Mail, Phone, RefreshCw, MessageCircle, ShieldCheck } from "lucide-react";
+import { getAllUsers, createUser, deleteUser, updateUserRole, getTeamLeads, assignAgentToTeamLead, toggleWhatsappModule, setUserSubscriptionExempt, setUserSubscriptionEnd } from "@/services/adminService";
+import { getSubscriptionPlans, adminSetUserPlan, adminCancelUserSubscription, type SubscriptionPlan } from "@/services/subscriptionService";
 import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
@@ -66,6 +67,10 @@ export default function UsersManagement() {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [isProcessingRelogin, setIsProcessingRelogin] = useState(false);
+  const [accessEndDate, setAccessEndDate] = useState<string>("");
+  const [savingAccess, setSavingAccess] = useState(false);
+  const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
+  const [savingPlan, setSavingPlan] = useState(false);
   const { toast } = useToast();
 
   const [newUser, setNewUser] = useState<NewUserForm>({
@@ -81,10 +86,12 @@ export default function UsersManagement() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [usersResult, teamLeadsData] = await Promise.all([
+        const [usersResult, teamLeadsData, plansData] = await Promise.all([
           getAllUsers(),
-          getTeamLeads()
+          getTeamLeads(),
+          getSubscriptionPlans().catch(() => [])
         ]);
+        setPlans(plansData || []);
         
         if (usersResult.error) {
           console.error("Error fetching users:", usersResult.error);
@@ -294,6 +301,92 @@ export default function UsersManagement() {
     }
   };
 
+  const refreshUsersAndSelected = async () => {
+    const usersResult = await getAllUsers();
+    if (usersResult.data) {
+      setUsers(usersResult.data);
+      setFilteredUsers(usersResult.data);
+      const updated = usersResult.data.find((u) => u.id === selectedUser?.id);
+      if (updated) setSelectedUser(updated);
+    }
+  };
+
+  const handleToggleExempt = async (checked: boolean) => {
+    if (!selectedUser) return;
+    try {
+      await setUserSubscriptionExempt(selectedUser.id, checked);
+      toast({
+        title: "Sucesso",
+        description: checked ? "Utilizador isento de subscrição." : "Isenção removida.",
+      });
+      await refreshUsersAndSelected();
+    } catch (error: any) {
+      console.error("Error toggling exempt:", error);
+      toast({ title: "Erro", description: error.message || "Não foi possível alterar a isenção.", variant: "destructive" });
+    }
+  };
+
+  const handleSaveAccessEnd = async () => {
+    if (!selectedUser) return;
+    if (!accessEndDate) {
+      toast({ title: "Indique uma data", variant: "destructive" });
+      return;
+    }
+    setSavingAccess(true);
+    try {
+      const iso = new Date(`${accessEndDate}T23:59:59`).toISOString();
+      await setUserSubscriptionEnd(selectedUser.id, iso);
+      toast({ title: "Acesso atualizado", description: `Acesso válido até ${new Date(iso).toLocaleDateString("pt-PT")}.` });
+      await refreshUsersAndSelected();
+    } catch (error: any) {
+      console.error("Error setting access end:", error);
+      toast({ title: "Erro", description: error.message || "Não foi possível definir a data.", variant: "destructive" });
+    } finally {
+      setSavingAccess(false);
+    }
+  };
+
+  const handleClearAccess = async () => {
+    if (!selectedUser) return;
+    setSavingAccess(true);
+    try {
+      await setUserSubscriptionEnd(selectedUser.id, null);
+      setAccessEndDate("");
+      toast({ title: "Acesso manual removido", description: "O utilizador volta a depender do trial/subscrição." });
+      await refreshUsersAndSelected();
+    } catch (error: any) {
+      console.error("Error clearing access:", error);
+      toast({ title: "Erro", description: error.message || "Não foi possível remover.", variant: "destructive" });
+    } finally {
+      setSavingAccess(false);
+    }
+  };
+
+  const handleSetPlan = async (value: string) => {
+    if (!selectedUser) return;
+    setSavingPlan(true);
+    try {
+      if (value === "none") {
+        const ok = await adminCancelUserSubscription(selectedUser.id);
+        if (!ok) throw new Error("Falha ao cancelar a subscrição");
+        toast({ title: "Subscrição removida", description: "O utilizador ficou sem plano." });
+      } else {
+        // Se houver uma data de acesso definida no campo abaixo, usamo-la como fim.
+        const endIso = accessEndDate ? new Date(`${accessEndDate}T23:59:59`).toISOString() : undefined;
+        const ok = await adminSetUserPlan(selectedUser.id, value, endIso);
+        if (!ok) throw new Error("Falha ao atribuir o plano");
+        const planName = plans.find((p) => p.id === value)?.name || "plano";
+        toast({ title: "Subscrição atualizada", description: `${planName} atribuído com subscrição ativa.` });
+      }
+      await refreshUsersAndSelected();
+    } catch (error: any) {
+      console.error("Error setting plan:", error);
+      toast({ title: "Erro", description: error.message || "Não foi possível alterar a subscrição.", variant: "destructive" });
+    } finally {
+      setSavingPlan(false);
+    }
+  };
+
   const handleForceRelogin = async (userId?: string) => {
     setIsProcessingRelogin(true);
     try {
@@ -456,6 +549,11 @@ export default function UsersManagement() {
                           size="sm"
                           onClick={() => {
                             setSelectedUser(user);
+                            setAccessEndDate(
+                              (user as any).subscription_end_date
+                                ? new Date((user as any).subscription_end_date).toISOString().slice(0, 10)
+                                : ""
+                            );
                             setIsEditDialogOpen(true);
                           }}
                         >
@@ -657,6 +755,85 @@ export default function UsersManagement() {
                     checked={selectedUser?.whatsapp_module_enabled || false}
                     onCheckedChange={handleToggleWhatsapp}
                   />
+                </div>
+
+                <div className="border rounded-md p-4 space-y-4">
+                  <div>
+                    <Label className="text-base flex items-center gap-2">
+                      <ShieldCheck className="h-4 w-4 text-indigo-600" />
+                      Acesso / Subscrição
+                    </Label>
+                    <p className="text-sm text-muted-foreground mt-0.5">
+                      {(selectedUser as any)?.trial_ends_at
+                        ? `Fim do trial: ${new Date((selectedUser as any).trial_ends_at).toLocaleDateString("pt-PT")}. `
+                        : ""}
+                      {(selectedUser as any)?.subscription_end_date
+                        ? `Acesso manual até: ${new Date((selectedUser as any).subscription_end_date).toLocaleDateString("pt-PT")}.`
+                        : "Sem data de acesso manual definida."}
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="user-plan">Plano de subscrição</Label>
+                    <Select
+                      value={(selectedUser as any)?.subscription_plan || "none"}
+                      onValueChange={handleSetPlan}
+                      disabled={savingPlan}
+                    >
+                      <SelectTrigger id="user-plan">
+                        <SelectValue placeholder="Selecione um plano" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Sem plano</SelectItem>
+                        {plans.map((p) => (
+                          <SelectItem key={p.id} value={p.id}>
+                            {p.name}{(p as any).ai_included ? " · IA integrada" : ""} — {p.price}€
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      Atribui uma subscrição ativa com este plano (define também se o utilizador usa a IA integrada).
+                    </p>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div className="pr-4">
+                      <Label htmlFor="exempt-switch">Isento de subscrição</Label>
+                      <p className="text-sm text-muted-foreground">
+                        Acesso permanente, sem precisar de trial nem subscrição.
+                      </p>
+                    </div>
+                    <Switch
+                      id="exempt-switch"
+                      checked={!!(selectedUser as any)?.subscription_exempt}
+                      onCheckedChange={handleToggleExempt}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="access-end">Definir acesso válido até</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        id="access-end"
+                        type="date"
+                        value={accessEndDate}
+                        onChange={(e) => setAccessEndDate(e.target.value)}
+                        className="flex-1"
+                      />
+                      <Button onClick={handleSaveAccessEnd} disabled={savingAccess}>
+                        Aplicar
+                      </Button>
+                      {(selectedUser as any)?.subscription_end_date && (
+                        <Button variant="outline" onClick={handleClearAccess} disabled={savingAccess}>
+                          Remover
+                        </Button>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Marca a subscrição como ativa até à data escolhida. Para acesso sem prazo, use "Isento".
+                    </p>
+                  </div>
                 </div>
               </div>
               <DialogFooter>

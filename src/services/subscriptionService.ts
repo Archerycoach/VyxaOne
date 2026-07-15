@@ -210,6 +210,105 @@ export const extendSubscription = async (
   }
 };
 
+/**
+ * Admin: define/altera manualmente o plano de subscrição de um utilizador.
+ * Mantém em sincronia a tabela `subscriptions` (usada pela resolução de IA por
+ * plano) e os campos do perfil (usados pelo SubscriptionGuard).
+ * endDateIso opcional: se omitido, calcula o fim a partir do intervalo do plano.
+ */
+export const adminSetUserPlan = async (
+  userId: string,
+  planId: string,
+  endDateIso?: string | null
+): Promise<boolean> => {
+  try {
+    const { data: plan } = await supabase
+      .from("subscription_plans")
+      .select("billing_interval")
+      .eq("id", planId)
+      .single();
+
+    const start = new Date();
+    let end: Date;
+    if (endDateIso) {
+      end = new Date(endDateIso);
+    } else {
+      end = new Date();
+      end.setMonth(end.getMonth() + getMonthsFromBillingInterval(plan?.billing_interval));
+    }
+
+    // Atualiza a subscrição ativa/trial existente ou cria uma nova.
+    const { data: existing } = await supabase
+      .from("subscriptions")
+      .select("id")
+      .eq("user_id", userId)
+      .in("status", ["active", "trialing"])
+      .order("current_period_end", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (existing) {
+      await supabase
+        .from("subscriptions")
+        .update({
+          plan_id: planId,
+          status: "active",
+          current_period_end: end.toISOString(),
+          trial_end: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", existing.id);
+    } else {
+      await supabase.from("subscriptions").insert({
+        user_id: userId,
+        plan_id: planId,
+        status: "active",
+        current_period_start: start.toISOString(),
+        current_period_end: end.toISOString(),
+      });
+    }
+
+    // Perfil em sincronia (o guard lê estes campos).
+    await supabase
+      .from("profiles")
+      .update({
+        subscription_status: "active",
+        subscription_plan: planId,
+        subscription_end_date: end.toISOString(),
+      })
+      .eq("id", userId);
+
+    return true;
+  } catch (error) {
+    console.error("Error in adminSetUserPlan:", error);
+    return false;
+  }
+};
+
+/**
+ * Admin: cancela a subscrição do utilizador (remove o plano). Volta a depender
+ * do trial / isenção.
+ */
+export const adminCancelUserSubscription = async (userId: string): Promise<boolean> => {
+  try {
+    await supabase
+      .from("subscriptions")
+      .update({ status: "cancelled", updated_at: new Date().toISOString() })
+      .eq("user_id", userId)
+      .in("status", ["active", "trialing"]);
+
+    await supabase
+      .from("profiles")
+      .update({ subscription_status: "expired", subscription_plan: null, subscription_end_date: null })
+      .eq("id", userId);
+
+    return true;
+  } catch (error) {
+    console.error("Error in adminCancelUserSubscription:", error);
+    return false;
+  }
+};
+
 export const getAllSubscriptions = async (filters: any = {}): Promise<SubscriptionWithPlan[]> => {
   try {
     // Cast to any to avoid "Type instantiation is excessively deep" error with complex joins

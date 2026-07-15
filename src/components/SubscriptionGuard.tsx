@@ -18,6 +18,7 @@ interface SubscriptionStatus {
   daysRemaining: number;
   subscriptionEndDate: string | null;
   isAdmin: boolean; // NOVO: flag para admin
+  isExempt: boolean; // isento de subscrição pelo admin
 }
 
 // Páginas acessíveis mesmo APÓS o trial expirar (para o utilizador poder
@@ -61,7 +62,7 @@ export function SubscriptionGuard({
       // Get user profile with subscription data AND role
       const { data: rawProfile, error } = await supabase
         .from("profiles")
-        .select("trial_ends_at, subscription_status, subscription_end_date, role")
+        .select("trial_ends_at, subscription_status, subscription_end_date, subscription_exempt, role")
         .eq("id", user.id)
         .single();
 
@@ -71,6 +72,8 @@ export function SubscriptionGuard({
 
       // ADMIN BYPASS: Se é admin, tem acesso total sem restrições
       const isAdmin = profile?.role === "admin";
+      // ISENÇÃO: o admin pode isentar um utilizador de trial/subscrição.
+      const isExempt = !!profile?.subscription_exempt;
 
       const now = new Date();
       const trialEndsAt = profile?.trial_ends_at
@@ -88,6 +91,8 @@ export function SubscriptionGuard({
         .select("status, current_period_end")
         .eq("user_id", user.id)
         .in("status", ["active", "trialing"])
+        .order("current_period_end", { ascending: false })
+        .limit(1)
         .maybeSingle();
 
       const hasDbSubscription =
@@ -112,6 +117,7 @@ export function SubscriptionGuard({
         daysRemaining,
         subscriptionEndDate: profile?.subscription_end_date || null,
         isAdmin, // NOVO: incluir flag admin
+        isExempt,
       };
 
       setStatus(subscriptionStatus);
@@ -126,6 +132,7 @@ export function SubscriptionGuard({
       // Trial expirado E sem subscrição ativa E tentando aceder a página restrita E NÃO é admin
       if (
         !isAdmin &&
+        !isExempt &&
         !isInTrial &&
         !hasActiveSubscription &&
         !isAlwaysAccessible &&
@@ -158,6 +165,7 @@ export function SubscriptionGuard({
   // Página sempre acessível ou utilizador com subscrição ativa ou ADMIN
   const hasAccess =
     status.isAdmin ||
+    status.isExempt ||
     status.hasActiveSubscription ||
     status.isInTrial ||
     ALWAYS_ACCESSIBLE_PAGES.some((path) => router.pathname.startsWith(path));
@@ -166,6 +174,7 @@ export function SubscriptionGuard({
   // Mostrar alerta se estiver em trial ou sem subscrição E NÃO é admin
   const showAlert =
     !status.isAdmin &&
+    !status.isExempt &&
     ((status.isInTrial && status.daysRemaining <= 7) ||
       (!status.hasActiveSubscription && !status.isInTrial));
 
