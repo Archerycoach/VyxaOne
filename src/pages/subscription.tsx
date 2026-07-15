@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
-import { Check, AlertTriangle, Calendar, CreditCard, Loader2 } from "lucide-react";
+import { Check, AlertTriangle, Calendar, CreditCard, Loader2, Sparkles, KeyRound } from "lucide-react";
 import SEO from "@/components/SEO";
 import { getSubscriptionPlans, type SubscriptionPlan } from "@/services/subscriptionService";
 
@@ -141,7 +141,7 @@ export default function SubscriptionPage() {
                 Trial Expirado
               </AlertTitle>
               <AlertDescription className="text-red-800 dark:text-red-200">
-                O seu período de trial de 14 dias terminou. Subscreva agora para
+                O seu período de trial terminou. Subscreva agora para
                 continuar a usar todas as funcionalidades do Vyxa One.
               </AlertDescription>
             </Alert>
@@ -210,6 +210,17 @@ export default function SubscriptionPage() {
                     {plan.description && (
                       <p className="text-sm text-muted-foreground mb-4">{plan.description}</p>
                     )}
+                    {(plan as any).ai_included ? (
+                      <div className="mb-4 flex items-start gap-2 rounded-md bg-indigo-50 px-3 py-2 text-sm text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">
+                        <Sparkles className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                        <span>IA integrada incluída — não precisa de configurar nenhuma chave.</span>
+                      </div>
+                    ) : (
+                      <div className="mb-4 flex items-start gap-2 rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">
+                        <KeyRound className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                        <span>Sem IA integrada — requer configurar a sua própria chave de IA em Definições &gt; IA.</span>
+                      </div>
+                    )}
                     {features.length > 0 && (
                       <ul className="space-y-3">
                         {features.map((feature, index) => (
@@ -257,7 +268,7 @@ export default function SubscriptionPage() {
             <p className="text-sm text-muted-foreground">
               {trialInfo?.isInTrial
                 ? "Após o trial, os seus dados serão preservados e poderá continuar assim que subscrever."
-                : "Todos os planos incluem 14 dias de trial gratuito. Não é necessário cartão de crédito."}
+                : "Todos os planos incluem um período de trial gratuito. Não é necessário cartão de crédito."}
             </p>
           </div>
         </div>

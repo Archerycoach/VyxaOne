@@ -85,7 +85,8 @@ export async function runAI(params: RunAIParams): Promise<AIResponse> {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
-  // Chave própria do utilizador, com reserva na chave da agência (ver lib/ai/keys.ts)
+  // Resolução por plano: plano com IA integrada usa a chave do admin/agência;
+  // caso contrário usa a chave do próprio consultor (ver lib/ai/keys.ts).
   const { provider, model, apiKey: api_key, scope } = await resolveAiKey(userId, supabase);
 
   if (scope === "user") {

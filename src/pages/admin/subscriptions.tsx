@@ -40,6 +40,7 @@ import {
   CommandItem,
 } from "@/components/ui/command";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
@@ -136,6 +137,7 @@ export default function SubscriptionsManagement() {
     billing_interval: "monthly" as BillingInterval,
     features: [] as string[],
     is_active: true,
+    ai_included: false,
   });
 
   useEffect(() => {
@@ -352,7 +354,8 @@ export default function SubscriptionsManagement() {
           billing_interval: planForm.billing_interval,
           features: planForm.features,
           is_active: planForm.is_active,
-        });
+          ai_included: planForm.ai_included,
+        } as any);
 
       if (error) throw error;
 
@@ -369,6 +372,7 @@ export default function SubscriptionsManagement() {
         billing_interval: "monthly",
         features: [],
         is_active: true,
+        ai_included: false,
       });
       await loadData();
     } catch (error) {
@@ -402,7 +406,8 @@ export default function SubscriptionsManagement() {
           billing_interval: planForm.billing_interval,
           features: planForm.features,
           is_active: planForm.is_active,
-        })
+          ai_included: planForm.ai_included,
+        } as any)
         .eq("id", selectedPlan.id);
 
       if (error) throw error;
@@ -474,6 +479,7 @@ export default function SubscriptionsManagement() {
       billing_interval: normalizeBillingInterval(plan.billing_interval),
       features: features,
       is_active: plan.is_active,
+      ai_included: !!(plan as any).ai_included,
     });
     setIsEditPlanDialogOpen(true);
   };
@@ -746,7 +752,14 @@ export default function SubscriptionsManagement() {
                   <TableBody>
                     {plans.map((plan) => (
                       <TableRow key={plan.id}>
-                        <TableCell className="font-medium">{plan.name}</TableCell>
+                        <TableCell className="font-medium">
+                          <div className="flex items-center gap-2">
+                            {plan.name}
+                            {(plan as any).ai_included && (
+                              <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200">IA integrada</Badge>
+                            )}
+                          </div>
+                        </TableCell>
                         <TableCell>{plan.price}€</TableCell>
                         <TableCell>
                           {plan.billing_interval === "monthly" ? "Mensal" : plan.billing_interval === "semiannual" ? "Semestral" : "Anual"}
@@ -1030,6 +1043,19 @@ export default function SubscriptionsManagement() {
                   </Select>
                 </div>
               </div>
+
+              <div className="flex items-center justify-between rounded-lg border p-3">
+                <div className="pr-4">
+                  <Label>IA integrada incluída</Label>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Se ativo, este plano usa a chave de IA do admin. Se inativo, o consultor tem de configurar a sua própria chave.
+                  </p>
+                </div>
+                <Switch
+                  checked={planForm.ai_included}
+                  onCheckedChange={(checked) => setPlanForm({ ...planForm, ai_included: checked })}
+                />
+              </div>
             </div>
             <DialogFooter>
               <Button
@@ -1123,6 +1149,18 @@ export default function SubscriptionsManagement() {
                       <SelectItem value="inactive">Inativo</SelectItem>
                     </SelectContent>
                   </Select>
+                </div>
+                <div className="flex items-center justify-between rounded-lg border p-3">
+                  <div className="pr-4">
+                    <Label>IA integrada incluída</Label>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      Se ativo, este plano usa a chave de IA do admin. Se inativo, o consultor tem de configurar a sua própria chave.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={planForm.ai_included}
+                    onCheckedChange={(checked) => setPlanForm({ ...planForm, ai_included: checked })}
+                  />
                 </div>
               </div>
             )}

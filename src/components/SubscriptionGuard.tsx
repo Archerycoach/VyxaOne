@@ -20,15 +20,9 @@ interface SubscriptionStatus {
   isAdmin: boolean; // NOVO: flag para admin
 }
 
-// Páginas acessíveis durante e após o trial (sempre disponíveis)
+// Páginas acessíveis mesmo APÓS o trial expirar (para o utilizador poder
+// subscrever e gerir a conta). Todo o resto da app é bloqueado sem trial/subscrição.
 const ALWAYS_ACCESSIBLE_PAGES = [
-  "/dashboard",
-  "/leads",
-  "/pipeline",
-  "/contacts",
-  "/calendar",
-  "/tasks",
-  "/interactions",
   "/subscription",
   "/settings",
 ];
@@ -86,10 +80,26 @@ export function SubscriptionGuard({
         ? new Date(profile.subscription_end_date)
         : null;
 
-      const isInTrial = trialEndsAt ? now < trialEndsAt : false;
+      // Subscrição ativa: aceitar tanto o estado desnormalizado no perfil como
+      // uma linha real na tabela subscriptions (ex.: criada pelo admin), para
+      // não bloquear quem tem subscrição válida mas o perfil não foi atualizado.
+      const { data: dbSub } = await supabase
+        .from("subscriptions")
+        .select("status, current_period_end")
+        .eq("user_id", user.id)
+        .in("status", ["active", "trialing"])
+        .maybeSingle();
+
+      const hasDbSubscription =
+        !!dbSub &&
+        (!dbSub.current_period_end || now < new Date(dbSub.current_period_end));
+
+      const isInTrial =
+        (trialEndsAt ? now < trialEndsAt : false) || dbSub?.status === "trialing";
       const hasActiveSubscription =
-        profile?.subscription_status === "active" &&
-        (!subscriptionEndDate || now < subscriptionEndDate);
+        (profile?.subscription_status === "active" &&
+          (!subscriptionEndDate || now < subscriptionEndDate)) ||
+        hasDbSubscription;
 
       const daysRemaining = trialEndsAt
         ? Math.max(0, Math.ceil((trialEndsAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)))

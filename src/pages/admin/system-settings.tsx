@@ -4,6 +4,7 @@ import { ArrowLeft, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { getSession } from "@/services/authService";
@@ -35,10 +36,13 @@ export default function SystemSettings() {
     reports: true,
     chat: true,
   });
+  const [trialDays, setTrialDays] = useState<string>("30");
+  const [savingTrial, setSavingTrial] = useState(false);
 
   useEffect(() => {
     checkAccess();
     loadModuleSettings();
+    loadTrialSetting();
   }, []);
 
   const checkAccess = async () => {
@@ -82,6 +86,50 @@ export default function SystemSettings() {
       }
     } catch (error) {
       console.error("Error loading module settings:", error);
+    }
+  };
+
+  const loadTrialSetting = async () => {
+    try {
+      const { data } = await supabase
+        .from("system_settings")
+        .select("value")
+        .eq("key", "trial_period_days")
+        .maybeSingle();
+      if (data?.value) setTrialDays(String(data.value));
+    } catch (error) {
+      console.error("Error loading trial setting:", error);
+    }
+  };
+
+  const saveTrialSetting = async () => {
+    const n = parseInt(trialDays, 10);
+    if (!Number.isFinite(n) || n < 0) {
+      toast({ title: "Valor inválido", description: "Indique um número de dias válido (0 ou mais).", variant: "destructive" });
+      return;
+    }
+    setSavingTrial(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) throw new Error("Sessão inválida");
+
+      const res = await fetch("/api/admin/system-settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ trial_period_days: String(n) }),
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || "Erro ao guardar");
+      }
+      setTrialDays(String(n));
+      toast({ title: "✅ Período de trial guardado", description: `Novos registos passam a ter ${n} dias de trial.` });
+    } catch (error: any) {
+      console.error("Error saving trial setting:", error);
+      toast({ title: "Erro ao guardar", description: error.message || "Não foi possível guardar.", variant: "destructive" });
+    } finally {
+      setSavingTrial(false);
     }
   };
 
@@ -259,6 +307,39 @@ export default function SystemSettings() {
                   {saving ? "A guardar..." : "Guardar Módulos"}
                 </Button>
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Período de Trial */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">⏳ Período de Trial</CardTitle>
+              <CardDescription>
+                Duração (em dias) do trial gratuito atribuído a cada novo registo.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-end gap-3 max-w-sm">
+                <div className="flex-1">
+                  <Label htmlFor="trial-days" className="font-medium">Dias de trial</Label>
+                  <Input
+                    id="trial-days"
+                    type="number"
+                    min="0"
+                    value={trialDays}
+                    onChange={(e) => setTrialDays(e.target.value)}
+                  />
+                </div>
+                <Button onClick={saveTrialSetting} disabled={savingTrial}>
+                  <Save className="h-4 w-4 mr-2" />
+                  {savingTrial ? "A guardar..." : "Guardar"}
+                </Button>
+              </div>
+              <p className="text-sm text-slate-600">
+                Aplica-se a <strong>novos</strong> registos. Os utilizadores atuais mantêm o prazo já
+                atribuído (data de registo + dias). Para dar mais tempo a um utilizador específico,
+                crie-lhe uma subscrição em modo <strong>Teste</strong> em Admin › Subscrições.
+              </p>
             </CardContent>
           </Card>
 

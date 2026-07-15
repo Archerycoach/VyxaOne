@@ -2,6 +2,7 @@ import React from "react";
 import Head from "next/head";
 import { Navigation } from "./Navigation";
 import { NotificationCenter } from "./NotificationCenter";
+import { SubscriptionGuard } from "./SubscriptionGuard";
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -26,7 +27,7 @@ export function Layout({ children, title }: LayoutProps) {
           </header>
 
           <main className="flex-1 overflow-y-auto px-4 sm:px-6 lg:px-8 py-6">
-            {children}
+            <SubscriptionGuard requiresSubscription>{children}</SubscriptionGuard>
           </main>
         </div>
       </div>
