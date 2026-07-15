@@ -5,6 +5,7 @@ import { hasValidWhatsAppConsent } from "@/services/consentService";
 import { sendClientEmail } from "@/lib/server/sendClientEmail";
 import { logEmailInteractionServer } from "@/lib/emailInteractionLogger";
 import { buildReactivationEmail } from "@/lib/server/reactivationEmail";
+import { deriveAppUrl } from "@/lib/server/appUrl";
 
 /**
  * Cron Job: Lead Reactivation & Follow-up
@@ -66,6 +67,8 @@ export default async function handler(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
+
+  const appUrl = deriveAppUrl(req);
 
   const results: ProcessingResults = {
     processed: 0,
@@ -133,7 +136,7 @@ export default async function handler(
     // Process each lead individually with error tolerance
     for (const lead of leadsToProcess) {
       try {
-        await processLead(lead as LeadToProcess, supabaseAdmin, results);
+        await processLead(lead as LeadToProcess, supabaseAdmin, results, appUrl);
       } catch (leadError: any) {
         console.error(`[Lead Reactivation] Error processing lead ${lead.id}:`, {
           error: leadError.message,
@@ -174,7 +177,8 @@ export default async function handler(
 async function processLead(
   lead: LeadToProcess,
   supabaseAdmin: any,
-  results: ProcessingResults
+  results: ProcessingResults,
+  appUrl: string
 ): Promise<void> {
   const attempts = lead.reactivation_attempts || 0;
   const now = new Date().getTime();
@@ -237,7 +241,7 @@ async function processLead(
   if (hasWhatsAppOptIn && lead.phone) {
     await sendWhatsAppReactivation(lead, nextAttempt, supabaseAdmin, results);
   } else if (lead.email && !lead.email_opt_out) {
-    await sendEmailReactivation(lead, nextAttempt, supabaseAdmin, results);
+    await sendEmailReactivation(lead, nextAttempt, supabaseAdmin, results, appUrl);
   } else {
     // No way to reach lead or opted out of both channels
     await supabaseAdmin.from("leads").update({
@@ -305,9 +309,10 @@ async function sendEmailReactivation(
   lead: LeadToProcess,
   attemptNumber: number,
   supabaseAdmin: any,
-  results: ProcessingResults
+  results: ProcessingResults,
+  appUrl: string
 ): Promise<void> {
-  const built = await buildReactivationEmail({ supabaseAdmin, lead, attemptNumber });
+  const built = await buildReactivationEmail({ supabaseAdmin, lead, attemptNumber, appUrl });
 
   if (!built) {
     console.error(`[Lead Reactivation] Email template para tentativa ${attemptNumber} não encontrado`);

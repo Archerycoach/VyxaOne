@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { sendClientEmail } from "@/lib/server/sendClientEmail";
 import { buildReactivationEmail } from "@/lib/server/reactivationEmail";
+import { deriveAppUrl } from "@/lib/server/appUrl";
 
 /**
  * Ferramenta de TESTE de envios de email de reativação.
@@ -75,7 +76,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     // Renderizar exatamente como a produção (garante os tokens/links).
-    const built = await buildReactivationEmail({ supabaseAdmin, lead, attemptNumber: attempt });
+    const built = await buildReactivationEmail({ supabaseAdmin, lead, attemptNumber: attempt, appUrl: deriveAppUrl(req) });
     if (!built) {
       return res.status(404).json({
         error: `Template de reativação da tentativa ${attempt} não encontrado. Configure-o em Definições › Envios Automáticos.`,

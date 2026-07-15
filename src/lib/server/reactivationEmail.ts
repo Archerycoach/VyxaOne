@@ -140,7 +140,15 @@ export async function buildReactivationEmail(params: {
     return null;
   }
 
-  const html = styleOptInButton(template.html_body)
+  // Normalizar o href dos placeholders: o editor visual de texto pode ter
+  // "colado" o domínio da instância antes do placeholder (ex.:
+  // href="https://siim.vyxa.pt/{{link_optin}}"), o que geraria uma URL dentro de
+  // outra ao substituir. Forçamos o href a ser exatamente o placeholder.
+  const normalizedBody = template.html_body
+    .replace(/href\s*=\s*"[^"]*(\{\{\s*link_optin\s*\}\})[^"]*"/gi, 'href="$1"')
+    .replace(/href\s*=\s*"[^"]*(\{\{\s*link_unsubscribe\s*\}\})[^"]*"/gi, 'href="$1"');
+
+  const html = styleOptInButton(normalizedBody)
     .replace(/\{\{nome\}\}/g, lead.name || "Cliente")
     .replace(/\{\{procura\}\}/g, procuraStr)
     .replace(/\{\{consultor\}\}/g, consultor)
