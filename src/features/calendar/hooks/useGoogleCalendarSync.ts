@@ -246,9 +246,12 @@ export function useGoogleCalendarSync() {
         return;
       }
 
-      const actualRedirectUri = window.location.origin.includes('localhost') || window.location.origin.includes('softgen') 
-        ? `${window.location.origin}/api/google-calendar/callback`
-        : (settings.redirectUri || `${window.location.origin}/api/google-calendar/callback`);
+      // Multi-instância: o redirect tem de voltar SEMPRE à origem da instância
+      // atual, nunca a um redirect_uri fixo guardado na BD (que apontaria para
+      // o domínio principal e faria a ligação "cair no site" em vez da
+      // instância específica). Cada subdomínio de instância tem de estar
+      // registado nas "Authorized redirect URIs" da consola Google.
+      const actualRedirectUri = `${window.location.origin}/api/google-calendar/callback`;
 
       const scopeString = buildGoogleScopeString(settings.scopes);
 
