@@ -83,14 +83,42 @@ export const getCalendarEvents = async (): Promise<CalendarEvent[]> => {
  * com o deleteCalendarEvent existente.
  */
 export const confirmAiCalendarEvent = async (id: string): Promise<void> => {
-  const { error } = await (supabase
+  const { data, error } = await (supabase
     .from("calendar_events")
     .update({ ai_pending: false } as any)
-    .eq("id", id) as any);
+    .eq("id", id)
+    .select()
+    .single() as any);
 
   if (error) {
     console.error("[calendarService] ❌ Error confirming AI event:", error);
     throw new Error("Não foi possível confirmar o evento");
+  }
+
+  // Ao confirmar, sincroniza de imediato com o Google Calendar (best-effort,
+  // como na criação manual de eventos — se falhar, a sincronização
+  // manual/diária apanha-o mais tarde, porque fica com google_event_id null
+  // e ai_pending false).
+  if (data && !data.google_event_id) {
+    try {
+      const googleEventId = await syncEventToGoogle({
+        title: data.title,
+        description: data.description || "",
+        start_time: data.start_time,
+        end_time: data.end_time,
+        location: data.location || "",
+      });
+
+      if (googleEventId) {
+        await supabase
+          .from("calendar_events")
+          .update({ google_event_id: googleEventId, is_synced: true })
+          .eq("id", id);
+        console.log("[calendarService] ✅ AI event synced to Google after confirmation:", googleEventId);
+      }
+    } catch (syncError) {
+      console.error("[calendarService] ⚠️ AI event confirmed but Google sync failed (will sync later):", syncError);
+    }
   }
 };
 
