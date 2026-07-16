@@ -939,14 +939,17 @@ export function LeadsListContainer({
       ) : (
         <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full">
+            {/* min-w-max: sem isto o "w-full" esmaga as colunas para caber no
+                ecrã (texto a partir letra a letra) em vez de ativar o scroll
+                horizontal do contentor. */}
+            <table className="w-full min-w-max">
               <thead className="bg-gray-800 text-white text-sm">
                 <tr>
                   {columnsConfig.map((column) => (
                     <th
                       key={column.column_key}
-                      className="px-4 py-3 text-left font-medium"
-                      style={{ width: column.column_width }}
+                      className="px-4 py-3 text-left font-medium whitespace-nowrap"
+                      style={{ width: column.column_width, minWidth: column.column_width }}
                     >
                       {column.column_label}
                     </th>
