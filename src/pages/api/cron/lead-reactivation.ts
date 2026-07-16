@@ -312,11 +312,31 @@ async function sendEmailReactivation(
   results: ProcessingResults,
   appUrl: string
 ): Promise<void> {
-  const built = await buildReactivationEmail({ supabaseAdmin, lead, attemptNumber, appUrl });
+  // O template é escolhido pelo nº de emails de reativação JÁ enviados a esta
+  // lead — e não pelo contador global `reactivation_attempts`, que é
+  // partilhado com o WhatsApp. Sem isto, uma lead que mude de canal a meio da
+  // cadência (ex.: 2 tentativas por WhatsApp e depois perde o opt-in), ou cujo
+  // contador tenha ficado "à frente" por estado antigo na BD, receberia o
+  // lembrete final como PRIMEIRO email. Contamos no automated_email_log
+  // (fonte única dos envios automáticos), excluindo envios de teste.
+  let emailAttempt = attemptNumber;
+  const { count, error: countError } = await supabaseAdmin
+    .from("automated_email_log")
+    .select("id", { count: "exact", head: true })
+    .eq("lead_id", lead.id)
+    .eq("source", "lead_reactivation")
+    .eq("status", "sent")
+    .not("subject", "ilike", "[TESTE]%");
+
+  if (!countError && typeof count === "number") {
+    emailAttempt = Math.min(count + 1, 3);
+  }
+
+  const built = await buildReactivationEmail({ supabaseAdmin, lead, attemptNumber: emailAttempt, appUrl });
 
   if (!built) {
-    console.error(`[Lead Reactivation] Email template para tentativa ${attemptNumber} não encontrado`);
-    throw new Error(`Template de reativação (tentativa ${attemptNumber}) não encontrado`);
+    console.error(`[Lead Reactivation] Email template para tentativa ${emailAttempt} não encontrado`);
+    throw new Error(`Template de reativação (tentativa ${emailAttempt}) não encontrado`);
   }
 
   const { subject, html, templateName } = built;
@@ -338,10 +358,12 @@ async function sendEmailReactivation(
     return;
   }
 
-  // Update lead state
-  await supabaseAdmin.from("leads").update({ 
+  // Update lead state. Grava emailAttempt (e não attemptNumber) para que,
+  // quando a cadência recomeça no email 1, os runs seguintes continuem 2 → 3
+  // → arquivo, em vez de arquivarem logo a seguir ao primeiro email.
+  await supabaseAdmin.from("leads").update({
     follow_up_state: "reengagement",
-    reactivation_attempts: attemptNumber,
+    reactivation_attempts: emailAttempt,
     last_reactivation_sent_at: new Date().toISOString(),
     archive_reason: "A aguardar opt-in via email",
     updated_at: new Date().toISOString()
@@ -358,10 +380,10 @@ async function sendEmailReactivation(
     to: lead.email!,
     subject,
     body: html,
-    outcome: `Email de reativação enviado (${templateName} - Tentativa ${attemptNumber}/3)`,
+    outcome: `Email de reativação enviado (${templateName} - Tentativa ${emailAttempt}/3)`,
     updateLastContact: false,
   });
 
   results.email_sent++;
-  console.log(`[Lead Reactivation] Email sent to lead ${lead.id} (attempt ${attemptNumber}/3)`);
+  console.log(`[Lead Reactivation] Email sent to lead ${lead.id} (attempt ${emailAttempt}/3)`);
 }
