@@ -71,6 +71,7 @@ export default function Settings() {
   const [isSaving, setIsSaving] = useState(false);
   const [loading, setLoading] = useState(false);
   const [savingReactivationToggle, setSavingReactivationToggle] = useState(false);
+  const [savingAutoAnalysisToggle, setSavingAutoAnalysisToggle] = useState(false);
   const [notifications, setNotifications] = useState({
     email: true,
     push: false,
@@ -369,6 +370,39 @@ export default function Settings() {
       });
     } finally {
       setSavingReactivationToggle(false);
+    }
+  };
+
+  const handleAutoAnalysisToggle = async (checked: boolean) => {
+    if (!profile?.id) return;
+    setSavingAutoAnalysisToggle(true);
+    try {
+      // NOTA: "lead_auto_analysis_enabled" só existe em profiles depois de
+      // correr a migração supabase/migrations/20260716100000_*.sql e
+      // regenerar database.types.ts — mesmo padrão do toggle de reativação.
+      const { error } = await (supabase
+        .from("profiles" as any)
+        .update({ lead_auto_analysis_enabled: checked })
+        .eq("id", profile.id) as any);
+
+      if (error) throw error;
+
+      setProfile((prev: any) => prev ? { ...prev, lead_auto_analysis_enabled: checked } : prev);
+      toast({
+        title: checked ? "Análise automática ativada" : "Análise automática desativada",
+        description: checked
+          ? "A IA volta a analisar cada nova nota/interação e a atualizar a lead automaticamente."
+          : "A IA deixa de analisar notas e interações. As notas de voz continuam a ser transcritas para as notas da lead.",
+      });
+    } catch (error) {
+      console.error("Error updating auto analysis toggle:", error);
+      toast({
+        title: "Erro",
+        description: "Não foi possível atualizar esta definição.",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingAutoAnalysisToggle(false);
     }
   };
 
@@ -1141,6 +1175,38 @@ export default function Settings() {
                     Registo de Envios Automáticos
                   </a>.
                 </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Análise Automática com IA</CardTitle>
+                <CardDescription>
+                  Sempre que adiciona uma nota, regista uma interação ou grava uma nota de voz
+                  numa lead, a IA analisa a novidade e atualiza a lead automaticamente:
+                  temperatura, status, dados de qualificação em falta e tarefas. Compromissos
+                  com data e hora concretas entram na agenda como &quot;por confirmar&quot;. É
+                  sempre notificado (🔔) do que a IA fez. Ligada por defeito.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center justify-between rounded-lg border p-4">
+                  <div className="space-y-1 pr-4">
+                    <Label htmlFor="lead_auto_analysis_enabled" className="text-base font-medium">
+                      Ativar análise automática de notas e interações
+                    </Label>
+                    <p className="text-sm text-muted-foreground">
+                      Quando desligado, a IA não analisa novos registos. As notas de voz
+                      continuam a ser transcritas para as notas da lead.
+                    </p>
+                  </div>
+                  <Switch
+                    id="lead_auto_analysis_enabled"
+                    checked={(profile as any)?.lead_auto_analysis_enabled ?? true}
+                    disabled={savingAutoAnalysisToggle}
+                    onCheckedChange={handleAutoAnalysisToggle}
+                  />
+                </div>
               </CardContent>
             </Card>
 

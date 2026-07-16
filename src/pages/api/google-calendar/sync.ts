@@ -263,8 +263,13 @@ async function syncEventsToGoogle(
       .eq("user_id", userId)
       .is("google_event_id", null)
       .gte("start_time", pastWindow);
-    
-    const events = rawEvents as any[] || [];
+
+    // Blocos criados pela IA que ainda estão "por confirmar" (ai_pending) NÃO
+    // vão para o Google — só depois de o consultor os confirmar no calendário
+    // (a confirmação sincroniza logo; se falhar, esta exportação apanha-os
+    // porque ficam com ai_pending=false e google_event_id null). Filtrado em
+    // JS e não na query para não partir em bases sem a coluna ainda.
+    const events = ((rawEvents as any[]) || []).filter((e) => !e.ai_pending);
     console.log("[syncEventsToGoogle] Found", events.length, "events to sync");
     
     if (events.length === 0) return 0;
@@ -368,7 +373,13 @@ async function syncEventsToGoogle(
  * "create" call idempotent: re-creating returns HTTP 409 instead of a duplicate.
  */
 function deterministicGoogleEventId(prefix: string, localId: string): string {
-  return `${prefix}${localId.replace(/[^a-v0-9]/gi, "").toLowerCase()}`;
+  // Sanitiza a string COMPLETA (prefixo incluído): o alfabeto base32hex do
+  // Google só permite 0-9 e a-v. O prefixo antigo "vyxa" continha 'y' e 'x'
+  // (inválidos) — o Google devolvia 400 "Invalid resource id" em TODAS as
+  // criações e nenhum evento criado no servidor era exportado pela
+  // sincronização. ("vyxa" fica "va", "vyxatask" fica "vatask" — continuam
+  // distintos e determinísticos.)
+  return `${prefix}${localId}`.toLowerCase().replace(/[^a-v0-9]/g, "");
 }
 
 /**
