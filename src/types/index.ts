@@ -292,6 +292,8 @@ export interface CalendarEvent {
   createdAt: string;
   userId?: string;
   isBookable?: boolean;
+  /** Evento criado pela análise automática de IA, à espera de confirmação do consultor. */
+  aiPending?: boolean;
 }
 
 // Pipeline Stage Types

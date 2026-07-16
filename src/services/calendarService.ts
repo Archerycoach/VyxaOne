@@ -25,7 +25,10 @@ const mapDbEventToFrontend = (dbEvent: DbCalendarEvent & { leads?: { name: strin
   googleSynced: dbEvent.is_synced || false,
   eventType: dbEvent.event_type || "meeting",
   createdAt: dbEvent.created_at,
-  userId: dbEvent.user_id || ""
+  userId: dbEvent.user_id || "",
+  // "ai_pending" só existe nos tipos gerados depois de correr a migração
+  // 20260716100000_lead_auto_analysis.sql e regenerar database.types.ts.
+  aiPending: Boolean((dbEvent as any).ai_pending),
 });
 
 // Get all calendar events for current user
@@ -71,6 +74,24 @@ export const getCalendarEvents = async (): Promise<CalendarEvent[]> => {
   }
 
   return mappedEvents;
+};
+
+/**
+ * Confirma um evento criado pela análise automática de IA (ai_pending).
+ * Depois de confirmado, passa a ser um evento normal (e pode ser sincronizado
+ * com o Google Calendar pelos fluxos habituais). Rejeitar = eliminar o evento
+ * com o deleteCalendarEvent existente.
+ */
+export const confirmAiCalendarEvent = async (id: string): Promise<void> => {
+  const { error } = await (supabase
+    .from("calendar_events")
+    .update({ ai_pending: false } as any)
+    .eq("id", id) as any);
+
+  if (error) {
+    console.error("[calendarService] ❌ Error confirming AI event:", error);
+    throw new Error("Não foi possível confirmar o evento");
+  }
 };
 
 // Get events within date range

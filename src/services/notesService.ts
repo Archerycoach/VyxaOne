@@ -1,6 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
 import { deleteGoogleCalendarEvent } from "@/lib/googleCalendar";
+import { triggerLeadAutoAnalysis } from "@/lib/leadAutoAnalysisClient";
 
 // Define types manually since they might be missing from Database definition
 export interface LeadNote {
@@ -77,6 +78,10 @@ export async function createNote(note: Omit<LeadNoteInsert, "created_by">): Prom
       .from("leads")
       .update({ last_contact_date: new Date().toISOString() })
       .eq("id", note.lead_id);
+
+    // Análise automática de IA (fire-and-forget — não bloqueia a criação da
+    // nota; o consultor é informado pela notificação na campainha).
+    triggerLeadAutoAnalysis(note.lead_id, note.note, "note");
   }
 
   return data as unknown as LeadNote;

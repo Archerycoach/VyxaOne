@@ -21,7 +21,7 @@ export function CalendarContainer() {
   const router = useRouter();
   
   // Hooks for data fetching
-  const { events, isLoading: eventsLoading, refetch: refetchEvents, deleteEvent } = useCalendarEvents();
+  const { events, isLoading: eventsLoading, refetch: refetchEvents, deleteEvent, confirmAiEvent } = useCalendarEvents();
   const { tasks, isLoading: tasksLoading, refetch: refetchTasks } = useCalendarTasks();
   const {
     isConnected,
@@ -721,6 +721,7 @@ export function CalendarContainer() {
         onEventClick={handleEditEvent}
         onTaskClick={handleEditTask}
         onDeleteEvent={deleteEvent}
+        onConfirmAiEvent={confirmAiEvent}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
         onDragOver={handleDragOver}

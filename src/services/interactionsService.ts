@@ -3,6 +3,7 @@ import type { Database } from "@/integrations/supabase/types";
 import { deleteGoogleCalendarEvent } from "@/lib/googleCalendar";
 import { CacheManager } from "@/lib/cacheInvalidation";
 import { recalculateScoreAfterInteraction } from "@/services/leadScoringService";
+import { triggerLeadAutoAnalysis } from "@/lib/leadAutoAnalysisClient";
 
 export type Interaction = Database["public"]["Tables"]["interactions"]["Row"];
 export type InteractionInsert = Database["public"]["Tables"]["interactions"]["Insert"];
@@ -237,6 +238,11 @@ export async function createInteraction(
       // ✅ Recalculate lead score after interaction
       await recalculateScoreAfterInteraction(interaction.lead_id, supabase);
     }
+
+    // Análise automática de IA (fire-and-forget — não bloqueia o registo da
+    // interação; o consultor é informado pela notificação na campainha).
+    const analysisContent = [interaction.content, interaction.outcome].filter(Boolean).join("\n");
+    triggerLeadAutoAnalysis(interaction.lead_id, analysisContent, "interaction");
   }
 
   return data;

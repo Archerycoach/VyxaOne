@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Mic, Square, Loader2, CheckCircle2, AlertCircle, Play, Pause, ClipboardCheck } from "lucide-react";
+import { Mic, Square, Loader2, CheckCircle2, Play, Pause, CalendarClock, ClipboardCheck, Lightbulb, ListChecks } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -12,15 +12,6 @@ const QUALIFICATION_FIELD_LABELS: Record<string, string> = Object.fromEntries(
   QUALIFICATION_FIELDS.map((field) => [field.key, field.label])
 );
 
-function formatExtractedValue(key: string, value: unknown): string {
-  if (typeof value === "boolean") return value ? "Sim" : "Não";
-  if (key === "budget" || key === "desired_price") {
-    const n = typeof value === "number" ? value : Number(value);
-    return Number.isFinite(n) ? `€${n.toLocaleString("pt-PT")}` : String(value);
-  }
-  return String(value);
-}
-
 interface VoiceNoteRecorderProps {
   leadId: string;
   leadName: string;
@@ -30,25 +21,29 @@ interface VoiceNoteRecorderProps {
   onCancel: () => void;
 }
 
-interface AnalysisResult {
+/**
+ * Resultado da análise automática aplicada pelo servidor — ver
+ * AppliedAutoAnalysis em src/lib/server/leadAutoAnalysis.ts.
+ */
+interface AppliedAnalysis {
   summary: string;
-  suggested_status: string;
-  suggested_temperature: string;
-  suggested_task: {
-    title: string;
-    description: string;
-    due_date: string;
-    priority: string;
-  } | null;
-  confidence: number;
-  extracted_data?: Record<string, unknown>;
+  temperature?: { from: string; to: string };
+  status?: { from: string; to: string };
+  qualification_fields: string[];
+  tasks_created: string[];
+  agenda_blocks_pending: string[];
+  next_actions: string[];
+}
+
+interface ProcessResult {
+  transcription: string;
+  analysis: AppliedAnalysis | null;
+  analysisSkippedReason: string | null;
 }
 
 export function VoiceNoteRecorder({
   leadId,
   leadName,
-  currentStatus,
-  currentTemperature,
   onSuccess,
   onCancel,
 }: VoiceNoteRecorderProps) {
@@ -59,9 +54,7 @@ export function VoiceNoteRecorder({
   const [recordingTime, setRecordingTime] = useState(0);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
-  const [transcription, setTranscription] = useState<string>("");
-  const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
-  const [isConfirming, setIsConfirming] = useState(false);
+  const [result, setResult] = useState<ProcessResult | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -157,6 +150,9 @@ export function VoiceNoteRecorder({
       const formData = new FormData();
       formData.append("audio", audioBlob, "voice-note.webm");
 
+      // Tudo automático no servidor: transcreve, grava a transcrição nas
+      // notas da lead, regista a interação e corre a análise de IA
+      // (temperatura, tarefas, blocos de agenda "por confirmar").
       const response = await fetch(`/api/gpt/leads/${leadId}/voice-note`, {
         method: "POST",
         headers: { Authorization: `Bearer ${session.access_token}` },
@@ -168,13 +164,12 @@ export function VoiceNoteRecorder({
         throw new Error(errBody?.error || "Erro ao processar nota de voz");
       }
 
-      const result = await response.json();
-      setTranscription(result.transcription);
-      setAnalysis(result.analysis);
+      const processResult: ProcessResult = await response.json();
+      setResult(processResult);
 
       toast({
-        title: "✅ Nota processada",
-        description: "Reveja as alterações sugeridas antes de confirmar.",
+        title: "✅ Nota de voz processada",
+        description: "Transcrição gravada nas notas da lead.",
       });
     } catch (error: any) {
       console.error("Error processing audio:", error);
@@ -185,50 +180,6 @@ export function VoiceNoteRecorder({
       });
     } finally {
       setIsProcessing(false);
-    }
-  };
-
-  const confirmChanges = async () => {
-    if (!analysis) return;
-
-    setIsConfirming(true);
-
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) throw new Error("Sessão expirada. Inicie sessão novamente.");
-
-      const response = await fetch(`/api/gpt/leads/${leadId}/voice-note`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
-          transcription,
-          analysis,
-        }),
-      });
-
-      if (!response.ok) {
-        const errBody = await response.json().catch(() => null);
-        throw new Error(errBody?.error || "Erro ao aplicar alterações");
-      }
-
-      toast({
-        title: "✅ Lead atualizada",
-        description: "Todas as alterações foram aplicadas com sucesso!",
-      });
-
-      onSuccess();
-    } catch (error: any) {
-      console.error("Error confirming changes:", error);
-      toast({
-        title: "Erro ao confirmar",
-        description: error.message || "Ocorreu um erro ao aplicar as alterações.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsConfirming(false);
     }
   };
 
@@ -260,6 +211,8 @@ export function VoiceNoteRecorder({
     return labels[temp] || temp;
   };
 
+  const analysis = result?.analysis || null;
+
   return (
     <div className="space-y-4">
       {!audioBlob && (
@@ -270,8 +223,8 @@ export function VoiceNoteRecorder({
               Gravar Nota de Voz
             </CardTitle>
             <CardDescription>
-              Grave uma nota após a visita ou contacto com {leadName}. A IA irá analisar e sugerir
-              atualizações automáticas.
+              Grave uma nota após a visita ou contacto com {leadName}. A transcrição é gravada
+              automaticamente nas notas da lead e a IA aplica as atualizações.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -310,7 +263,7 @@ export function VoiceNoteRecorder({
         </Card>
       )}
 
-      {audioBlob && !analysis && (
+      {audioBlob && !result && (
         <Card>
           <CardHeader>
             <CardTitle>Gravação Concluída</CardTitle>
@@ -361,150 +314,145 @@ export function VoiceNoteRecorder({
         </Card>
       )}
 
-      {analysis && (
-        <Card className="border-indigo-200">
+      {result && (
+        <Card className="border-green-200">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <CheckCircle2 className="h-5 w-5 text-green-600" />
-              Análise da Nota de Voz
+              O que a IA fez
             </CardTitle>
             <CardDescription>
-              Reveja as alterações sugeridas pela IA antes de confirmar.
+              A transcrição foi gravada nas notas da lead e as atualizações abaixo já foram aplicadas.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             {/* Transcription */}
             <div>
-              <h4 className="font-semibold mb-2 text-sm text-gray-700">📝 Transcrição</h4>
-              <p className="text-sm bg-gray-50 p-3 rounded border italic">&quot;{transcription}&quot;</p>
+              <h4 className="font-semibold mb-2 text-sm text-gray-700">📝 Transcrição (gravada nas notas)</h4>
+              <p className="text-sm bg-gray-50 p-3 rounded border italic">&quot;{result.transcription}&quot;</p>
             </div>
 
-            <Separator />
-
-            {/* Summary */}
-            <div>
-              <h4 className="font-semibold mb-2 text-sm text-gray-700">📋 Resumo da Interação</h4>
-              <p className="text-sm bg-indigo-50 p-3 rounded border">{analysis.summary}</p>
-            </div>
-
-            <Separator />
-
-            {/* Status Change */}
-            <div>
-              <h4 className="font-semibold mb-2 text-sm text-gray-700">🎯 Mudança de Status</h4>
-              <div className="flex items-center gap-2">
-                <Badge variant="outline">{getStatusLabel(currentStatus)}</Badge>
-                <span className="text-gray-400">→</span>
-                <Badge className="bg-indigo-600">{getStatusLabel(analysis.suggested_status)}</Badge>
+            {!analysis && (
+              <div className="text-sm bg-amber-50 border border-amber-200 rounded p-3 text-amber-800">
+                {result.analysisSkippedReason === "toggle_desligado"
+                  ? "A análise automática de IA está desligada nas Definições — apenas a transcrição foi gravada."
+                  : "A análise de IA não foi executada (a transcrição foi gravada na mesma)."}
               </div>
-            </div>
+            )}
 
-            {/* Temperature Change */}
-            <div>
-              <h4 className="font-semibold mb-2 text-sm text-gray-700">🌡️ Temperatura</h4>
-              <div className="flex items-center gap-2">
-                <Badge variant="outline">{getTemperatureLabel(currentTemperature)}</Badge>
-                <span className="text-gray-400">→</span>
-                <Badge className="bg-indigo-600">{getTemperatureLabel(analysis.suggested_temperature)}</Badge>
-              </div>
-            </div>
-
-            {/* Suggested Task */}
-            {analysis.suggested_task && (
+            {analysis && (
               <>
                 <Separator />
+
+                {/* Summary */}
                 <div>
-                  <h4 className="font-semibold mb-2 text-sm text-gray-700">✅ Próxima Tarefa</h4>
-                  <div className="bg-green-50 p-3 rounded border space-y-2">
-                    <p className="font-medium text-sm">{analysis.suggested_task.title}</p>
-                    <p className="text-sm text-gray-600">{analysis.suggested_task.description}</p>
-                    <div className="flex items-center gap-2 text-xs">
-                      <Badge variant="outline">
-                        📅 {new Date(analysis.suggested_task.due_date).toLocaleDateString("pt-PT")}
-                      </Badge>
-                      <Badge
-                        variant={
-                          analysis.suggested_task.priority === "urgent"
-                            ? "destructive"
-                            : "outline"
-                        }
-                      >
-                        Prioridade: {analysis.suggested_task.priority}
-                      </Badge>
+                  <h4 className="font-semibold mb-2 text-sm text-gray-700">📋 Resumo da Interação</h4>
+                  <p className="text-sm bg-indigo-50 p-3 rounded border">{analysis.summary}</p>
+                </div>
+
+                {/* Status Change */}
+                {analysis.status && (
+                  <div>
+                    <h4 className="font-semibold mb-2 text-sm text-gray-700">🎯 Status atualizado</h4>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline">{getStatusLabel(analysis.status.from)}</Badge>
+                      <span className="text-gray-400">→</span>
+                      <Badge className="bg-indigo-600">{getStatusLabel(analysis.status.to)}</Badge>
                     </div>
                   </div>
-                </div>
-              </>
-            )}
+                )}
 
-            {/* Extracted Qualification Data */}
-            {analysis.extracted_data && Object.keys(analysis.extracted_data).length > 0 && (
-              <>
-                <Separator />
-                <div>
-                  <h4 className="font-semibold mb-2 text-sm text-gray-700 flex items-center gap-1.5">
-                    <ClipboardCheck className="h-4 w-4 text-amber-600" />
-                    Dados de Qualificação Detetados
-                  </h4>
-                  <div className="bg-amber-50 border border-amber-100 rounded p-3 space-y-1.5">
-                    {Object.entries(analysis.extracted_data).map(([key, value]) => (
-                      <div key={key} className="flex items-center justify-between text-sm">
-                        <span className="text-gray-600">{QUALIFICATION_FIELD_LABELS[key] || key}</span>
-                        <Badge className="bg-amber-600">{formatExtractedValue(key, value)}</Badge>
-                      </div>
-                    ))}
+                {/* Temperature Change */}
+                {analysis.temperature && (
+                  <div>
+                    <h4 className="font-semibold mb-2 text-sm text-gray-700">🌡️ Temperatura atualizada</h4>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline">{getTemperatureLabel(analysis.temperature.from)}</Badge>
+                      <span className="text-gray-400">→</span>
+                      <Badge className="bg-indigo-600">{getTemperatureLabel(analysis.temperature.to)}</Badge>
+                    </div>
                   </div>
-                  <p className="text-xs text-gray-500 mt-1.5">
-                    Estes campos vão ser preenchidos/atualizados na ficha da lead ao confirmar.
-                  </p>
-                </div>
+                )}
+
+                {/* Tasks created */}
+                {analysis.tasks_created.length > 0 && (
+                  <div>
+                    <h4 className="font-semibold mb-2 text-sm text-gray-700 flex items-center gap-1.5">
+                      <ListChecks className="h-4 w-4 text-green-600" />
+                      Tarefas criadas
+                    </h4>
+                    <ul className="bg-green-50 border border-green-100 rounded p-3 space-y-1 text-sm list-disc list-inside">
+                      {analysis.tasks_created.map((title) => (
+                        <li key={title}>{title}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Agenda blocks pending confirmation */}
+                {analysis.agenda_blocks_pending.length > 0 && (
+                  <div>
+                    <h4 className="font-semibold mb-2 text-sm text-gray-700 flex items-center gap-1.5">
+                      <CalendarClock className="h-4 w-4 text-amber-600" />
+                      Blocos na agenda (por confirmar)
+                    </h4>
+                    <ul className="bg-amber-50 border border-amber-100 rounded p-3 space-y-1 text-sm list-disc list-inside">
+                      {analysis.agenda_blocks_pending.map((title) => (
+                        <li key={title}>{title}</li>
+                      ))}
+                    </ul>
+                    <p className="text-xs text-gray-500 mt-1.5">
+                      Confirme ou rejeite estes blocos no Calendário.
+                    </p>
+                  </div>
+                )}
+
+                {/* Qualification fields filled */}
+                {analysis.qualification_fields.length > 0 && (
+                  <div>
+                    <h4 className="font-semibold mb-2 text-sm text-gray-700 flex items-center gap-1.5">
+                      <ClipboardCheck className="h-4 w-4 text-amber-600" />
+                      Dados de qualificação preenchidos
+                    </h4>
+                    <div className="flex flex-wrap gap-1.5">
+                      {analysis.qualification_fields.map((key) => (
+                        <Badge key={key} variant="outline">{QUALIFICATION_FIELD_LABELS[key] || key}</Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Next actions */}
+                {analysis.next_actions.length > 0 && (
+                  <div>
+                    <h4 className="font-semibold mb-2 text-sm text-gray-700 flex items-center gap-1.5">
+                      <Lightbulb className="h-4 w-4 text-indigo-600" />
+                      Sugestões de próximas ações
+                    </h4>
+                    <ul className="bg-indigo-50 border border-indigo-100 rounded p-3 space-y-1 text-sm list-disc list-inside">
+                      {analysis.next_actions.map((action) => (
+                        <li key={action}>{action}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </>
             )}
 
             <Separator />
 
-            {/* Confidence */}
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-gray-600">Confiança da IA</span>
-              <Badge variant={analysis.confidence >= 0.8 ? "default" : "outline"}>
-                {(analysis.confidence * 100).toFixed(0)}%
-              </Badge>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="flex gap-2 pt-4">
-              <Button variant="outline" onClick={onCancel} disabled={isConfirming} className="flex-1">
-                Cancelar
-              </Button>
-              <Button
-                onClick={confirmChanges}
-                disabled={isConfirming}
-                className="flex-1 bg-green-600 hover:bg-green-700"
-              >
-                {isConfirming ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    A aplicar...
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 className="h-4 w-4 mr-2" />
-                    Confirmar Alterações
-                  </>
-                )}
-              </Button>
-            </div>
-
-            {analysis.confidence < 0.7 && (
-              <div className="flex items-start gap-2 p-3 bg-yellow-50 border border-yellow-200 rounded text-sm">
-                <AlertCircle className="h-4 w-4 text-yellow-600 mt-0.5" />
-                <p className="text-yellow-800">
-                  A confiança da IA é moderada. Reveja cuidadosamente as alterações antes de confirmar.
-                </p>
-              </div>
-            )}
+            <Button onClick={onSuccess} className="w-full bg-green-600 hover:bg-green-700">
+              <CheckCircle2 className="h-4 w-4 mr-2" />
+              Concluir
+            </Button>
           </CardContent>
         </Card>
+      )}
+
+      {!result && (
+        <Button variant="ghost" onClick={onCancel} disabled={isProcessing || isRecording} className="w-full">
+          Cancelar
+        </Button>
       )}
     </div>
   );

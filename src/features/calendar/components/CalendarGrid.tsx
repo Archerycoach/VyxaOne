@@ -14,6 +14,8 @@ interface CalendarGridProps {
   onEventClick: (event: CalendarEvent) => void;
   onTaskClick: (task: Task) => void;
   onDeleteEvent?: (eventId: string) => void;
+  /** Confirmar um bloco de agenda criado pela IA (ai_pending). */
+  onConfirmAiEvent?: (eventId: string) => void;
   // Drag and Drop handlers
   onDragStart: (e: React.DragEvent, item: { id: string; type: "event" | "task"; startTime: string }) => void;
   onDragEnd: (e: React.DragEvent) => void;
@@ -29,6 +31,7 @@ export function CalendarGrid({
   onEventClick,
   onTaskClick,
   onDeleteEvent,
+  onConfirmAiEvent,
   onDragStart,
   onDragEnd,
   onDragOver,
@@ -183,6 +186,7 @@ export function CalendarGrid({
                         onDeleteEvent(eventId);
                       }
                     }}
+                    onConfirmAi={onConfirmAiEvent}
                     showSyncStatus={true}
                   />
                 </div>
@@ -268,6 +272,7 @@ export function CalendarGrid({
                             startTime: event.startTime 
                           })}
                           onDragEnd={onDragEnd}
+                          onConfirmAi={onConfirmAiEvent}
                           compact
                           showSyncStatus={true}
                         />
@@ -316,6 +321,7 @@ export function CalendarGrid({
           onEventClick={onEventClick}
           onTaskClick={onTaskClick}
           onDeleteEvent={onDeleteEvent}
+          onConfirmAiEvent={onConfirmAiEvent}
         />
       </>
     );
@@ -386,6 +392,7 @@ export function CalendarGrid({
                           startTime: event.startTime 
                         })}
                         onDragEnd={onDragEnd}
+                        onConfirmAi={onConfirmAiEvent}
                         compact
                         showSyncStatus={true}
                       />
@@ -434,6 +441,7 @@ export function CalendarGrid({
         onEventClick={onEventClick}
         onTaskClick={onTaskClick}
         onDeleteEvent={onDeleteEvent}
+        onConfirmAiEvent={onConfirmAiEvent}
       />
     </>
   );

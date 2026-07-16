@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { getCalendarEvents, deleteCalendarEvent } from "@/services/calendarService";
+import { getCalendarEvents, deleteCalendarEvent, confirmAiCalendarEvent } from "@/services/calendarService";
 import type { CalendarEvent } from "@/types";
 import { useToast } from "@/hooks/use-toast";
 
@@ -58,6 +58,29 @@ export function useCalendarEvents() {
     }
   }, [fetchEvents, toast]);
 
+  const confirmAiEvent = useCallback(async (eventId: string) => {
+    try {
+      await confirmAiCalendarEvent(eventId);
+
+      // Optimistic update — o evento passa a normal de imediato
+      setEvents(prev => prev.map(e => (e.id === eventId ? { ...e, aiPending: false } : e)));
+
+      toast({
+        title: "Evento confirmado",
+        description: "O bloco sugerido pela IA passou a evento normal da agenda.",
+      });
+
+      await fetchEvents(true);
+    } catch (err) {
+      console.error("[useCalendarEvents] ❌ Error confirming AI event:", err);
+      toast({
+        title: "Erro ao confirmar",
+        description: "Não foi possível confirmar o evento",
+        variant: "destructive",
+      });
+    }
+  }, [fetchEvents, toast]);
+
   useEffect(() => {
     fetchEvents();
   }, [fetchEvents]);
@@ -68,5 +91,6 @@ export function useCalendarEvents() {
     error,
     refetch: () => fetchEvents(true),
     deleteEvent,
+    confirmAiEvent,
   };
 }

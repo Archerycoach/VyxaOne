@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Clock, CalendarIcon, Trash2, AlertCircle } from "lucide-react";
+import { Clock, CalendarIcon, Trash2, AlertCircle, Sparkles, Check, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,6 +24,8 @@ interface EventCardProps {
   event: CalendarEvent;
   onClick: () => void;
   onDelete?: (eventId: string) => void;
+  /** Confirmar um bloco criado pela IA (event.aiPending). Rejeitar usa o onDelete. */
+  onConfirmAi?: (eventId: string) => void;
   onDragStart?: (e: React.DragEvent) => void;
   onDragEnd?: (e: React.DragEvent) => void;
   compact?: boolean;
@@ -34,15 +36,19 @@ export function EventCard({
   event,
   onClick,
   onDelete,
+  onConfirmAi,
   onDragStart,
   onDragEnd,
   compact = false,
   showSyncStatus = true,
 }: EventCardProps) {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  
+
+  // Bloco criado pela análise automática de IA, à espera de confirmação
+  const isAiPending = Boolean(event.aiPending);
+
   // Check if event is not synced to Google Calendar
-  const isNotSynced = showSyncStatus && !event.googleEventId;
+  const isNotSynced = showSyncStatus && !event.googleEventId && !isAiPending;
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -61,6 +67,17 @@ export function EventCard({
     setShowDeleteDialog(false);
   };
 
+  const handleConfirmAi = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (onConfirmAi) onConfirmAi(event.id);
+  };
+
+  const handleRejectAi = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    // Rejeitar = eliminar; usa o diálogo de confirmação existente.
+    setShowDeleteDialog(true);
+  };
+
   if (compact) {
     return (
       <>
@@ -69,13 +86,27 @@ export function EventCard({
           onDragStart={onDragStart}
           onDragEnd={onDragEnd}
           className={`text-xs rounded p-1 truncate cursor-move transition-opacity group relative ${
-            isNotSynced 
-              ? "bg-orange-100 hover:bg-orange-200 border border-orange-300" 
+            isAiPending
+              ? "bg-amber-50 hover:bg-amber-100 border border-dashed border-amber-400"
+              : isNotSynced
+              ? "bg-orange-100 hover:bg-orange-200 border border-orange-300"
               : "bg-purple-100 hover:bg-purple-200"
           }`}
           onClick={handleClick}
         >
           <div className="flex items-center gap-1">
+            {isAiPending && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Sparkles className="h-3 w-3 text-amber-600 flex-shrink-0" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p className="text-xs">Sugerido pela IA — por confirmar</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
             {isNotSynced && (
               <TooltipProvider>
                 <Tooltip>
@@ -95,7 +126,29 @@ export function EventCard({
               <div className="truncate">{event.title}</div>
             </div>
           </div>
-          {onDelete && (
+          {isAiPending && onConfirmAi && (
+            <div className="flex gap-1 mt-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-5 w-5 bg-green-100 hover:bg-green-200"
+                onClick={handleConfirmAi}
+                title="Confirmar bloco sugerido pela IA"
+              >
+                <Check className="h-3 w-3 text-green-700" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-5 w-5 bg-red-100 hover:bg-red-200"
+                onClick={handleRejectAi}
+                title="Rejeitar bloco sugerido pela IA"
+              >
+                <X className="h-3 w-3 text-red-700" />
+              </Button>
+            </div>
+          )}
+          {onDelete && !isAiPending && (
             <Button
               variant="ghost"
               size="icon"
@@ -134,13 +187,15 @@ export function EventCard({
         onDragStart={onDragStart}
         onDragEnd={onDragEnd}
         className={`border rounded-lg p-4 cursor-move transition-opacity group relative ${
-          isNotSynced 
-            ? "bg-orange-50 hover:bg-orange-100 border-orange-300" 
+          isAiPending
+            ? "bg-amber-50 hover:bg-amber-100 border-dashed border-amber-400"
+            : isNotSynced
+            ? "bg-orange-50 hover:bg-orange-100 border-orange-300"
             : "bg-purple-50 hover:bg-purple-100"
         }`}
         onClick={handleClick}
       >
-        {onDelete && (
+        {onDelete && !isAiPending && (
           <Button
             variant="ghost"
             size="icon"
@@ -155,6 +210,12 @@ export function EventCard({
           <div className="flex-1 pr-10">
             <div className="flex items-center gap-2">
               <h3 className="font-semibold">{event.title}</h3>
+              {isAiPending && (
+                <Badge variant="outline" className="text-xs bg-amber-100 border-amber-400 text-amber-800">
+                  <Sparkles className="h-3 w-3 mr-1" />
+                  Por confirmar · IA
+                </Badge>
+              )}
               {event.googleEventId ? (
                 <Badge variant="outline" className="text-xs">
                   <CalendarIcon className="h-3 w-3 mr-1" />
@@ -193,6 +254,27 @@ export function EventCard({
                  "Outro"}
               </span>
             </div>
+            {isAiPending && onConfirmAi && (
+              <div className="flex gap-2 mt-3">
+                <Button
+                  size="sm"
+                  className="bg-green-600 hover:bg-green-700"
+                  onClick={handleConfirmAi}
+                >
+                  <Check className="h-4 w-4 mr-1" />
+                  Confirmar
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-red-300 text-red-700 hover:bg-red-50"
+                  onClick={handleRejectAi}
+                >
+                  <X className="h-4 w-4 mr-1" />
+                  Rejeitar
+                </Button>
+              </div>
+            )}
           </div>
         </div>
       </div>
