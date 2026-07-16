@@ -85,15 +85,21 @@ const getSharedVisibilityUserIds = async (consultantId: string, teamLeadId: stri
   (grants || []).forEach((row: any) => extraIds.add(row.team_lead_id));
 
   if (teamLeadId) {
+    // maybeSingle + sem throw: com o RLS de profiles (profiles_select_scoped),
+    // um consultor SÓ consegue ler o perfil do seu team lead quando o Modo
+    // Equipa já está ligado (get_visible_user_ids inclui a equipa). Sem Modo
+    // Equipa a linha vem vazia — o que significa exatamente "sem partilha",
+    // não um erro. Com .single(), a página de leads inteira rebentava para
+    // qualquer consultor associado a uma equipa sem Modo Equipa.
     const { data: teamLeadProfile, error: teamLeadError } = await supabase
       .from("profiles" as any)
       .select("team_shares_all_leads")
       .eq("id", teamLeadId)
-      .single();
+      .maybeSingle();
 
-    if (teamLeadError) throw teamLeadError;
-
-    if ((teamLeadProfile as any)?.team_shares_all_leads) {
+    if (teamLeadError) {
+      console.error("[leadsService] Error fetching team lead sharing flag:", teamLeadError);
+    } else if ((teamLeadProfile as any)?.team_shares_all_leads) {
       extraIds.add(teamLeadId);
       const siblingIds = await getTeamMemberIds(teamLeadId);
       siblingIds.forEach((id) => extraIds.add(id));
