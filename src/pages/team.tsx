@@ -76,10 +76,10 @@ export default function TeamPage() {
         return;
       }
 
-      // Get user role
+      // Get user role + equipa
       const { data: profile } = await supabase
         .from("profiles")
-        .select("role")
+        .select("role, team_lead_id")
         .eq("id", session.user.id)
         .single();
 
@@ -87,8 +87,11 @@ export default function TeamPage() {
       setCurrentUserRole(role || null);
       setCurrentUserId(session.user.id);
 
-      // Only broker, admin, and team_lead can access this page
-      if (role !== "broker" && role !== "admin" && role !== "team_lead") {
+      // Broker, admin e team_lead têm sempre acesso; um consultor tem acesso
+      // quando pertence a uma equipa (team_lead_id) — vê os colegas em modo
+      // leitura, via get_team_roster (só a lista de pessoas, nunca as leads).
+      const isConsultantWithTeam = role === "consultant" && Boolean((profile as any)?.team_lead_id);
+      if (role !== "broker" && role !== "admin" && role !== "team_lead" && !isConsultantWithTeam) {
         router.push("/dashboard");
         return;
       }
@@ -104,7 +107,11 @@ export default function TeamPage() {
 
   const loadTeamMembers = async (): Promise<TeamMember[]> => {
     try {
-      const { data, error } = await supabase.rpc("get_team_overview" as any);
+      // get_team_roster: igual à antiga get_team_overview para broker/admin/
+      // team_lead, mas também devolve a equipa aos CONSULTORES que pertencem
+      // a uma (o próprio, o team lead e os colegas) — ver migração
+      // 20260717110000_team_roster.sql.
+      const { data, error } = await supabase.rpc("get_team_roster" as any);
 
       if (error) {
         console.error("Error loading team:", error);

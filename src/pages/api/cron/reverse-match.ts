@@ -60,11 +60,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       try {
         console.log(`[Reverse Match] Processando imóvel ${property.id}: ${property.title || 'Sem título'}`);
 
-        // Encontrar leads com match >= 70%
+        // Encontrar leads com match >= 70%. O 4º argumento (service role) é
+        // essencial: sem ele as queries corriam com o cliente anon do browser
+        // e o RLS devolvia 0 resultados em produção.
         const matchedLeads = await findLeadsForProperty(
           property.id,
           property.user_id,
-          70 // Score mínimo de 70%
+          70, // Score mínimo de 70%
+          supabase
         );
 
         console.log(`[Reverse Match] Encontradas ${matchedLeads.length} leads interessadas`);

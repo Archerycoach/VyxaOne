@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Building2, CalendarDays, Edit, Euro, MapPin, Search, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,8 +12,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { deleteDevelopment } from "@/services/developmentsService";
-import type { Development, DevelopmentStatus } from "@/types";
+import { deleteDevelopment, getTypologiesByDevelopment } from "@/services/developmentsService";
+import type { Development, DevelopmentStatus, DevelopmentTypology } from "@/types";
 
 interface DevelopmentsListProps {
   developments: Development[];
@@ -91,10 +91,31 @@ function formatPriceRange(development: Development) {
   return "Preço sob consulta";
 }
 
+const compactPriceFormatter = new Intl.NumberFormat("pt-PT", { maximumFractionDigits: 0 });
+
+/** "T2 · 250 000–320 000 €" (ou só o nome quando não há preços definidos). */
+function formatTypologyChip(row: DevelopmentTypology): string {
+  if (row.price_from != null && row.price_to != null) {
+    return `${row.typology} · ${compactPriceFormatter.format(row.price_from)}–${compactPriceFormatter.format(row.price_to)} €`;
+  }
+  if (row.price_from != null) {
+    return `${row.typology} · desde ${compactPriceFormatter.format(row.price_from)} €`;
+  }
+  return row.typology;
+}
+
 export function DevelopmentsList({ developments, onEdit, onRefresh }: DevelopmentsListProps) {
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [typologiesByDevelopment, setTypologiesByDevelopment] = useState<Record<string, DevelopmentTypology[]>>({});
+
+  // Uma query só para as tipologias de todos os empreendimentos (chips nos cards)
+  useEffect(() => {
+    getTypologiesByDevelopment()
+      .then(setTypologiesByDevelopment)
+      .catch((err) => console.error("Erro ao carregar tipologias:", err));
+  }, [developments]);
 
   const filteredDevelopments = developments.filter((development) => {
     const searchableText = [
@@ -217,7 +238,13 @@ export function DevelopmentsList({ developments, onEdit, onRefresh }: Developmen
                 </div>
 
                 <div className="flex flex-wrap gap-2">
-                  {(development.typologies ?? []).length > 0 ? (
+                  {(typologiesByDevelopment[development.id] ?? []).length > 0 ? (
+                    typologiesByDevelopment[development.id].map((row) => (
+                      <Badge key={row.id} variant="outline">
+                        {formatTypologyChip(row)}
+                      </Badge>
+                    ))
+                  ) : (development.typologies ?? []).length > 0 ? (
                     development.typologies?.map((typology) => (
                       <Badge key={typology} variant="outline">
                         {typology}
@@ -227,6 +254,12 @@ export function DevelopmentsList({ developments, onEdit, onRefresh }: Developmen
                     <Badge variant="outline">Sem tipologias definidas</Badge>
                   )}
                 </div>
+
+                {((development as any).amenities as string[] | null)?.length ? (
+                  <p className="text-sm text-muted-foreground">
+                    Amenities: {((development as any).amenities as string[]).join(" · ")}
+                  </p>
+                ) : null}
 
                 {development.developer_name ? (
                   <p className="text-sm text-muted-foreground">

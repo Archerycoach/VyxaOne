@@ -40,6 +40,9 @@ yarn-error.log*
 scripts/db-targets.local.txt
 schema.sql
 
+# inventários de schema gerados pelo compare-db-schemas.ps1 (locais, não commitar)
+scripts/schema-dumps/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

@@ -27,6 +27,7 @@ export type AutomatedEmailSource =
   | "lead_reactivation"
   | "contact_alerts"
   | "property_matcher"
+  | "buyer_match"
   | "workflow_automation"
   | "meta_auto_reply"
   | "booking_confirmation"
@@ -77,6 +78,7 @@ const MARKETING_EMAIL_SOURCES: ReadonlySet<AutomatedEmailSource> = new Set<Autom
   "lead_reactivation",
   "contact_alerts",
   "property_matcher",
+  "buyer_match",
   "workflow_automation",
   "landing_monthly_report",
 ]);

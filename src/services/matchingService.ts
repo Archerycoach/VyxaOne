@@ -30,20 +30,33 @@ export interface MatchedProperty {
   source: 'internal' | 'idealista';
 }
 
+/** Contexto server-side: cliente com service role + id do consultor. */
+export interface ServerMatchingContext {
+  client: any;
+  userId: string;
+}
+
 /**
  * Encontra imóveis que correspondem às preferências de uma lead
  * Cruza com: base de dados interna + Idealista
- * 
+ *
  * @param leadId ID da lead
- * @param credentials Optional Idealista credentials (required for Idealista search). 
+ * @param credentials Optional Idealista credentials (required for Idealista search).
  *                    Must be obtained server-side using getIdealistaCredentials() from @/lib/server/idealistaCredentials
+ * @param serverContext OBRIGATÓRIO em API routes/crons: {client: supabaseAdmin, userId}.
+ *                      Sem ele, usa o cliente browser + sessão do utilizador — que em
+ *                      contexto server-side não existe (auth.getUser() falha) e as
+ *                      queries anon são bloqueadas pelo RLS.
  */
 export const findMatchesForLead = async (
-  leadId: string, 
-  credentials?: IdealistaCredentials
+  leadId: string,
+  credentials?: IdealistaCredentials,
+  serverContext?: ServerMatchingContext
 ): Promise<MatchedProperty[]> => {
+  const db = serverContext?.client || supabase;
+
   // 1. Obter preferências da lead
-  const { data: lead, error: leadError } = await supabase
+  const { data: lead, error: leadError } = await db
     .from("leads")
     .select("*")
     .eq("id", leadId)
@@ -52,14 +65,18 @@ export const findMatchesForLead = async (
   if (leadError) throw leadError;
   if (!lead) throw new Error("Lead não encontrada");
 
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("Utilizador não autenticado");
+  let userId = serverContext?.userId;
+  if (!userId) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error("Utilizador não autenticado");
+    userId = user.id;
+  }
 
   // 2. Pesquisar na base de dados interna
-  const { data: allProperties, error: propError } = await supabase
+  const { data: allProperties, error: propError } = await db
     .from("properties")
     .select("*")
-    .eq("user_id", user.id)
+    .eq("user_id", userId)
     .limit(100);
   
   if (propError) {
@@ -99,7 +116,7 @@ export const findMatchesForLead = async (
   if (credentials) {
     try {
       const idealistaParams = leadToIdealistaParams(lead);
-      const idealistaProperties = await searchIdealistaProperties(idealistaParams, credentials, user.id);
+      const idealistaProperties = await searchIdealistaProperties(idealistaParams, credentials, userId);
       
       idealistaMatches = idealistaProperties.map(idealistaProperty => {
         const { score, reasons } = calculateMatchScore(lead, idealistaProperty, 'idealista');
@@ -316,10 +333,15 @@ export const calculateMatchScore = (
 export const findLeadsForProperty = async (
   propertyId: string,
   userId: string,
-  minScore: number = 70
+  minScore: number = 70,
+  serverClient?: any
 ): Promise<Array<{lead: any; match_score: number; match_reasons: string[]}>> => {
+  // Em API routes/crons passar o supabaseAdmin (service role) — o cliente
+  // browser não tem sessão nesse contexto e o RLS bloqueia as queries.
+  const db = serverClient || supabase;
+
   // 1. Obter o imóvel
-  const { data: property, error: propertyError } = await supabase
+  const { data: property, error: propertyError } = await db
     .from("properties")
     .select("*")
     .eq("id", propertyId)
@@ -329,7 +351,7 @@ export const findLeadsForProperty = async (
   if (!property) throw new Error("Imóvel não encontrado");
 
   // 2. Obter todas as leads ativas do utilizador
-  const { data: leads, error: leadsError } = await supabase
+  const { data: leads, error: leadsError } = await db
     .from("leads")
     .select("*")
     .eq("user_id", userId)

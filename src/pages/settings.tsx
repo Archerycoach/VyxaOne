@@ -72,6 +72,7 @@ export default function Settings() {
   const [loading, setLoading] = useState(false);
   const [savingReactivationToggle, setSavingReactivationToggle] = useState(false);
   const [savingAutoAnalysisToggle, setSavingAutoAnalysisToggle] = useState(false);
+  const [savingBuyerMatchToggle, setSavingBuyerMatchToggle] = useState(false);
   const [notifications, setNotifications] = useState({
     email: true,
     push: false,
@@ -403,6 +404,38 @@ export default function Settings() {
       });
     } finally {
       setSavingAutoAnalysisToggle(false);
+    }
+  };
+
+  const handleBuyerMatchToggle = async (field: "buyer_match_enabled" | "buyer_match_email_enabled", checked: boolean) => {
+    if (!profile?.id) return;
+    setSavingBuyerMatchToggle(true);
+    try {
+      // NOTA: colunas criadas pela migração 20260717090000_buyer_match.sql;
+      // "as any" até os tipos serem regenerados (padrão dos outros toggles).
+      const { error } = await (supabase
+        .from("profiles" as any)
+        .update({ [field]: checked })
+        .eq("id", profile.id) as any);
+
+      if (error) throw error;
+
+      setProfile((prev: any) => prev ? { ...prev, [field]: checked } : prev);
+      toast({
+        title: "Definição atualizada",
+        description: field === "buyer_match_enabled"
+          ? (checked ? "Vai receber alertas diários de buyer match." : "Alertas de buyer match desligados.")
+          : (checked ? "Os clientes passam a receber emails automáticos com as sugestões." : "Envio automático de emails de sugestões desligado."),
+      });
+    } catch (error) {
+      console.error("Error updating buyer match toggle:", error);
+      toast({
+        title: "Erro",
+        description: "Não foi possível atualizar esta definição.",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingBuyerMatchToggle(false);
     }
   };
 
@@ -1205,6 +1238,55 @@ export default function Settings() {
                     checked={(profile as any)?.lead_auto_analysis_enabled ?? true}
                     disabled={savingAutoAnalysisToggle}
                     onCheckedChange={handleAutoAnalysisToggle}
+                  />
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Buyer Match</CardTitle>
+                <CardDescription>
+                  Todos os dias de manhã, o sistema cruza as suas leads compradoras com os
+                  imóveis e empreendimentos recentes (últimos 30 dias) — incluindo as
+                  tipologias, preços e amenities dos empreendimentos — e alerta-o na
+                  campainha (🔔) com os matches encontrados. Cada match só é alertado uma vez.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between rounded-lg border p-4">
+                  <div className="space-y-1 pr-4">
+                    <Label htmlFor="buyer_match_enabled" className="text-base font-medium">
+                      Ativar alertas de buyer match
+                    </Label>
+                    <p className="text-sm text-muted-foreground">
+                      Recebe uma notificação por lead com os imóveis/empreendimentos compatíveis. Ligado por defeito.
+                    </p>
+                  </div>
+                  <Switch
+                    id="buyer_match_enabled"
+                    checked={(profile as any)?.buyer_match_enabled ?? true}
+                    disabled={savingBuyerMatchToggle}
+                    onCheckedChange={(v) => handleBuyerMatchToggle("buyer_match_enabled", v)}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between rounded-lg border p-4">
+                  <div className="space-y-1 pr-4">
+                    <Label htmlFor="buyer_match_email_enabled" className="text-base font-medium">
+                      Enviar email automático ao cliente com as sugestões
+                    </Label>
+                    <p className="text-sm text-muted-foreground">
+                      Além do alerta, o cliente recebe um email com os imóveis e empreendimentos
+                      (tipologia, preço, amenities, prazo de conclusão e condições). Respeita o
+                      opt-out. Desligado por defeito.
+                    </p>
+                  </div>
+                  <Switch
+                    id="buyer_match_email_enabled"
+                    checked={Boolean((profile as any)?.buyer_match_email_enabled)}
+                    disabled={savingBuyerMatchToggle || !((profile as any)?.buyer_match_enabled ?? true)}
+                    onCheckedChange={(v) => handleBuyerMatchToggle("buyer_match_email_enabled", v)}
                   />
                 </div>
               </CardContent>

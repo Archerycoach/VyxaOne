@@ -39,6 +39,10 @@
       "schedule": "30 9 * * *"
     },
     {
+      "path": "/api/cron/buyer-match",
+      "schedule": "45 7 * * *"
+    },
+    {
       "path": "/api/cron/whatsapp-cadence",
       "schedule": "0 * * * *"
     },

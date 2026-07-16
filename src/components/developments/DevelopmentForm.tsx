@@ -18,11 +18,18 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { createDevelopment, updateDevelopment } from "@/services/developmentsService";
+import {
+  createDevelopment,
+  updateDevelopment,
+  getDevelopmentTypologies,
+  saveDevelopmentTypologies,
+  deriveGlobalsFromTypologies,
+  type DevelopmentTypologyInput,
+} from "@/services/developmentsService";
 import { getOrCreateLandingLink, setLandingPublished as apiSetLandingPublished, getLandingState } from "@/services/landingService";
 import { addDevelopmentImage, removeDevelopmentImage } from "@/services/imageUploadService";
 import { Switch } from "@/components/ui/switch";
-import { Globe, Copy, Loader2, ImagePlus, X } from "lucide-react";
+import { Globe, Copy, Loader2, ImagePlus, X, Plus, Trash2 } from "lucide-react";
 import type { Development, DevelopmentStatus } from "@/types";
 
 interface DevelopmentFormProps {
@@ -43,14 +50,37 @@ interface DevelopmentFormState {
   developer_name: string;
   price_from: string;
   price_to: string;
-  typologies: string;
   total_units: string;
   available_units: string;
   delivery_date: string;
   published_at: string;
   highlights: string;
   reference_code: string;
+  payment_terms: string;
+  reservation_terms: string;
+  amenities: string;
 }
+
+/** Linha de tipologia no formulário — tudo string para os inputs. */
+interface TypologyRowState {
+  typology: string;
+  price_from: string;
+  price_to: string;
+  area_from: string;
+  area_to: string;
+  units_total: string;
+  units_available: string;
+}
+
+const emptyTypologyRow: TypologyRowState = {
+  typology: "",
+  price_from: "",
+  price_to: "",
+  area_from: "",
+  area_to: "",
+  units_total: "",
+  units_available: "",
+};
 
 const initialFormState: DevelopmentFormState = {
   name: "",
@@ -63,13 +93,15 @@ const initialFormState: DevelopmentFormState = {
   developer_name: "",
   price_from: "",
   price_to: "",
-  typologies: "",
   total_units: "",
   available_units: "",
   delivery_date: "",
   published_at: "",
   highlights: "",
   reference_code: "",
+  payment_terms: "",
+  reservation_terms: "",
+  amenities: "",
 };
 
 function formatDateInput(value?: string | null) {
@@ -187,6 +219,9 @@ export function DevelopmentForm({ development, open, onOpenChange, onSuccess }: 
     }
   };
 
+  // Linhas de tipologia (T0-T6+ com preço/área/unidades por tipologia)
+  const [typologyRows, setTypologyRows] = useState<TypologyRowState[]>([]);
+
   useEffect(() => {
     if (development) {
       setFormData({
@@ -200,21 +235,58 @@ export function DevelopmentForm({ development, open, onOpenChange, onSuccess }: 
         developer_name: development.developer_name ?? "",
         price_from: development.price_from != null ? String(development.price_from) : "",
         price_to: development.price_to != null ? String(development.price_to) : "",
-        typologies: development.typologies?.join(", ") ?? "",
         total_units: development.total_units != null ? String(development.total_units) : "",
         available_units: development.available_units != null ? String(development.available_units) : "",
         delivery_date: formatDateInput(development.delivery_date),
         published_at: formatDateInput(development.published_at),
         highlights: development.highlights?.join(", ") ?? "",
         reference_code: development.reference_code ?? "",
+        payment_terms: (development as any).payment_terms ?? "",
+        reservation_terms: (development as any).reservation_terms ?? "",
+        amenities: ((development as any).amenities as string[] | null)?.join(", ") ?? "",
       });
+
+      // Carrega as linhas de tipologia; se ainda não existirem (empreendimento
+      // antigo), pré-semeia a partir da lista de nomes legada (typologies[]).
+      getDevelopmentTypologies(development.id)
+        .then((rows) => {
+          if (rows.length > 0) {
+            setTypologyRows(rows.map((row) => ({
+              typology: row.typology,
+              price_from: row.price_from != null ? String(row.price_from) : "",
+              price_to: row.price_to != null ? String(row.price_to) : "",
+              area_from: row.area_from != null ? String(row.area_from) : "",
+              area_to: row.area_to != null ? String(row.area_to) : "",
+              units_total: row.units_total != null ? String(row.units_total) : "",
+              units_available: row.units_available != null ? String(row.units_available) : "",
+            })));
+          } else if (development.typologies && development.typologies.length > 0) {
+            setTypologyRows(development.typologies.map((name) => ({ ...emptyTypologyRow, typology: name })));
+          } else {
+            setTypologyRows([]);
+          }
+        })
+        .catch((err) => {
+          console.error("Erro ao carregar tipologias do empreendimento:", err);
+          setTypologyRows([]);
+        });
       return;
     }
 
     if (open) {
       setFormData(initialFormState);
+      setTypologyRows([]);
     }
   }, [development, open]);
+
+  const handleTypologyRowChange = (index: number, key: keyof TypologyRowState, value: string) => {
+    setTypologyRows((rows) => rows.map((row, i) => (i === index ? { ...row, [key]: value } : row)));
+  };
+
+  const addTypologyRow = () => setTypologyRows((rows) => [...rows, { ...emptyTypologyRow }]);
+
+  const removeTypologyRow = (index: number) =>
+    setTypologyRows((rows) => rows.filter((_, i) => i !== index));
 
   const handleChange = <K extends keyof DevelopmentFormState>(key: K, value: DevelopmentFormState[K]) => {
     setFormData((current) => ({
@@ -244,6 +316,29 @@ export function DevelopmentForm({ development, open, onOpenChange, onSuccess }: 
       return;
     }
 
+    // Validação das linhas de tipologia (linhas totalmente vazias são ignoradas)
+    const cleanedRows = typologyRows.filter((row) =>
+      Object.values(row).some((value) => value.trim() !== "")
+    );
+    for (const row of cleanedRows) {
+      if (!row.typology.trim()) {
+        toast({ title: "Erro", description: "Cada linha de tipologia precisa de um nome (ex.: T2).", variant: "destructive" });
+        return;
+      }
+      if (row.price_from && row.price_to && Number(row.price_from) > Number(row.price_to)) {
+        toast({ title: "Erro", description: `Tipologia ${row.typology}: o preço mínimo não pode exceder o máximo.`, variant: "destructive" });
+        return;
+      }
+      if (row.area_from && row.area_to && Number(row.area_from) > Number(row.area_to)) {
+        toast({ title: "Erro", description: `Tipologia ${row.typology}: a área mínima não pode exceder a máxima.`, variant: "destructive" });
+        return;
+      }
+      if (row.units_total && row.units_available && Number(row.units_available) > Number(row.units_total)) {
+        toast({ title: "Erro", description: `Tipologia ${row.typology}: unidades disponíveis excedem o total.`, variant: "destructive" });
+        return;
+      }
+    }
+
     setLoading(true);
 
     try {
@@ -260,6 +355,19 @@ export function DevelopmentForm({ development, open, onOpenChange, onSuccess }: 
         return;
       }
 
+      // Converte as linhas do formulário para o formato do serviço e deriva
+      // os campos globais retrocompatíveis (typologies[], price_from/to).
+      const typologyInputs: DevelopmentTypologyInput[] = cleanedRows.map((row) => ({
+        typology: row.typology.trim(),
+        price_from: row.price_from ? Number(row.price_from) : null,
+        price_to: row.price_to ? Number(row.price_to) : null,
+        area_from: row.area_from ? Number(row.area_from) : null,
+        area_to: row.area_to ? Number(row.area_to) : null,
+        units_total: row.units_total ? Number(row.units_total) : null,
+        units_available: row.units_available ? Number(row.units_available) : null,
+      }));
+      const derived = deriveGlobalsFromTypologies(typologyInputs);
+
       const payload = {
         name: formData.name.trim(),
         description: formData.description.trim() || null,
@@ -269,37 +377,48 @@ export function DevelopmentForm({ development, open, onOpenChange, onSuccess }: 
         district: formData.district.trim() || null,
         postal_code: formData.postal_code.trim() || null,
         developer_name: formData.developer_name.trim() || null,
-        price_from: formData.price_from ? Number(formData.price_from) : null,
-        price_to: formData.price_to ? Number(formData.price_to) : null,
-        typologies: parseCommaSeparatedList(formData.typologies),
+        // Com linhas de tipologia, o intervalo global de preço é derivado
+        // delas; sem linhas, valem os campos manuais.
+        price_from: derived.price_from ?? (formData.price_from ? Number(formData.price_from) : null),
+        price_to: derived.price_to ?? (formData.price_to ? Number(formData.price_to) : null),
+        typologies: derived.typologies,
         total_units: formData.total_units ? Number(formData.total_units) : null,
         available_units: formData.available_units ? Number(formData.available_units) : null,
         delivery_date: formData.delivery_date || null,
         published_at: formData.published_at ? formData.published_at + "T00:00:00Z" : null,
         highlights: parseCommaSeparatedList(formData.highlights),
         reference_code: formData.reference_code.trim() || null,
+        payment_terms: formData.payment_terms.trim() || null,
+        reservation_terms: formData.reservation_terms.trim() || null,
+        amenities: parseCommaSeparatedList(formData.amenities),
       };
 
+      let developmentId: string;
       if (development) {
         await updateDevelopment(development.id, payload);
+        developmentId = development.id;
         toast({
           title: "Sucesso",
           description: "Empreendimento atualizado com sucesso.",
         });
       } else {
-        await createDevelopment({
+        const created = await createDevelopment({
           ...payload,
           user_id: user.id,
         });
+        developmentId = created.id;
         toast({
           title: "Sucesso",
           description: "Empreendimento criado com sucesso.",
         });
       }
 
+      await saveDevelopmentTypologies(developmentId, user.id, typologyInputs);
+
       onSuccess();
       onOpenChange(false);
       setFormData(initialFormState);
+      setTypologyRows([]);
     } catch (error) {
       console.error("Error saving development:", error);
       toast({
@@ -475,15 +594,144 @@ export function DevelopmentForm({ development, open, onOpenChange, onSuccess }: 
             </div>
           </div>
 
+          <div className="border rounded-lg p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <Label className="text-base">Tipologias</Label>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Preço, área e unidades por tipologia (ex.: T0 a T4). O intervalo global de
+                  preço do empreendimento é calculado automaticamente a partir destas linhas.
+                </p>
+              </div>
+              <Button type="button" variant="outline" size="sm" onClick={addTypologyRow} className="gap-1 shrink-0">
+                <Plus className="h-4 w-4" />
+                Adicionar
+              </Button>
+            </div>
+
+            {typologyRows.length === 0 && (
+              <p className="text-sm text-muted-foreground">
+                Sem tipologias definidas. Adicione uma linha por tipologia disponível.
+              </p>
+            )}
+
+            {typologyRows.map((row, index) => (
+              <div key={index} className="grid grid-cols-2 md:grid-cols-8 gap-2 items-end border-b pb-3 last:border-b-0 last:pb-0">
+                <div className="space-y-1">
+                  <Label className="text-xs">Tipologia</Label>
+                  <Input
+                    value={row.typology}
+                    onChange={(e) => handleTypologyRowChange(index, "typology", e.target.value)}
+                    placeholder="T2"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Preço de (€)</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={row.price_from}
+                    onChange={(e) => handleTypologyRowChange(index, "price_from", e.target.value)}
+                    placeholder="250000"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Preço até (€)</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={row.price_to}
+                    onChange={(e) => handleTypologyRowChange(index, "price_to", e.target.value)}
+                    placeholder="320000"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Área de (m²)</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={row.area_from}
+                    onChange={(e) => handleTypologyRowChange(index, "area_from", e.target.value)}
+                    placeholder="80"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Área até (m²)</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={row.area_to}
+                    onChange={(e) => handleTypologyRowChange(index, "area_to", e.target.value)}
+                    placeholder="95"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Unidades</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={row.units_total}
+                    onChange={(e) => handleTypologyRowChange(index, "units_total", e.target.value)}
+                    placeholder="10"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Disponíveis</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={row.units_available}
+                    onChange={(e) => handleTypologyRowChange(index, "units_available", e.target.value)}
+                    placeholder="4"
+                  />
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => removeTypologyRow(index)}
+                  className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                  title="Remover tipologia"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            ))}
+          </div>
+
           <div className="space-y-2">
-            <Label htmlFor="typologies">Tipologias</Label>
+            <Label htmlFor="amenities">Amenities</Label>
             <Input
-              id="typologies"
-              value={formData.typologies}
-              onChange={(event) => handleChange("typologies", event.target.value)}
-              placeholder="T1, T2, T3 duplex"
+              id="amenities"
+              value={formData.amenities}
+              onChange={(event) => handleChange("amenities", event.target.value)}
+              placeholder="Piscina, ginásio, garagem, jardim, portaria"
             />
-            <p className="text-xs text-muted-foreground">Separar por vírgulas.</p>
+            <p className="text-xs text-muted-foreground">Separar por vírgulas. Usado no buyer match e nos emails de sugestões.</p>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="payment_terms">Condições de pagamento</Label>
+              <Textarea
+                id="payment_terms"
+                value={formData.payment_terms}
+                onChange={(event) => handleChange("payment_terms", event.target.value)}
+                placeholder="Ex: 10% na reserva, 20% durante a obra, 70% na escritura."
+                rows={3}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="reservation_terms">Condições de reserva</Label>
+              <Textarea
+                id="reservation_terms"
+                value={formData.reservation_terms}
+                onChange={(event) => handleChange("reservation_terms", event.target.value)}
+                placeholder="Ex: Reserva de 5.000€, válida 15 dias, dedutível no CPCV."
+                rows={3}
+              />
+            </div>
           </div>
 
           <div className="space-y-2">

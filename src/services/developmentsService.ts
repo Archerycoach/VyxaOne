@@ -1,5 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
-import type { Development, DevelopmentStatus } from "@/types";
+import type { Development, DevelopmentStatus, DevelopmentTypology } from "@/types";
 import { matchNewDevelopment } from "./contactAlertsService";
 
 export interface DevelopmentInsert {
@@ -23,6 +23,20 @@ export interface DevelopmentInsert {
   images?: string[] | null;
   main_image_url?: string | null;
   reference_code?: string | null;
+  payment_terms?: string | null;
+  reservation_terms?: string | null;
+  amenities?: string[] | null;
+}
+
+/** Linha de tipologia editável no formulário (sem ids — geridas por save). */
+export interface DevelopmentTypologyInput {
+  typology: string;
+  price_from?: number | null;
+  price_to?: number | null;
+  area_from?: number | null;
+  area_to?: number | null;
+  units_total?: number | null;
+  units_available?: number | null;
 }
 
 export type DevelopmentUpdate = Partial<DevelopmentInsert>;
@@ -90,6 +104,96 @@ export async function deleteDevelopment(id: string): Promise<void> {
     .eq("id", id);
 
   if (error) throw error;
+}
+
+// ============================================================
+// Tipologias por empreendimento (development_typologies)
+// ============================================================
+
+export async function getDevelopmentTypologies(developmentId: string): Promise<DevelopmentTypology[]> {
+  const { data, error } = await untypedSupabase
+    .from("development_typologies")
+    .select("*")
+    .eq("development_id", developmentId)
+    .order("typology", { ascending: true });
+
+  if (error) throw error;
+  return (data ?? []) as DevelopmentTypology[];
+}
+
+/** Tipologias de vários empreendimentos de uma vez (para a lista/cards). */
+export async function getTypologiesByDevelopment(): Promise<Record<string, DevelopmentTypology[]>> {
+  const { data, error } = await untypedSupabase
+    .from("development_typologies")
+    .select("*")
+    .order("typology", { ascending: true });
+
+  if (error) throw error;
+
+  const grouped: Record<string, DevelopmentTypology[]> = {};
+  for (const row of (data ?? []) as DevelopmentTypology[]) {
+    (grouped[row.development_id] ||= []).push(row);
+  }
+  return grouped;
+}
+
+/**
+ * Substitui as linhas de tipologia de um empreendimento (delete + insert —
+ * simples e suficiente para o volume em causa).
+ */
+export async function saveDevelopmentTypologies(
+  developmentId: string,
+  userId: string,
+  rows: DevelopmentTypologyInput[]
+): Promise<void> {
+  const { error: deleteError } = await untypedSupabase
+    .from("development_typologies")
+    .delete()
+    .eq("development_id", developmentId);
+
+  if (deleteError) throw deleteError;
+
+  if (rows.length === 0) return;
+
+  const { error: insertError } = await untypedSupabase
+    .from("development_typologies")
+    .insert(rows.map((row) => ({
+      development_id: developmentId,
+      user_id: userId,
+      typology: row.typology,
+      price_from: row.price_from ?? null,
+      price_to: row.price_to ?? null,
+      area_from: row.area_from ?? null,
+      area_to: row.area_to ?? null,
+      units_total: row.units_total ?? null,
+      units_available: row.units_available ?? null,
+    })));
+
+  if (insertError) throw insertError;
+}
+
+/**
+ * Deriva os campos "globais" retrocompatíveis (typologies[], price_from/to)
+ * a partir das linhas de tipologia — o resto da app (cards, contact alerts)
+ * continua a funcionar sem alterações.
+ */
+export function deriveGlobalsFromTypologies(rows: DevelopmentTypologyInput[]): {
+  typologies: string[] | null;
+  price_from: number | null;
+  price_to: number | null;
+} {
+  if (rows.length === 0) {
+    return { typologies: null, price_from: null, price_to: null };
+  }
+
+  const prices_from = rows.map((r) => r.price_from).filter((v): v is number => v != null);
+  const prices_to = rows.map((r) => r.price_to).filter((v): v is number => v != null);
+
+  return {
+    typologies: rows.map((r) => r.typology),
+    price_from: prices_from.length > 0 ? Math.min(...prices_from) : null,
+    price_to: prices_to.length > 0 ? Math.max(...prices_to) : null,
+  };
 }
 
 export async function getRecentDevelopments(days = 30): Promise<Development[]> {

@@ -96,6 +96,11 @@ export function Navigation() {
   // Team lead and above can see team features
   const canSeeTeamFeatures = isAdmin || isBroker || isTeamLead;
 
+  // Um consultor que pertence a uma equipa (team_lead_id) também vê o menu
+  // "Equipa" — em modo leitura, para saber quem são os colegas (a página usa
+  // get_team_roster, que nunca expõe leads/contactos de terceiros).
+  const belongsToTeam = isConsultant && Boolean(profile?.team_lead_id);
+
   const toggleGroup = (label: string) => {
     setExpandedGroups(prev => prev.includes(label) ? prev.filter(g => g !== label) : [...prev, label]);
   };
@@ -164,8 +169,8 @@ export function Navigation() {
       ]
     },
 
-    // Team Management (broker, admin, team_lead only)
-    ...(canSeeTeamFeatures
+    // Team Management (broker, admin, team_lead e consultores COM equipa)
+    ...(canSeeTeamFeatures || belongsToTeam
       ? [{ icon: Users, label: "Equipa", path: "/team" }]
       : []),
     

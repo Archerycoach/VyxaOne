@@ -212,8 +212,27 @@ export interface Development {
   images?: string[] | null;
   main_image_url?: string | null;
   reference_code?: string | null;
+  payment_terms?: string | null;
+  reservation_terms?: string | null;
+  amenities?: string[] | null;
   created_at: string;
   updated_at: string;
+}
+
+/** Características de uma tipologia (T0-T6+) dentro de um empreendimento. */
+export interface DevelopmentTypology {
+  id: string;
+  development_id: string;
+  user_id: string;
+  typology: string;
+  price_from?: number | null;
+  price_to?: number | null;
+  area_from?: number | null;
+  area_to?: number | null;
+  units_total?: number | null;
+  units_available?: number | null;
+  created_at?: string;
+  updated_at?: string;
 }
 
 // Interaction Types

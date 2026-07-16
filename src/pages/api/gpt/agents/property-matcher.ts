@@ -49,8 +49,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!smtpSettings) return res.status(200).json({ message: "No SMTP settings" });
 
     // 4. Find real property matches (internal DB + Idealista)
+    // serverContext obrigatório: sem ele o matchingService usa o cliente
+    // browser + auth.getUser(), que não existem em API routes — falhava
+    // sempre com "Utilizador não autenticado" e nenhum email era enviado.
     console.log(`[Property Matcher] Finding matches for lead ${leadId}...`);
-    const matches = await findMatchesForLead(leadId);
+    const matches = await findMatchesForLead(leadId, undefined, { client: supabase, userId });
     
     if (matches.length === 0) {
       console.log(`[Property Matcher] No matches found for lead ${leadId}`);
