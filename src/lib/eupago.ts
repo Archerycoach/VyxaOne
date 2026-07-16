@@ -22,6 +22,14 @@ const eupagoAuth = (apiKey: string) => ({
   headers: { Authorization: `ApiKey ${apiKey}`, "Content-Type": "application/json" },
 });
 
+// Extrai o detalhe do erro da EuPago (corpo completo da resposta), para o erro
+// não ficar apenas "Request failed with status code XXX".
+const eupagoError = (error: any): string => {
+  const data = error?.response?.data;
+  if (data) return typeof data === "string" ? data : JSON.stringify(data);
+  return error?.message || "erro desconhecido";
+};
+
 export const eupago = {
   // Create MBWay payment
   createMBWayPayment: async ({
@@ -59,8 +67,8 @@ export const eupago = {
       }
       throw new Error(response.data.mensagem || "Erro ao criar pagamento MBWay");
     } catch (error: any) {
-      console.error("Error creating MBWay payment:", error?.response?.data || error.message);
-      throw new Error(`Erro MBWay: ${error?.response?.data?.mensagem || error.message}`);
+      console.error("Error creating MBWay payment:", eupagoError(error));
+      throw new Error(`Erro MBWay: ${eupagoError(error)}`);
     }
   },
 
@@ -98,8 +106,8 @@ export const eupago = {
       }
       throw new Error(response.data.mensagem || "Erro ao criar referência Multibanco");
     } catch (error: any) {
-      console.error("Error creating Multibanco reference:", error?.response?.data || error.message);
-      throw new Error(`Erro Multibanco: ${error?.response?.data?.mensagem || error.message}`);
+      console.error("Error creating Multibanco reference:", eupagoError(error));
+      throw new Error(`Erro Multibanco: ${eupagoError(error)}`);
     }
   },
 
@@ -140,8 +148,8 @@ export const eupago = {
       }
       throw new Error(response.data.mensagem || "Erro ao criar pagamento por cartão");
     } catch (error: any) {
-      console.error("Error creating credit card payment:", error?.response?.data || error.message);
-      throw new Error(`Erro cartão: ${error?.response?.data?.mensagem || error.message}`);
+      console.error("Error creating credit card payment:", eupagoError(error));
+      throw new Error(`Erro cartão: ${eupagoError(error)}`);
     }
   },
 
@@ -165,7 +173,7 @@ export const eupago = {
         paidDate: response.data.data_pagamento,
       };
     } catch (error: any) {
-      console.error("Error checking payment status:", error?.response?.data || error.message);
+      console.error("Error checking payment status:", eupagoError(error));
       throw new Error(`Erro ao verificar status: ${error.message}`);
     }
   },
