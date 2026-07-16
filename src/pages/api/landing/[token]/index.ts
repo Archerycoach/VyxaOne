@@ -15,7 +15,8 @@ const PROPERTY_FIELDS = `
 const DEVELOPMENT_FIELDS = `
   id, name, description, price_from, price_to, typologies, highlights,
   city, district, address, delivery_date, developer_name, available_units,
-  total_units, images, main_image_url, reference_code, user_id, landing_published
+  total_units, images, main_image_url, reference_code, user_id, landing_published,
+  amenities
 `;
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -44,6 +45,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   if (!entity || !entity.landing_published) {
     return res.status(404).json({ error: "Not found" });
+  }
+
+  // Detalhes por tipologia (T0-T6+ com preço/área/disponibilidade) — só para
+  // empreendimentos. Campos seguros para página pública.
+  let typologyDetails: any[] = [];
+  if (entityType === "development") {
+    const { data: typologyRows } = await (supabaseAdmin.from("development_typologies" as any) as any)
+      .select("typology, price_from, price_to, area_from, area_to, units_available")
+      .eq("development_id", entity.id)
+      .order("typology", { ascending: true });
+    typologyDetails = typologyRows || [];
   }
 
   // Contacto do agente responsável (o utilizador dono do registo).
@@ -75,7 +87,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   return res.status(200).json({
     type: entityType,
-    entity: safe,
+    entity: entityType === "development" ? { ...safe, typology_details: typologyDetails } : safe,
     agent: agent ? { name: agent.full_name, email: agent.email, phone: agent.phone, avatar: agent.avatar_url } : null,
     questions: questions || [],
   });

@@ -33,6 +33,26 @@ function formatPrice(value?: number | null) {
   return new Intl.NumberFormat("pt-PT", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(value);
 }
 
+function formatRange(from?: number | null, to?: number | null, unit?: string) {
+  const suffix = unit ? ` ${unit}` : "";
+  const fmt = (v: number) => (unit ? `${new Intl.NumberFormat("pt-PT").format(v)}` : formatPrice(v));
+  if (from != null && to != null) {
+    return from === to ? `${fmt(from)}${suffix}` : `${fmt(from)}–${fmt(to)}${suffix}`;
+  }
+  if (from != null) return `desde ${fmt(from)}${suffix}`;
+  if (to != null) return `até ${fmt(to)}${suffix}`;
+  return null;
+}
+
+interface TypologyDetail {
+  typology: string;
+  price_from?: number | null;
+  price_to?: number | null;
+  area_from?: number | null;
+  area_to?: number | null;
+  units_available?: number | null;
+}
+
 // Renderização no servidor: garante que os meta tags de SEO/partilha (Open
 // Graph) estão no HTML inicial — os scrapers do WhatsApp/Facebook não correm
 // JavaScript, por isso a pré-visualização só funciona assim.
@@ -176,6 +196,63 @@ export default function LandingPage({ data, url, token }: PageProps) {
                     {e.area != null && <span className="flex items-center gap-1"><Ruler className="h-4 w-4" /> {e.area} m²</span>}
                   </div>
                 )}
+
+                {/* Empreendimentos: tabela de tipologias com áreas, preços e
+                    disponibilidade; fallback para os nomes (empreendimentos
+                    antigos sem detalhes por tipologia). */}
+                {!isProperty && (e.typology_details as TypologyDetail[] | undefined)?.length ? (
+                  <div>
+                    <h2 className="text-lg font-semibold text-slate-900 mb-2 flex items-center gap-1.5">
+                      <BedDouble className="h-5 w-5 text-blue-700" /> Tipologias
+                    </h2>
+                    <div className="overflow-x-auto rounded-lg border border-slate-200">
+                      <table className="w-full min-w-max text-sm">
+                        <thead className="bg-slate-100 text-slate-600">
+                          <tr>
+                            <th className="px-4 py-2 text-left font-medium">Tipologia</th>
+                            <th className="px-4 py-2 text-left font-medium">Área</th>
+                            <th className="px-4 py-2 text-left font-medium">Preço</th>
+                            <th className="px-4 py-2 text-left font-medium">Disponibilidade</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {(e.typology_details as TypologyDetail[]).map((t, i) => (
+                            <tr key={`${t.typology}-${i}`} className={i % 2 === 0 ? "bg-white" : "bg-slate-50"}>
+                              <td className="px-4 py-2.5 font-semibold text-slate-900">{t.typology}</td>
+                              <td className="px-4 py-2.5 text-slate-600">
+                                {formatRange(t.area_from, t.area_to, "m²") || "—"}
+                              </td>
+                              <td className="px-4 py-2.5 text-slate-900 font-medium">
+                                {formatRange(t.price_from, t.price_to) || "Sob consulta"}
+                              </td>
+                              <td className="px-4 py-2.5">
+                                {t.units_available == null ? (
+                                  <span className="text-slate-400">—</span>
+                                ) : t.units_available > 0 ? (
+                                  <span className="text-green-700 font-medium">{t.units_available} {t.units_available === 1 ? "disponível" : "disponíveis"}</span>
+                                ) : (
+                                  <span className="text-red-600 font-medium">Esgotado</span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ) : !isProperty && (e.typologies as string[] | undefined)?.length ? (
+                  <div className="flex flex-wrap gap-2">
+                    {(e.typologies as string[]).map((t) => (
+                      <span key={t} className="px-3 py-1 rounded-full bg-blue-50 text-blue-800 text-sm font-medium border border-blue-100">{t}</span>
+                    ))}
+                  </div>
+                ) : null}
+
+                {!isProperty && (e.amenities as string[] | undefined)?.length ? (
+                  <p className="text-sm text-slate-600">
+                    <span className="font-medium text-slate-900">Amenities:</span> {(e.amenities as string[]).join(" · ")}
+                  </p>
+                ) : null}
 
                 {/* CTA — visível de imediato, especialmente em telemóvel */}
                 <div className="flex flex-wrap gap-2 pt-1">
