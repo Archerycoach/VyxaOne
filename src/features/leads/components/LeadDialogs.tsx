@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { LeadWithContacts } from "@/services/leadsService";
 import { LeadDetailsDialog } from "@/components/leads/LeadDetailsDialog";
+import { buildLeadEventTitle, isAutoLeadEventTitle } from "@/lib/leadEventTitle";
 
 interface LeadDialogsProps {
   // Task Dialog
@@ -196,7 +197,18 @@ export function LeadDialogs({
               <Label htmlFor="event-type">Tipo de Evento</Label>
               <Select
                 value={eventForm.event_type || "meeting"}
-                onValueChange={(value) => setEventForm({ ...eventForm, event_type: value })}
+                onValueChange={(value) => {
+                  // Ao mudar o tipo, o título acompanha ("Chamada - {lead}"),
+                  // mas só enquanto for o título automático — um título
+                  // escrito pelo consultor nunca é substituído.
+                  const leadName = selectedLead?.name || "";
+                  const shouldUpdateTitle = leadName && isAutoLeadEventTitle(eventForm.title, leadName);
+                  setEventForm({
+                    ...eventForm,
+                    event_type: value,
+                    ...(shouldUpdateTitle ? { title: buildLeadEventTitle(value, leadName) } : {}),
+                  });
+                }}
               >
                 <SelectTrigger id="event-type">
                   <SelectValue placeholder="Selecione o tipo" />

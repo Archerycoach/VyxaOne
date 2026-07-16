@@ -435,7 +435,7 @@ export function LeadsListContainer({
       console.log("[LeadsListContainer] Opening event dialog for lead:", lead.id);
       setSelectedLead(lead);
       setEventForm({
-        title: `Reunião: ${lead.name}`,
+        title: `Reunião - ${lead.name}`,
         description: "",
         start_date: "",
         end_date: "",
