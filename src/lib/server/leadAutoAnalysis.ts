@@ -2,6 +2,7 @@ import { runAI } from "@/lib/ai/provider";
 import { getLeadAutoAnalysisPrompt } from "@/lib/ai/prompts/leadAutoAnalysis";
 import { getLeadQualification, formatCurrentQualificationValue, mapExtractedDataToLeadUpdate } from "@/lib/leadQualification";
 import { storeMemory } from "@/lib/ai/embeddings";
+import { buildLeadEventTitle } from "@/lib/leadEventTitle";
 
 /**
  * Análise automática de uma lead após um novo registo (nota, interação ou
@@ -256,12 +257,6 @@ export async function runLeadAutoAnalysis(
 
     // 3. Blocos de agenda "por confirmar" (ai_pending) — sem sync Google até
     // o consultor confirmar no calendário.
-    const EVENT_TYPE_LABELS: Record<string, string> = {
-      viewing: "Visita",
-      meeting: "Reunião",
-      call: "Chamada",
-      followup: "Follow-up",
-    };
     const agendaBlocks = (Array.isArray(analysis.agenda_blocks) ? analysis.agenda_blocks : [])
       .filter((b) => b && typeof b.title === "string" && b.title.trim() && b.start_time)
       .slice(0, 2);
@@ -280,7 +275,7 @@ export async function runLeadAutoAnalysis(
       // Santos"), para os eventos criados a partir da lead ficarem uniformes
       // e identificáveis na agenda. O título descritivo da IA vai para a
       // descrição, junto com o excerto que originou o bloco.
-      const eventTitle = `${EVENT_TYPE_LABELS[eventType]} - ${lead.name}`;
+      const eventTitle = buildLeadEventTitle(eventType, lead.name);
       const descriptionParts = [
         block.title,
         block.description || "",

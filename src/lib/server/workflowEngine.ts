@@ -8,6 +8,7 @@ import { createClient } from "@supabase/supabase-js";
 import { SupabaseClient } from "@supabase/supabase-js";
 import { sendClientEmail } from "@/lib/server/sendClientEmail";
 import { logEmailInteractionServer } from "@/lib/emailInteractionLogger";
+import { buildLeadEventTitle } from "@/lib/leadEventTitle";
 import type { Database } from "@/integrations/supabase/database.types";
 
 type TaskInsert = Database["public"]["Tables"]["tasks"]["Insert"];
@@ -407,8 +408,15 @@ async function createCalendarEventAction(
   // Type-safe alias to avoid service-role client type inference issues
   const db = supabase as unknown as SupabaseClient;
 
-  const title = personalizeContent(config.subject || config.title || "Evento automático", lead);
-  const description = personalizeContent(config.body || config.description || "", lead);
+  // Título normalizado "Tema - Nome da lead" (ex.: "Reunião - David Santos"),
+  // como em todos os fluxos que criam eventos a partir de uma lead. O título
+  // configurado no workflow vai para a descrição.
+  const configuredTitle = personalizeContent(config.subject || config.title || "Evento automático", lead);
+  const configuredDescription = personalizeContent(config.body || config.description || "", lead);
+  const title = buildLeadEventTitle(config.eventType || "meeting", lead.name);
+  const description = [configuredTitle, configuredDescription]
+    .filter((part) => part && part.trim())
+    .join("\n\n");
 
   // Deduplication check
   const { data: existingEvent } = await supabase

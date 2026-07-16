@@ -2,6 +2,7 @@ import { NextApiRequest, NextApiResponse } from "next";
 import { validateGptRequest, logGptAction } from "@/lib/gptAuth";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { buildCalendarEventSignature } from "@/lib/calendarEventDedup";
+import { buildLeadEventTitle } from "@/lib/leadEventTitle";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const userId = await validateGptRequest(req, res);
@@ -51,7 +52,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       const normalizedStartTime = parsedStartTime.toISOString();
       const normalizedEndTime = parsedEndTime.toISOString();
-      
+
+      // Eventos ligados a uma lead ficam com o título normalizado
+      // "Tema - Nome da lead" (ex.: "Chamada - David Santos"); o título
+      // original passa para a descrição. Feito ANTES da assinatura de
+      // duplicados, para a idempotência funcionar sobre o título final.
+      let finalTitle = title;
+      let finalDescription = description || null;
+      if (lead_id) {
+        const { data: lead } = await supabaseAdmin
+          .from("leads")
+          .select("name")
+          .eq("id", lead_id)
+          .eq("user_id", userId)
+          .maybeSingle();
+
+        if (lead?.name) {
+          finalTitle = buildLeadEventTitle(event_type, lead.name);
+          finalDescription = [title, description || ""].filter((part: string) => part && part.trim()).join("\n\n") || null;
+        }
+      }
+
       const dateOnly = normalizedStartTime.split('T')[0];
       const startOfDay = `${dateOnly}T00:00:00.000Z`;
       const endOfDay = `${dateOnly}T23:59:59.999Z`;
@@ -79,7 +100,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
 
       const incomingSignature = buildCalendarEventSignature({
-        title,
+        title: finalTitle,
         lead_id: lead_id || null,
         start_time: normalizedStartTime,
         end_time: normalizedEndTime,
@@ -105,8 +126,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       const newEvent = {
         user_id: userId,
-        title,
-        description: description || null,
+        title: finalTitle,
+        description: finalDescription,
         start_time: normalizedStartTime,
         end_time: normalizedEndTime,
         event_type: event_type || "meeting",
