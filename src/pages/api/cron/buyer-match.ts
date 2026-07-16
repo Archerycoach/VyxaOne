@@ -115,7 +115,7 @@ async function processUser(
   }
 
   // Linhas de tipologia dos empreendimentos recentes
-  let typologiesByDevelopment: Record<string, DevelopmentTypologyRow[]> = {};
+  const typologiesByDevelopment: Record<string, DevelopmentTypologyRow[]> = {};
   if (recentDevelopments.length > 0) {
     const { data: typologyRows } = await supabaseAdmin
       .from("development_typologies")
