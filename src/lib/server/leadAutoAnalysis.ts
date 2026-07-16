@@ -256,6 +256,12 @@ export async function runLeadAutoAnalysis(
 
     // 3. Blocos de agenda "por confirmar" (ai_pending) — sem sync Google até
     // o consultor confirmar no calendário.
+    const EVENT_TYPE_LABELS: Record<string, string> = {
+      viewing: "Visita",
+      meeting: "Reunião",
+      call: "Chamada",
+      followup: "Follow-up",
+    };
     const agendaBlocks = (Array.isArray(analysis.agenda_blocks) ? analysis.agenda_blocks : [])
       .filter((b) => b && typeof b.title === "string" && b.title.trim() && b.start_time)
       .slice(0, 2);
@@ -266,22 +272,35 @@ export async function runLeadAutoAnalysis(
         continue;
       }
       const end = block.end_time ? new Date(block.end_time) : new Date(start.getTime() + 60 * 60 * 1000);
+      const eventType = ["viewing", "meeting", "call", "followup"].includes(block.event_type || "")
+        ? (block.event_type as string)
+        : "meeting";
+
+      // Título normalizado "Tema - Nome da lead" (ex.: "Chamada - David
+      // Santos"), para os eventos criados a partir da lead ficarem uniformes
+      // e identificáveis na agenda. O título descritivo da IA vai para a
+      // descrição, junto com o excerto que originou o bloco.
+      const eventTitle = `${EVENT_TYPE_LABELS[eventType]} - ${lead.name}`;
+      const descriptionParts = [
+        block.title,
+        block.description || "",
+        `Criado automaticamente pela IA a partir de: "${newContent.substring(0, 200)}"`,
+      ].filter((part) => part && part.trim());
+
       const { error: eventError } = await supabaseAdmin.from("calendar_events").insert({
         user_id: userId,
         lead_id: leadId,
-        title: block.title,
-        description: block.description || `Criado automaticamente pela IA a partir de: "${newContent.substring(0, 200)}"`,
+        title: eventTitle,
+        description: descriptionParts.join("\n\n"),
         start_time: start.toISOString(),
         end_time: (Number.isNaN(end.getTime()) ? new Date(start.getTime() + 60 * 60 * 1000) : end).toISOString(),
-        event_type: ["viewing", "meeting", "call", "followup"].includes(block.event_type || "")
-          ? block.event_type
-          : "meeting",
+        event_type: eventType,
         ai_pending: true,
       });
       if (eventError) {
         console.error(`[Lead Auto Analysis] Erro ao criar bloco de agenda (lead ${leadId}):`, eventError);
       } else {
-        applied.agenda_blocks_pending.push(block.title);
+        applied.agenda_blocks_pending.push(eventTitle);
       }
     }
 
