@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { Search, UserPlus, Trash2, Edit, Mail, Phone, RefreshCw, MessageCircle, ShieldCheck } from "lucide-react";
+import { Search, UserPlus, Trash2, Edit, Mail, Phone, RefreshCw, MessageCircle, ShieldCheck, KeyRound } from "lucide-react";
 import { getAllUsers, createUser, deleteUser, updateUserRole, getTeamLeads, assignAgentToTeamLead, toggleWhatsappModule, setUserSubscriptionExempt, setUserSubscriptionEnd } from "@/services/adminService";
 import { getSubscriptionPlans, adminSetUserPlan, adminCancelUserSubscription, type SubscriptionPlan } from "@/services/subscriptionService";
 import { supabase } from "@/integrations/supabase/client";
@@ -71,7 +71,43 @@ export default function UsersManagement() {
   const [savingAccess, setSavingAccess] = useState(false);
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [savingPlan, setSavingPlan] = useState(false);
+  const [manualPassword, setManualPassword] = useState("");
+  const [savingPassword, setSavingPassword] = useState(false);
   const { toast } = useToast();
+
+  // Alteração manual da password do utilizador selecionado (só admin — o
+  // endpoint /api/admin/update-password valida o papel pelo token de sessão).
+  const handleUpdatePassword = async () => {
+    if (!selectedUser?.id) return;
+    if (manualPassword.length < 6) {
+      toast({ title: "Password demasiado curta", description: "Mínimo de 6 caracteres.", variant: "destructive" });
+      return;
+    }
+    setSavingPassword(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error("Sessão expirada. Inicie sessão novamente.");
+
+      const response = await fetch("/api/admin/update-password", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ userId: selectedUser.id, newPassword: manualPassword }),
+      });
+
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Erro ao alterar a password");
+
+      setManualPassword("");
+      toast({ title: "Password alterada", description: result.message });
+    } catch (error: any) {
+      toast({ title: "Erro ao alterar password", description: error.message, variant: "destructive" });
+    } finally {
+      setSavingPassword(false);
+    }
+  };
 
   const [newUser, setNewUser] = useState<NewUserForm>({
     name: "",
@@ -685,7 +721,13 @@ export default function UsersManagement() {
           </Dialog>
 
           {/* Edit Role Dialog */}
-          <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+          <Dialog
+            open={isEditDialogOpen}
+            onOpenChange={(open) => {
+              setIsEditDialogOpen(open);
+              if (!open) setManualPassword("");
+            }}
+          >
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Editar Utilizador</DialogTitle>
@@ -755,6 +797,35 @@ export default function UsersManagement() {
                     checked={selectedUser?.whatsapp_module_enabled || false}
                     onCheckedChange={handleToggleWhatsapp}
                   />
+                </div>
+
+                <div className="border rounded-md p-4 space-y-3">
+                  <div>
+                    <Label className="text-base flex items-center gap-2">
+                      <KeyRound className="h-4 w-4 text-amber-600" />
+                      Alterar Password
+                    </Label>
+                    <p className="text-sm text-muted-foreground mt-0.5">
+                      Define manualmente uma nova password para {selectedUser?.full_name || "este utilizador"}.
+                      Comunique-a por um canal seguro e peça-lhe para a alterar depois de entrar.
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Input
+                      type="password"
+                      placeholder="Nova password (mín. 6 caracteres)"
+                      value={manualPassword}
+                      onChange={(e) => setManualPassword(e.target.value)}
+                      autoComplete="new-password"
+                    />
+                    <Button
+                      onClick={handleUpdatePassword}
+                      disabled={savingPassword || manualPassword.length < 6}
+                      className="shrink-0"
+                    >
+                      {savingPassword ? "A alterar..." : "Alterar"}
+                    </Button>
+                  </div>
                 </div>
 
                 <div className="border rounded-md p-4 space-y-4">
