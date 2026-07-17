@@ -27,6 +27,7 @@ import { ScopeSelector } from "@/components/ScopeSelector";
 import { supabase } from "@/integrations/supabase/client";
 import { AiAssistantCard } from "./AiAssistantCard";
 import { RadarWidget } from "@/components/radar/RadarWidget";
+import { ActivityWidget } from "./ActivityWidget";
 
 interface TeamMember {
   id: string;
@@ -137,6 +138,11 @@ export function DashboardContainer() {
       <AiAssistantCard />
 
       <RadarWidget />
+
+      {/* Atividade do consultor (chamadas, emails, visitas, etc.) por período.
+          Gestores a ver "todos" veem a sua própria; para a equipa há a página
+          Performance. */}
+      <ActivityWidget agentId={selectedAgent && selectedAgent !== "all" ? selectedAgent : currentUserId} />
 
       {/* Top Stats Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">

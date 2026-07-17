@@ -52,6 +52,8 @@ export default function PerformancePage() {
   const [interactions, setInteractions] = useState<Interaction[]>([]);
   const [deals, setDeals] = useState<Deal[]>([]);
   const [selectedPeriod, setSelectedPeriod] = useState<string>("30");
+  const [customFrom, setCustomFrom] = useState<string>("");
+  const [customTo, setCustomTo] = useState<string>("");
   const [selectedAgent, setSelectedAgent] = useState<string>("all");
   const [leadTypeFilter, setLeadTypeFilter] = useState<"all" | "buyer" | "seller">("all");
 
@@ -143,9 +145,22 @@ export default function PerformancePage() {
 
   const calculateMetrics = (): AgentMetrics[] => {
     const metrics: AgentMetrics[] = [];
-    const periodDays = parseInt(selectedPeriod);
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - periodDays);
+    // Intervalo: range de datas personalizado tem prioridade sobre o preset.
+    let startDate: Date;
+    let endDate: Date;
+    if (selectedPeriod === "custom" && customFrom && customTo) {
+      startDate = new Date(customFrom); startDate.setHours(0, 0, 0, 0);
+      endDate = new Date(customTo); endDate.setHours(23, 59, 59, 999);
+    } else {
+      const periodDays = parseInt(selectedPeriod) || 30;
+      startDate = new Date(); startDate.setDate(startDate.getDate() - periodDays); startDate.setHours(0, 0, 0, 0);
+      endDate = new Date(); endDate.setHours(23, 59, 59, 999);
+    }
+    const inRange = (value: string | null | undefined) => {
+      if (!value) return false;
+      const d = new Date(value);
+      return d >= startDate && d <= endDate;
+    };
 
     // Filter agents based on selection
     const agentsToAnalyzeRaw = selectedAgent === "all" 
@@ -162,7 +177,7 @@ export default function PerformancePage() {
       // Filter leads by agent and period
       const agentLeads = leads.filter(lead => {
         const isAssigned = lead.assigned_to === agent.id;
-        const isInPeriod = new Date(lead.created_at || "") >= startDate;
+        const isInPeriod = inRange(lead.created_at);
         
         // Apply lead type filter
         let matchesType = true;
@@ -178,7 +193,7 @@ export default function PerformancePage() {
       // Filter deals (acquisitions) by agent and period
       const agentDeals = deals.filter(deal => {
         const isAgent = deal.user_id === agent.id;
-        const isInPeriod = new Date(deal.transaction_date || "") >= startDate;
+        const isInPeriod = inRange(deal.transaction_date);
         
         // Apply lead type filter for acquisitions
         let matchesType = true;
@@ -205,7 +220,7 @@ export default function PerformancePage() {
       // Filter interactions by agent and period
       const agentInteractions = interactions.filter(interaction => {
         const isAgent = interaction.user_id === agent.id;
-        const isInPeriod = new Date(interaction.interaction_date || "") >= startDate;
+        const isInPeriod = inRange(interaction.interaction_date);
         
         // Filter interactions by related lead type
         if (leadTypeFilter !== "all" && interaction.lead_id) {
@@ -348,8 +363,16 @@ export default function PerformancePage() {
                       <SelectItem value="30">Últimos 30 dias</SelectItem>
                       <SelectItem value="90">Últimos 90 dias</SelectItem>
                       <SelectItem value="365">Último ano</SelectItem>
+                      <SelectItem value="custom">Datas personalizadas</SelectItem>
                     </SelectContent>
                   </Select>
+                  {selectedPeriod === "custom" && (
+                    <div className="flex items-center gap-2 mt-2">
+                      <input type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} className="border rounded px-2 py-1 text-sm" />
+                      <span className="text-sm text-muted-foreground">até</span>
+                      <input type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)} className="border rounded px-2 py-1 text-sm" />
+                    </div>
+                  )}
                 </div>
                 <div className="flex-1">
                   <label className="text-sm font-medium mb-2 block">Agente</label>
@@ -374,7 +397,7 @@ export default function PerformancePage() {
           {/* Period Filter for Agents - Simplified */}
           {userRole === "consultant" && (
             <Card className="p-4 mb-6">
-              <div className="flex items-center gap-4">
+              <div className="flex flex-wrap items-center gap-4">
                 <label className="text-sm font-medium">Período de Análise:</label>
                 <Select value={selectedPeriod} onValueChange={setSelectedPeriod}>
                   <SelectTrigger className="w-[200px]">
@@ -385,8 +408,16 @@ export default function PerformancePage() {
                     <SelectItem value="30">Últimos 30 dias</SelectItem>
                     <SelectItem value="90">Últimos 90 dias</SelectItem>
                     <SelectItem value="365">Último ano</SelectItem>
+                    <SelectItem value="custom">Datas personalizadas</SelectItem>
                   </SelectContent>
                 </Select>
+                {selectedPeriod === "custom" && (
+                  <div className="flex items-center gap-2">
+                    <input type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} className="border rounded px-2 py-1 text-sm" />
+                    <span className="text-sm text-muted-foreground">até</span>
+                    <input type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)} className="border rounded px-2 py-1 text-sm" />
+                  </div>
+                )}
               </div>
             </Card>
           )}
