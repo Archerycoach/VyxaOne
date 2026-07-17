@@ -87,12 +87,14 @@ export default function TeamPage() {
       setCurrentUserRole(role || null);
       setCurrentUserId(session.user.id);
 
-      // Broker, admin e team_lead têm sempre acesso; um consultor tem acesso
-      // quando pertence a uma equipa (team_lead_id) — vê os colegas em modo
-      // leitura, via get_team_roster (só a lista de pessoas, nunca as leads).
+      // Gestão de Equipa é uma feature de agência: broker e team_lead têm
+      // acesso, e um consultor com equipa vê os colegas em leitura (via
+      // get_team_roster). O ADMIN (operador da plataforma) NÃO acede — gere
+      // contas em Admin → Utilizadores e não deve ver a equipa/atividade dos
+      // consultores. Ver project-admin-data-isolation.
       const isConsultantWithTeam = role === "consultant" && Boolean((profile as any)?.team_lead_id);
-      if (role !== "broker" && role !== "admin" && role !== "team_lead" && !isConsultantWithTeam) {
-        router.push("/dashboard");
+      if (role !== "broker" && role !== "team_lead" && !isConsultantWithTeam) {
+        router.push(role === "admin" ? "/admin/dashboard" : "/dashboard");
         return;
       }
 
