@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import { CalendarHeader } from "./CalendarHeader";
 import { CalendarGrid } from "./CalendarGrid";
+import { CalendarTimeGrid } from "./CalendarTimeGrid";
 import { CalendarDialogs } from "./CalendarDialogs";
 import { GoogleSyncStatusDialog } from "./GoogleSyncStatusDialog";
 import {
@@ -302,6 +303,31 @@ export function CalendarContainer() {
       description: "",
       startTime: formatForInput(startTime),
       endTime: formatForInput(endTime),
+      location: "",
+      eventType: "viewing",
+      leadId: "",
+    });
+    setShowEventForm(true);
+  };
+
+  // Criar um evento a partir de um clique num espaço vazio da grelha horária.
+  const handleCreateEventAt = (date: Date) => {
+    setEditingEvent(null);
+    const start = new Date(date);
+    const end = new Date(start.getTime() + 60 * 60 * 1000); // 1h por defeito
+    const formatForInput = (d: Date) => {
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      const hours = String(d.getHours()).padStart(2, "0");
+      const minutes = String(d.getMinutes()).padStart(2, "0");
+      return `${year}-${month}-${day}T${hours}:${minutes}`;
+    };
+    setEventForm({
+      title: "",
+      description: "",
+      startTime: formatForInput(start),
+      endTime: formatForInput(end),
       location: "",
       eventType: "viewing",
       leadId: "",
@@ -635,6 +661,29 @@ export function CalendarContainer() {
     setDraggedItem(null);
   };
 
+  // Reposicionar na grelha horária (preserva a duração do evento).
+  const handleRescheduleEvent = async (id: string, newStartISO: string, newEndISO: string) => {
+    try {
+      await updateCalendarEvent(id, { start_time: newStartISO, end_time: newEndISO });
+      refetchEvents();
+      toast({ title: "Evento movido com sucesso" });
+    } catch (error) {
+      console.error(error);
+      toast({ title: "Erro ao mover evento", variant: "destructive" });
+    }
+  };
+
+  const handleRescheduleTask = async (id: string, newDueISO: string) => {
+    try {
+      await updateTask(id, { due_date: newDueISO });
+      refetchTasks();
+      toast({ title: "Tarefa movida com sucesso" });
+    } catch (error) {
+      console.error(error);
+      toast({ title: "Erro ao mover tarefa", variant: "destructive" });
+    }
+  };
+
   // Filter events and tasks by current date/view
   const filteredEvents = React.useMemo(() => {
     const filtered = filterEventsByDate(events, currentDate);
@@ -713,20 +762,34 @@ export function CalendarContainer() {
         isSyncing={isSyncing}
       />
 
-      <CalendarGrid
-        viewMode={viewMode}
-        currentDate={currentDate}
-        events={showEvents ? filteredEventsWithoutDuplicates : []}
-        tasks={showTasks ? filteredTasks : []}
-        onEventClick={handleEditEvent}
-        onTaskClick={handleEditTask}
-        onDeleteEvent={deleteEvent}
-        onConfirmAiEvent={confirmAiEvent}
-        onDragStart={handleDragStart}
-        onDragEnd={handleDragEnd}
-        onDragOver={handleDragOver}
-        onDrop={handleDrop}
-      />
+      {viewMode === "month" ? (
+        <CalendarGrid
+          viewMode={viewMode}
+          currentDate={currentDate}
+          events={showEvents ? filteredEventsWithoutDuplicates : []}
+          tasks={showTasks ? filteredTasks : []}
+          onEventClick={handleEditEvent}
+          onTaskClick={handleEditTask}
+          onDeleteEvent={deleteEvent}
+          onConfirmAiEvent={confirmAiEvent}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+          onDragOver={handleDragOver}
+          onDrop={handleDrop}
+        />
+      ) : (
+        <CalendarTimeGrid
+          viewMode={viewMode}
+          currentDate={currentDate}
+          events={showEvents ? filteredEventsWithoutDuplicates : []}
+          tasks={showTasks ? filteredTasks : []}
+          onEventClick={handleEditEvent}
+          onTaskClick={handleEditTask}
+          onRescheduleEvent={handleRescheduleEvent}
+          onRescheduleTask={handleRescheduleTask}
+          onSlotClick={handleCreateEventAt}
+        />
+      )}
 
       <CalendarDialogs
         showEventForm={showEventForm}
