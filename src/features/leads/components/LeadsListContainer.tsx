@@ -124,18 +124,23 @@ export function LeadsListContainer({
     loadColumnsConfig();
   }, []);
 
+  // Colunas nunca mostradas na vista de lista (independentemente da config):
+  // Orçamento mín. e Atribuído a — pouco úteis nesta vista. Os dados
+  // continuam na ficha da lead e na exportação.
+  const HIDDEN_LIST_COLUMNS = ["budget_min", "assigned_to"];
+
   const loadColumnsConfig = async () => {
     try {
       const config = await getLeadColumnsConfig();
-      const visibleColumns = config.filter((col) => col.is_visible);
-      
+      const visibleColumns = config.filter((col) => col.is_visible && !HIDDEN_LIST_COLUMNS.includes(col.column_key));
+
       if (visibleColumns.length === 0) {
-        setColumnsConfig(DEFAULT_COLUMNS);
+        setColumnsConfig(DEFAULT_COLUMNS.filter((col) => !HIDDEN_LIST_COLUMNS.includes(col.column_key)));
       } else {
         setColumnsConfig(visibleColumns);
       }
     } catch (error) {
-      setColumnsConfig(DEFAULT_COLUMNS);
+      setColumnsConfig(DEFAULT_COLUMNS.filter((col) => !HIDDEN_LIST_COLUMNS.includes(col.column_key)));
     }
   };
 
@@ -802,79 +807,66 @@ export function LeadsListContainer({
         </div>
       )}
 
-      {canAssignLeads && (
-        <div className="flex items-center">
+      {/* Barra superior: seletor de âmbito (equipa) à esquerda; filtros e
+          opções de vista à direita, na mesma linha. */}
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+        {canAssignLeads ? (
           <ScopeSelector value={scopeFilter} onChange={setScopeFilter} label="Consultor / Equipa" />
-        </div>
-      )}
+        ) : (
+          <div />
+        )}
 
-      <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-        <LeadFilters
-          searchTerm={searchTerm}
-          onSearchChange={setSearchTerm}
-          filterType={filterType}
-          onFilterChange={setFilterType}
-          showArchived={showArchived}
-          onToggleArchived={toggleArchived}
-          showTransferred={showTransferred}
-          onToggleTransferred={toggleTransferred}
-        />
-
-        <div className="flex gap-4 items-center flex-wrap sm:flex-nowrap">
-          <div className="flex items-center gap-2">
-            <LeadAdvancedFilters filters={qualFilters} onChange={setQualFilters} />
-            <Select value={notContactedDays} onValueChange={setNotContactedDays}>
-              <SelectTrigger
-                className={`w-[190px] h-9 ${notContactedDays !== "all" ? "bg-amber-50 border-amber-300 text-amber-800" : "bg-white"}`}
-                title="Filtrar leads sem contacto recente"
-              >
-                <SelectValue placeholder="Sem contacto há..." />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Contacto: qualquer</SelectItem>
-                <SelectItem value="3">Sem contacto há 3+ dias</SelectItem>
-                <SelectItem value="7">Sem contacto há 7+ dias</SelectItem>
-                <SelectItem value="15">Sem contacto há 15+ dias</SelectItem>
-                <SelectItem value="30">Sem contacto há 30+ dias</SelectItem>
-                <SelectItem value="60">Sem contacto há 60+ dias</SelectItem>
-                <SelectItem value="90">Sem contacto há 90+ dias</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={sortField} onValueChange={setSortField}>
-              <SelectTrigger className="w-[180px] bg-white h-9">
-                <SelectValue placeholder="Ordenar por..." />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="created_at">Data de criação</SelectItem>
-                <SelectItem value="last_contact_date">Última interação</SelectItem>
-                <SelectItem value="name">Nome</SelectItem>
-                <SelectItem value="property_type">Tipo de imóvel</SelectItem>
-                <SelectItem value="bedrooms">Tipologia</SelectItem>
-                <SelectItem value="development_name">Empreendimento</SelectItem>
-              </SelectContent>
-            </Select>
-            <Button 
-              variant="outline" 
-              size="icon"
-              onClick={() => setSortOrder(o => o === "asc" ? "desc" : "asc")}
-              className="bg-white shrink-0 h-9 w-9"
-              title={sortOrder === "asc" ? "Crescente" : "Decrescente"}
+        <div className="flex gap-2 items-center flex-wrap md:flex-nowrap md:justify-end">
+          <LeadAdvancedFilters filters={qualFilters} onChange={setQualFilters} />
+          <Select value={notContactedDays} onValueChange={setNotContactedDays}>
+            <SelectTrigger
+              className={`w-[190px] h-9 ${notContactedDays !== "all" ? "bg-amber-50 border-amber-300 text-amber-800" : "bg-white"}`}
+              title="Filtrar leads sem contacto recente"
             >
-              {sortOrder === "asc" ? <ArrowDownAZ className="h-4 w-4" /> : <ArrowUpZA className="h-4 w-4" />}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => exportLeadsToExcel(sortedLeads)}
-              className="bg-white shrink-0 h-9 gap-2"
-              title="Exportar para Excel"
-            >
-              <Download className="h-4 w-4" />
-              <span className="hidden sm:inline">Exportar</span>
-            </Button>
-          </div>
-
-          {/* View Mode Toggle */}
+              <SelectValue placeholder="Sem contacto há..." />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Contacto: qualquer</SelectItem>
+              <SelectItem value="3">Sem contacto há 3+ dias</SelectItem>
+              <SelectItem value="7">Sem contacto há 7+ dias</SelectItem>
+              <SelectItem value="15">Sem contacto há 15+ dias</SelectItem>
+              <SelectItem value="30">Sem contacto há 30+ dias</SelectItem>
+              <SelectItem value="60">Sem contacto há 60+ dias</SelectItem>
+              <SelectItem value="90">Sem contacto há 90+ dias</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={sortField} onValueChange={setSortField}>
+            <SelectTrigger className="w-[180px] bg-white h-9">
+              <SelectValue placeholder="Ordenar por..." />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="created_at">Data de criação</SelectItem>
+              <SelectItem value="last_contact_date">Última interação</SelectItem>
+              <SelectItem value="name">Nome</SelectItem>
+              <SelectItem value="property_type">Tipo de imóvel</SelectItem>
+              <SelectItem value="bedrooms">Tipologia</SelectItem>
+              <SelectItem value="development_name">Empreendimento</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => setSortOrder(o => o === "asc" ? "desc" : "asc")}
+            className="bg-white shrink-0 h-9 w-9"
+            title={sortOrder === "asc" ? "Crescente" : "Decrescente"}
+          >
+            {sortOrder === "asc" ? <ArrowDownAZ className="h-4 w-4" /> : <ArrowUpZA className="h-4 w-4" />}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => exportLeadsToExcel(sortedLeads)}
+            className="bg-white shrink-0 h-9 gap-2"
+            title="Exportar para Excel"
+          >
+            <Download className="h-4 w-4" />
+            <span className="hidden sm:inline">Exportar</span>
+          </Button>
           <div className="flex gap-1 border rounded-lg p-1 bg-gray-50 h-9">
             <Button
               variant={viewMode === "grid" ? "default" : "ghost"}
@@ -897,6 +889,18 @@ export function LeadsListContainer({
           </div>
         </div>
       </div>
+
+      {/* Pesquisa + filtros de tipo (largura total, por baixo da barra) */}
+      <LeadFilters
+        searchTerm={searchTerm}
+        onSearchChange={setSearchTerm}
+        filterType={filterType}
+        onFilterChange={setFilterType}
+        showArchived={showArchived}
+        onToggleArchived={toggleArchived}
+        showTransferred={showTransferred}
+        onToggleTransferred={toggleTransferred}
+      />
 
       {showTransferred ? (
         sortedLeads.length === 0 ? (
