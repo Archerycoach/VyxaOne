@@ -395,6 +395,21 @@ export function LeadCard({
                     Restaurar Lead
                   </DropdownMenuItem>
                 )}
+                {!showArchived && (
+                  <DropdownMenuItem onClick={() => handleMenuItemClick(() => onDelete(lead))} className="text-red-600">
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Arquivar
+                  </DropdownMenuItem>
+                )}
+                {showArchived && onPermanentlyDelete && (
+                  <DropdownMenuItem
+                    onClick={() => handleMenuItemClick(() => { if (confirm(`⚠️ ATENÇÃO: Esta ação é irreversível!\n\nEliminar PERMANENTEMENTE "${lead.name}"? A lead não poderá ser recuperada.`)) onPermanentlyDelete(lead); })}
+                    className="text-red-600"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Eliminar permanentemente
+                  </DropdownMenuItem>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
 
@@ -689,6 +704,21 @@ export function LeadCard({
                     <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
                   </svg>
                   Restaurar Lead
+                </DropdownMenuItem>
+              )}
+              {!showArchived && (
+                <DropdownMenuItem onClick={() => handleMenuItemClick(() => onDelete(lead))} className="text-red-600">
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Arquivar
+                </DropdownMenuItem>
+              )}
+              {showArchived && onPermanentlyDelete && (
+                <DropdownMenuItem
+                  onClick={() => handleMenuItemClick(() => { if (confirm(`⚠️ ATENÇÃO: Esta ação é irreversível!\n\nEliminar PERMANENTEMENTE "${lead.name}"? A lead não poderá ser recuperada.`)) onPermanentlyDelete(lead); })}
+                  className="text-red-600"
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Eliminar permanentemente
                 </DropdownMenuItem>
               )}
             </DropdownMenuContent>
