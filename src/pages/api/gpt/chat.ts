@@ -7,6 +7,7 @@ import {
   type IdealistaProperty,
 } from "@/services/idealistaService";
 import { getIdealistaCredentials } from "@/lib/server/idealistaCredentials";
+import { buildLeadUpdateProposal, FIELD_LABELS as LEAD_FIELD_LABELS } from "@/lib/server/leadChatUpdate";
 
 interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -917,12 +918,18 @@ function isGenericPortalSearchRequest(message: string): boolean {
 
 function isLeadUpdateRequest(message: string): boolean {
   const normalizedMessage = normalizeText(message);
-  const hasUpdateIntent = /(atualiza|atualizar|altera|alterar|muda|mudar|associa|associar|define|definir|marca|marcar)/.test(
+  const hasUpdateIntent = /(atualiza|atualizar|altera|alterar|muda|mudar|associa|associar|define|definir|marca|marcar|coloca|colocar|poe|por\b)/.test(
     normalizedMessage,
   );
   const hasLeadReference = /(lead|leads|todas as leads|todos os leads)/.test(normalizedMessage);
-  
-  return hasUpdateIntent && hasLeadReference;
+  // Também dispara quando o pedido menciona um campo alterável — permite
+  // "muda a tipologia da Ana para T3" sem a palavra "lead". A identificação
+  // exata da lead e do campo é feita depois pela IA (buildLeadUpdateProposal).
+  const hasFieldReference = /(tipologia|orcamento|orçamento|email|e-mail|telefone|contacto|estado|status|temperatura|quente|morna|fria|zona|localizacao|localização|quartos|objetivo|prazo|empreendimento|nome)/.test(
+    normalizedMessage,
+  );
+
+  return hasUpdateIntent && (hasLeadReference || hasFieldReference);
 }
 
 async function executeBulkLeadUpdate(
@@ -1550,8 +1557,32 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     if (isLeadUpdateRequest(message)) {
-      const updateResult = await executeBulkLeadUpdate(message, activeLeads, user.id, supabase);
-      return res.status(200).json({ reply: updateResult });
+      // A IA interpreta o pedido e PROPÕE a alteração (uma lead ou em massa).
+      // Nada é gravado aqui — o consultor confirma no ecrã, e a gravação é
+      // feita por /api/gpt/leads/apply-chat-update (que revalida tudo).
+      const proposal = await buildLeadUpdateProposal({ message, leads: activeLeads as any, userId: user.id });
+
+      if (proposal.needsClarification) {
+        return res.status(200).json({ reply: proposal.needsClarification });
+      }
+
+      const changedFields = Object.keys(proposal.updates)
+        .filter((k) => k !== "is_development")
+        .map((k) => LEAD_FIELD_LABELS[k] || k)
+        .join(", ");
+      const namesPreview = proposal.leadNames.slice(0, 5).join(", ");
+      const moreNames = proposal.leadNames.length > 5 ? ` e mais ${proposal.leadNames.length - 5}` : "";
+      const reply = `${proposal.summary}\n\n**Campos:** ${changedFields}\n**Leads (${proposal.targetLeadIds.length}):** ${namesPreview}${moreNames}\n\nConfirma para eu gravar.`;
+
+      return res.status(200).json({
+        reply,
+        pendingLeadUpdate: {
+          targetLeadIds: proposal.targetLeadIds,
+          updates: proposal.updates,
+          summary: proposal.summary,
+          leadNames: proposal.leadNames,
+        },
+      });
     }
 
     if (isGenericPortalSearchRequest(message)) {

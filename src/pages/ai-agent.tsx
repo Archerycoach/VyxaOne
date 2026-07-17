@@ -32,6 +32,13 @@ interface AiTask {
   is_active: boolean;
 }
 
+interface PendingLeadUpdate {
+  targetLeadIds: string[];
+  updates: Record<string, unknown>;
+  summary: string;
+  leadNames: string[];
+}
+
 interface EmailCampaignDraft {
   criteria: {
     location: string | null;
@@ -69,6 +76,9 @@ export default function AiAgentPage() {
   const [chatMessage, setChatMessage] = useState("");
   const [isChatting, setIsChatting] = useState(false);
   const [latestCampaignDraft, setLatestCampaignDraft] = useState<EmailCampaignDraft | null>(null);
+  // Alteração de leads proposta pela IA, à espera de confirmação do consultor.
+  const [pendingLeadUpdate, setPendingLeadUpdate] = useState<PendingLeadUpdate | null>(null);
+  const [isApplyingUpdate, setIsApplyingUpdate] = useState(false);
   
   // Create task modal
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
@@ -182,6 +192,46 @@ export default function AiAgentPage() {
     }
   };
 
+  // Aplica a alteração de leads proposta, depois do consultor confirmar.
+  const handleConfirmLeadUpdate = async () => {
+    if (!pendingLeadUpdate) return;
+    setIsApplyingUpdate(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("Sessão expirada. Faça login novamente.");
+
+      const res = await fetch("/api/gpt/leads/apply-chat-update", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${session.access_token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          targetLeadIds: pendingLeadUpdate.targetLeadIds,
+          updates: pendingLeadUpdate.updates,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Não foi possível aplicar a alteração.");
+
+      setChatHistory((prev) => [
+        ...prev,
+        { role: "assistant", content: `✅ Feito. Atualizei ${data.updatedCount} lead(s): ${(data.updatedFields || []).join(", ")}.` },
+      ]);
+      toast({ title: "Leads atualizadas", description: `${data.updatedCount} lead(s) alterada(s).` });
+      setPendingLeadUpdate(null);
+    } catch (error: any) {
+      toast({ title: "Erro ao aplicar", description: error.message, variant: "destructive" });
+    } finally {
+      setIsApplyingUpdate(false);
+    }
+  };
+
+  const handleCancelLeadUpdate = () => {
+    setPendingLeadUpdate(null);
+    setChatHistory((prev) => [...prev, { role: "assistant", content: "Sem problema — não alterei nada." }]);
+  };
+
   const openDraftInBulkMessages = () => {
     if (!latestCampaignDraft) return;
 
@@ -278,6 +328,7 @@ export default function AiAgentPage() {
       
       if (data.reply) {
         setLatestCampaignDraft(data.campaignDraft || null);
+        setPendingLeadUpdate(data.pendingLeadUpdate || null);
         setChatHistory([...newHistory, { role: "assistant", content: data.reply }]);
       } else if (data.error) {
         throw new Error(data.error);
@@ -427,6 +478,33 @@ export default function AiAgentPage() {
                           </div>
                         )}
                       </ScrollArea>
+                      {pendingLeadUpdate && (
+                        <div className="border-t bg-amber-50 p-4">
+                          <div className="rounded-xl border border-amber-200 bg-white p-4 space-y-3">
+                            <p className="text-sm font-semibold text-amber-900">Confirmar alteração</p>
+                            <p className="text-sm text-gray-800">{pendingLeadUpdate.summary}</p>
+                            <div className="text-xs text-gray-600">
+                              <span className="font-medium">Leads ({pendingLeadUpdate.targetLeadIds.length}):</span>{" "}
+                              {pendingLeadUpdate.leadNames.slice(0, 6).join(", ")}
+                              {pendingLeadUpdate.leadNames.length > 6 ? ` e mais ${pendingLeadUpdate.leadNames.length - 6}` : ""}
+                            </div>
+                            <div className="flex gap-2 pt-1">
+                              <Button
+                                onClick={handleConfirmLeadUpdate}
+                                disabled={isApplyingUpdate}
+                                className="bg-green-600 hover:bg-green-700"
+                              >
+                                {isApplyingUpdate ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                                Confirmar
+                              </Button>
+                              <Button variant="outline" onClick={handleCancelLeadUpdate} disabled={isApplyingUpdate}>
+                                Cancelar
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
                       {latestCampaignDraft && (
                         <div className="border-t bg-indigo-50/60 p-4 space-y-4">
                           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
