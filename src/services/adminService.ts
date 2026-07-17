@@ -67,7 +67,10 @@ export const getCurrentUserRole = async (): Promise<string | null> => {
   return data?.role || null;
 };
 
-// Get general admin stats
+// Estatísticas do painel de admin — APENAS contas/configuração.
+// O admin (operador) não deve ver dados de clientes (leads/imóveis/tarefas),
+// por isso estas contagens deixaram de ser consultadas aqui (ver migração
+// 20260717140000_restrict_admin_data_access.sql).
 export const getAdminStats = async () => {
   const { count: usersCount } = await supabase
     .from("profiles")
@@ -78,24 +81,9 @@ export const getAdminStats = async () => {
     .select("*", { count: "exact", head: true })
     .eq("is_active", true);
 
-  const { count: leadsCount } = await supabase
-    .from("leads")
-    .select("*", { count: "exact", head: true });
-
-  const { count: propertiesCount } = await supabase
-    .from("properties")
-    .select("*", { count: "exact", head: true });
-
-  const { count: tasksCount } = await supabase
-    .from("tasks")
-    .select("*", { count: "exact", head: true });
-
   return {
     totalUsers: usersCount || 0,
     activeUsers: activeCount || 0,
-    totalLeads: leadsCount || 0,
-    totalProperties: propertiesCount || 0,
-    totalTasks: tasksCount || 0,
   };
 };
 
