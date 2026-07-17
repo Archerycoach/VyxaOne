@@ -176,11 +176,18 @@ export default async function handler(
       });
 
     if (profileUpdateError) {
+      // O perfil é obrigatório: sem ele o utilizador fica "órfão" (existe em
+      // auth.users mas não aparece em lado nenhum). Em vez de reportar sucesso
+      // enganador, apagamos o auth.users criado e devolvemos um erro real.
       console.error("[API] Profile update error:", profileUpdateError.message);
-      return res.status(200).json({ 
-        success: true, 
-        warning: "Utilizador criado, mas houve erro ao atualizar perfil: " + profileUpdateError.message,
-        user: newUser.user
+      try {
+        await supabaseAdmin.auth.admin.deleteUser(newUser.user.id);
+      } catch (cleanupErr) {
+        console.error("[API] Falha ao limpar auth user órfão:", cleanupErr);
+      }
+      return res.status(500).json({
+        error: "Utilizador não criado: falha ao gravar o perfil (" + profileUpdateError.message + ").",
+        code: "PROFILE_CREATE_FAILED",
       });
     }
 
