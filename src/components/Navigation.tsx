@@ -46,6 +46,8 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { clearAuthCache } from "./ProtectedRoute";
+import { clearSubscriptionCache } from "./SubscriptionGuard";
 
 interface NavItem {
   icon: any;
@@ -77,6 +79,9 @@ export function Navigation() {
   }, []);
 
   const handleLogout = async () => {
+    // Limpa os caches dos guards para o próximo utilizador não herdar estado.
+    clearAuthCache();
+    clearSubscriptionCache();
     await supabase.auth.signOut();
     router.push("/login");
   };

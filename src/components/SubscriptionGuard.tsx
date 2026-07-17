@@ -28,82 +28,116 @@ const ALWAYS_ACCESSIBLE_PAGES = [
   "/settings",
 ];
 
+/**
+ * Cache do estado de subscrição por sessão, ao nível do módulo — persiste
+ * entre mudanças de ecrã (o guard está no Layout e remontava em cada
+ * navegação, fazendo getUser() [rede] + 2 queries todas as vezes → "A
+ * verificar subscrição..." demorado). TTL curto para apanhar mudanças
+ * (subscrição/isenção) em poucos minutos.
+ */
+interface SubCache {
+  userId: string;
+  status: SubscriptionStatus;
+  ts: number;
+}
+let subCache: SubCache | null = null;
+const SUB_CACHE_TTL = 120000; // 2 minutos
+
+/** Permite invalidar o cache (ex.: após subscrever). */
+export function clearSubscriptionCache() {
+  subCache = null;
+}
+
+function freshCache(): SubscriptionStatus | null {
+  return subCache && Date.now() - subCache.ts < SUB_CACHE_TTL ? subCache.status : null;
+}
+
 export function SubscriptionGuard({
   children,
   requiresSubscription = false,
 }: SubscriptionGuardProps) {
   const router = useRouter();
-  const [status, setStatus] = useState<SubscriptionStatus | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [userId, setUserId] = useState<string | null>(null);
+  // Inicializa a partir do cache — se estiver fresco, não há ecrã "A
+  // verificar" nem chamadas de rede nesta navegação.
+  const [status, setStatus] = useState<SubscriptionStatus | null>(() => freshCache());
+  const [loading, setLoading] = useState(() => !freshCache());
 
   useEffect(() => {
     checkSubscriptionStatus();
   }, []); // Removed router.pathname to break infinite re-render loops!
 
+  const applyRedirect = (s: SubscriptionStatus) => {
+    const currentPath = router.pathname;
+    const isAlwaysAccessible = ALWAYS_ACCESSIBLE_PAGES.some((path) => currentPath.startsWith(path));
+    if (
+      !s.isAdmin &&
+      !s.isExempt &&
+      !s.isInTrial &&
+      !s.hasActiveSubscription &&
+      !isAlwaysAccessible &&
+      requiresSubscription
+    ) {
+      router.push("/subscription?reason=expired");
+    }
+  };
+
   const checkSubscriptionStatus = async () => {
     try {
-      if (!status) {
-        setLoading(true);
-      }
-
-      // Get current user
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) {
+      // getSession é local (não vai à rede como getUser).
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        subCache = null;
         router.push("/login");
         return;
       }
+      const uid = session.user.id;
 
-      setUserId(user.id);
+      // Cache fresco para este utilizador → reutiliza, sem rede.
+      if (subCache && subCache.userId === uid && Date.now() - subCache.ts < SUB_CACHE_TTL) {
+        setStatus(subCache.status);
+        setLoading(false);
+        applyRedirect(subCache.status);
+        return;
+      }
 
-      // Get user profile with subscription data AND role
+      if (!status) setLoading(true);
+
+      // Perfil (só as colunas necessárias).
       const { data: rawProfile, error } = await supabase
         .from("profiles")
         .select("trial_ends_at, subscription_status, subscription_end_date, subscription_exempt, role")
-        .eq("id", user.id)
+        .eq("id", uid)
         .single();
 
       if (error) throw error;
-
       const profile = rawProfile as any;
 
-      // ADMIN BYPASS: Se é admin, tem acesso total sem restrições
       const isAdmin = profile?.role === "admin";
-      // ISENÇÃO: o admin pode isentar um utilizador de trial/subscrição.
       const isExempt = !!profile?.subscription_exempt;
 
       const now = new Date();
-      const trialEndsAt = profile?.trial_ends_at
-        ? new Date(profile.trial_ends_at)
-        : null;
-      const subscriptionEndDate = profile?.subscription_end_date
-        ? new Date(profile.subscription_end_date)
-        : null;
+      const trialEndsAt = profile?.trial_ends_at ? new Date(profile.trial_ends_at) : null;
+      const subscriptionEndDate = profile?.subscription_end_date ? new Date(profile.subscription_end_date) : null;
 
-      // Subscrição ativa: aceitar tanto o estado desnormalizado no perfil como
-      // uma linha real na tabela subscriptions (ex.: criada pelo admin), para
-      // não bloquear quem tem subscrição válida mas o perfil não foi atualizado.
-      const { data: dbSub } = await supabase
-        .from("subscriptions")
-        .select("status, current_period_end")
-        .eq("user_id", user.id)
-        .in("status", ["active", "trialing"])
-        .order("current_period_end", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      // Admin/isento têm acesso garantido — evita a query extra a subscriptions.
+      let hasDbSubscription = false;
+      let dbSubStatus: string | null = null;
+      if (!isAdmin && !isExempt) {
+        const { data: dbSub } = await supabase
+          .from("subscriptions")
+          .select("status, current_period_end")
+          .eq("user_id", uid)
+          .in("status", ["active", "trialing"])
+          .order("current_period_end", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        hasDbSubscription = !!dbSub && (!dbSub.current_period_end || now < new Date(dbSub.current_period_end));
+        dbSubStatus = dbSub?.status ?? null;
+      }
 
-      const hasDbSubscription =
-        !!dbSub &&
-        (!dbSub.current_period_end || now < new Date(dbSub.current_period_end));
-
-      const isInTrial =
-        (trialEndsAt ? now < trialEndsAt : false) || dbSub?.status === "trialing";
+      const isInTrial = (trialEndsAt ? now < trialEndsAt : false) || dbSubStatus === "trialing";
       const hasActiveSubscription =
-        (profile?.subscription_status === "active" &&
-          (!subscriptionEndDate || now < subscriptionEndDate)) ||
+        (profile?.subscription_status === "active" && (!subscriptionEndDate || now < subscriptionEndDate)) ||
         hasDbSubscription;
 
       const daysRemaining = trialEndsAt
@@ -116,30 +150,13 @@ export function SubscriptionGuard({
         trialEndsAt: profile?.trial_ends_at || null,
         daysRemaining,
         subscriptionEndDate: profile?.subscription_end_date || null,
-        isAdmin, // NOVO: incluir flag admin
+        isAdmin,
         isExempt,
       };
 
+      subCache = { userId: uid, status: subscriptionStatus, ts: Date.now() };
       setStatus(subscriptionStatus);
-
-      // Check if user should be redirected
-      const currentPath = router.pathname;
-      const isAlwaysAccessible = ALWAYS_ACCESSIBLE_PAGES.some((path) =>
-        currentPath.startsWith(path)
-      );
-
-      // ADMIN BYPASS: Admins nunca são redirecionados
-      // Trial expirado E sem subscrição ativa E tentando aceder a página restrita E NÃO é admin
-      if (
-        !isAdmin &&
-        !isExempt &&
-        !isInTrial &&
-        !hasActiveSubscription &&
-        !isAlwaysAccessible &&
-        requiresSubscription
-      ) {
-        router.push("/subscription?reason=expired");
-      }
+      applyRedirect(subscriptionStatus);
     } catch (error) {
       console.error("Error checking subscription:", error);
     } finally {

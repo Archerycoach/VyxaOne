@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import { Layout } from "@/components/Layout";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { clearSubscriptionCache } from "@/components/SubscriptionGuard";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -277,6 +278,9 @@ export default function SubscriptionPage() {
             planPrice={payingPlan.price}
             onSuccess={() => {
               setPayingPlan(null);
+              // Invalida o cache do guard para o acesso ser reavaliado já
+              // (senão a subscrição nova só valia após o TTL do cache).
+              clearSubscriptionCache();
               loadSubscriptionData();
             }}
           />
