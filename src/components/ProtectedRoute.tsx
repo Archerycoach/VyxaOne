@@ -9,6 +9,28 @@ interface ProtectedRouteProps {
   allowedRoles?: string[];
 }
 
+/**
+ * Cache do resultado da verificação (papel, needs_relogin, desafio MFA) por
+ * sessão, ao nível do módulo — persiste entre mudanças de ecrã (cada página
+ * remonta o ProtectedRoute). Sem isto, cada navegação fazia 2-3 chamadas de
+ * rede em série ("A verificar permissões..." durante muito tempo). TTL curto
+ * para que alterações de papel/relogin sejam apanhadas em poucos minutos.
+ */
+interface AuthCache {
+  userId: string;
+  role: string | null;
+  needsRelogin: boolean;
+  mfaChallenge: boolean;
+  ts: number;
+}
+let authCache: AuthCache | null = null;
+const AUTH_CACHE_TTL = 120000; // 2 minutos
+
+/** Permite invalidar o cache a partir de outros sítios (ex.: logout). */
+export function clearAuthCache() {
+  authCache = null;
+}
+
 export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -24,11 +46,13 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
     
     const checkAuth = async () => {
       try {
+        // getSession é local (só vai à rede se precisar de refrescar o token).
         const { data: { session }, error } = await supabase.auth.getSession();
-        
+
         if (!mounted) return;
-        
+
         if (error || !session) {
+          authCache = null;
           setIsAuthenticated(false);
           setIsAuthorized(false);
           setLoading(false);
@@ -38,71 +62,67 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
           return;
         }
 
-        // 2FA: se a conta tem fator inscrito mas a sessão ainda está em AAL1
-        // (código por introduzir), envia para o login para completar o desafio.
-        try {
-          const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-          if (mounted && aal?.nextLevel === "aal2" && aal.currentLevel === "aal1") {
-            setLoading(false);
-            if (router.pathname !== '/login') {
-              router.push("/login");
-            }
-            return;
-          }
-        } catch (mfaErr) {
-          console.error("[ProtectedRoute] Erro ao verificar AAL:", mfaErr);
-        }
+        const uid = session.user.id;
+        const now = Date.now();
 
-        // Check roles
-        if (allowedRoles && allowedRoles.length > 0) {
-          const { data: profileRaw, error: profileError } = await supabase
-            .from("profiles")
-            .select("*")
-            .eq("id", session.user.id)
-            .single();
-            
-          const profile = profileRaw as any;
-            
-          if (!mounted) return;
-            
-          if (profileError || !profile || !allowedRoles.includes(profile.role)) {
-            setIsAuthorized(false);
-            setLoading(false);
-            if (router.pathname !== '/dashboard') {
-              router.push("/dashboard");
-            }
-          } else {
-            if (profile.needs_relogin) {
-              setUserId(session.user.id);
-              setNeedsRelogin(true);
-              setLoading(false);
-              return;
-            }
-            setIsAuthenticated(true);
-            setIsAuthorized(true);
-            setLoading(false);
-          }
+        // Usa o cache se ainda estiver fresco para este utilizador — evita
+        // repetir as chamadas de rede em cada mudança de ecrã.
+        let role: string | null;
+        let needsReloginFlag: boolean;
+        let mfaChallenge: boolean;
+
+        if (authCache && authCache.userId === uid && now - authCache.ts < AUTH_CACHE_TTL) {
+          ({ role, needsRelogin: needsReloginFlag, mfaChallenge } = authCache);
         } else {
-          // Check needs_relogin even if no allowedRoles specified
-          const { data: profileRaw } = await supabase
-            .from("profiles")
-            .select("*")
-            .eq("id", session.user.id)
-            .single();
-            
-          const profile = profileRaw as any;
-            
-          if (mounted && profile?.needs_relogin) {
-            setUserId(session.user.id);
-            setNeedsRelogin(true);
-            setLoading(false);
-            return;
-          }
+          // Primeira vez (ou cache expirado): MFA + perfil EM PARALELO, e só
+          // as colunas necessárias do perfil.
+          const [aalRes, profileRes] = await Promise.all([
+            supabase.auth.mfa.getAuthenticatorAssuranceLevel().catch((mfaErr) => {
+              console.error("[ProtectedRoute] Erro ao verificar AAL:", mfaErr);
+              return null as any;
+            }),
+            supabase.from("profiles").select("role, needs_relogin").eq("id", uid).single(),
+          ]);
 
-          setIsAuthenticated(true);
-          setIsAuthorized(true);
-          setLoading(false);
+          if (!mounted) return;
+
+          const aal = aalRes?.data;
+          mfaChallenge = Boolean(aal && aal.nextLevel === "aal2" && aal.currentLevel === "aal1");
+          const profile = profileRes.data as any;
+          role = profile?.role ?? null;
+          needsReloginFlag = Boolean(profile?.needs_relogin);
+
+          authCache = { userId: uid, role, needsRelogin: needsReloginFlag, mfaChallenge, ts: now };
         }
+
+        // 2FA: sessão ainda em AAL1 com fator inscrito → completar no login.
+        if (mfaChallenge) {
+          setLoading(false);
+          if (router.pathname !== '/login') {
+            router.push("/login");
+          }
+          return;
+        }
+
+        if (needsReloginFlag) {
+          setUserId(uid);
+          setNeedsRelogin(true);
+          setLoading(false);
+          return;
+        }
+
+        if (allowedRoles && allowedRoles.length > 0 && (!role || !allowedRoles.includes(role))) {
+          setIsAuthorized(false);
+          setLoading(false);
+          if (router.pathname !== '/dashboard') {
+            router.push("/dashboard");
+          }
+          return;
+        }
+
+        setIsAuthenticated(true);
+        setIsAuthorized(true);
+        setLoading(false);
       } catch (err) {
         if (mounted) {
           setLoading(false);

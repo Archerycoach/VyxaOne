@@ -92,7 +92,7 @@ export default async function handler(
     }
 
     // Fields for the user being created (distinct from the caller's own body-supplied identity above)
-    const { email, password, fullName, role, isActive, teamLeadId } = req.body;
+    const { email, password, fullName, role, isActive, teamLeadId, emailConfirm } = req.body;
 
     console.log("[API] Admin verified. Creating user...");
 
@@ -123,13 +123,16 @@ export default async function handler(
 
     console.log("[API] Creating user:", { email, role, teamLeadId });
 
-    // Create user in Supabase Auth
+    // Create user in Supabase Auth.
+    // email_confirm: quando true (default), marca o email como verificado —
+    // o utilizador pode iniciar sessão de imediato, sem passar pelo email de
+    // confirmação do Supabase. O admin pode desligar no formulário.
     const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
-      email_confirm: true,
-      user_metadata: { 
-        full_name: fullName 
+      email_confirm: emailConfirm !== false,
+      user_metadata: {
+        full_name: fullName
       }
     });
 

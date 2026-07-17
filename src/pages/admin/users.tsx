@@ -25,6 +25,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Search, UserPlus, Trash2, Edit, Mail, Phone, RefreshCw, MessageCircle, ShieldCheck, KeyRound } from "lucide-react";
 import { getAllUsers, createUser, deleteUser, updateUserRole, getTeamLeads, assignAgentToTeamLead, toggleWhatsappModule, setUserSubscriptionExempt, setUserSubscriptionEnd } from "@/services/adminService";
@@ -51,9 +52,10 @@ interface NewUserForm {
   email: string;
   password: string;
   phone: string;
-  role: "admin" | "team_lead" | "consultant";
+  role: "admin" | "broker" | "team_lead" | "consultant";
   team_lead_id: string | null;
   is_active: boolean;
+  email_confirm: boolean;
 }
 
 export default function UsersManagement() {
@@ -117,6 +119,7 @@ export default function UsersManagement() {
     role: "consultant",
     team_lead_id: null,
     is_active: true,
+    email_confirm: true,
   });
 
   useEffect(() => {
@@ -177,7 +180,8 @@ export default function UsersManagement() {
         phone: newUser.phone,
         role: newUser.role,
         isActive: true,
-        teamLeadId: newUser.role === 'consultant' ? newUser.team_lead_id : undefined,
+        teamLeadId: newUser.role === 'consultant' ? newUser.team_lead_id ?? undefined : undefined,
+        emailConfirm: newUser.email_confirm,
       });
       
       if (result.error) {
@@ -203,6 +207,7 @@ export default function UsersManagement() {
         role: "consultant",
         team_lead_id: null,
         is_active: true,
+        email_confirm: true,
       });
 
       // Refresh users list
@@ -669,7 +674,7 @@ export default function UsersManagement() {
                   <Label htmlFor="role">Role</Label>
                   <Select
                     value={newUser.role}
-                    onValueChange={(value: "admin" | "team_lead" | "consultant") =>
+                    onValueChange={(value: "admin" | "broker" | "team_lead" | "consultant") =>
                       setNewUser({ ...newUser, role: value })
                     }
                   >
@@ -679,9 +684,25 @@ export default function UsersManagement() {
                     <SelectContent>
                       <SelectItem value="consultant">Consultant</SelectItem>
                       <SelectItem value="team_lead">Team Lead</SelectItem>
+                      <SelectItem value="broker">Broker</SelectItem>
                       <SelectItem value="admin">Admin</SelectItem>
                     </SelectContent>
                   </Select>
+                </div>
+
+                <div className="flex items-start gap-2 rounded-md border p-3">
+                  <Checkbox
+                    id="email-confirm"
+                    checked={newUser.email_confirm}
+                    onCheckedChange={(checked) => setNewUser({ ...newUser, email_confirm: checked === true })}
+                    className="mt-0.5"
+                  />
+                  <div>
+                    <Label htmlFor="email-confirm" className="cursor-pointer">Email já verificado</Label>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      O utilizador pode iniciar sessão de imediato, sem passar pelo email de confirmação do Supabase.
+                    </p>
+                  </div>
                 </div>
 
                 {newUser.role === 'consultant' && (
@@ -748,6 +769,7 @@ export default function UsersManagement() {
                     <SelectContent>
                       <SelectItem value="consultant">Consultant</SelectItem>
                       <SelectItem value="team_lead">Team Lead</SelectItem>
+                      <SelectItem value="broker">Broker</SelectItem>
                       <SelectItem value="admin">Admin</SelectItem>
                     </SelectContent>
                   </Select>

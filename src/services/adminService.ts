@@ -13,9 +13,11 @@ export interface CreateUserData {
   password: string;
   fullName: string;
   phone?: string;
-  role: "admin" | "team_lead" | "consultant";
+  role: "admin" | "broker" | "team_lead" | "consultant";
   isActive: boolean;
   teamLeadId?: string;
+  /** Marcar o email como verificado (permite login imediato). Default true. */
+  emailConfirm?: boolean;
 }
 
 export type ActivityLogWithProfile = Database["public"]["Tables"]["activity_logs"]["Row"] & {
