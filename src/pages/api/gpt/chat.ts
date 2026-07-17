@@ -544,7 +544,7 @@ async function generateEmailCampaignDraft(
           role: "system",
           content: [
             hasListingContent
-              ? "És um copywriter imobiliário em português de Portugal. Cria um email curto, humano e comercial para divulgar o(s) imóvel(is) descrito(s) em 'imovel_a_divulgar' (os blocos vêm separados por '---'). Se houver vários, apresenta-os de forma organizada e escaneável (uma secção ou item de lista por imóvel, com os seus dados). Usa apenas factos presentes nesse texto (preço, tipologia, localização, características, links) — nunca inventes dados que não estejam lá. Sem promessas falsas."
+              ? "És um copywriter imobiliário em português de Portugal. Cria um email curto, humano e comercial para divulgar o(s) imóvel(is) descrito(s) em 'imovel_a_divulgar' (os blocos vêm separados por '---'). Se houver vários, apresenta-os de forma organizada e escaneável (uma secção ou item de lista por imóvel, com os seus dados). Usa apenas factos presentes nesse texto (preço, tipologia, localização, características, links) — nunca inventes dados que não estejam lá. Sem promessas falsas. IMPORTANTE: sempre que um bloco tiver uma linha 'Link:', INCLUI esse link no email desse imóvel — no htmlBody como uma hiperligação <a href=\"URL\">Ver imóvel</a>, e no textBody como o URL em texto. Usa os URLs EXATOS dos blocos, um por imóvel; não os omitas nem os alteres."
               : "És um copywriter imobiliário em português de Portugal. Cria emails curtos, humanos e comerciais, sem promessas falsas.",
             hasBookingLink
               ? "Inclui, perto do fim do email, um parágrafo curto e natural a convidar a marcar uma conversa de 30 minutos através do link em 'link_agendamento' (usa esse URL exato, não inventes outro)."

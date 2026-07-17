@@ -1,7 +1,7 @@
 import React from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Search } from "lucide-react";
+import { Search, X } from "lucide-react";
 
 interface LeadFiltersProps {
   searchTerm: string;
@@ -32,8 +32,19 @@ export function LeadFilters({
           placeholder="Pesquisar por nome, email ou telefone..."
           value={searchTerm}
           onChange={(e) => onSearchChange(e.target.value)}
-          className="pl-10"
+          className="pl-10 pr-10"
         />
+        {searchTerm && (
+          <button
+            type="button"
+            onClick={() => onSearchChange("")}
+            className="absolute right-2 top-1.5 p-1 rounded text-muted-foreground hover:bg-gray-100 hover:text-gray-700"
+            title="Limpar pesquisa"
+            aria-label="Limpar pesquisa"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
       </div>
 
       <div className="flex gap-2">

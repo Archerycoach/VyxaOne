@@ -910,7 +910,10 @@ export function LeadDetailsDialog({
           )}
         </DialogHeader>
 
-        <div ref={dialogContentRef} className="flex-1 min-h-0 overflow-y-auto">
+        {/* Sem flex-1: o corpo ajusta-se ao conteúdo (separadores curtos como
+            Interações/Notas deixam de ter um grande espaço branco), com scroll
+            próprio só quando o conteúdo excede a altura máxima. */}
+        <div ref={dialogContentRef} className="min-h-0 overflow-y-auto max-h-[72vh]">
         {isLoading ? (
           <div className="flex items-center justify-center py-12">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />

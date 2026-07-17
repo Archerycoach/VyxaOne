@@ -44,6 +44,7 @@ import { getLeadQualification } from "@/lib/leadQualification";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScopeSelector } from "@/components/ScopeSelector";
 import { getStagesForUsers, type PipelineStage } from "@/services/pipelineSettingsService";
+import { LeadAdvancedFilters, EMPTY_QUALIFICATION_FILTERS, leadMatchesQualificationFilters, type LeadQualificationFilters } from "./LeadAdvancedFilters";
 
 // Default columns configuration for fallback
 const DEFAULT_COLUMNS: LeadColumnConfig[] = [
@@ -201,8 +202,30 @@ export function LeadsListContainer({
     filteredLeads,
   } = useLeadFilters(scopedLeads);
 
+  // Filtro "sem contacto há X dias": uma lead entra se nunca foi contactada
+  // (last_contact_date null) OU se o último contacto foi há mais de X dias.
+  const [notContactedDays, setNotContactedDays] = useState<string>("all");
+  const [qualFilters, setQualFilters] = useState<LeadQualificationFilters>(EMPTY_QUALIFICATION_FILTERS);
+  const contactFilteredLeads = useMemo(() => {
+    let list = filteredLeads;
+
+    if (notContactedDays !== "all") {
+      const days = parseInt(notContactedDays, 10);
+      if (Number.isFinite(days)) {
+        const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+        list = list.filter((l) => !l.last_contact_date || new Date(l.last_contact_date).getTime() < cutoff);
+      }
+    }
+
+    // Filtros avançados de qualificação (tipo, objetivo, tipologia, orçamento,
+    // localização, financiamento, imóvel a vender, estado, temperatura, prazo).
+    list = list.filter((l) => leadMatchesQualificationFilters(l, qualFilters));
+
+    return list;
+  }, [filteredLeads, notContactedDays, qualFilters]);
+
   const sortedLeads = useMemo(() => {
-    return [...filteredLeads].sort((a, b) => {
+    return [...contactFilteredLeads].sort((a, b) => {
       let aVal: any = a[sortField as keyof typeof a];
       let bVal: any = b[sortField as keyof typeof b];
 
@@ -218,7 +241,7 @@ export function LeadsListContainer({
       if (aVal > bVal) return sortOrder === "asc" ? 1 : -1;
       return 0;
     });
-  }, [filteredLeads, sortField, sortOrder]);
+  }, [contactFilteredLeads, sortField, sortOrder]);
 
   // CRUD operations - destructure from useLeadMutations hook
   const { convertLead, deleteLead, restore, permanentlyDelete, assign } = useLeadMutations(stableRefetch);
@@ -799,6 +822,24 @@ export function LeadsListContainer({
 
         <div className="flex gap-4 items-center flex-wrap sm:flex-nowrap">
           <div className="flex items-center gap-2">
+            <LeadAdvancedFilters filters={qualFilters} onChange={setQualFilters} />
+            <Select value={notContactedDays} onValueChange={setNotContactedDays}>
+              <SelectTrigger
+                className={`w-[190px] h-9 ${notContactedDays !== "all" ? "bg-amber-50 border-amber-300 text-amber-800" : "bg-white"}`}
+                title="Filtrar leads sem contacto recente"
+              >
+                <SelectValue placeholder="Sem contacto há..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Contacto: qualquer</SelectItem>
+                <SelectItem value="3">Sem contacto há 3+ dias</SelectItem>
+                <SelectItem value="7">Sem contacto há 7+ dias</SelectItem>
+                <SelectItem value="15">Sem contacto há 15+ dias</SelectItem>
+                <SelectItem value="30">Sem contacto há 30+ dias</SelectItem>
+                <SelectItem value="60">Sem contacto há 60+ dias</SelectItem>
+                <SelectItem value="90">Sem contacto há 90+ dias</SelectItem>
+              </SelectContent>
+            </Select>
             <Select value={sortField} onValueChange={setSortField}>
               <SelectTrigger className="w-[180px] bg-white h-9">
                 <SelectValue placeholder="Ordenar por..." />
@@ -938,12 +979,16 @@ export function LeadsListContainer({
         </div>
       ) : (
         <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-          <div className="overflow-x-auto">
+          {/* Altura limitada: a tabela scrolla dentro desta área (vertical e
+              horizontal), por isso a barra de scroll horizontal fica sempre
+              visível no fundo do contentor — não é preciso descer até ao fim
+              de todas as leads para lá chegar. */}
+          <div className="overflow-auto max-h-[calc(100vh-18rem)]">
             {/* min-w-max: sem isto o "w-full" esmaga as colunas para caber no
                 ecrã (texto a partir letra a letra) em vez de ativar o scroll
                 horizontal do contentor. */}
             <table className="w-full min-w-max">
-              <thead className="bg-gray-800 text-white text-sm">
+              <thead className="bg-gray-800 text-white text-sm sticky top-0 z-20">
                 <tr>
                   {columnsConfig.map((column) => (
                     <th
@@ -954,7 +999,9 @@ export function LeadsListContainer({
                       {column.column_label}
                     </th>
                   ))}
-                  <th className="px-4 py-3 text-left font-medium w-32">Ações</th>
+                  {/* Coluna de Ações fixada à direita: os 3 pontos ficam
+                      sempre visíveis mesmo com a tabela mais larga que o ecrã. */}
+                  <th className="px-4 py-3 text-left font-medium w-32 sticky right-0 bg-gray-800 z-30 shadow-[-8px_0_8px_-6px_rgba(0,0,0,0.25)]">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
@@ -1021,7 +1068,10 @@ export function LeadsListContainer({
                           </td>
                         );
                       })}
-                      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                      <td
+                        className={`px-4 py-3 sticky right-0 z-10 ${bgClass} shadow-[-8px_0_8px_-6px_rgba(0,0,0,0.12)]`}
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <div className="flex gap-1">
                           <button
                             onClick={() => handleEdit(lead)}
@@ -1036,7 +1086,7 @@ export function LeadsListContainer({
                                 <MoreVertical className="h-4 w-4" />
                               </button>
                             </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-56">
+                            <DropdownMenuContent align="end" className="w-56 max-h-[70vh] overflow-y-auto">
                               <div className="px-2 py-1.5 text-xs font-semibold text-gray-500 uppercase">
                                 Comunicação
                               </div>

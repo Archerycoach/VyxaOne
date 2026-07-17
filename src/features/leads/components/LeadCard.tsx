@@ -315,7 +315,7 @@ export function LeadCard({
                 side="bottom"
                 sideOffset={5}
                 collisionPadding={20}
-                className="w-56 max-h-[500px] overflow-y-auto"
+                className="w-56 max-h-[70vh] overflow-y-auto"
               >
                 <DropdownMenuItem onClick={() => handleMenuItemClick(() => setQuickContactOpen(true))}>
                   <Phone className="h-4 w-4 mr-2" />
@@ -611,7 +611,7 @@ export function LeadCard({
               side="bottom"
               sideOffset={5}
               collisionPadding={20}
-              className="w-56 max-h-[500px] overflow-y-auto"
+              className="w-56 max-h-[70vh] overflow-y-auto"
             >
               <DropdownMenuItem onClick={() => handleMenuItemClick(() => setQuickContactOpen(true))}>
                 <Phone className="h-4 w-4 mr-2" />

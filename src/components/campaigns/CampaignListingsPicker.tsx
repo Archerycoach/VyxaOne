@@ -117,9 +117,12 @@ export function CampaignListingsPicker({ selected, onChange, onExtractExternal, 
 
   const handleUrl = async () => {
     if (!listingUrl.trim()) return;
-    const ext = await onExtractExternal({ sourceUrl: listingUrl.trim() });
+    const url = listingUrl.trim();
+    const ext = await onExtractExternal({ sourceUrl: url });
     if (ext) {
-      onChange([...selected, { key: `external:${ext.id}`, kind: "external", label: ext.title, block: ext.text }]);
+      // Inclui o URL colado no bloco, para a IA poder pô-lo no email (o texto
+      // extraído da página não contém o próprio link).
+      onChange([...selected, { key: `external:${ext.id}`, kind: "external", label: ext.title, block: `Link: ${url}\n\n${ext.text}` }]);
       setListingUrl("");
       setListingMode("none");
     }

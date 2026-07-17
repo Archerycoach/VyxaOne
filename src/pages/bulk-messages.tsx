@@ -934,6 +934,10 @@ export default function BulkMessages() {
         let successCount = 0;
         let failCount = 0;
         const errors: string[] = [];
+        // A cópia para o próprio só é pedida UMA vez em todo o envio em massa
+        // (senão o consultor recebia uma cópia por cada destinatário). Uma só
+        // cópia basta para ficar no histórico.
+        let copyToSelfPending = sendCopyToSelf && Boolean(copyEmail);
 
         // Send emails sequentially to avoid overwhelming the SMTP server
         for (const recipient of selectedData) {
@@ -981,7 +985,7 @@ export default function BulkMessages() {
                 html: htmlContent,
                 text: textContent,
                 attachments: emailAttachments.length > 0 ? emailAttachments : undefined,
-                sendCopyToSender: sendCopyToSelf && Boolean(copyEmail),
+                sendCopyToSender: copyToSelfPending,
                 leadId: recipient.type === "lead" ? recipient.id.replace("lead-", "") : undefined,
                 contactId: recipient.type === "contact" ? recipient.id.replace("contact-", "") : undefined,
               }),
@@ -997,6 +1001,8 @@ export default function BulkMessages() {
 
             if (result.success) {
               successCount++;
+              // Cópia já enviada com o primeiro email — não repetir nos seguintes.
+              copyToSelfPending = false;
             } else {
               failCount++;
               errors.push(`${recipient.name}: ${result.message}`);
