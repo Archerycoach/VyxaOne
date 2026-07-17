@@ -33,8 +33,7 @@ interface AiTask {
 }
 
 interface PendingLeadUpdate {
-  targetLeadIds: string[];
-  updates: Record<string, unknown>;
+  edits: Array<{ leadId: string; updates: Record<string, unknown> }>;
   summary: string;
   leadNames: string[];
 }
@@ -206,10 +205,7 @@ export default function AiAgentPage() {
           "Authorization": `Bearer ${session.access_token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          targetLeadIds: pendingLeadUpdate.targetLeadIds,
-          updates: pendingLeadUpdate.updates,
-        }),
+        body: JSON.stringify({ edits: pendingLeadUpdate.edits }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Não foi possível aplicar a alteração.");
@@ -484,7 +480,7 @@ export default function AiAgentPage() {
                             <p className="text-sm font-semibold text-amber-900">Confirmar alteração</p>
                             <p className="text-sm text-gray-800">{pendingLeadUpdate.summary}</p>
                             <div className="text-xs text-gray-600">
-                              <span className="font-medium">Leads ({pendingLeadUpdate.targetLeadIds.length}):</span>{" "}
+                              <span className="font-medium">Leads ({pendingLeadUpdate.edits.length}):</span>{" "}
                               {pendingLeadUpdate.leadNames.slice(0, 6).join(", ")}
                               {pendingLeadUpdate.leadNames.length > 6 ? ` e mais ${pendingLeadUpdate.leadNames.length - 6}` : ""}
                             </div>

@@ -918,7 +918,7 @@ function isGenericPortalSearchRequest(message: string): boolean {
 
 function isLeadUpdateRequest(message: string): boolean {
   const normalizedMessage = normalizeText(message);
-  const hasUpdateIntent = /(atualiza|atualizar|altera|alterar|muda|mudar|associa|associar|define|definir|marca|marcar|coloca|colocar|poe|por\b)/.test(
+  const hasUpdateIntent = /(atualiza|atualizar|altera|alterar|muda|mudar|associa|associar|define|definir|marca|marcar|coloca|colocar|poe|por\b|executa|executar|aplica|aplicar|confirma|confirmar|avanca|avancar|procede|proceder)/.test(
     normalizedMessage,
   );
   const hasLeadReference = /(lead|leads|todas as leads|todos os leads)/.test(normalizedMessage);
@@ -1560,25 +1560,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // A IA interpreta o pedido e PROPÕE a alteração (uma lead ou em massa).
       // Nada é gravado aqui — o consultor confirma no ecrã, e a gravação é
       // feita por /api/gpt/leads/apply-chat-update (que revalida tudo).
-      const proposal = await buildLeadUpdateProposal({ message, leads: activeLeads as any, userId: user.id });
+      const proposal = await buildLeadUpdateProposal({
+        message,
+        leads: activeLeads as any,
+        userId: user.id,
+        history: history || [],
+      });
 
       if (proposal.needsClarification) {
         return res.status(200).json({ reply: proposal.needsClarification });
       }
 
-      const changedFields = Object.keys(proposal.updates)
-        .filter((k) => k !== "is_development")
-        .map((k) => LEAD_FIELD_LABELS[k] || k)
-        .join(", ");
-      const namesPreview = proposal.leadNames.slice(0, 5).join(", ");
-      const moreNames = proposal.leadNames.length > 5 ? ` e mais ${proposal.leadNames.length - 5}` : "";
-      const reply = `${proposal.summary}\n\n**Campos:** ${changedFields}\n**Leads (${proposal.targetLeadIds.length}):** ${namesPreview}${moreNames}\n\nConfirma para eu gravar.`;
+      const allFields = Array.from(
+        new Set(proposal.edits.flatMap((e) => Object.keys(e.updates).filter((k) => k !== "is_development")))
+      ).map((k) => LEAD_FIELD_LABELS[k] || k).join(", ");
+      const namesPreview = proposal.leadNames.slice(0, 6).join(", ");
+      const moreNames = proposal.leadNames.length > 6 ? ` e mais ${proposal.leadNames.length - 6}` : "";
+      const reply = `${proposal.summary}\n\n**Campos:** ${allFields}\n**Leads (${proposal.edits.length}):** ${namesPreview}${moreNames}\n\nConfirma para eu gravar.`;
 
       return res.status(200).json({
         reply,
         pendingLeadUpdate: {
-          targetLeadIds: proposal.targetLeadIds,
-          updates: proposal.updates,
+          edits: proposal.edits,
           summary: proposal.summary,
           leadNames: proposal.leadNames,
         },

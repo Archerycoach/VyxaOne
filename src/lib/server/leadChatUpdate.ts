@@ -17,12 +17,22 @@ const VALID_PROPERTY_TYPE = ["apartment", "house", "land", "commercial", "store"
 const VALID_BUY_PURPOSE = ["housing", "investment", "secondary"];
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-export interface LeadChatUpdateProposal {
-  targetLeadIds: string[];
+/** Uma edição a UMA lead (cada lead pode ter os seus próprios valores). */
+export interface LeadEdit {
+  leadId: string;
   updates: Record<string, unknown>;
+}
+
+export interface LeadChatUpdateProposal {
+  edits: LeadEdit[];
   summary: string;
   leadNames: string[];
   needsClarification: string | null;
+}
+
+interface HistoryMsg {
+  role: "user" | "assistant" | "system";
+  content: string;
 }
 
 interface MinimalLead {
@@ -138,12 +148,12 @@ export async function buildLeadUpdateProposal(params: {
   message: string;
   leads: MinimalLead[];
   userId: string;
+  history?: HistoryMsg[];
 }): Promise<LeadChatUpdateProposal> {
-  const { message, leads, userId } = params;
+  const { message, leads, userId, history } = params;
 
   const empty: LeadChatUpdateProposal = {
-    targetLeadIds: [],
-    updates: {},
+    edits: [],
     summary: "",
     leadNames: [],
     needsClarification: "Não percebi bem o que alterar. Pode indicar a lead e o campo? (ex.: \"muda a tipologia da Ana para T3\")",
@@ -153,7 +163,7 @@ export async function buildLeadUpdateProposal(params: {
     const aiResponse = await runAI({
       userId,
       task: "lead_chat_update",
-      messages: [{ role: "user", content: getLeadChatUpdatePrompt({ message, leads }) }],
+      messages: [{ role: "user", content: getLeadChatUpdatePrompt({ message, leads, history }) }],
       jsonMode: true,
       temperature: 0.1,
     });
@@ -165,26 +175,38 @@ export async function buildLeadUpdateProposal(params: {
       return empty;
     }
 
-    if (parsed?.needsClarification && typeof parsed.needsClarification === "string") {
-      return { ...empty, needsClarification: parsed.needsClarification };
+    if (parsed?.needsClarification && typeof parsed.needsClarification === "string" && parsed.needsClarification.trim()) {
+      return { ...empty, needsClarification: parsed.needsClarification.trim() };
     }
 
-    const targetLeadIds = resolveTargetLeadIds(parsed?.targetLeadIds, leads);
-    const updates = validateLeadUpdates(parsed?.updates);
-
-    if (targetLeadIds.length === 0) {
-      return { ...empty, needsClarification: "Não consegui identificar a lead. Pode indicar o nome exato?" };
-    }
-    if (Object.keys(updates).length === 0) {
-      return { ...empty, needsClarification: "Não percebi que campo alterar. Pode ser mais específico?" };
+    // Aceita o formato novo (edits: [{leadId, updates}]) e, por
+    // retrocompatibilidade, o antigo (targetLeadIds + updates iguais para todas).
+    let rawEdits: any[] = Array.isArray(parsed?.edits) ? parsed.edits : [];
+    if (rawEdits.length === 0 && Array.isArray(parsed?.targetLeadIds)) {
+      rawEdits = parsed.targetLeadIds.map((leadId: string) => ({ leadId, updates: parsed?.updates }));
     }
 
-    const leadNames = leads.filter((l) => targetLeadIds.includes(l.id)).map((l) => l.name);
+    const validIds = new Set(leads.map((l) => l.id));
+    const edits: LeadEdit[] = [];
+    for (const e of rawEdits) {
+      if (!e || typeof e.leadId !== "string" || !validIds.has(e.leadId)) continue;
+      const updates = validateLeadUpdates(e.updates);
+      if (Object.keys(updates).length === 0) continue;
+      edits.push({ leadId: e.leadId, updates });
+    }
+
+    if (edits.length === 0) {
+      return { ...empty, needsClarification: "Não consegui identificar as leads ou os campos a alterar. Pode ser mais específico? (ex.: \"associa a lead Douglas ao empreendimento Distrikt\")" };
+    }
+
+    const nameById = new Map(leads.map((l) => [l.id, l.name]));
+    const leadNames = edits.map((e) => nameById.get(e.leadId) || "?");
+    const allFields = Array.from(new Set(edits.flatMap((e) => Object.keys(e.updates).filter((k) => k !== "is_development"))));
     const summary = typeof parsed?.summary === "string" && parsed.summary.trim()
       ? parsed.summary.trim()
-      : `Alterar ${Object.keys(updates).map((k) => FIELD_LABELS[k] || k).join(", ")} em ${targetLeadIds.length} lead(s).`;
+      : `Alterar ${allFields.map((k) => FIELD_LABELS[k] || k).join(", ")} em ${edits.length} lead(s).`;
 
-    return { targetLeadIds, updates, summary, leadNames, needsClarification: null };
+    return { edits, summary, leadNames, needsClarification: null };
   } catch (error) {
     console.error("[leadChatUpdate] Erro ao construir proposta:", error);
     return empty;
