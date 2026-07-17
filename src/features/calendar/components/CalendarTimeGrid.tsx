@@ -1,4 +1,4 @@
-import React, { useMemo, useRef } from "react";
+import React, { useMemo, useRef, useState, useEffect } from "react";
 import type { CalendarEvent, Task } from "@/types";
 
 /**
@@ -130,8 +130,14 @@ export function CalendarTimeGrid({
     });
   }, [viewMode, currentDate]);
 
-  const now = new Date();
+  // Atualiza a linha da hora atual a cada minuto.
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 60 * 1000);
+    return () => clearInterval(t);
+  }, []);
   const nowMin = minutesOfDay(now);
+  const showsToday = days.some((d) => sameDay(d, now));
 
   const hours = Array.from({ length: 24 }, (_, i) => i);
 
@@ -181,7 +187,7 @@ export function CalendarTimeGrid({
       <div className="overflow-y-auto max-h-[calc(100vh-16rem)]">
         <div className="flex relative" style={{ height: HOUR_HEIGHT * 24 }}>
           {/* Coluna das horas */}
-          <div className="w-14 shrink-0 border-r">
+          <div className="w-14 shrink-0 border-r relative">
             {hours.map((h) => (
               <div key={h} className="relative" style={{ height: HOUR_HEIGHT }}>
                 <span className="absolute -top-2 right-1 text-[11px] text-gray-400">
@@ -189,6 +195,15 @@ export function CalendarTimeGrid({
                 </span>
               </div>
             ))}
+            {/* Etiqueta da hora atual */}
+            {showsToday && (
+              <div
+                className="absolute right-0 z-30 -translate-y-1/2 rounded bg-red-500 px-1 text-[10px] font-semibold text-white"
+                style={{ top: (nowMin / 60) * HOUR_HEIGHT }}
+              >
+                {now.toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" })}
+              </div>
+            )}
           </div>
 
           {/* Colunas dos dias */}

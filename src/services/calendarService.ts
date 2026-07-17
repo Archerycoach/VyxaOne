@@ -208,7 +208,12 @@ export const createCalendarEvent = async (event: CalendarEventInsert & { contact
     end_time: event.end_time,
   });
 
-  if (incomingSignature) {
+  // Eventos de disponibilidade (reserva) são propositadamente vários por dia
+  // — não se deduplicam. Sem esta exceção, o 2º bloco "Disponível..." do mesmo
+  // dia era silenciosamente descartado (dava "sucesso" mas não aparecia).
+  const isBookable = (event as any).is_bookable === true;
+
+  if (incomingSignature && !isBookable) {
     // Extract date only from start_time for same-day query
     const dateOnly = new Date(event.start_time).toISOString().split('T')[0];
     const startOfDay = `${dateOnly}T00:00:00.000Z`;
@@ -236,10 +241,28 @@ export const createCalendarEvent = async (event: CalendarEventInsert & { contact
       throw duplicateError;
     }
 
+    // Normaliza uma data/hora ao minuto (ignora segundos/ms) para comparar horas.
+    const toMinuteIso = (value?: string | null): string | null => {
+      if (!value) return null;
+      const d = new Date(value);
+      if (Number.isNaN(d.getTime())) return null;
+      d.setSeconds(0, 0);
+      return d.toISOString();
+    };
+    const incomingStartMinute = toMinuteIso(event.start_time);
+
     // Check if any existing event has the same signature
     const existingEvent = (candidateMatches || []).find((existing) => {
       const existingSignature = buildCalendarEventSignature(existing);
-      return existingSignature === incomingSignature;
+      if (existingSignature !== incomingSignature) return false;
+      // Regra "um evento por lead por dia" mantém-se para eventos COM lead.
+      // Para eventos SEM lead (ex.: blocos "Disponível"), só é duplicado se
+      // coincidir também a hora de início — assim é possível ter vários no
+      // mesmo dia em horas diferentes.
+      if (!event.lead_id) {
+        return toMinuteIso(existing.start_time) === incomingStartMinute;
+      }
+      return true;
     });
 
     if (existingEvent) {

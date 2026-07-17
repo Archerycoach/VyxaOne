@@ -737,6 +737,7 @@ export function CalendarContainer() {
         currentDate={currentDate}
         formatDate={formatDate}
         onNavigate={navigateDate}
+        onToday={goToToday}
         onViewModeChange={setViewMode}
         onNewEvent={handleCreateEvent}
         onCopyBookingLink={handleCopyBookingLink}

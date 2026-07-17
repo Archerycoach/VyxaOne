@@ -1,13 +1,21 @@
 import { Button } from "@/components/ui/button";
-import { ChevronLeft, ChevronRight, Plus, Calendar as CalendarIcon, Link as LinkIcon, ListChecks } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { ChevronLeft, ChevronRight, Plus, Calendar as CalendarIcon, Link as LinkIcon, ListChecks, RefreshCw, ChevronDown } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 
 interface CalendarHeaderProps {
   viewMode: "day" | "week" | "month";
   currentDate: Date;
   formatDate: (date: Date) => string;
   onNavigate: (direction: "prev" | "next") => void;
+  onToday?: () => void;
   onViewModeChange: (mode: "day" | "week" | "month") => void;
   onNewEvent: () => void;
   onCopyBookingLink?: () => void;
@@ -30,6 +38,7 @@ export function CalendarHeader({
   currentDate,
   formatDate,
   onNavigate,
+  onToday,
   onViewModeChange,
   onNewEvent,
   onCopyBookingLink,
@@ -65,6 +74,11 @@ export function CalendarHeader({
           <Button variant="outline" size="icon" onClick={() => onNavigate("next")}>
             <ChevronRight className="h-4 w-4" />
           </Button>
+          {onToday && (
+            <Button variant="outline" size="sm" onClick={onToday}>
+              Hoje
+            </Button>
+          )}
         </div>
 
         <div className="flex gap-1 rounded-lg border p-1">
@@ -101,65 +115,75 @@ export function CalendarHeader({
         {onCopyBookingLink && (
           <Button variant="outline" onClick={onCopyBookingLink}>
             <LinkIcon className="mr-2 h-4 w-4" />
-            Copiar Link de Reservas
+            Link de Reservas
           </Button>
         )}
 
         {googleConfigured && (
-          <div className="flex flex-wrap items-center gap-2">
-            {googleConnected ? (
-              <>
-                <Button
-                  variant="outline"
-                  onClick={handleSync}
-                  disabled={isSyncing}
-                >
-                  <CalendarIcon className="mr-2 h-4 w-4" />
-                  {isSyncing ? "A sincronizar..." : "Sincronizar"}
-                </Button>
-
-                {onShowSyncStatus && (
-                  <Button
-                    variant="outline"
-                    onClick={onShowSyncStatus}
-                    title="Ver estado da sincronização"
-                  >
-                    <ListChecks className="mr-2 h-4 w-4" />
-                    Estado da sincronização
-                  </Button>
-                )}
-
-                {/* Interruptor de sincronização automática */}
-                {autoSyncEnabled !== null && autoSyncEnabled !== undefined && onToggleAutoSync && (
-                  <label className="flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm">
-                    <Switch
-                      checked={autoSyncEnabled}
-                      onCheckedChange={onToggleAutoSync}
-                      aria-label="Sincronização automática"
-                    />
-                    <span className="text-muted-foreground">Sync automática</span>
-                  </label>
-                )}
-
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={onGoogleDisconnect}
-                  title="Desconectar Google Calendar"
-                >
-                  Desconectar
-                </Button>
-                <Badge variant="default" className="bg-green-500 px-3 py-1.5">
-                  Google Conectado
-                </Badge>
-              </>
-            ) : (
-              <Button variant="outline" onClick={onGoogleConnect}>
-                <CalendarIcon className="mr-2 h-4 w-4" />
-                Conectar Google
+          googleConnected ? (
+            <>
+              {/* Botão rápido de sincronizar + menu com as restantes opções */}
+              <Button variant="outline" onClick={handleSync} disabled={isSyncing}>
+                <RefreshCw className={`mr-2 h-4 w-4 ${isSyncing ? "animate-spin" : ""}`} />
+                {isSyncing ? "A sincronizar..." : "Sincronizar"}
               </Button>
-            )}
-          </div>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" className="gap-2">
+                    <span className="inline-block h-2 w-2 rounded-full bg-green-500" />
+                    Google
+                    <ChevronDown className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-64">
+                  <DropdownMenuLabel className="flex items-center gap-2">
+                    <span className="inline-block h-2 w-2 rounded-full bg-green-500" />
+                    Google Calendar conectado
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+
+                  {onShowSyncStatus && (
+                    <DropdownMenuItem onClick={onShowSyncStatus}>
+                      <ListChecks className="mr-2 h-4 w-4" />
+                      Estado da sincronização
+                    </DropdownMenuItem>
+                  )}
+
+                  {/* Sincronização automática (toggle dentro do menu) */}
+                  {autoSyncEnabled !== null && autoSyncEnabled !== undefined && onToggleAutoSync && (
+                    <div
+                      className="flex items-center justify-between px-2 py-1.5 text-sm"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <span className="flex items-center">
+                        <RefreshCw className="mr-2 h-4 w-4" />
+                        Sync automática
+                      </span>
+                      <Switch
+                        checked={autoSyncEnabled}
+                        onCheckedChange={onToggleAutoSync}
+                        aria-label="Sincronização automática"
+                      />
+                    </div>
+                  )}
+
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={onGoogleDisconnect}
+                    className="text-red-600 focus:text-red-600"
+                  >
+                    Desconectar
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </>
+          ) : (
+            <Button variant="outline" onClick={onGoogleConnect}>
+              <CalendarIcon className="mr-2 h-4 w-4" />
+              Conectar Google
+            </Button>
+          )
         )}
       </div>
     </div>
