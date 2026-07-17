@@ -93,8 +93,11 @@ export function Navigation() {
   // Broker and above can see team/all users
   const canSeeAllUsers = isAdmin || isBroker;
   
-  // Team lead and above can see team features
-  const canSeeTeamFeatures = isAdmin || isBroker || isTeamLead;
+  // Funcionalidades de equipa (Gestão de Equipa + Performance de Equipa) são
+  // para papéis de agência — o admin (operador da plataforma) NÃO as vê:
+  // ele gere contas em Admin → Utilizadores e não deve ver dados/atividade
+  // dos consultores. Ver project-admin-data-isolation.
+  const canSeeTeamFeatures = isBroker || isTeamLead;
 
   // Um consultor que pertence a uma equipa (team_lead_id) também vê o menu
   // "Equipa" — em modo leitura, para saber quem são os colegas (a página usa

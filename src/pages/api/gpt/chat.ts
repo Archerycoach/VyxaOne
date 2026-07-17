@@ -543,7 +543,7 @@ async function generateEmailCampaignDraft(
           role: "system",
           content: [
             hasListingContent
-              ? "És um copywriter imobiliário em português de Portugal. Cria um email curto, humano e comercial para divulgar especificamente o imóvel descrito em 'imovel_a_divulgar'. Usa apenas factos presentes nesse texto (preço, tipologia, localização, características, fotos referidas) — nunca inventes dados que não estejam lá. Sem promessas falsas."
+              ? "És um copywriter imobiliário em português de Portugal. Cria um email curto, humano e comercial para divulgar o(s) imóvel(is) descrito(s) em 'imovel_a_divulgar' (os blocos vêm separados por '---'). Se houver vários, apresenta-os de forma organizada e escaneável (uma secção ou item de lista por imóvel, com os seus dados). Usa apenas factos presentes nesse texto (preço, tipologia, localização, características, links) — nunca inventes dados que não estejam lá. Sem promessas falsas."
               : "És um copywriter imobiliário em português de Portugal. Cria emails curtos, humanos e comerciais, sem promessas falsas.",
             hasBookingLink
               ? "Inclui, perto do fim do email, um parágrafo curto e natural a convidar a marcar uma conversa de 30 minutos através do link em 'link_agendamento' (usa esse URL exato, não inventes outro)."
@@ -679,7 +679,7 @@ async function selectEmailCampaignAudience(params: {
         {
           role: "system",
           content: hasListingContent
-            ? "És um assistente imobiliário em português de Portugal. Seleciona as leads certas para uma campanha de email. Há um imóvel específico a divulgar em 'imovel_a_divulgar' — extrai dele o preço, tipologia, zona e tipo de imóvel, e usa isso como critério principal de seleção quando não houver 'criterios_inferidos' explícitos (ou combina os dois se ambos existirem). Só seleciona leads cujo orçamento máximo cubra o preço do imóvel e cuja tipologia/zona/objetivo (compra/investimento) sejam compatíveis — não incluas leads claramente incompatíveis (ex.: orçamento muito abaixo do preço, tipologia ou zona incompatível) só porque não há outros critérios. Se o pedido apenas afinar o tom ou o texto e não introduzir novos critérios de audiência, reutiliza exatamente os IDs anteriores. Responde APENAS em JSON com as chaves filterSummary e selectedLeadIds."
+            ? "És um assistente imobiliário em português de Portugal. Seleciona as leads certas para uma campanha de email. Há um ou mais imóveis a divulgar em 'imovel_a_divulgar' (blocos separados por '---') — extrai de cada um o preço, tipologia, zona e tipo, e usa isso como critério principal de seleção quando não houver 'criterios_inferidos' explícitos (ou combina os dois se ambos existirem). Seleciona uma lead se for compatível com PELO MENOS UM dos imóveis (orçamento máximo cobre o preço e tipologia/zona/objetivo compatíveis) — não incluas leads claramente incompatíveis com todos eles. Se o pedido apenas afinar o tom ou o texto e não introduzir novos critérios de audiência, reutiliza exatamente os IDs anteriores. Responde APENAS em JSON com as chaves filterSummary e selectedLeadIds."
             : "És um assistente imobiliário em português de Portugal. Seleciona as leads certas para uma campanha de email com base num pedido livre. Se o pedido apenas afinar o tom ou o texto e não introduzir novos critérios de audiência, reutiliza exatamente os IDs anteriores. Responde APENAS em JSON com as chaves filterSummary e selectedLeadIds.",
         },
         {

@@ -98,7 +98,14 @@ export default function TeamDashboard() {
         .eq("id", user.id)
         .single();
 
-      if (profile && (profile.role === "admin" || profile.role === "broker" || profile.role === "team_lead")) {
+      // O admin (operador) NÃO vê Performance de Equipa — é atividade dos
+      // consultores. Redirecionado para o painel de admin.
+      if (profile && profile.role === "admin") {
+        router.push("/admin/dashboard");
+        return;
+      }
+
+      if (profile && (profile.role === "broker" || profile.role === "team_lead")) {
         setUserRole(profile.role);
         setHasAccess(true);
         loadAgents(profile.role);

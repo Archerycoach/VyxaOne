@@ -17,7 +17,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Loader2, Send, Sparkles, Users, Upload, Link as LinkIcon, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Loader2, Send, Sparkles, Users, AlertTriangle } from "lucide-react";
+import { CampaignListingsPicker, type SelectedListing, type ExternalListing } from "@/components/campaigns/CampaignListingsPicker";
+import { CampaignRecipientsEditor, type SimpleLead } from "@/components/campaigns/CampaignRecipientsEditor";
+import { joinListingBlocks } from "@/lib/campaignListings";
 
 interface EmailCampaignDraft {
   criteria: {
@@ -81,12 +84,13 @@ export default function AiEmailCampaignsPage() {
   const [debugMode, setDebugMode] = useState(false);
   const [debugInfo, setDebugInfo] = useState<EmailCampaignDebugInfo | null>(null);
 
-  // Imóvel a divulgar (brochura ou link) — opcional
-  const [listingMode, setListingMode] = useState<"none" | "document" | "url">("none");
-  const [listingUrl, setListingUrl] = useState("");
-  const [listingContent, setListingContent] = useState<string | null>(null);
-  const [listingSourceTitle, setListingSourceTitle] = useState<string | null>(null);
+  // Imóveis a divulgar (carteira + brochuras/links) — vários, opcional.
+  const [selectedListings, setSelectedListings] = useState<SelectedListing[]>([]);
   const [isExtractingListing, setIsExtractingListing] = useState(false);
+
+  // Edição manual dos destinatários (além do segmento sugerido pela IA).
+  const [removedLeadIds, setRemovedLeadIds] = useState<Set<string>>(new Set());
+  const [manualLeads, setManualLeads] = useState<SimpleLead[]>([]);
 
   // Leads sinalizadas por notas/interações — incluídas na campanha só se o
   // consultor as marcar explicitamente.
@@ -190,7 +194,8 @@ export default function AiEmailCampaignsPage() {
       : null,
     recipientLeadIds:
       draft?.recipientLeadIds || draft?.recipients.map((recipient) => recipient.id) || null,
-    listingContent: listingContent || null,
+    // Vários imóveis: concatenados num só texto factual (contrato inalterado).
+    listingContent: joinListingBlocks(selectedListings.map((l) => l.block)),
     bookingLink: includeBookingLink ? bookingLinkUrl : null,
   });
 
@@ -307,19 +312,33 @@ export default function AiEmailCampaignsPage() {
       return;
     }
 
-    // Destinatários finais = seleção da IA (já sem as sinalizadas) + as
-    // sinalizadas que o consultor decidiu incluir mesmo assim.
+    // Destinatários finais = seleção da IA + sinalizadas incluídas + leads
+    // adicionadas manualmente, MENOS as que o consultor removeu.
     const baseRecipientIds =
       latestCampaignDraft.recipientLeadIds || latestCampaignDraft.recipients.map((recipient) => recipient.id);
-    const finalRecipientIds = Array.from(new Set([...baseRecipientIds, ...includedFlaggedLeadIds]));
+    const finalRecipientIds = Array.from(
+      new Set([
+        ...baseRecipientIds,
+        ...includedFlaggedLeadIds,
+        ...manualLeads.map((l) => l.id),
+      ]),
+    ).filter((id) => !removedLeadIds.has(id));
+
+    // Junta as leads manuais à lista de recipients (para Mensagens as mostrar).
+    const mergedRecipients = [
+      ...latestCampaignDraft.recipients,
+      ...manualLeads
+        .filter((l) => !latestCampaignDraft.recipients.some((r) => r.id === l.id))
+        .map((l) => ({ id: l.id, name: l.name, email: l.email, status: null, location_preference: null, typology: null })),
+    ].filter((r) => !removedLeadIds.has(r.id));
 
     if (typeof window !== "undefined") {
       window.sessionStorage.setItem(
         AI_DRAFT_STORAGE_KEY,
         JSON.stringify({
-          recipients: latestCampaignDraft.recipients,
+          recipients: mergedRecipients,
           recipientLeadIds: finalRecipientIds,
-          matchedLeadCount: latestCampaignDraft.matchedLeadCount ?? latestCampaignDraft.recipients.length,
+          matchedLeadCount: finalRecipientIds.length,
           missingEmailCount: latestCampaignDraft.missingEmailCount ?? 0,
           filterSummary: latestCampaignDraft.filterSummary,
         }),
@@ -362,6 +381,8 @@ export default function AiEmailCampaignsPage() {
     setLatestCampaignDraft(null);
     setDebugInfo(null);
     setIncludedFlaggedLeadIds(new Set());
+    setRemovedLeadIds(new Set());
+    setManualLeads([]);
 
     try {
       const {
@@ -432,11 +453,12 @@ export default function AiEmailCampaignsPage() {
     }
   };
 
-  const handleExtractListing = async (payload: { documentBase64?: string; documentName?: string; sourceUrl?: string }) => {
+  // Extrai o conteúdo de uma brochura/link e devolve-o ao picker (que o
+  // acrescenta à lista de imóveis a divulgar). Devolve null em caso de erro.
+  const handleExtractListing = async (
+    payload: { documentBase64?: string; documentName?: string; sourceUrl?: string }
+  ): Promise<ExternalListing | null> => {
     setIsExtractingListing(true);
-    setListingContent(null);
-    setListingSourceTitle(null);
-
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("Sessão expirada. Faça login novamente.");
@@ -453,26 +475,39 @@ export default function AiEmailCampaignsPage() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Não foi possível ler o conteúdo do imóvel.");
 
-      setListingContent(data.text);
-      setListingSourceTitle(data.sourceTitle || null);
-      toast({ title: "Imóvel identificado", description: "O conteúdo foi lido com sucesso — o email vai divulgar este imóvel." });
+      toast({ title: "Imóvel identificado", description: "O conteúdo foi lido — foi adicionado à campanha." });
+      return {
+        id: `${Date.now()}`,
+        title: data.sourceTitle || payload.documentName || "Imóvel externo",
+        text: data.text,
+      };
     } catch (error) {
       toast({
         title: "Erro",
         description: error instanceof Error ? error.message : "Não foi possível ler o conteúdo do imóvel.",
         variant: "destructive",
       });
+      return null;
     } finally {
       setIsExtractingListing(false);
     }
   };
 
-  const handleDocumentSelected = async (file: File) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      handleExtractListing({ documentBase64: reader.result as string, documentName: file.name });
-    };
-    reader.readAsDataURL(file);
+  const toggleRemovedLead = (leadId: string) => {
+    setRemovedLeadIds((current) => {
+      const next = new Set(current);
+      if (next.has(leadId)) next.delete(leadId);
+      else next.add(leadId);
+      return next;
+    });
+  };
+
+  const addManualLead = (lead: SimpleLead) => {
+    setManualLeads((current) => (current.some((l) => l.id === lead.id) ? current : [...current, lead]));
+  };
+
+  const removeManualLead = (leadId: string) => {
+    setManualLeads((current) => current.filter((l) => l.id !== leadId));
   };
 
   const toggleFlaggedLead = (leadId: string, checked: boolean) => {
@@ -690,79 +725,12 @@ export default function AiEmailCampaignsPage() {
                       />
                     </div>
 
-                    <div className="space-y-3 rounded-lg border p-4 bg-slate-50">
-                      <div>
-                        <Label>Imóvel a divulgar (opcional)</Label>
-                        <p className="text-xs text-gray-500 mt-0.5">
-                          Carregue uma brochura ou cole o link de uma publicação — a IA escreve o email a divulgar especificamente esse imóvel, usando os dados reais encontrados.
-                        </p>
-                      </div>
-
-                      <div className="flex gap-2">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant={listingMode === "document" ? "default" : "outline"}
-                          onClick={() => setListingMode(listingMode === "document" ? "none" : "document")}
-                        >
-                          <Upload className="h-3.5 w-3.5 mr-1.5" />
-                          Brochura (PDF/Word)
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant={listingMode === "url" ? "default" : "outline"}
-                          onClick={() => setListingMode(listingMode === "url" ? "none" : "url")}
-                        >
-                          <LinkIcon className="h-3.5 w-3.5 mr-1.5" />
-                          Link da publicação
-                        </Button>
-                      </div>
-
-                      {listingMode === "document" && (
-                        <Input
-                          type="file"
-                          accept=".pdf,.docx"
-                          disabled={isExtractingListing}
-                          onChange={(event) => {
-                            const file = event.target.files?.[0];
-                            if (file) handleDocumentSelected(file);
-                          }}
-                        />
-                      )}
-
-                      {listingMode === "url" && (
-                        <div className="flex gap-2">
-                          <Input
-                            placeholder="https://..."
-                            value={listingUrl}
-                            onChange={(event) => setListingUrl(event.target.value)}
-                          />
-                          <Button
-                            type="button"
-                            variant="outline"
-                            disabled={isExtractingListing || !listingUrl.trim()}
-                            onClick={() => handleExtractListing({ sourceUrl: listingUrl.trim() })}
-                          >
-                            Ler
-                          </Button>
-                        </div>
-                      )}
-
-                      {isExtractingListing && (
-                        <p className="text-xs text-gray-500 flex items-center gap-1.5">
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          A ler o conteúdo do imóvel...
-                        </p>
-                      )}
-
-                      {listingContent && !isExtractingListing && (
-                        <p className="text-xs text-green-700 flex items-center gap-1.5">
-                          <CheckCircle2 className="h-3.5 w-3.5" />
-                          {listingSourceTitle || "Conteúdo do imóvel"} identificado — o email vai divulgar este imóvel.
-                        </p>
-                      )}
-                    </div>
+                    <CampaignListingsPicker
+                      selected={selectedListings}
+                      onChange={setSelectedListings}
+                      onExtractExternal={handleExtractListing}
+                      isExtracting={isExtractingListing}
+                    />
 
                     <label className="flex items-start gap-2 rounded-lg border p-4 bg-slate-50 cursor-pointer">
                       <Checkbox
@@ -851,20 +819,16 @@ export default function AiEmailCampaignsPage() {
                   <div className="space-y-3">
                     <div className="flex items-center gap-2 text-sm font-medium text-gray-900">
                       <Users className="h-4 w-4" />
-                      Leads abrangidas
+                      Destinatários
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                      {latestCampaignDraft.recipients.slice(0, 8).map((recipient) => (
-                        <Badge key={recipient.id} variant="secondary" className="py-1.5">
-                          {recipient.name}
-                        </Badge>
-                      ))}
-                    </div>
-                    {latestCampaignDraft.recipients.length > 8 && (
-                      <p className="text-xs text-gray-500">
-                        +{latestCampaignDraft.recipients.length - 8} leads adicionais serão pré-selecionadas em Mensagens.
-                      </p>
-                    )}
+                    <CampaignRecipientsEditor
+                      suggested={latestCampaignDraft.recipients.filter((r) => r.email).map((r) => ({ id: r.id, name: r.name, email: r.email }))}
+                      removedIds={removedLeadIds}
+                      onToggleRemoved={toggleRemovedLead}
+                      manualLeads={manualLeads}
+                      onAddManual={addManualLead}
+                      onRemoveManual={removeManualLead}
+                    />
 
                     {latestCampaignDraft.flaggedForReview && latestCampaignDraft.flaggedForReview.length > 0 && (
                       <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-2">
