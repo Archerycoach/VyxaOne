@@ -1,4 +1,15 @@
 import React, { useMemo, useRef, useState, useEffect } from "react";
+import { Trash2, Check, X } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import type { CalendarEvent, Task } from "@/types";
 
 /**
@@ -23,6 +34,10 @@ interface CalendarTimeGridProps {
   onRescheduleTask: (id: string, newDueISO: string) => void;
   /** Clique num espaço vazio → criar evento àquela hora. */
   onSlotClick?: (date: Date) => void;
+  /** Eliminar um evento. */
+  onDeleteEvent?: (eventId: string) => void;
+  /** Confirmar um bloco sugerido pela IA (aiPending). */
+  onConfirmAiEvent?: (eventId: string) => void;
 }
 
 const WEEKDAY_LABELS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
@@ -116,8 +131,11 @@ export function CalendarTimeGrid({
   onRescheduleEvent,
   onRescheduleTask,
   onSlotClick,
+  onDeleteEvent,
+  onConfirmAiEvent,
 }: CalendarTimeGridProps) {
   const dragRef = useRef<{ kind: "event" | "task"; id: string; durationMin: number } | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<CalendarEvent | null>(null);
 
   const days = useMemo(() => {
     if (viewMode === "day") return [new Date(currentDate)];
@@ -250,6 +268,7 @@ export function CalendarTimeGrid({
                   const height = Math.max(18, ((endMin - startMin) / 60) * HOUR_HEIGHT - 2);
                   const widthPct = 100 / cols;
                   const start = new Date(event.startTime);
+                  const isAiPending = Boolean((event as any).aiPending);
                   return (
                     <div
                       key={event.id}
@@ -260,13 +279,46 @@ export function CalendarTimeGrid({
                         dragRef.current = { kind: "event", id: event.id, durationMin: Math.max(15, Math.round((e.getTime() - s.getTime()) / 60000)) };
                       }}
                       onClick={(e) => { e.stopPropagation(); onEventClick(event); }}
-                      className={`absolute rounded border px-1.5 py-0.5 text-[11px] leading-tight overflow-hidden cursor-pointer shadow-sm ${eventColor(event)}`}
+                      className={`group absolute rounded border px-1.5 py-0.5 text-[11px] leading-tight overflow-hidden cursor-pointer shadow-sm ${eventColor(event)}`}
                       style={{ top, height, left: `calc(${col * widthPct}% + 2px)`, width: `calc(${widthPct}% - 4px)` }}
                       title={event.title}
                     >
-                      <div className="font-medium truncate">
+                      <div className="font-medium truncate pr-4">
                         {start.toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" })} {event.title}
                       </div>
+
+                      {/* Confirmar/Rejeitar para blocos sugeridos pela IA */}
+                      {isAiPending && onConfirmAiEvent ? (
+                        <div className="absolute top-0.5 right-0.5 flex gap-0.5">
+                          <button
+                            type="button"
+                            title="Confirmar bloco sugerido pela IA"
+                            onClick={(e) => { e.stopPropagation(); onConfirmAiEvent(event.id); }}
+                            className="rounded bg-green-100 p-0.5 text-green-700 hover:bg-green-200"
+                          >
+                            <Check className="h-3 w-3" />
+                          </button>
+                          <button
+                            type="button"
+                            title="Rejeitar (eliminar)"
+                            onClick={(e) => { e.stopPropagation(); setConfirmDelete(event); }}
+                            className="rounded bg-red-100 p-0.5 text-red-700 hover:bg-red-200"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </div>
+                      ) : (
+                        onDeleteEvent && (
+                          <button
+                            type="button"
+                            title="Eliminar evento"
+                            onClick={(e) => { e.stopPropagation(); setConfirmDelete(event); }}
+                            className="absolute top-0.5 right-0.5 rounded p-0.5 text-red-500 opacity-0 group-hover:opacity-100 hover:bg-white/60 transition-opacity"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        )
+                      )}
                     </div>
                   );
                 })}
@@ -294,6 +346,30 @@ export function CalendarTimeGrid({
           })}
         </div>
       </div>
+
+      {/* Diálogo de confirmação de eliminação */}
+      <AlertDialog open={!!confirmDelete} onOpenChange={(open) => !open && setConfirmDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Eliminar evento?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem a certeza que deseja eliminar o evento &quot;{confirmDelete?.title}&quot;? Esta ação não pode ser revertida.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-500 hover:bg-red-600"
+              onClick={() => {
+                if (confirmDelete && onDeleteEvent) onDeleteEvent(confirmDelete.id);
+                setConfirmDelete(null);
+              }}
+            >
+              Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

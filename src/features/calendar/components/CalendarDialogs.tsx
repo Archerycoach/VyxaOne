@@ -17,7 +17,9 @@ interface CalendarDialogsProps {
   setEventForm: (form: Partial<CalendarEvent>) => void;
   handleEventSubmit: (e: React.FormEvent) => Promise<void>;
   isEditing: boolean;
-  
+  /** Eliminar o evento em edição (só relevante quando isEditing). */
+  handleDeleteEvent?: () => void;
+
   // Task Dialog
   showTaskForm: boolean;
   setShowTaskForm: (show: boolean) => void;
@@ -35,6 +37,7 @@ export function CalendarDialogs({
   setEventForm,
   handleEventSubmit,
   isEditing,
+  handleDeleteEvent,
   showTaskForm,
   setShowTaskForm,
   taskForm,
@@ -179,17 +182,31 @@ export function CalendarDialogs({
                 </div>
               )}
 
-              <DialogFooter>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setShowEventForm(false)}
-                >
-                  Cancelar
-                </Button>
-                <Button type="submit">
-                  {isEditing ? "Guardar" : "Criar"}
-                </Button>
+              <DialogFooter className="sm:justify-between">
+                {isEditing && handleDeleteEvent ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="border-red-300 text-red-600 hover:bg-red-50 hover:text-red-700"
+                    onClick={handleDeleteEvent}
+                  >
+                    Eliminar
+                  </Button>
+                ) : (
+                  <span />
+                )}
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setShowEventForm(false)}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button type="submit">
+                    {isEditing ? "Guardar" : "Criar"}
+                  </Button>
+                </div>
               </DialogFooter>
             </form>
 

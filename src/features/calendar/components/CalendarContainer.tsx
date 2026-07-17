@@ -684,6 +684,19 @@ export function CalendarContainer() {
     }
   };
 
+  // Eliminar a partir do diálogo de edição do evento (disponível em qualquer vista).
+  const handleDeleteEditingEvent = async () => {
+    if (!editingEvent) return;
+    if (!window.confirm(`Eliminar o evento "${editingEvent.title}"? Esta ação não pode ser revertida.`)) return;
+    try {
+      await deleteEvent(editingEvent.id);
+      setShowEventForm(false);
+      setEditingEvent(null);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
   // Filter events and tasks by current date/view
   const filteredEvents = React.useMemo(() => {
     const filtered = filterEventsByDate(events, currentDate);
@@ -789,6 +802,8 @@ export function CalendarContainer() {
           onRescheduleEvent={handleRescheduleEvent}
           onRescheduleTask={handleRescheduleTask}
           onSlotClick={handleCreateEventAt}
+          onDeleteEvent={deleteEvent}
+          onConfirmAiEvent={confirmAiEvent}
         />
       )}
 
@@ -799,7 +814,8 @@ export function CalendarContainer() {
         setEventForm={setEventForm}
         handleEventSubmit={handleEventSubmit}
         isEditing={!!editingEvent}
-        
+        handleDeleteEvent={handleDeleteEditingEvent}
+
         showTaskForm={showTaskForm}
         setShowTaskForm={setShowTaskForm}
         taskForm={taskForm}
