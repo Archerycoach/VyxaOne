@@ -55,6 +55,54 @@ async function authHeaders(): Promise<Record<string, string>> {
   };
 }
 
+export interface FsboSearchResult {
+  propertyCode: string;
+  url: string;
+  thumbnail: string | null;
+  title: string;
+  description: string;
+  price: number | null;
+  size: number | null;
+  rooms: number | null;
+  bathrooms: number | null;
+  municipality: string | null;
+  district: string | null;
+  typology: string | null;
+  propertyType: string | null;
+  alreadySaved: boolean;
+  buyerMatches: Array<{ leadId: string; name: string; score: number }>;
+  buyerMatchCount: number;
+}
+
+export interface FsboSearchParams {
+  center: string;
+  minPrice?: number;
+  maxPrice?: number;
+  minSize?: number;
+  maxSize?: number;
+  bedrooms?: string;
+  propertyType?: string;
+  distance?: number;
+}
+
+/** Procura particulares a vender no Idealista, cruzados com a carteira. */
+export async function searchFsboListings(params: FsboSearchParams): Promise<{
+  totalFound: number;
+  privateCount: number;
+  buyersConsidered: number;
+  results: FsboSearchResult[];
+}> {
+  const headers = await authHeaders();
+  const response = await fetch("/api/gpt/fsbo/search", {
+    method: "POST",
+    headers,
+    body: JSON.stringify(params),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || "Erro na pesquisa.");
+  return data;
+}
+
 /** Organiza o texto de um anúncio nos campos do imóvel. Não grava. */
 export async function extractFsboListing(params: { text: string; sourceUrl?: string }): Promise<{
   prospect: Partial<FsboProspect>;

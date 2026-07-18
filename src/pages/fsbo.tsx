@@ -15,12 +15,12 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import {
-  Home, Loader2, Sparkles, Users, Phone, Trash2, AlertTriangle, ExternalLink,
+  Home, Loader2, Sparkles, Users, Phone, Trash2, AlertTriangle, ExternalLink, Search,
 } from "lucide-react";
 import {
   extractFsboListing, matchFsboBuyers, listFsboProspects, saveFsboProspect,
-  updateFsboProspect, deleteFsboProspect,
-  type FsboProspect, type FsboBuyerMatch, type FsboStatus,
+  updateFsboProspect, deleteFsboProspect, searchFsboListings,
+  type FsboProspect, type FsboBuyerMatch, type FsboStatus, type FsboSearchResult,
 } from "@/services/fsboService";
 
 const STATUS_LABELS: Record<FsboStatus, string> = {
@@ -58,6 +58,69 @@ export default function FsboPage() {
   const [matches, setMatches] = useState<FsboBuyerMatch[]>([]);
   const [matchTarget, setMatchTarget] = useState<FsboProspect | null>(null);
   const [matching, setMatching] = useState(false);
+
+  // Busca no Idealista
+  const [tab, setTab] = useState<"lista" | "procurar">("lista");
+  const [searchZone, setSearchZone] = useState("");
+  const [searchMin, setSearchMin] = useState("");
+  const [searchMax, setSearchMax] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [searchResults, setSearchResults] = useState<FsboSearchResult[] | null>(null);
+  const [searchInfo, setSearchInfo] = useState<{ totalFound: number; privateCount: number } | null>(null);
+
+  const handleSearch = async () => {
+    if (!searchZone.trim()) return;
+    setSearching(true);
+    setSearchResults(null);
+    try {
+      const data = await searchFsboListings({
+        center: searchZone.trim(),
+        minPrice: searchMin ? Number(searchMin) : undefined,
+        maxPrice: searchMax ? Number(searchMax) : undefined,
+      });
+      setSearchResults(data.results);
+      setSearchInfo({ totalFound: data.totalFound, privateCount: data.privateCount });
+    } catch (error) {
+      toast({
+        title: "Erro na pesquisa",
+        description: error instanceof Error ? error.message : "Tenta novamente.",
+        variant: "destructive",
+      });
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const saveFromSearch = async (result: FsboSearchResult) => {
+    try {
+      await saveFsboProspect({
+        source: "idealista",
+        source_url: result.url,
+        title: result.title,
+        description: result.description,
+        property_type: result.propertyType,
+        typology: result.typology,
+        price: result.price,
+        area: result.size,
+        bedrooms: result.rooms,
+        bathrooms: result.bathrooms,
+        city: result.municipality,
+        district: result.district,
+        matched_buyers: result.buyerMatchCount,
+      });
+      setSearchResults((prev) =>
+        prev ? prev.map((r) => (r.propertyCode === result.propertyCode ? { ...r, alreadySaved: true } : r)) : prev
+      );
+      toast({ title: "Guardado", description: "Adicionado à tua lista de particulares." });
+      await load();
+    } catch (error) {
+      toast({
+        title: "Erro ao guardar",
+        description: error instanceof Error ? error.message : "Tenta novamente.",
+        variant: "destructive",
+      });
+    }
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -191,25 +254,161 @@ export default function FsboPage() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              <Select value={filter} onValueChange={(v) => setFilter(v as FsboStatus | "todos")}>
-                <SelectTrigger className="w-44">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="todos">Todos</SelectItem>
-                  {(Object.keys(STATUS_LABELS) as FsboStatus[]).map((s) => (
-                    <SelectItem key={s} value={s}>{STATUS_LABELS[s]}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Button onClick={() => setAddOpen(true)}>
+              <div className="flex gap-1 rounded-lg border p-1">
+                <Button
+                  variant={tab === "procurar" ? "default" : "ghost"}
+                  size="sm"
+                  onClick={() => setTab("procurar")}
+                >
+                  <Search className="mr-2 h-4 w-4" />
+                  Procurar
+                </Button>
+                <Button
+                  variant={tab === "lista" ? "default" : "ghost"}
+                  size="sm"
+                  onClick={() => setTab("lista")}
+                >
+                  A minha lista
+                </Button>
+              </div>
+
+              {tab === "lista" && (
+                <Select value={filter} onValueChange={(v) => setFilter(v as FsboStatus | "todos")}>
+                  <SelectTrigger className="w-44">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Todos</SelectItem>
+                    {(Object.keys(STATUS_LABELS) as FsboStatus[]).map((s) => (
+                      <SelectItem key={s} value={s}>{STATUS_LABELS[s]}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+
+              <Button variant="outline" onClick={() => setAddOpen(true)}>
                 <Sparkles className="mr-2 h-4 w-4" />
-                Adicionar anúncio
+                Colar anúncio
               </Button>
             </div>
           </div>
 
-          {loading ? (
+          {tab === "procurar" && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Procurar particulares no Idealista</CardTitle>
+                <CardDescription>
+                  Mostra os anúncios sem mediadora identificada e diz-te quantos dos teus
+                  compradores encaixam em cada um. Para contactar, abres o anúncio — o contacto
+                  do proprietário está lá, não no Idealista via API.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-2 sm:grid-cols-4">
+                  <Input
+                    className="sm:col-span-2"
+                    placeholder="Zona (ex.: Matosinhos)"
+                    value={searchZone}
+                    onChange={(e) => setSearchZone(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+                  />
+                  <Input
+                    type="number"
+                    placeholder="Preço mín."
+                    value={searchMin}
+                    onChange={(e) => setSearchMin(e.target.value)}
+                  />
+                  <Input
+                    type="number"
+                    placeholder="Preço máx."
+                    value={searchMax}
+                    onChange={(e) => setSearchMax(e.target.value)}
+                  />
+                </div>
+
+                <Button onClick={handleSearch} disabled={searching || !searchZone.trim()}>
+                  {searching ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Search className="mr-2 h-4 w-4" />
+                  )}
+                  Procurar
+                </Button>
+
+                {searchInfo && (
+                  <p className="text-sm text-muted-foreground">
+                    {searchInfo.privateCount} de {searchInfo.totalFound} anúncios parecem ser de
+                    particulares.
+                  </p>
+                )}
+
+                {searchResults && searchResults.length > 0 && (
+                  <div className="space-y-2">
+                    {searchResults.map((r) => (
+                      <div key={r.propertyCode} className="flex gap-3 rounded-lg border p-3">
+                        {r.thumbnail && (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={r.thumbnail}
+                            alt=""
+                            className="h-20 w-28 shrink-0 rounded object-cover"
+                          />
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <div className="mb-1 flex flex-wrap items-center gap-2">
+                            {r.buyerMatchCount > 0 && (
+                              <Badge variant="outline" className="gap-1 bg-purple-100 text-purple-800">
+                                <Users className="h-3 w-3" />
+                                {r.buyerMatchCount} comprador{r.buyerMatchCount === 1 ? "" : "es"}
+                              </Badge>
+                            )}
+                            {r.alreadySaved && <Badge variant="secondary">Já na lista</Badge>}
+                          </div>
+                          <p className="truncate font-medium">{r.title}</p>
+                          <p className="truncate text-sm text-muted-foreground">
+                            {[
+                              r.typology,
+                              r.municipality,
+                              r.size ? `${r.size} m²` : null,
+                              r.price ? `${Number(r.price).toLocaleString("pt-PT")} €` : null,
+                            ].filter(Boolean).join(" · ")}
+                          </p>
+                          {r.buyerMatches.length > 0 && (
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {r.buyerMatches.map((m) => `${m.name} (${m.score}%)`).join(" · ")}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex shrink-0 flex-col gap-2">
+                          <Button size="sm" variant="outline" asChild>
+                            <a href={r.url} target="_blank" rel="noopener noreferrer">
+                              <ExternalLink className="mr-1 h-4 w-4" />
+                              Abrir
+                            </a>
+                          </Button>
+                          <Button
+                            size="sm"
+                            onClick={() => saveFromSearch(r)}
+                            disabled={r.alreadySaved}
+                          >
+                            Guardar
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {searchResults && searchResults.length === 0 && (
+                  <p className="py-6 text-center text-muted-foreground">
+                    Não encontrei anúncios de particulares nesta zona com estes critérios.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {tab === "lista" && (loading ? (
             <div className="flex items-center justify-center py-16 text-muted-foreground">
               <Loader2 className="mr-2 h-5 w-5 animate-spin" />
               A carregar…
@@ -297,7 +496,7 @@ export default function FsboPage() {
                 </Card>
               ))}
             </div>
-          )}
+          ))}
         </div>
 
         {/* Adicionar anúncio */}
