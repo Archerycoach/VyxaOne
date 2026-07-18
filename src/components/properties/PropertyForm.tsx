@@ -25,6 +25,7 @@ import { Switch } from "@/components/ui/switch";
 import { getOrCreateLandingLink, setLandingPublished as apiSetLandingPublished, getLandingState } from "@/services/landingService";
 import { addPropertyImage, removePropertyImage } from "@/services/imageUploadService";
 import { PropertyDocumentScanner } from "@/components/properties/PropertyDocumentScanner";
+import { indexPropertyForSearch } from "@/services/semanticSearchService";
 import type { Property } from "@/types";
 
 // Tipos simplificados para os seletores
@@ -354,14 +355,18 @@ export function PropertyForm({
         user_id: user.id
       };
 
+      // Reindexa para a pesquisa semântica (best-effort — não bloqueia o
+      // guardar, e é ignorado se o conteúdo não mudou).
       if (property) {
         await updateProperty(property.id, propertyData);
+        void indexPropertyForSearch(property.id);
         toast({
           title: "Sucesso",
           description: "Imóvel atualizado com sucesso",
         });
       } else {
-        await createProperty(propertyData);
+        const created = await createProperty(propertyData);
+        if ((created as any)?.id) void indexPropertyForSearch((created as any).id);
         toast({
           title: "Sucesso",
           description: "Imóvel criado com sucesso",
