@@ -11,6 +11,16 @@ import { runAI } from "@/lib/ai/provider";
  * documento legal é pior do que um campo vazio.
  */
 
+// Um PDF ou fotografia em base64 ultrapassa facilmente o limite de 1 MB que o
+// Next impõe por omissão ao corpo dos pedidos.
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: "16mb",
+    },
+  },
+};
+
 type DocumentKind = "caderneta" | "energia" | "cpcv" | "auto";
 
 const KIND_HINTS: Record<Exclude<DocumentKind, "auto">, string> = {
@@ -41,6 +51,40 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(400).json({ error: "Documento não fornecido" });
     }
 
+    // Cadernetas prediais e certificados energéticos são quase sempre PDF.
+    // Nesse caso extraímos o texto e enviamo-lo à IA (em vez da imagem):
+    // é mais fiável e mais barato do que fazer OCR de uma fotografia.
+    const isPdf = imageBase64.startsWith("data:application/pdf");
+    let pdfText = "";
+
+    if (isPdf) {
+      try {
+        const base64 = imageBase64.split(",")[1] || "";
+        const buffer = Buffer.from(base64, "base64");
+
+        // pdf-parse@1 (a v2 depende de DOMMatrix/canvas, indisponíveis numa
+        // rota de API em Node) — mesmo padrão do extract-listing-content.
+        const pdfParseModule: any = await import("pdf-parse");
+        const pdfParse = typeof pdfParseModule === "function" ? pdfParseModule : pdfParseModule.default;
+        const parsed = await pdfParse(buffer);
+        pdfText = (parsed.text || "").trim();
+      } catch (pdfError) {
+        console.error("[extract-from-document] Erro ao ler o PDF:", pdfError);
+        return res.status(422).json({
+          error: "Não foi possível ler este PDF. Tenta exportá-lo de novo ou envia uma fotografia do documento.",
+        });
+      }
+
+      // PDF digitalizado (só imagem, sem camada de texto): não dá para extrair
+      // texto e não conseguimos rasterizá-lo aqui. Dizemos o que fazer.
+      if (pdfText.length < 40) {
+        return res.status(422).json({
+          error:
+            "Este PDF não tem texto — parece ser digitalizado a partir de papel. Fotografa o documento e envia a imagem, que aí consigo lê-lo.",
+        });
+      }
+    }
+
     const documentKind: DocumentKind = kind || "auto";
     const hint =
       documentKind === "auto"
@@ -50,6 +94,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const prompt = `Analisa este documento imobiliário português e extrai os dados para JSON.
 
 ${hint}
+${isPdf ? `\nTEXTO DO DOCUMENTO:\n"""\n${pdfText.substring(0, 12000)}\n"""\n` : ""}
 
 Devolve EXATAMENTE esta estrutura:
 {
@@ -78,7 +123,9 @@ Instruções CRÍTICAS:
 - Usa null em TODOS os campos que não conseguires ler com certeza. NUNCA inventes.
 - Se a imagem estiver ilegível ou não for um destes documentos, devolve document_type "desconhecido" e todos os campos a null.
 - Os números devem ser números puros, sem símbolos de moeda nem separadores de milhares.
-- confidence "baixa" se a imagem estiver tremida, cortada ou com pouca luz.
+- confidence: ${isPdf
+      ? '"alta" se o texto do documento for claro e completo; "baixa" se estiver truncado ou confuso.'
+      : '"baixa" se a imagem estiver tremida, cortada ou com pouca luz.'}
 - Responde EXCLUSIVAMENTE com o JSON, sem texto antes ou depois.`;
 
     const aiResponse = await runAI({
@@ -87,10 +134,13 @@ Instruções CRÍTICAS:
       messages: [
         {
           role: "user",
-          content: [
-            { type: "text", text: prompt },
-            { type: "image_url", image_url: { url: imageBase64 } },
-          ] as any,
+          // No PDF o texto já vai dentro do prompt — não há imagem para enviar.
+          content: isPdf
+            ? prompt
+            : ([
+                { type: "text", text: prompt },
+                { type: "image_url", image_url: { url: imageBase64 } },
+              ] as any),
         },
       ],
       temperature: 0.1,

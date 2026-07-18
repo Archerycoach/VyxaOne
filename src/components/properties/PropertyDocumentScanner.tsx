@@ -71,10 +71,21 @@ export function PropertyDocumentScanner({ onApply }: PropertyDocumentScannerProp
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!file.type.startsWith("image/")) {
+    const isPdf = file.type === "application/pdf";
+    if (!file.type.startsWith("image/") && !isPdf) {
       toast({
         title: "Ficheiro inválido",
-        description: "Envia uma fotografia ou imagem do documento.",
+        description: "Envia um PDF ou uma fotografia do documento.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Ficheiros muito grandes rebentam o limite do corpo do pedido.
+    if (file.size > 12 * 1024 * 1024) {
+      toast({
+        title: "Ficheiro demasiado grande",
+        description: "O limite é 12 MB. Comprime o PDF ou envia uma fotografia.",
         variant: "destructive",
       });
       return;
@@ -133,7 +144,7 @@ export function PropertyDocumentScanner({ onApply }: PropertyDocumentScannerProp
       <input
         ref={inputRef}
         type="file"
-        accept="image/*"
+        accept="application/pdf,image/*"
         className="hidden"
         onChange={handleFile}
       />
@@ -154,6 +165,8 @@ export function PropertyDocumentScanner({ onApply }: PropertyDocumentScannerProp
           <FileScan className="mr-2 h-4 w-4" />
           Ler documento
         </Button>
+
+        <span className="text-xs text-muted-foreground">PDF ou fotografia</span>
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
@@ -161,8 +174,8 @@ export function PropertyDocumentScanner({ onApply }: PropertyDocumentScannerProp
           <DialogHeader>
             <DialogTitle>Dados lidos do documento</DialogTitle>
             <DialogDescription>
-              Confirma os valores antes de os aplicar à ficha do imóvel. A IA pode ler mal
-              números e moradas em fotografias.
+              Confirma os valores antes de os aplicar à ficha do imóvel. Em PDF a leitura é
+              fiável; em fotografia, a IA pode ler mal números e moradas.
             </DialogDescription>
           </DialogHeader>
 
