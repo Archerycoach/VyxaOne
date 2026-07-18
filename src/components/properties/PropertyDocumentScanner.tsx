@@ -38,6 +38,7 @@ const FIELD_LABELS: Record<string, string> = {
   area: "Área (m²)",
   bedrooms: "Quartos",
   bathrooms: "Casas de banho",
+  floor: "Andar",
   energy_rating: "Classe energética",
   price: "Preço",
   year_built: "Ano de construção",

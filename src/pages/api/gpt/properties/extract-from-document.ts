@@ -110,6 +110,7 @@ Devolve EXATAMENTE esta estrutura:
     "area": número da área bruta privativa em m2, ou null,
     "bedrooms": número de quartos ou null,
     "bathrooms": número de casas de banho ou null,
+    "floor": número do andar (ex.: 3 para "3º dto"), ou null,
     "energy_rating": "A+ | A | B | B- | C | D | E | F, ou null",
     "price": número (preço de venda, só no CPCV) ou null,
     "year_built": número (ano de construção) ou null,
