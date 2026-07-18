@@ -20,7 +20,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { SemanticPropertyMatches } from "@/components/leads/SemanticPropertyMatches";
 import { Textarea } from "@/components/ui/textarea";
 import {
   User,
@@ -1181,6 +1182,22 @@ export function LeadDetailsDialog({
 
             <TabsContent value="ai-assistant" className="mt-0 space-y-4">
               <LeadConversionProbabilityPanel leadId={lead.id} />
+
+              {/* Cruzamento semântico com a carteira (lê as notas, não só os filtros) */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">Imóveis que encaixam</CardTitle>
+                  <CardDescription>
+                    Cruza o que está escrito nesta lead — preferências e notas — com a carteira,
+                    incluindo o que não cabe em filtros (&quot;luminoso&quot;, &quot;vista&quot;,
+                    &quot;espaço para escritório&quot;).
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <SemanticPropertyMatches leadId={lead.id} />
+                </CardContent>
+              </Card>
+
               <LeadQualificationPanel leadId={lead.id} onInsertIntoDraft={handleInsertQualificationIntoDraft} onApplied={handleQualificationAppliedByAi} />
               <LeadAIInsightsPanel leadId={lead.id} />
             </TabsContent>

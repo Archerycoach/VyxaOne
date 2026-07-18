@@ -133,9 +133,20 @@ export default function DuplicateLeadsPage() {
               {groups.map((group) => (
                 <Card key={group.key}>
                   <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-base">
+                    <CardTitle className="flex flex-wrap items-center gap-2 text-base">
                       <Badge variant="secondary">{group.leads.length} leads</Badge>
-                      Possível duplicado
+                      {group.confidence === "possible" ? (
+                        <Badge variant="outline" className="bg-amber-100 text-amber-800">
+                          A confirmar
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="bg-green-100 text-green-800">
+                          Duplicado quase certo
+                        </Badge>
+                      )}
+                      <span className="text-sm font-normal text-muted-foreground">
+                        {group.reason || "Possível duplicado"}
+                      </span>
                     </CardTitle>
                   </CardHeader>
                   <CardContent>

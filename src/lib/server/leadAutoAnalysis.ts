@@ -3,6 +3,8 @@ import { getLeadAutoAnalysisPrompt } from "@/lib/ai/prompts/leadAutoAnalysis";
 import { getLeadQualification, formatCurrentQualificationValue, mapExtractedDataToLeadUpdate } from "@/lib/leadQualification";
 import { storeMemory } from "@/lib/ai/embeddings";
 import { buildLeadEventTitle } from "@/lib/leadEventTitle";
+import { getCapabilityLevel, recordAiAction } from "@/lib/server/aiActions";
+import { getPipelineStagesForLead } from "@/lib/server/pipelineStages";
 
 /**
  * Análise automática de uma lead após um novo registo (nota, interação ou
@@ -63,6 +65,8 @@ export interface AppliedAutoAnalysis {
   tasks_created: string[];
   agenda_blocks_pending: string[];
   next_actions: string[];
+  /** Ações que ficaram à espera de aprovação na caixa de entrada. */
+  proposed: string[];
 }
 
 export interface RunLeadAutoAnalysisParams {
@@ -89,7 +93,7 @@ export async function runLeadAutoAnalysis(
     // Guardas — por ordem, sem custo de IA.
     const { data: profile } = await supabaseAdmin
       .from("profiles")
-      .select("lead_auto_analysis_enabled, automation_paused")
+      .select("lead_auto_analysis_enabled, automation_paused, ai_capability_levels")
       .eq("id", userId)
       .maybeSingle();
 
@@ -141,6 +145,10 @@ export async function runLeadAutoAnalysis(
       currentValue: formatCurrentQualificationValue(lead, field.key),
     }));
 
+    // Fases reais desta instalação (personalizáveis) — sem isto a IA sugeria
+    // fases em inglês que nunca correspondiam e eram sempre descartadas.
+    const pipelineStages = await getPipelineStagesForLead(supabaseAdmin, lead.lead_type);
+
     const prompt = getLeadAutoAnalysisPrompt({
       newContent,
       trigger,
@@ -156,6 +164,7 @@ export async function runLeadAutoAnalysis(
       recentInteractions: interactions || [],
       recentNotes: notes || [],
       qualificationFields,
+      pipelineStages,
     });
 
     const aiResponse = await runAI({
@@ -184,54 +193,117 @@ export async function runLeadAutoAnalysis(
       qualification_fields: [],
       tasks_created: [],
       agenda_blocks_pending: [],
+      proposed: [],
       next_actions: Array.isArray(analysis.next_actions)
         ? analysis.next_actions.filter((a) => typeof a === "string" && a.trim()).slice(0, 3)
         : [],
     };
 
-    // 1. Atualização da lead: temperatura, status, qualificação (só campos
-    // vazios — nunca sobrescreve o que o consultor já preencheu; mesma regra
-    // do modo "auto" do analyze-notes).
-    const leadUpdate: Record<string, unknown> = {
-      last_ai_analysis_at: now,
-      updated_at: now,
-    };
+    // Níveis configurados pelo consultor para cada capacidade.
+    const levels = profile?.ai_capability_levels;
+    const qualificationLevel = getCapabilityLevel(levels, "lead_qualification");
+    const temperatureLevel = getCapabilityLevel(levels, "lead_temperature");
+    const statusLevel = getCapabilityLevel(levels, "lead_status");
+    const taskLevel = getCapabilityLevel(levels, "task_create");
+    const calendarLevel = getCapabilityLevel(levels, "calendar_block");
 
+    // Carimbo da análise — não é uma "alteração" ao trabalho do consultor,
+    // por isso é sempre gravado diretamente (serve o debounce).
+    await supabaseAdmin
+      .from("leads")
+      .update({ last_ai_analysis_at: now, updated_at: now })
+      .eq("id", leadId);
+
+    // 1a. Qualificação — só campos VAZIOS. Nunca sobrescreve o que o
+    // consultor já preencheu, por isso é a única que corre em automático.
+    const proposedQualification = mapExtractedDataToLeadUpdate(analysis.extracted_data || {});
+    const qualificationUpdates: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(proposedQualification)) {
+      const currentValue = (lead as Record<string, unknown>)[key];
+      if (currentValue === undefined || currentValue === null || currentValue === "") {
+        qualificationUpdates[key] = value;
+      }
+    }
+    if (Object.keys(qualificationUpdates).length > 0) {
+      const fieldNames = Object.keys(qualificationUpdates);
+      const { applied: wasApplied } = await recordAiAction({
+        supabaseAdmin,
+        userId,
+        capability: "lead_qualification",
+        level: qualificationLevel,
+        entityType: "lead",
+        entityId: leadId,
+        leadId,
+        title: `Preencher qualificação de ${lead.name}: ${fieldNames.join(", ")}`,
+        reason: analysis.summary,
+        source: trigger,
+        payload: { updates: qualificationUpdates },
+        previousState: Object.fromEntries(fieldNames.map((f) => [f, null])),
+      });
+      if (wasApplied) {
+        applied.qualification_fields.push(...fieldNames);
+      } else if (qualificationLevel === "propose") {
+        applied.proposed.push(`Qualificação: ${fieldNames.join(", ")}`);
+      }
+    }
+
+    // 1b. Temperatura — altera algo que o consultor pode ter definido.
     const validTemperatures = ["hot", "warm", "cold"];
     if (
       analysis.suggested_temperature &&
       validTemperatures.includes(analysis.suggested_temperature) &&
       analysis.suggested_temperature !== lead.temperature
     ) {
-      leadUpdate.temperature = analysis.suggested_temperature;
-      applied.temperature = { from: lead.temperature || "cold", to: analysis.suggested_temperature };
-    }
-
-    const validStatuses = ["new", "contacted", "qualified", "proposal", "negotiation", "won", "lost"];
-    if (
-      analysis.suggested_status &&
-      validStatuses.includes(analysis.suggested_status) &&
-      analysis.suggested_status !== lead.status
-    ) {
-      leadUpdate.status = analysis.suggested_status;
-      applied.status = { from: lead.status, to: analysis.suggested_status };
-    }
-
-    const proposedQualification = mapExtractedDataToLeadUpdate(analysis.extracted_data || {});
-    for (const [key, value] of Object.entries(proposedQualification)) {
-      const currentValue = (lead as Record<string, unknown>)[key];
-      if (currentValue === undefined || currentValue === null || currentValue === "") {
-        leadUpdate[key] = value;
-        applied.qualification_fields.push(key);
+      const from = lead.temperature || "cold";
+      const to = analysis.suggested_temperature;
+      const { applied: wasApplied } = await recordAiAction({
+        supabaseAdmin,
+        userId,
+        capability: "lead_temperature",
+        level: temperatureLevel,
+        entityType: "lead",
+        entityId: leadId,
+        leadId,
+        title: `Temperatura de ${lead.name}: ${from} → ${to}`,
+        reason: analysis.summary,
+        source: trigger,
+        payload: { updates: { temperature: to } },
+        previousState: { temperature: from },
+      });
+      if (wasApplied) {
+        applied.temperature = { from, to };
+      } else if (temperatureLevel === "propose") {
+        applied.proposed.push(`Temperatura: ${from} → ${to}`);
       }
     }
 
-    const { error: leadUpdateError } = await supabaseAdmin
-      .from("leads")
-      .update(leadUpdate)
-      .eq("id", leadId);
-    if (leadUpdateError) {
-      console.error(`[Lead Auto Analysis] Erro ao atualizar lead ${leadId}:`, leadUpdateError);
+    // 1c. Fase do pipeline — validada contra as fases REAIS desta agência.
+    if (
+      analysis.suggested_status &&
+      pipelineStages.includes(analysis.suggested_status) &&
+      analysis.suggested_status !== lead.status
+    ) {
+      const from = lead.status;
+      const to = analysis.suggested_status;
+      const { applied: wasApplied } = await recordAiAction({
+        supabaseAdmin,
+        userId,
+        capability: "lead_status",
+        level: statusLevel,
+        entityType: "lead",
+        entityId: leadId,
+        leadId,
+        title: `Fase de ${lead.name}: ${from} → ${to}`,
+        reason: analysis.summary,
+        source: trigger,
+        payload: { updates: { status: to } },
+        previousState: { status: from },
+      });
+      if (wasApplied) {
+        applied.status = { from, to };
+      } else if (statusLevel === "propose") {
+        applied.proposed.push(`Fase: ${from} → ${to}`);
+      }
     }
 
     // 2. Tarefas (máx. 2, garantido também aqui e não só no prompt).
@@ -239,27 +311,42 @@ export async function runLeadAutoAnalysis(
       .filter((t) => t && typeof t.title === "string" && t.title.trim())
       .slice(0, 2);
     for (const task of tasks) {
-      const { error: taskError } = await supabaseAdmin.from("tasks").insert({
-        user_id: userId,
-        related_lead_id: leadId,
-        title: task.title,
-        description: task.description || null,
-        due_date: task.due_date || null,
-        priority: ["urgent", "high", "medium", "low"].includes(task.priority || "") ? task.priority : "medium",
-        status: "pending",
+      const priority = ["urgent", "high", "medium", "low"].includes(task.priority || "")
+        ? task.priority
+        : "medium";
+      const { applied: wasApplied } = await recordAiAction({
+        supabaseAdmin,
+        userId,
+        capability: "task_create",
+        level: taskLevel,
+        entityType: "task",
+        leadId,
+        title: `Tarefa para ${lead.name}: ${task.title}`,
+        reason: task.description || analysis.summary,
+        source: trigger,
+        payload: {
+          task: {
+            title: task.title,
+            description: task.description || null,
+            due_date: task.due_date || null,
+            priority,
+          },
+        },
       });
-      if (taskError) {
-        console.error(`[Lead Auto Analysis] Erro ao criar tarefa (lead ${leadId}):`, taskError);
-      } else {
+      if (wasApplied) {
         applied.tasks_created.push(task.title);
+      } else if (taskLevel === "propose") {
+        applied.proposed.push(`Tarefa: ${task.title}`);
       }
     }
 
     // 3. Blocos de agenda "por confirmar" (ai_pending) — sem sync Google até
     // o consultor confirmar no calendário.
-    const agendaBlocks = (Array.isArray(analysis.agenda_blocks) ? analysis.agenda_blocks : [])
-      .filter((b) => b && typeof b.title === "string" && b.title.trim() && b.start_time)
-      .slice(0, 2);
+    const agendaBlocks = calendarLevel === "off"
+      ? []
+      : (Array.isArray(analysis.agenda_blocks) ? analysis.agenda_blocks : [])
+          .filter((b) => b && typeof b.title === "string" && b.title.trim() && b.start_time)
+          .slice(0, 2);
     for (const block of agendaBlocks) {
       const start = new Date(block.start_time);
       if (Number.isNaN(start.getTime()) || start.getTime() < Date.now()) {
@@ -328,6 +415,11 @@ export async function runLeadAutoAnalysis(
     }
     for (const title of applied.agenda_blocks_pending) {
       notificationLines.push(`📅 Bloco na agenda POR CONFIRMAR: ${title}`);
+    }
+    if (applied.proposed.length > 0) {
+      notificationLines.push(
+        `⏳ À espera da tua aprovação (${applied.proposed.length}): ${applied.proposed.join(" · ")}`
+      );
     }
     if (applied.next_actions.length > 0) {
       notificationLines.push(`💡 Sugestões: ${applied.next_actions.join(" · ")}`);

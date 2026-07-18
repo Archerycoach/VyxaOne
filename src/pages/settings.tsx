@@ -24,6 +24,7 @@ import { PipelineStagesSettings } from "@/components/settings/PipelineStagesSett
 import { TwoFactorSettings } from "@/components/settings/TwoFactorSettings";
 import { PersonalLandingSettings } from "@/components/settings/PersonalLandingSettings";
 import { FormQuestionsSettings } from "@/components/settings/FormQuestionsSettings";
+import { AiCapabilityLevels } from "@/components/settings/AiCapabilityLevels";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
 
 // Least-privilege scopes (Google OAuth verification): apenas o necessário.
@@ -1242,6 +1243,8 @@ export default function Settings() {
                 </div>
               </CardContent>
             </Card>
+
+            <AiCapabilityLevels profile={profile} onProfileChange={setProfile} />
 
             <Card>
               <CardHeader>

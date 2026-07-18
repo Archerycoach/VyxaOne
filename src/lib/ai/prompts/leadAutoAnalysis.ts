@@ -31,6 +31,12 @@ interface LeadAutoAnalysisContext {
   recentNotes: Array<{ created_at: string | null; note: string }>;
   /** Campos de qualificação relevantes para esta lead, com o valor atual conhecido. */
   qualificationFields: QualificationFieldContext[];
+  /**
+   * Fases do pipeline configuradas para o tipo desta lead (comprador/vendedor).
+   * São específicas de cada instalação — não podem ser fixas no prompt, senão
+   * a IA sugere fases que não existem e a sugestão é sempre descartada.
+   */
+  pipelineStages: string[];
 }
 
 const TRIGGER_LABELS: Record<LeadAutoAnalysisContext["trigger"], string> = {
@@ -40,7 +46,7 @@ const TRIGGER_LABELS: Record<LeadAutoAnalysisContext["trigger"], string> = {
 };
 
 export function getLeadAutoAnalysisPrompt(context: LeadAutoAnalysisContext): string {
-  const { newContent, trigger, leadData, recentInteractions, recentNotes, qualificationFields } = context;
+  const { newContent, trigger, leadData, recentInteractions, recentNotes, qualificationFields, pipelineStages } = context;
 
   const now = new Date();
   const nowStr = now.toISOString();
@@ -87,14 +93,9 @@ ${notesContext}
 
 **TAREFA 1 — Estado da lead:**
 1. **summary**: Resume a novidade e o seu impacto em 2-3 frases.
-2. **suggested_status**: Novo status no pipeline. Valores possíveis:
-   - "new" = Lead acabou de entrar
-   - "contacted" = Primeiro contacto feito
-   - "qualified" = Lead qualificada, necessidades claras
-   - "proposal" = Proposta/imóveis enviados
-   - "negotiation" = Em negociação de valores/condições
-   - "won" = Negócio fechado
-   - "lost" = Lead perdida
+2. **suggested_status**: Nova fase no pipeline. Usa EXATAMENTE um destes valores (são as fases configuradas nesta agência):
+${pipelineStages.map((stage) => `   - "${stage}"`).join("\n")}
+   Não inventes fases nem traduzas: devolve o identificador tal como está escrito acima.
    Se a novidade não justificar mudança, devolve o status atual.
 3. **suggested_temperature**: "hot" (urgência, decisão iminente), "warm" (interesse sem pressa) ou "cold" (desinteresse, obstáculos). Se a novidade não justificar mudança, devolve a temperatura atual.
 

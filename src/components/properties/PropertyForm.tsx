@@ -24,6 +24,8 @@ import { Wand2, Globe, Copy, Loader2, ImagePlus, X } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { getOrCreateLandingLink, setLandingPublished as apiSetLandingPublished, getLandingState } from "@/services/landingService";
 import { addPropertyImage, removePropertyImage } from "@/services/imageUploadService";
+import { PropertyDocumentScanner } from "@/components/properties/PropertyDocumentScanner";
+import { indexPropertyForSearch } from "@/services/semanticSearchService";
 import type { Property } from "@/types";
 
 // Tipos simplificados para os seletores
@@ -78,11 +80,56 @@ export function PropertyForm({
     bedrooms: "",
     bathrooms: "",
     area: "",
+    typology: "",
+    floor: "",
+    energy_rating: "",
+    year_built: "",
+    matrix_article: "",
+    taxable_value: "",
     status: "available",
     lead_id: preselectedLeadId || "none",
     contact_id: preselectedContactId || "none",
     acquisition_date: new Date().toISOString().split("T")[0]
   });
+
+  /**
+   * Aplica ao formulário os campos lidos de um documento (caderneta predial,
+   * certificado energético, CPCV). Preenche tudo o que o documento traga —
+   * incluindo artigo matricial e valor patrimonial — para a ficha do imóvel
+   * poder ser criada diretamente a partir da caderneta.
+   *
+   * Só sobrepõe campos que o documento traga: o que já estiver preenchido e
+   * não vier no documento fica como está.
+   */
+  const handleDocumentFields = (fields: Record<string, unknown>) => {
+    const asText = (value: unknown) => (value === null || value === undefined ? "" : String(value));
+    const take = (value: unknown, current: string) => (value ? asText(value) : current);
+
+    setFormData((prev) => ({
+      ...prev,
+      address: take(fields.address, prev.address),
+      city: take(fields.city, prev.city),
+      district: take(fields.district, prev.district),
+      postal_code: take(fields.postal_code, prev.postal_code),
+      property_type: take(fields.property_type, prev.property_type),
+      area: take(fields.area, prev.area),
+      bedrooms: take(fields.bedrooms, prev.bedrooms),
+      bathrooms: take(fields.bathrooms, prev.bathrooms),
+      price: take(fields.price, prev.price),
+      typology: take(fields.typology, prev.typology),
+      floor: take(fields.floor, prev.floor),
+      energy_rating: take(fields.energy_rating, prev.energy_rating),
+      year_built: take(fields.year_built, prev.year_built),
+      matrix_article: take(fields.matrix_article, prev.matrix_article),
+      taxable_value: take(fields.taxable_value, prev.taxable_value),
+      // Sem título ainda? Compõe um a partir do que a caderneta deu.
+      title:
+        prev.title ||
+        [fields.typology, fields.property_type === "apartment" ? "Apartamento" : null, fields.city]
+          .filter(Boolean)
+          .join(" · "),
+    }));
+  };
 
   const [generatingDesc, setGeneratingDesc] = useState(false);
   const [descKeywords, setDescKeywords] = useState("");
@@ -264,6 +311,12 @@ export function PropertyForm({
         bedrooms: property.bedrooms ? property.bedrooms.toString() : "",
         bathrooms: property.bathrooms ? property.bathrooms.toString() : "",
         area: property.area ? property.area.toString() : "",
+        typology: property.typology || "",
+        floor: (property as any).floor != null ? String((property as any).floor) : "",
+        energy_rating: property.energy_rating || "",
+        year_built: (property as any).year_built != null ? String((property as any).year_built) : "",
+        matrix_article: (property as any).matrix_article || "",
+        taxable_value: (property as any).taxable_value != null ? String((property as any).taxable_value) : "",
         status: property.status || "available",
         lead_id: property.lead_id || "none",
         contact_id: property.contact_id || "none",
@@ -288,6 +341,12 @@ export function PropertyForm({
       bedrooms: "",
       bathrooms: "",
       area: "",
+      typology: "",
+      floor: "",
+      energy_rating: "",
+      year_built: "",
+      matrix_article: "",
+      taxable_value: "",
       status: "available",
       lead_id: preselectedLeadId || "none",
       contact_id: preselectedContactId || "none",
@@ -323,6 +382,12 @@ export function PropertyForm({
         bedrooms: formData.bedrooms ? Number(formData.bedrooms) : null,
         bathrooms: formData.bathrooms ? Number(formData.bathrooms) : null,
         area: formData.area ? Number(formData.area) : null,
+        typology: formData.typology || null,
+        floor: formData.floor ? Number(formData.floor) : null,
+        energy_rating: formData.energy_rating || null,
+        year_built: formData.year_built ? Number(formData.year_built) : null,
+        matrix_article: formData.matrix_article || null,
+        taxable_value: formData.taxable_value ? Number(formData.taxable_value) : null,
         status: formData.status as "available" | "reserved" | "sold" | "rented" | "off_market",
         lead_id: formData.lead_id && formData.lead_id !== "none" ? formData.lead_id : null,
         contact_id: formData.contact_id && formData.contact_id !== "none" ? formData.contact_id : null,
@@ -330,14 +395,18 @@ export function PropertyForm({
         user_id: user.id
       };
 
+      // Reindexa para a pesquisa semântica (best-effort — não bloqueia o
+      // guardar, e é ignorado se o conteúdo não mudou).
       if (property) {
         await updateProperty(property.id, propertyData);
+        void indexPropertyForSearch(property.id);
         toast({
           title: "Sucesso",
           description: "Imóvel atualizado com sucesso",
         });
       } else {
-        await createProperty(propertyData);
+        const created = await createProperty(propertyData);
+        if ((created as any)?.id) void indexPropertyForSearch((created as any).id);
         toast({
           title: "Sucesso",
           description: "Imóvel criado com sucesso",
@@ -441,6 +510,13 @@ export function PropertyForm({
         <DialogHeader>
           <DialogTitle>{property ? "Editar Imóvel" : "Novo Imóvel"}</DialogTitle>
         </DialogHeader>
+
+        {/* Preencher a partir da caderneta predial, certificado energético ou CPCV */}
+        <div className="rounded-lg border bg-muted/40 p-3">
+          <p className="mb-2 text-sm font-medium">Preencher a partir de um documento</p>
+          <PropertyDocumentScanner onApply={handleDocumentFields} />
+        </div>
+
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="title">Título *</Label>
@@ -635,6 +711,75 @@ export function PropertyForm({
                 type="number"
                 value={formData.area}
                 onChange={(e) => setFormData({ ...formData, area: e.target.value })}
+                placeholder="0"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <div className="space-y-2">
+              <Label htmlFor="typology">Tipologia</Label>
+              <Input
+                id="typology"
+                value={formData.typology}
+                onChange={(e) => setFormData({ ...formData, typology: e.target.value })}
+                placeholder="T3"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="floor">Andar</Label>
+              <Input
+                id="floor"
+                type="number"
+                value={formData.floor}
+                onChange={(e) => setFormData({ ...formData, floor: e.target.value })}
+                placeholder="3"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="energy_rating">Classe energética</Label>
+              <Input
+                id="energy_rating"
+                value={formData.energy_rating}
+                onChange={(e) => setFormData({ ...formData, energy_rating: e.target.value })}
+                placeholder="B-"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="year_built">Ano de construção</Label>
+              <Input
+                id="year_built"
+                type="number"
+                value={formData.year_built}
+                onChange={(e) => setFormData({ ...formData, year_built: e.target.value })}
+                placeholder="2008"
+              />
+            </div>
+          </div>
+
+          {/* Dados da caderneta predial / certidão permanente */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="matrix_article">Artigo matricial</Label>
+              <Input
+                id="matrix_article"
+                value={formData.matrix_article}
+                onChange={(e) => setFormData({ ...formData, matrix_article: e.target.value })}
+                placeholder="791-G"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="taxable_value">Valor patrimonial (VPT)</Label>
+              <Input
+                id="taxable_value"
+                type="number"
+                step="0.01"
+                value={formData.taxable_value}
+                onChange={(e) => setFormData({ ...formData, taxable_value: e.target.value })}
                 placeholder="0"
               />
             </div>

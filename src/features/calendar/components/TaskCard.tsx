@@ -1,5 +1,5 @@
 import React from "react";
-import { Clock } from "lucide-react";
+import { Clock, User } from "lucide-react";
 import type { Task } from "@/types";
 import { Badge } from "@/components/ui/badge";
 
@@ -36,6 +36,9 @@ export function TaskCard({
           {task.dueDate && new Date(task.dueDate).toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" })}
         </div>
         <div className="truncate">{task.title}</div>
+        {task.relatedLeadName && (
+          <div className="truncate text-[10px] text-blue-800/80">{task.relatedLeadName}</div>
+        )}
       </div>
     );
   }
@@ -70,6 +73,12 @@ export function TaskCard({
               </Badge>
             )}
           </div>
+          {task.relatedLeadName && (
+            <div className="mt-1.5 inline-flex max-w-full items-center gap-1 rounded-md bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800">
+              <User className="h-3 w-3 shrink-0" />
+              <span className="truncate">{task.relatedLeadName}</span>
+            </div>
+          )}
           {task.description && (
             <p className="text-sm text-gray-600 mt-1">{task.description}</p>
           )}

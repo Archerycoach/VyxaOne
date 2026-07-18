@@ -84,10 +84,17 @@ export function TaskCard({ task, onComplete, onEdit, onDelete, onAddNote }: Task
       <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
         <div className="flex items-start gap-2 flex-1">
           {getStatusIcon(task.status)}
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <CardTitle className="text-base font-semibold line-clamp-2">
               {task.title}
             </CardTitle>
+            {/* Lead a que a tarefa diz respeito */}
+            {task.relatedLeadName && (
+              <div className="mt-1.5 inline-flex max-w-full items-center gap-1 rounded-md bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-950 dark:text-blue-300">
+                <User className="h-3 w-3 shrink-0" />
+                <span className="truncate">{task.relatedLeadName}</span>
+              </div>
+            )}
           </div>
         </div>
         <div className="flex gap-1">
