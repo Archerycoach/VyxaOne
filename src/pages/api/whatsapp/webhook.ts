@@ -7,6 +7,8 @@ import { deriveAppUrl } from "@/lib/server/appUrl";
 import { getGoogleCalendarFreeBusy, syncEventToGoogle } from "@/lib/googleCalendar";
 import { recordOptOut } from "@/services/consentService";
 import { calculateLeadScore } from "@/services/leadScoringService";
+import { runAI } from "@/lib/ai/provider";
+import { recordAiAction, getCapabilityLevel } from "@/lib/server/aiActions";
 
 // Initialize Supabase Admin client to bypass RLS for webhook processing
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
@@ -450,10 +452,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
               // ✅ Recalculate lead score after inbound message
               await calculateLeadScore(lead.id, supabaseAdmin, "whatsapp_inbound");
 
-              // 5. Trigger the GPT agent to respond and qualify (Using Claude)
-              const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
-              
-              if (anthropicApiKey) {
+              // 5. Agente de conversa: responde à lead e qualifica.
+              //
+              // Passa pelo runAI (e não por uma chamada direta à Anthropic com
+              // uma chave global do ambiente): assim usa a chave certa segundo
+              // o plano/consultor e o custo fica registado em ai_usage_logs,
+              // como em todas as outras funcionalidades de IA.
+              {
                 try {
                   // Get recent interactions for context
                   const { data: recentInteractions } = await supabaseAdmin
@@ -511,32 +516,24 @@ Formato OBRIGATÓRIO do JSON:
   }
 }`;
 
-                  const response = await fetch("https://api.anthropic.com/v1/messages", {
-                    method: "POST",
-                    headers: {
-                      "Content-Type": "application/json",
-                      "x-api-key": anthropicApiKey,
-                      "anthropic-version": "2023-06-01"
-                    },
-                    body: JSON.stringify({
-                      model: "claude-3-haiku-20240307",
-                      max_tokens: 1024,
-                      system: systemPrompt,
-                      messages: [
-                        { role: "user", content: `Histórico recente:\n${historyText}\n\nNova mensagem da lead: ${text}\n\nGera APENAS o JSON de resposta.` }
-                      ],
-                      temperature: 0.7,
-                    })
+                  const aiResponse = await runAI({
+                    userId: lead.user_id,
+                    task: "whatsapp_agent",
+                    messages: [
+                      { role: "system", content: systemPrompt },
+                      {
+                        role: "user",
+                        content: `Histórico recente:\n${historyText}\n\nNova mensagem da lead: ${text}\n\nGera APENAS o JSON de resposta.`,
+                      },
+                    ],
+                    jsonMode: true,
+                    temperature: 0.7,
+                    maxTokens: 1024,
                   });
 
-                  if (response.ok) {
-                    const aiData = await response.json();
-                    let rawContent = aiData.content[0].text;
-                    
-                    // Cleanup possible markdown formatting from Claude
-                    rawContent = rawContent.replace(/```json/g, "").replace(/```/g, "").trim();
-                    const result = JSON.parse(rawContent);
-                    
+                  {
+                    const result = JSON.parse(aiResponse.text);
+
                     if (result.reply && !automationPaused) {
                       // Send the reply back to the lead
                       await sendWhatsAppMessage(lead.user_id, from, result.reply, supabaseAdmin, lead.id, false, "whatsapp_auto_responder");
@@ -732,32 +729,69 @@ Formato OBRIGATÓRIO do JSON:
                     }
 
                     if (Object.keys(updates).length > 0) {
-                      await supabaseAdmin
-                        .from("leads")
-                        .update(updates)
-                        .eq("id", lead.id);
-                        
-                      console.log(`[WhatsApp Webhook] Lead ${lead.id} updated with AI data:`, updates);
-                      
-                      if (result.lead_updates && Object.keys(result.lead_updates).length > 0) {
-                        await supabaseAdmin.from("interactions").insert({
-                          lead_id: lead.id,
-                          user_id: lead.user_id,
-                          interaction_type: "note",
-                          content: `Dados atualizados automaticamente pelo Claude (via WhatsApp):\n${JSON.stringify(result.lead_updates, null, 2)}`,
-                          interaction_date: new Date().toISOString()
+                      // Estado interno da conversa (não é uma "alteração" ao
+                      // trabalho do consultor) — aplicado sempre.
+                      const conversationKeys = ["follow_up_state", "archive_reason", "reactivation_attempts"];
+                      const conversationUpdates: Record<string, unknown> = {};
+                      const leadDataUpdates: Record<string, unknown> = {};
+                      for (const [key, value] of Object.entries(updates)) {
+                        if (conversationKeys.includes(key)) conversationUpdates[key] = value;
+                        else leadDataUpdates[key] = value;
+                      }
+
+                      if (Object.keys(conversationUpdates).length > 0) {
+                        await supabaseAdmin
+                          .from("leads")
+                          .update(conversationUpdates)
+                          .eq("id", lead.id);
+                      }
+
+                      // Temperatura e dados de qualificação passam pela espinha
+                      // de ações da IA: ficam auditados e podem ser desfeitos,
+                      // e respeitam o nível escolhido pelo consultor.
+                      if (Object.keys(leadDataUpdates).length > 0) {
+                        const { data: leadProfile } = await supabaseAdmin
+                          .from("profiles")
+                          .select("ai_capability_levels")
+                          .eq("id", lead.user_id)
+                          .maybeSingle();
+
+                        const capability = leadDataUpdates.temperature
+                          ? "lead_temperature"
+                          : "lead_qualification";
+                        const level = getCapabilityLevel(leadProfile?.ai_capability_levels, capability);
+
+                        const previousState: Record<string, unknown> = {};
+                        for (const key of Object.keys(leadDataUpdates)) {
+                          previousState[key] = (lead as Record<string, unknown>)[key] ?? null;
+                        }
+
+                        await recordAiAction({
+                          supabaseAdmin,
+                          userId: lead.user_id,
+                          capability,
+                          level,
+                          entityType: "lead",
+                          entityId: lead.id,
+                          leadId: lead.id,
+                          title: `WhatsApp de ${lead.name}: ${Object.keys(leadDataUpdates).join(", ")}`,
+                          reason: `A partir da mensagem recebida: "${text.substring(0, 200)}"`,
+                          source: "whatsapp_inbound",
+                          payload: { updates: leadDataUpdates },
+                          previousState,
                         });
                       }
-                      
+
+                      console.log(`[WhatsApp Webhook] Lead ${lead.id}: ação de IA registada`, updates);
+
                       // Recalculate lead score
                       await calculateLeadScore(lead.id, supabaseAdmin);
                     }
-                  } else {
-                    const errorText = await response.text();
-                    console.error("Anthropic API Error:", errorText);
                   }
                 } catch (aiError) {
-                  console.error("Error generating Anthropic reply:", aiError);
+                  // Sem chave de IA configurada, quota esgotada ou JSON inválido:
+                  // a mensagem da lead já ficou registada, só não há resposta automática.
+                  console.error("[WhatsApp Webhook] Erro no agente de IA:", aiError);
                 }
               }
               

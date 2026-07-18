@@ -138,6 +138,7 @@ export function Navigation() {
     { icon: Building2, label: "Empreendimentos", path: "/developments" },
     { icon: Users, label: "Contactos", path: "/contacts" },
     { icon: Radar, label: "Radar", path: "/radar" },
+    { icon: Sparkles, label: "Assistente IA", path: "/ai-inbox" },
     { icon: Calendar, label: "Agenda", path: "/calendar" },
     { icon: CheckSquare, label: "Tarefas", path: "/tasks" },
     { icon: Sparkles, label: "Idealista", path: "/idealista" },

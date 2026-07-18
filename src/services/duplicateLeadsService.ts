@@ -1,9 +1,17 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getAllLeads, type LeadWithContacts } from "./leadsService";
+import { nameSimilarity, POSSIBLE_DUPLICATE_THRESHOLD } from "@/lib/nameSimilarity";
 
 export interface DuplicateLeadGroup {
   key: string;
   leads: LeadWithContacts[];
+  /**
+   * "certain"  — partilham telefone ou email (praticamente de certeza a mesma pessoa)
+   * "possible" — nomes muito parecidos, contactos não coincidem (rever antes de fundir)
+   */
+  confidence?: "certain" | "possible";
+  /** Porque é que estas leads foram agrupadas — mostrado ao consultor. */
+  reason?: string;
 }
 
 // Últimos 9 dígitos (números de telemóvel/fixo PT) — ignora indicativo (+351,
@@ -75,15 +83,68 @@ export const findDuplicateLeadGroups = async (): Promise<DuplicateLeadGroup[]> =
     groups.set(root, group);
   }
 
-  return Array.from(groups.entries())
+  const certainGroups: DuplicateLeadGroup[] = Array.from(groups.entries())
     .filter(([, group]) => group.length > 1)
     .map(([key, group]) => ({
       key,
+      confidence: "certain" as const,
+      reason: "Partilham telefone ou email",
       leads: group.sort(
         (a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()
       ),
     }));
+
+  // Leads já agrupadas por contacto não voltam a ser sugeridas por nome.
+  const alreadyGrouped = new Set(certainGroups.flatMap((g) => g.leads.map((l) => l.id)));
+
+  return [...certainGroups, ...findPossibleDuplicatesByName(leads, alreadyGrouped)];
 };
+
+/**
+ * Pares com nomes muito parecidos cujos contactos não coincidem — tipicamente a
+ * mesma pessoa registada com um email diferente, ou com uma gralha no nome.
+ *
+ * Guarda contra falsos positivos: se AMBAS as leads têm telefone E email
+ * preenchidos e AMBOS diferem, são quase de certeza pessoas diferentes com o
+ * mesmo nome, e não são sugeridas. O caso que interessa apanhar é aquele em
+ * que um dos contactos falta ou tem gralha.
+ */
+function findPossibleDuplicatesByName(
+  leads: LeadWithContacts[],
+  alreadyGrouped: Set<string>
+): DuplicateLeadGroup[] {
+  const candidates = leads.filter((lead) => !alreadyGrouped.has(lead.id) && lead.name);
+  const pairs: DuplicateLeadGroup[] = [];
+
+  for (let i = 0; i < candidates.length; i++) {
+    for (let j = i + 1; j < candidates.length; j++) {
+      const a = candidates[i];
+      const b = candidates[j];
+
+      if (nameSimilarity(a.name, b.name) < POSSIBLE_DUPLICATE_THRESHOLD) continue;
+
+      const phoneA = normalizePhone(a.phone);
+      const phoneB = normalizePhone(b.phone);
+      const emailA = normalizeEmail(a.email);
+      const emailB = normalizeEmail(b.email);
+
+      const phonesConflict = !!phoneA && !!phoneB && phoneA !== phoneB;
+      const emailsConflict = !!emailA && !!emailB && emailA !== emailB;
+      if (phonesConflict && emailsConflict) continue;
+
+      pairs.push({
+        key: `name:${a.id}:${b.id}`,
+        confidence: "possible",
+        reason: "Nomes muito parecidos, contactos não coincidem",
+        leads: [a, b].sort(
+          (x, y) => new Date(x.created_at || 0).getTime() - new Date(y.created_at || 0).getTime()
+        ),
+      });
+    }
+  }
+
+  return pairs;
+}
 
 export const mergeLeads = async (primaryId: string, duplicateId: string): Promise<void> => {
   const { error } = await (supabase.rpc as any)("merge_leads", {

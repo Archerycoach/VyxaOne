@@ -24,6 +24,7 @@ import { Wand2, Globe, Copy, Loader2, ImagePlus, X } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { getOrCreateLandingLink, setLandingPublished as apiSetLandingPublished, getLandingState } from "@/services/landingService";
 import { addPropertyImage, removePropertyImage } from "@/services/imageUploadService";
+import { PropertyDocumentScanner } from "@/components/properties/PropertyDocumentScanner";
 import type { Property } from "@/types";
 
 // Tipos simplificados para os seletores
@@ -83,6 +84,29 @@ export function PropertyForm({
     contact_id: preselectedContactId || "none",
     acquisition_date: new Date().toISOString().split("T")[0]
   });
+
+  /**
+   * Aplica ao formulário os campos lidos de um documento (caderneta, certificado
+   * energético, CPCV). Só preenche os campos que este formulário tem; os
+   * restantes (artigo matricial, valor patrimonial, ano de construção) ficam
+   * visíveis no diálogo do scanner para o consultor os usar como quiser.
+   */
+  const handleDocumentFields = (fields: Record<string, unknown>) => {
+    const asText = (value: unknown) => (value === null || value === undefined ? "" : String(value));
+
+    setFormData((prev) => ({
+      ...prev,
+      address: fields.address ? asText(fields.address) : prev.address,
+      city: fields.city ? asText(fields.city) : prev.city,
+      district: fields.district ? asText(fields.district) : prev.district,
+      postal_code: fields.postal_code ? asText(fields.postal_code) : prev.postal_code,
+      property_type: fields.property_type ? asText(fields.property_type) : prev.property_type,
+      area: fields.area ? asText(fields.area) : prev.area,
+      bedrooms: fields.bedrooms ? asText(fields.bedrooms) : prev.bedrooms,
+      bathrooms: fields.bathrooms ? asText(fields.bathrooms) : prev.bathrooms,
+      price: fields.price ? asText(fields.price) : prev.price,
+    }));
+  };
 
   const [generatingDesc, setGeneratingDesc] = useState(false);
   const [descKeywords, setDescKeywords] = useState("");
@@ -441,6 +465,13 @@ export function PropertyForm({
         <DialogHeader>
           <DialogTitle>{property ? "Editar Imóvel" : "Novo Imóvel"}</DialogTitle>
         </DialogHeader>
+
+        {/* Preencher a partir da caderneta predial, certificado energético ou CPCV */}
+        <div className="rounded-lg border bg-muted/40 p-3">
+          <p className="mb-2 text-sm font-medium">Preencher a partir de um documento</p>
+          <PropertyDocumentScanner onApply={handleDocumentFields} />
+        </div>
+
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="title">Título *</Label>
