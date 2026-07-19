@@ -319,7 +319,7 @@ horário **deixa de aparecer ao cliente** — automaticamente, sem teres de o
 apagar. A verificação é feita duas vezes: ao mostrar a lista e no momento em
 que o cliente confirma.
 
-### 6.2 Tarefas
+### 6.3 Tarefas
 
 Cada tarefa mostra a **lead a que diz respeito**, prioridade, estado e prazo
 (com aviso de atraso). Podes concluir, editar, anotar ou eliminar.
