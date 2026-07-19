@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import Head from "next/head";
 import type { GetServerSideProps } from "next";
 import { Button } from "@/components/ui/button";
@@ -86,21 +86,6 @@ export default function LandingPage({ data, url, token }: PageProps) {
   const [submitting, setSubmitting] = useState(false);
   const [sent, setSent] = useState(false);
   const [formError, setFormError] = useState("");
-
-  // O botão "Tenho interesse" era uma âncora para #contacto. No telemóvel
-  // funcionava, mas no ecrã grande o formulário já está visível ao lado — não
-  // havia para onde deslocar e parecia que o botão não fazia nada. Passa a
-  // levar ao formulário E a pôr o cursor no primeiro campo, o que dá retorno
-  // visível nos dois tamanhos de ecrã.
-  const contactRef = useRef<HTMLDivElement>(null);
-  const nameInputRef = useRef<HTMLInputElement>(null);
-
-  const goToContactForm = () => {
-    contactRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-    // Espera pelo fim do deslocamento antes de focar, senão o browser
-    // interrompe a animação.
-    setTimeout(() => nameInputRef.current?.focus(), 400);
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -278,9 +263,6 @@ export default function LandingPage({ data, url, token }: PageProps) {
 
                 {/* CTA — visível de imediato, especialmente em telemóvel */}
                 <div className="flex flex-wrap gap-2 pt-1">
-                  <Button type="button" className="gap-2" onClick={goToContactForm}>
-                    Tenho interesse
-                  </Button>
                   {waHref && (
                     <a href={waHref} target="_blank" rel="noopener noreferrer">
                       <Button variant="outline" className="gap-2 text-green-700 border-green-200 hover:bg-green-50">
@@ -291,7 +273,7 @@ export default function LandingPage({ data, url, token }: PageProps) {
                   {data.agent?.bookingToken && (
                     <a href={`/agendar/${data.agent.bookingToken}`} target="_blank" rel="noopener noreferrer">
                       <Button variant="outline" className="gap-2">
-                        <CalendarDays className="h-4 w-4" /> Marcar visita
+                        <CalendarDays className="h-4 w-4" /> Agendar chamada
                       </Button>
                     </a>
                   )}
@@ -307,7 +289,7 @@ export default function LandingPage({ data, url, token }: PageProps) {
                 )}
               </div>
 
-              <div className="md:col-span-1" id="contacto" ref={contactRef}>
+              <div className="md:col-span-1" id="contacto">
                 <div className="border rounded-lg p-5 bg-slate-50 sticky top-8">
                   {sent ? (
                     <div className="text-center py-6">
@@ -331,7 +313,7 @@ export default function LandingPage({ data, url, token }: PageProps) {
                         <input type="text" name="company" value={form.company} onChange={(ev) => setForm({ ...form, company: ev.target.value })} className="hidden" tabIndex={-1} autoComplete="off" />
                         <div>
                           <Label htmlFor="name">Nome *</Label>
-                          <Input id="name" ref={nameInputRef} value={form.name} onChange={(ev) => setForm({ ...form, name: ev.target.value })} required />
+                          <Input id="name" value={form.name} onChange={(ev) => setForm({ ...form, name: ev.target.value })} required />
                         </div>
                         <div>
                           <Label htmlFor="email">Email</Label>
