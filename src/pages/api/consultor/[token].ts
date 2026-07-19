@@ -11,7 +11,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   res.setHeader("Cache-Control", "no-store");
 
   const { data: agent } = await (supabaseAdmin.from("profiles") as any)
-    .select("id, full_name, email, phone, avatar_url, landing_headline, landing_bio, landing_published")
+    .select("id, full_name, email, phone, avatar_url, landing_headline, landing_bio, landing_published, booking_token")
     .eq("landing_token", token)
     .maybeSingle();
 
@@ -49,6 +49,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       avatar: agent.avatar_url,
       headline: agent.landing_headline,
       bio: agent.landing_bio,
+      // Token da página pública de agendamento, para a landing oferecer
+      // "Marcar reunião". Só é exposto o token público — nunca dados internos.
+      bookingToken: agent.booking_token || null,
     },
     listings,
   });

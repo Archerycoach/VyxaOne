@@ -1,10 +1,19 @@
 import Head from "next/head";
 import Link from "next/link";
 import type { GetServerSideProps } from "next";
-import { Phone, Mail, MapPin } from "lucide-react";
+import { Phone, Mail, MapPin, CalendarDays } from "lucide-react";
 
 interface AgentLanding {
-  agent: { name: string | null; email: string | null; phone: string | null; avatar: string | null; headline: string | null; bio: string | null };
+  agent: {
+    name: string | null;
+    email: string | null;
+    phone: string | null;
+    avatar: string | null;
+    headline: string | null;
+    bio: string | null;
+    /** Token da página pública de agendamento, quando ativa. */
+    bookingToken?: string | null;
+  };
   listings: Array<{ title: string; price: number | null; city: string | null; image: string | null; token: string; kind: string }>;
 }
 
@@ -83,6 +92,19 @@ export default function AgentLandingPage({ data, url }: PageProps) {
                 {a.phone && <a href={`tel:${a.phone}`} className="flex items-center gap-1.5"><Phone className="h-4 w-4" /> {a.phone}</a>}
                 {a.email && <a href={`mailto:${a.email}`} className="flex items-center gap-1.5"><Mail className="h-4 w-4" /> {a.email}</a>}
               </div>
+
+              {/* Marcação direta na agenda do consultor */}
+              {a.bookingToken && (
+                <a
+                  href={`/agendar/${a.bookingToken}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-4 inline-flex items-center gap-2 rounded-md bg-white px-4 py-2 text-sm font-medium text-blue-700 shadow-sm transition hover:bg-blue-50"
+                >
+                  <CalendarDays className="h-4 w-4" />
+                  Marcar reunião
+                </a>
+              )}
             </div>
           </div>
         </div>
