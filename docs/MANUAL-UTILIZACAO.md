@@ -15,7 +15,7 @@
 3. [O dia a dia do consultor](#3-o-dia-a-dia-do-consultor)
 4. [Leads e clientes](#4-leads-e-clientes)
 5. [Imóveis e angariação](#5-imóveis-e-angariação)
-6. [Agenda e tarefas](#6-agenda-e-tarefas)
+6. [Agenda, reservas e tarefas](#6-agenda-reservas-e-tarefas)
 7. [Comunicação com clientes](#7-comunicação-com-clientes)
 8. [A Inteligência Artificial](#8-a-inteligência-artificial)
 9. [Análise e desempenho](#9-análise-e-desempenho)
@@ -125,6 +125,22 @@ colunas configuráveis). Podes:
   prazo de compra.
 - **Sem contacto há X dias** — encontra rapidamente quem foi esquecido.
 - Ordenar e exportar.
+
+#### Leads que voltam a contactar
+
+Quando alguém que **já está na tua base** preenche um novo formulário da Meta,
+a lead:
+
+- **sobe ao topo da lista**, como se fosse nova (o histórico original mantém-se);
+- ganha o distintivo laranja **🔁 Voltou a contactar**;
+- recebe uma nota com os dados do novo formulário e os campos vazios são preenchidos;
+- gera uma notificação na campainha.
+
+É um sinal forte de intenção — a pessoa procurou-te outra vez.
+
+> O distintivo desaparece assim que a contactares (compara a data da nova
+> submissão com o teu último contacto). Não é um prazo fixo: fica lá enquanto
+> não for tratada.
 
 ### 4.2 Ficha da lead
 
