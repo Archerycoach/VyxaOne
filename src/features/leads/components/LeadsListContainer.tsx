@@ -19,7 +19,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { LayoutGrid, List, Edit, MoreVertical, Eye, Mail, MessageSquare, MessageCircle, CalendarDays, StickyNote, UserCheck, Phone, Trash2, Users, ArrowDownAZ, ArrowUpZA, Download } from "lucide-react";
+import { LayoutGrid, List, Edit, MoreVertical, Eye, Mail, MessageSquare, MessageCircle, CalendarDays, StickyNote, UserCheck, Phone, Trash2, Users, ArrowDownAZ, ArrowUpZA, Download, Radar } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -824,6 +824,19 @@ export function LeadsListContainer({
         )}
 
         <div className="flex gap-2 items-center flex-wrap md:flex-nowrap md:justify-end">
+          {/* O Radar deixou de ter entrada própria no menu — vive aqui, ao pé
+              das leads, que é onde faz sentido usá-lo. */}
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-9 gap-2"
+            onClick={() => router.push("/radar")}
+            title="Acompanhamento ativo de clientes quentes"
+          >
+            <Radar className="h-4 w-4" />
+            <span className="hidden lg:inline">Radar</span>
+          </Button>
+
           <LeadAdvancedFilters filters={qualFilters} onChange={setQualFilters} />
           <Select value={notContactedDays} onValueChange={setNotContactedDays}>
             <SelectTrigger

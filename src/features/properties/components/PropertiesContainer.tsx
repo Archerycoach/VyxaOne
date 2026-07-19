@@ -5,6 +5,7 @@ import { PropertiesList } from "@/components/properties/PropertiesList";
 import { PropertyForm } from "@/components/properties/PropertyForm";
 import { getProperties } from "@/services/propertiesService";
 import { indexAllProperties } from "@/services/semanticSearchService";
+import { BookingLinkButton } from "@/components/BookingLinkButton";
 import { useToast } from "@/hooks/use-toast";
 import type { Property } from "@/types";
 
@@ -93,6 +94,7 @@ export function PropertiesContainer() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <BookingLinkButton />
           <Button variant="outline" onClick={handleIndexAll} disabled={indexing}>
             {indexing ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />

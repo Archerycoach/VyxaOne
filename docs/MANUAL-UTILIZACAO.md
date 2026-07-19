@@ -261,7 +261,7 @@ estado da obra. Entram no cruzamento com as leads compradoras.
 
 ---
 
-## 6. Agenda e tarefas
+## 6. Agenda, reservas e tarefas
 
 ### 6.1 Agenda
 
@@ -490,3 +490,18 @@ OpenAI ou Google configurada.
 
 **O meu colega vê a minha lista de Particulares?**
 Não. Essa lista é estritamente privada de cada consultor.
+
+**Criei horários disponíveis e não aparecem no Google Calendar.**
+É propositado. Um horário livre não é um compromisso — só sincroniza quando um
+cliente o reservar.
+
+**Marquei uma visita por cima de um horário livre. Tenho de o apagar?**
+Não. Deixa de ser oferecido ao cliente automaticamente.
+
+**Como cancelo todos os horários de uma série?**
+Abre uma ocorrência qualquer, carrega em Eliminar e escolhe **"Eliminar toda a
+série"**. Os que já tiverem cliente marcado são preservados.
+
+**Uma lead antiga apareceu no topo da lista com um distintivo laranja.**
+Voltou a preencher um formulário da Meta. Vê a nota mais recente para saberes
+o que ela pediu desta vez.

@@ -42,7 +42,7 @@ import {
   Mail,
   Palette,
   Banknote,
-  Radar,
+  Search,
 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
@@ -129,21 +129,20 @@ export function Navigation() {
       : []),
     
     // Main items
+    // O Radar vive dentro das Leads, o Agente IA no grupo de IA, e o
+    // Idealista/Particulares nas Ferramentas — o menu principal fica só com
+    // o que se usa todos os dias.
     { icon: ListTodo, label: "O Meu Dia", path: "/ai-organizer" },
-    { icon: Bot, label: "Agente IA", path: "/ai-agent" },
     { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
     { icon: Users, label: "Leads", path: "/leads" },
     { icon: Target, label: "Pipeline", path: "/pipeline" },
     { icon: Building2, label: "Imóveis", path: "/properties" },
-    { icon: Home, label: "Particulares", path: "/fsbo" },
     { icon: Building2, label: "Empreendimentos", path: "/developments" },
     { icon: Users, label: "Contactos", path: "/contacts" },
-    { icon: Radar, label: "Radar", path: "/radar" },
     { icon: Sparkles, label: "Assistente IA", path: "/ai-inbox" },
     { icon: Calendar, label: "Agenda", path: "/calendar" },
     { icon: CheckSquare, label: "Tarefas", path: "/tasks" },
-    { icon: Sparkles, label: "Idealista", path: "/idealista" },
-    
+
     // Performance Group
     { 
       icon: TrendingUp, 
@@ -161,6 +160,8 @@ export function Navigation() {
       icon: Calculator, 
       label: "Ferramentas", 
       subItems: [
+        { icon: Home, label: "Particulares", path: "/fsbo" },
+        { icon: Search, label: "Idealista", path: "/idealista" },
         { icon: Send, label: "Mensagens", path: "/bulk-messages" },
         { icon: Mail, label: "Registo de Envios Automáticos", path: "/automated-emails" },
         { icon: Calculator, label: "Financiamento", path: "/financing" },
@@ -174,6 +175,7 @@ export function Navigation() {
       icon: Sparkles,
       label: "Inteligência Artificial",
       subItems: [
+        { icon: Bot, label: "Agente IA", path: "/ai-agent" },
         { icon: BrainCircuit, label: "Emails por Procura", path: "/ai-email-campaigns" },
         { icon: Brain, label: "Coach de Performance", path: "/ai-performance-coach" },
       ]

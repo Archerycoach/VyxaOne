@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
-import { ChevronLeft, ChevronRight, Plus, Calendar as CalendarIcon, Link as LinkIcon, ListChecks, RefreshCw, ChevronDown } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, Calendar as CalendarIcon, ListChecks, RefreshCw, ChevronDown } from "lucide-react";
+import { BookingLinkButton } from "@/components/BookingLinkButton";
 import { Switch } from "@/components/ui/switch";
 import {
   DropdownMenu,
@@ -112,12 +113,7 @@ export function CalendarHeader({
           Novo Evento
         </Button>
 
-        {onCopyBookingLink && (
-          <Button variant="outline" onClick={onCopyBookingLink}>
-            <LinkIcon className="mr-2 h-4 w-4" />
-            Link de Reservas
-          </Button>
-        )}
+        {onCopyBookingLink && <BookingLinkButton />}
 
         {googleConfigured && (
           googleConnected ? (
