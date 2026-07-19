@@ -191,24 +191,47 @@ inalterados são ignorados.
 
 ### 5.2 Particulares (FSBO)
 
-Para angariação junto de quem vende sem mediadora.
+Para angariação junto de quem vende sem mediadora. Tem dois separadores.
 
-Encontras o anúncio como sempre fizeste (Idealista, OLX, Facebook), colas o
-texto aqui e a aplicação:
+#### Procurar
 
-1. **Organiza** os dados do imóvel em campos limpos.
-2. **Avisa** se o anúncio parecer ser de uma mediadora e não de um particular.
-3. **Cruza com a tua carteira de compradores** e diz-te quantos e quais
-   encaixam, com percentagem e motivos.
+Pesquisa no **Idealista** por zona e intervalo de preço, e mostra apenas os
+anúncios **sem mediadora identificada** — os que aparentam ser de particulares.
 
-Ligas ao proprietário já a saber que tens três compradores para aquele imóvel.
+Para cada resultado vês quantos dos **teus compradores** encaixam naquele
+imóvel, com os nomes e a percentagem de afinidade. A lista vem ordenada pelos
+que têm mais compradores, que são os que interessa contactar primeiro.
 
-> **O contacto é sempre feito por ti.** A aplicação não envia nada ao
-> proprietário nem faz contactos automáticos. Esta lista é o teu caderno de
-> angariação — é privada, nem a tua equipa a vê.
+- **Abrir** — vai ao anúncio no Idealista.
+- **Guardar** — passa-o para a tua lista de acompanhamento.
 
-Cada imóvel tem estado: Por contactar → Contactado → Sem interesse /
-Angariado / Descartado.
+> **O contacto do proprietário não vem na pesquisa.** O Idealista não o
+> disponibiliza por essa via — abres o anúncio e contactas a partir de lá,
+> como farias numa busca manual.
+>
+> A deteção de "particular" é um **indício**, não uma garantia: baseia-se na
+> ausência de identificação profissional no anúncio. Pode escapar alguma
+> mediadora mal identificada.
+
+#### Colar anúncio
+
+Se encontrares o anúncio noutro sítio (OLX, Facebook, jornal), colas o texto e
+a aplicação organiza os dados e avisa se parecer ser de uma mediadora.
+
+#### A minha lista
+
+Os imóveis guardados, com estado: Por contactar → Contactado → Sem interesse /
+Angariado / Descartado. O botão **Ver compradores** recalcula o cruzamento a
+qualquer momento.
+
+> **A aplicação nunca contacta o proprietário.** Não envia mensagens, emails
+> nem faz chamadas — organiza a informação e cruza-a com a tua carteira; o
+> contacto é sempre teu. Esta lista é **privada de cada consultor**: nem a
+> equipa nem os gestores a veem.
+>
+> Lembra-te de que a obrigação de consultar a **Lista Nacional de Não
+> Contactação** antes de uma chamada comercial não solicitada aplica-se
+> na mesma, tal como numa busca manual.
 
 ### 5.3 Empreendimentos
 
@@ -239,11 +262,62 @@ atualiza sozinha.
   botão **Eliminar** ao abrir o evento.
 - Botão **Hoje** volta à data atual.
 
-Eventos sugeridos pela IA aparecem a **amarelo tracejado** com ✓ e ✕ para
-confirmar ou rejeitar. Só sincronizam com o Google depois de confirmados.
+**Cores dos blocos:**
 
-**Link de Reservas** — partilha com clientes para eles marcarem diretamente
-nos teus horários livres.
+| Cor | O que é |
+|---|---|
+| Azul | Evento sincronizado com o Google |
+| Roxo | Evento local, ainda não sincronizado |
+| Amarelo tracejado | Sugerido pela IA — ✓ confirmar / ✕ rejeitar |
+| **Verde tracejado** | **Horário livre para reserva** (ainda não é compromisso) |
+
+### 6.2 Link de Reservas
+
+Partilha com os clientes para eles marcarem diretamente nos teus horários
+livres. O botão está no topo da Agenda.
+
+#### Criar horários disponíveis
+
+Cria um evento e liga **"Disponível para reserva"**. Esse bloco aparece na tua
+agenda a verde tracejado, com o prefixo "Livre ·".
+
+> **Um horário livre não ocupa a tua agenda.** Aparece a verde só para saberes
+> que está aberto a reservas, e **não é enviado para o Google Calendar** — o
+> tempo continua livre para tudo o resto. Só quando um cliente reserva é que
+> passa a compromisso e sincroniza com o Google, já com o nome dele.
+
+#### Repetir horários
+
+Ao criar uma disponibilidade, liga **"Repetir este horário"**: escolhes a data
+limite num calendário e, se quiseres, os dias da semana. Sem escolher dias,
+repete no mesmo dia da semana da data de início.
+
+Exemplo: terça, 10h–11h, repetir até 31 de dezembro → cria todas as terças
+até essa data, de uma só vez.
+
+#### Alterar ou eliminar uma série
+
+Ao abrir uma ocorrência de uma série, a aplicação pergunta o âmbito:
+
+| Opção | O que afeta |
+|---|---|
+| **Apenas esta ocorrência** | Só aquele dia |
+| **Esta e as seguintes** | Desta data para a frente |
+| **Toda a série** | Tudo, incluindo as ocorrências anteriores |
+
+Ao propagar uma alteração de horas, as **datas de cada ocorrência mantêm-se** —
+só muda a hora e a duração. Mudar uma terça das 10h para as 11h passa todas as
+terças seguintes para as 11h, cada uma no seu dia.
+
+> **Horários já reservados por clientes nunca são alterados nem eliminados**,
+> seja qual for o âmbito escolhido. A aplicação avisa quantos preservou.
+
+#### Conflitos
+
+Se marcares um compromisso que se sobreponha a um horário disponível, esse
+horário **deixa de aparecer ao cliente** — automaticamente, sem teres de o
+apagar. A verificação é feita duas vezes: ao mostrar a lista e no momento em
+que o cliente confirma.
 
 ### 6.2 Tarefas
 
