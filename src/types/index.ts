@@ -153,6 +153,10 @@ export interface Lead {
   seller_status?: string | null;
   next_follow_up?: string | null;
   last_contact_date?: string | null;
+  /** Última submissão de formulário (Meta). Faz a lead subir na lista. */
+  last_form_submission_at?: string | null;
+  /** Nº de formulários submetidos. 1 = entrada original; 2+ = voltou a contactar. */
+  form_submissions_count?: number | null;
   won_at?: string | null;
   conversion_probability?: number | null;
 }
@@ -311,6 +315,8 @@ export interface CalendarEvent {
   createdAt: string;
   userId?: string;
   isBookable?: boolean;
+  /** Agrupa as ocorrências de uma disponibilidade recorrente. */
+  recurrenceGroupId?: string | null;
   /** Evento criado pela análise automática de IA, à espera de confirmação do consultor. */
   aiPending?: boolean;
 }

@@ -47,6 +47,9 @@ export function EventCard({
   // Bloco criado pela análise automática de IA, à espera de confirmação
   const isAiPending = Boolean(event.aiPending);
 
+  // Disponibilidade ainda por reservar — espaço livre, não compromisso.
+  const isBookable = Boolean((event as any).isBookable);
+
   // Check if event is not synced to Google Calendar
   const isNotSynced = showSyncStatus && !event.googleEventId && !isAiPending;
 
@@ -88,6 +91,8 @@ export function EventCard({
           className={`text-xs rounded p-1 truncate cursor-move transition-opacity group relative ${
             isAiPending
               ? "bg-amber-50 hover:bg-amber-100 border border-dashed border-amber-400"
+              : isBookable
+              ? "bg-green-50 hover:bg-green-100 border border-dashed border-green-400"
               : isNotSynced
               ? "bg-orange-100 hover:bg-orange-200 border border-orange-300"
               : "bg-purple-100 hover:bg-purple-200"
@@ -189,6 +194,8 @@ export function EventCard({
         className={`border rounded-lg p-4 cursor-move transition-opacity group relative ${
           isAiPending
             ? "bg-amber-50 hover:bg-amber-100 border-dashed border-amber-400"
+            : isBookable
+            ? "bg-green-50 hover:bg-green-100 border-dashed border-green-400"
             : isNotSynced
             ? "bg-orange-50 hover:bg-orange-100 border-orange-300"
             : "bg-purple-50 hover:bg-purple-100"
@@ -214,6 +221,11 @@ export function EventCard({
                 <Badge variant="outline" className="text-xs bg-amber-100 border-amber-400 text-amber-800">
                   <Sparkles className="h-3 w-3 mr-1" />
                   Por confirmar · IA
+                </Badge>
+              )}
+              {isBookable && (
+                <Badge variant="outline" className="text-xs bg-green-100 border-green-400 text-green-800">
+                  Livre para reserva
                 </Badge>
               )}
               {event.googleEventId ? (

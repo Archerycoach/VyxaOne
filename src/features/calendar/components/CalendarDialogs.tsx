@@ -6,6 +6,9 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { CalendarIcon } from "lucide-react";
 import { LeadActivitiesPanel } from "./LeadActivitiesPanel";
 import type { CalendarEvent, Task } from "@/types";
 
@@ -179,6 +182,138 @@ export function CalendarDialogs({
                     checked={eventForm.isBookable || false}
                     onCheckedChange={(checked) => setEventForm({ ...eventForm, isBookable: checked })}
                   />
+                </div>
+              )}
+
+              {/* Repetição — só faz sentido ao CRIAR uma disponibilidade nova */}
+              {!eventForm.leadId && eventForm.isBookable && !isEditing && (
+                <div className="space-y-3 rounded-md border p-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label htmlFor="event-repeat">Repetir este horário</Label>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        Cria o mesmo horário nas semanas seguintes, até à data que indicares.
+                      </p>
+                    </div>
+                    <Switch
+                      id="event-repeat"
+                      checked={!!(eventForm as any).repeatUntil}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          // Por omissão, repete durante um mês.
+                          const base = (eventForm as any).startTime
+                            ? new Date((eventForm as any).startTime)
+                            : new Date();
+                          base.setMonth(base.getMonth() + 1);
+                          setEventForm({
+                            ...eventForm,
+                            repeatUntil: base.toISOString().split("T")[0],
+                            repeatWeekdays: [],
+                          } as any);
+                        } else {
+                          setEventForm({ ...eventForm, repeatUntil: "", repeatWeekdays: [] } as any);
+                        }
+                      }}
+                    />
+                  </div>
+
+                  {(eventForm as any).repeatUntil && (
+                    <>
+                      <div>
+                        <Label className="text-xs">Repetir até</Label>
+                        {/*
+                          Seletor em vez de campo de texto: num <input type="date">
+                          controlado, cada dígito incompleto faz o browser reportar
+                          valor vazio, o estado é reposto e a escrita salta do campo.
+                        */}
+                        {/*
+                          modal: sem isto, o Popover é renderizado em portal
+                          (fora do DOM do Dialog) e a armadilha de foco do
+                          Dialog rouba-lhe o foco ao clicar nas setas de
+                          navegação — o Popover lê isso como interação exterior
+                          e fecha-se a meio da escolha do mês.
+                        */}
+                        <Popover modal>
+                          <PopoverTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="w-full justify-start font-normal"
+                            >
+                              <CalendarIcon className="mr-2 h-4 w-4" />
+                              {(eventForm as any).repeatUntil
+                                ? new Date(`${(eventForm as any).repeatUntil}T00:00:00`)
+                                    .toLocaleDateString("pt-PT", {
+                                      weekday: "long",
+                                      day: "2-digit",
+                                      month: "long",
+                                      year: "numeric",
+                                    })
+                                : "Escolher data"}
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0" align="start">
+                            <Calendar
+                              mode="single"
+                              selected={
+                                (eventForm as any).repeatUntil
+                                  ? new Date(`${(eventForm as any).repeatUntil}T00:00:00`)
+                                  : undefined
+                              }
+                              onSelect={(date) => {
+                                if (!date) return;
+                                // Data local em YYYY-MM-DD (toISOString converteria
+                                // para UTC e podia recuar um dia).
+                                const yyyy = date.getFullYear();
+                                const mm = String(date.getMonth() + 1).padStart(2, "0");
+                                const dd = String(date.getDate()).padStart(2, "0");
+                                setEventForm({
+                                  ...eventForm,
+                                  repeatUntil: `${yyyy}-${mm}-${dd}`,
+                                } as any);
+                              }}
+                              disabled={(date) => {
+                                const start = (eventForm as any).startTime
+                                  ? new Date((eventForm as any).startTime)
+                                  : new Date();
+                                start.setHours(0, 0, 0, 0);
+                                return date < start;
+                              }}
+                            />
+                          </PopoverContent>
+                        </Popover>
+                      </div>
+
+                      <div>
+                        <Label className="text-xs">Dias da semana</Label>
+                        <p className="mb-2 text-xs text-muted-foreground">
+                          Sem seleção, repete no mesmo dia da semana da data de início.
+                        </p>
+                        <div className="flex flex-wrap gap-1">
+                          {["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"].map((label, index) => {
+                            const selected = ((eventForm as any).repeatWeekdays || []).includes(index);
+                            return (
+                              <Button
+                                key={index}
+                                type="button"
+                                size="sm"
+                                variant={selected ? "default" : "outline"}
+                                onClick={() => {
+                                  const current: number[] = (eventForm as any).repeatWeekdays || [];
+                                  const next = selected
+                                    ? current.filter((d) => d !== index)
+                                    : [...current, index];
+                                  setEventForm({ ...eventForm, repeatWeekdays: next } as any);
+                                }}
+                              >
+                                {label}
+                              </Button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
 

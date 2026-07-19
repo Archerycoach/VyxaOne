@@ -15,7 +15,7 @@
 3. [O dia a dia do consultor](#3-o-dia-a-dia-do-consultor)
 4. [Leads e clientes](#4-leads-e-clientes)
 5. [Imóveis e angariação](#5-imóveis-e-angariação)
-6. [Agenda e tarefas](#6-agenda-e-tarefas)
+6. [Agenda, reservas e tarefas](#6-agenda-reservas-e-tarefas)
 7. [Comunicação com clientes](#7-comunicação-com-clientes)
 8. [A Inteligência Artificial](#8-a-inteligência-artificial)
 9. [Análise e desempenho](#9-análise-e-desempenho)
@@ -126,6 +126,22 @@ colunas configuráveis). Podes:
 - **Sem contacto há X dias** — encontra rapidamente quem foi esquecido.
 - Ordenar e exportar.
 
+#### Leads que voltam a contactar
+
+Quando alguém que **já está na tua base** preenche um novo formulário da Meta,
+a lead:
+
+- **sobe ao topo da lista**, como se fosse nova (o histórico original mantém-se);
+- ganha o distintivo laranja **🔁 Voltou a contactar**;
+- recebe uma nota com os dados do novo formulário e os campos vazios são preenchidos;
+- gera uma notificação na campainha.
+
+É um sinal forte de intenção — a pessoa procurou-te outra vez.
+
+> O distintivo desaparece assim que a contactares (compara a data da nova
+> submissão com o teu último contacto). Não é um prazo fixo: fica lá enquanto
+> não for tratada.
+
 ### 4.2 Ficha da lead
 
 Ao abrir uma lead tens separadores para cada área:
@@ -167,11 +183,17 @@ Escolhes qual fica como principal e fundes. **Nunca funde sozinho.**
 A tua carteira. Ao criar ou editar um imóvel tens duas ajudas:
 
 **Preencher a partir de um documento** — envia um **PDF ou fotografia** da
-caderneta predial, certificado energético ou CPCV, e os campos preenchem-se
-sozinhos (morada, área, tipologia, quartos, classe energética, preço).
+caderneta predial, certificado energético ou CPCV, e a ficha preenche-se
+sozinha: morada, concelho, distrito, código postal, tipo de imóvel, tipologia,
+área, quartos, casas de banho, andar, classe energética, ano de construção,
+preço, **artigo matricial** e **valor patrimonial (VPT)**.
 
-> Em PDF a leitura é fiável. Em fotografia, confirma sempre os números —
-> a aplicação avisa quando a imagem não estava clara.
+Se o título estiver vazio, é composto a partir do documento (ex.: "T3 ·
+Apartamento · Lisboa") — dá para gravar a ficha sem escrever nada.
+
+> Em PDF a leitura é fiável, porque o texto é extraído diretamente. Em
+> fotografia, confirma sempre os números — a aplicação marca a leitura como
+> duvidosa quando a imagem não estava clara.
 > PDFs digitalizados a partir de papel não têm texto: nesse caso, fotografa o
 > documento.
 
@@ -185,24 +207,77 @@ inalterados são ignorados.
 
 ### 5.2 Particulares (FSBO)
 
-Para angariação junto de quem vende sem mediadora.
+Para angariação junto de quem vende sem mediadora. Tem dois separadores.
 
-Encontras o anúncio como sempre fizeste (Idealista, OLX, Facebook), colas o
-texto aqui e a aplicação:
+#### Procurar
 
-1. **Organiza** os dados do imóvel em campos limpos.
-2. **Avisa** se o anúncio parecer ser de uma mediadora e não de um particular.
-3. **Cruza com a tua carteira de compradores** e diz-te quantos e quais
-   encaixam, com percentagem e motivos.
+Pesquisa no **Idealista** por zona e intervalo de preço, e mostra apenas os
+anúncios de **particulares** (o portal identifica o tipo de anunciante, por
+isso a filtragem é exata — não deixa passar mediadoras).
 
-Ligas ao proprietário já a saber que tens três compradores para aquele imóvel.
+Cada resultado mostra logo:
 
-> **O contacto é sempre feito por ti.** A aplicação não envia nada ao
-> proprietário nem faz contactos automáticos. Esta lista é o teu caderno de
-> angariação — é privada, nem a tua equipa a vê.
+| Indicador | O que diz |
+|---|---|
+| 📞 **Contacto** | Nome e telefone publicados no anúncio, com o número clicável |
+| 👥 **Compradores** | Quantos e quais dos teus clientes encaixam, com percentagem |
+| 🕐 **Tempo de mercado** | Cinzento até 3 semanas · **âmbar** a partir de 21 dias · **vermelho** a partir de 60 |
+| 📉 **Baixou o preço** | Se o valor desceu desde que o começaste a acompanhar |
 
-Cada imóvel tem estado: Por contactar → Contactado → Sem interesse /
-Angariado / Descartado.
+A lista vem ordenada pelos que têm mais compradores; em igualdade, aparecem
+primeiro os que estão há mais tempo no mercado — os vendedores mais recetivos.
+
+- **Abrir** — vai ao anúncio no Idealista.
+- **Guardar** — passa-o para a tua lista de acompanhamento, já com o contacto.
+- **Tocar no número** — liga e **regista a chamada** (ver abaixo).
+
+#### Registo automático de chamadas
+
+Sempre que tocas no número — na pesquisa ou na tua lista — a chamada arranca e
+o Vyxa regista-a:
+
+- o imóvel passa a **Contactado**, com a data;
+- fica uma linha no histórico (*"Chamada efetuada em 19/07/2026 14:32"*), que
+  se acumula se ligares mais vezes;
+- se o imóvel ainda não estava na tua lista, **é guardado nesse momento** com
+  os dados do anúncio e o contacto.
+
+> A chamada arranca sempre primeiro — o registo corre em paralelo e nunca a
+> atrasa. Se a rede falhar, a chamada faz-se na mesma.
+>
+> **Um clique não garante uma conversa.** Se ligaste e não atenderam, o imóvel
+> fica na mesma como "Contactado" — muda o estado no seletor, é um clique. O
+> histórico diz "Chamada efetuada", não "Falei com o proprietário".
+
+> **Sobre o tempo de mercado:** o Idealista não indica a data de publicação, por
+> isso o Vyxa conta a partir da **primeira vez que viu o anúncio** numa
+> pesquisa tua. É um mínimo garantido — o anúncio pode já existir há mais
+> tempo. A precisão melhora à medida que fores pesquisando as tuas zonas com
+> regularidade.
+>
+> **Sobre os contactos:** são apresentados tal como estão publicados no
+> anúncio, para te poupar o clique. **Só ficam guardados se carregares em
+> Guardar** naquele imóvel — a pesquisa não cria listas de contactos.
+
+#### Colar anúncio
+
+Se encontrares o anúncio noutro sítio (OLX, Facebook, jornal), colas o texto e
+a aplicação organiza os dados e avisa se parecer ser de uma mediadora.
+
+#### A minha lista
+
+Os imóveis guardados, com estado: Por contactar → Contactado → Sem interesse /
+Angariado / Descartado. O botão **Ver compradores** recalcula o cruzamento a
+qualquer momento.
+
+> **A aplicação nunca contacta o proprietário.** Não envia mensagens, emails
+> nem faz chamadas — organiza a informação e cruza-a com a tua carteira; o
+> contacto é sempre teu. Esta lista é **privada de cada consultor**: nem a
+> equipa nem os gestores a veem.
+>
+> Lembra-te de que a obrigação de consultar a **Lista Nacional de Não
+> Contactação** antes de uma chamada comercial não solicitada aplica-se
+> na mesma, tal como numa busca manual.
 
 ### 5.3 Empreendimentos
 
@@ -216,7 +291,7 @@ estado da obra. Entram no cruzamento com as leads compradoras.
 
 ---
 
-## 6. Agenda e tarefas
+## 6. Agenda, reservas e tarefas
 
 ### 6.1 Agenda
 
@@ -233,13 +308,69 @@ atualiza sozinha.
   botão **Eliminar** ao abrir o evento.
 - Botão **Hoje** volta à data atual.
 
-Eventos sugeridos pela IA aparecem a **amarelo tracejado** com ✓ e ✕ para
-confirmar ou rejeitar. Só sincronizam com o Google depois de confirmados.
+**Cores dos blocos:**
 
-**Link de Reservas** — partilha com clientes para eles marcarem diretamente
-nos teus horários livres.
+| Cor | O que é |
+|---|---|
+| Azul | Evento sincronizado com o Google |
+| Roxo | Evento local, ainda não sincronizado |
+| Amarelo tracejado | Sugerido pela IA — ✓ confirmar / ✕ rejeitar |
+| **Verde tracejado** | **Horário livre para reserva** (ainda não é compromisso) |
 
-### 6.2 Tarefas
+### 6.2 Link de Reservas
+
+Partilha com os clientes para eles marcarem diretamente nos teus horários
+livres.
+
+O botão **Link de Reservas** está em três sítios — **Agenda**, **Imóveis** e
+**Empreendimentos** — para o poderes copiar no momento em que estás a falar
+com o cliente sobre um imóvel, sem ter de ir à Agenda. É sempre o mesmo link
+(um por consultor).
+
+#### Criar horários disponíveis
+
+Cria um evento e liga **"Disponível para reserva"**. Esse bloco aparece na tua
+agenda a verde tracejado, com o prefixo "Livre ·".
+
+> **Um horário livre não ocupa a tua agenda.** Aparece a verde só para saberes
+> que está aberto a reservas, e **não é enviado para o Google Calendar** — o
+> tempo continua livre para tudo o resto. Só quando um cliente reserva é que
+> passa a compromisso e sincroniza com o Google, já com o nome dele.
+
+#### Repetir horários
+
+Ao criar uma disponibilidade, liga **"Repetir este horário"**: escolhes a data
+limite num calendário e, se quiseres, os dias da semana. Sem escolher dias,
+repete no mesmo dia da semana da data de início.
+
+Exemplo: terça, 10h–11h, repetir até 31 de dezembro → cria todas as terças
+até essa data, de uma só vez.
+
+#### Alterar ou eliminar uma série
+
+Ao abrir uma ocorrência de uma série, a aplicação pergunta o âmbito:
+
+| Opção | O que afeta |
+|---|---|
+| **Apenas esta ocorrência** | Só aquele dia |
+| **Esta e as seguintes** | Desta data para a frente |
+| **Toda a série** | Tudo, incluindo as ocorrências anteriores |
+
+Ao propagar uma alteração de horas, as **datas de cada ocorrência mantêm-se** —
+só muda a hora e a duração. Mudar uma terça das 10h para as 11h passa todas as
+terças seguintes para as 11h, cada uma no seu dia.
+
+> **Horários já reservados por clientes nunca são alterados nem eliminados**,
+> seja qual for o âmbito escolhido. A aplicação avisa quantos preservou.
+
+#### Conflitos
+
+Se marcares um compromisso que se sobreponha a um horário disponível, esse
+horário **deixa de aparecer ao cliente** — automaticamente, sem teres de o
+apagar. A verificação é feita duas vezes: ao mostrar a lista e no momento em
+que o cliente confirma.
+
+### 6.3 Tarefas
 
 Cada tarefa mostra a **lead a que diz respeito**, prioridade, estado e prazo
 (com aviso de atraso). Podes concluir, editar, anotar ou eliminar.
@@ -352,28 +483,40 @@ na **Cronologia** da lead, a par das edições manuais.
 
 ## 11. Referência rápida do menu
 
+### Menu principal
+
 | Menu | Para quê |
 |---|---|
 | O Meu Dia | O que interessa hoje |
-| Agente IA | Conversar com o assistente |
-| Assistente IA | Aprovar e auditar o que a IA faz |
 | Dashboard | Visão geral |
 | Leads | Clientes e potenciais clientes |
 | Pipeline | Negócios por fase |
 | Imóveis | A tua carteira |
-| Particulares | Angariação a quem vende sem mediadora |
 | Empreendimentos | Construção nova |
 | Contactos | Agenda de contactos |
-| Radar | Acompanhamento ativo |
-| Agenda | Calendário |
+| Agenda | Calendário e link de reservas |
 | Tarefas | O que há para fazer |
-| Idealista | Pesquisa no portal |
-| Negócios / Objetivos / Relatórios | Gestão comercial |
-| Mensagens | Envios em massa |
-| Emails por Procura | Campanhas segmentadas |
-| Financiamento / Avaliação / Documentos | Ferramentas |
-| Coach de Performance | Aconselhamento de IA |
-| Equipa / Subscrição / Definições | Administração |
+
+### Grupos
+
+**Análise de Desempenho** — Negócios · Performance · Objetivos · Relatórios
+
+**Ferramentas** — Particulares · Idealista · Mensagens · Registo de Envios
+Automáticos · Financiamento · Avaliação de Imóvel · Documentos
+
+**Inteligência Artificial** — Assistente IA · Agente IA · Emails por Procura ·
+Coach de Performance
+
+**Administração** — Equipa · Subscrição · Definições
+
+### Onde encontrar o que não tem menu próprio
+
+| Funcionalidade | Onde está |
+|---|---|
+| **Radar** | Botão na barra da página **Leads** |
+| **Link de Reservas** | Agenda, Imóveis e Empreendimentos |
+| **Duplicados** | A partir da lista de Leads |
+| **Portal do Cliente** | Separador na ficha de cada lead |
 
 ---
 
@@ -394,3 +537,26 @@ OpenAI ou Google configurada.
 
 **O meu colega vê a minha lista de Particulares?**
 Não. Essa lista é estritamente privada de cada consultor.
+
+**Criei horários disponíveis e não aparecem no Google Calendar.**
+É propositado. Um horário livre não é um compromisso — só sincroniza quando um
+cliente o reservar.
+
+**Marquei uma visita por cima de um horário livre. Tenho de o apagar?**
+Não. Deixa de ser oferecido ao cliente automaticamente.
+
+**Liguei a um particular e não atenderam — fica como contactado?**
+Fica. O registo marca a **tentativa**, não a conversa. Se quiseres voltar a
+tê-lo por contactar, muda o estado no seletor.
+
+**Cliquei no número no computador e não aconteceu nada.**
+A chamada depende de teres uma aplicação de telefone associada. O registo é
+feito à mesma.
+
+**Como cancelo todos os horários de uma série?**
+Abre uma ocorrência qualquer, carrega em Eliminar e escolhe **"Eliminar toda a
+série"**. Os que já tiverem cliente marcado são preservados.
+
+**Uma lead antiga apareceu no topo da lista com um distintivo laranja.**
+Voltou a preencher um formulário da Meta. Vê a nota mais recente para saberes
+o que ela pediu desta vez.

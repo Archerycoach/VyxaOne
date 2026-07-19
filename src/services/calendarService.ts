@@ -29,6 +29,11 @@ const mapDbEventToFrontend = (dbEvent: DbCalendarEvent & { leads?: { name: strin
   // "ai_pending" só existe nos tipos gerados depois de correr a migração
   // 20260716100000_lead_auto_analysis.sql e regenerar database.types.ts.
   aiPending: Boolean((dbEvent as any).ai_pending),
+  // Bloco de disponibilidade por reservar: a agenda mostra-o como "livre para
+  // reserva", não como compromisso. Passa a evento normal quando um cliente
+  // reserva (o confirm.ts põe is_bookable a false).
+  isBookable: Boolean((dbEvent as any).is_bookable),
+  recurrenceGroupId: (dbEvent as any).recurrence_group_id || null,
 });
 
 // Get all calendar events for current user
@@ -295,6 +300,18 @@ export const createCalendarEvent = async (event: CalendarEventInsert & { contact
 
   console.log("[calendarService] ✅ Event created locally:", data.id);
 
+  // Blocos de DISPONIBILIDADE não vão para o Google.
+  //
+  // Enquanto ninguém reservar, aquele tempo continua livre na agenda do
+  // consultor — sincronizá-lo faria o Google mostrá-lo como ocupado e
+  // bloquearia o horário a toda a gente (incluindo à consulta de
+  // disponibilidade da própria aplicação). Só quando um cliente reserva é que
+  // o bloco passa a compromisso e é enviado para o Google (ver confirm.ts).
+  if (isBookable) {
+    console.log("[calendarService] ⏭️ Bloco disponível para reserva — não sincroniza com o Google até ser reservado.");
+    return mapDbEventToFrontend(data);
+  }
+
   // Try to sync to Google Calendar immediately (non-blocking)
   try {
     console.log("[calendarService] 🔄 Attempting to sync to Google Calendar...");
@@ -352,6 +369,146 @@ export const createCalendarEvent = async (event: CalendarEventInsert & { contact
 
 // Alias for compatibility
 export const createEvent = createCalendarEvent;
+
+/**
+ * Aplica uma alteração a uma ocorrência de uma série E a todas as seguintes.
+ *
+ * As datas de cada ocorrência são preservadas — só muda a HORA do dia e a
+ * duração. Alterar "das 10h para as 11h" numa terça altera todas as terças
+ * seguintes para as 11h, sem lhes mexer no dia.
+ *
+ * Ocorrências já reservadas por um cliente (is_bookable = false com lead
+ * associada) NÃO são tocadas: mexer no horário de um compromisso já marcado
+ * seria alterar um combinado com o cliente pelas costas dele.
+ *
+ * Devolve quantas ocorrências foram efetivamente alteradas.
+ */
+export const updateCalendarSeriesFromDate = async (
+  recurrenceGroupId: string,
+  /** Só as ocorrências a partir desta data. `null` = toda a série. */
+  fromStartTime: string | null,
+  updates: {
+    title?: string;
+    description?: string | null;
+    location?: string | null;
+    event_type?: string;
+    is_bookable?: boolean;
+    /** Nova hora de início (só a hora do dia é usada). */
+    start_time?: string;
+    /** Novo fim, para recalcular a duração. */
+    end_time?: string;
+  }
+): Promise<{ updated: number; skippedBooked: number }> => {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Sessão expirada.");
+
+  let occurrencesQuery = (supabase as any)
+    .from("calendar_events")
+    .select("id, start_time, end_time, is_bookable, lead_id")
+    .eq("recurrence_group_id", recurrenceGroupId)
+    .eq("user_id", user.id);
+
+  if (fromStartTime) {
+    occurrencesQuery = occurrencesQuery.gte("start_time", fromStartTime);
+  }
+
+  const { data: occurrences, error: fetchError } = await occurrencesQuery;
+
+  if (fetchError) throw fetchError;
+  if (!occurrences || occurrences.length === 0) return { updated: 0, skippedBooked: 0 };
+
+  // Hora do dia e duração novas, retiradas da ocorrência editada.
+  const newStart = updates.start_time ? new Date(updates.start_time) : null;
+  const newEnd = updates.end_time ? new Date(updates.end_time) : null;
+  const newDurationMs = newStart && newEnd ? newEnd.getTime() - newStart.getTime() : null;
+
+  let updated = 0;
+  let skippedBooked = 0;
+
+  for (const occurrence of occurrences) {
+    // Já reservada por um cliente — não mexer.
+    if (occurrence.is_bookable === false && occurrence.lead_id) {
+      skippedBooked++;
+      continue;
+    }
+
+    const payload: Record<string, unknown> = {};
+    if (updates.title !== undefined) payload.title = updates.title;
+    if (updates.description !== undefined) payload.description = updates.description;
+    if (updates.location !== undefined) payload.location = updates.location;
+    if (updates.event_type !== undefined) payload.event_type = updates.event_type;
+    if (updates.is_bookable !== undefined) payload.is_bookable = updates.is_bookable;
+
+    if (newStart) {
+      const occurrenceStart = new Date(occurrence.start_time);
+      occurrenceStart.setHours(newStart.getHours(), newStart.getMinutes(), 0, 0);
+      payload.start_time = occurrenceStart.toISOString();
+
+      const durationMs = newDurationMs ?? (
+        new Date(occurrence.end_time).getTime() - new Date(occurrence.start_time).getTime()
+      );
+      payload.end_time = new Date(occurrenceStart.getTime() + durationMs).toISOString();
+    }
+
+    if (Object.keys(payload).length === 0) continue;
+
+    const { error } = await (supabase as any)
+      .from("calendar_events")
+      .update(payload)
+      .eq("id", occurrence.id);
+
+    if (error) {
+      console.error(`[calendarService] Erro ao atualizar ocorrência ${occurrence.id}:`, error);
+      continue;
+    }
+    updated++;
+  }
+
+  return { updated, skippedBooked };
+};
+
+/**
+ * Elimina uma ocorrência e todas as seguintes da mesma série.
+ * Ocorrências já reservadas por clientes são preservadas.
+ */
+export const deleteCalendarSeriesFromDate = async (
+  recurrenceGroupId: string,
+  /** Só as ocorrências a partir desta data. `null` = toda a série. */
+  fromStartTime: string | null
+): Promise<{ deleted: number; skippedBooked: number }> => {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Sessão expirada.");
+
+  let occurrencesQuery = (supabase as any)
+    .from("calendar_events")
+    .select("id, is_bookable, lead_id")
+    .eq("recurrence_group_id", recurrenceGroupId)
+    .eq("user_id", user.id);
+
+  if (fromStartTime) {
+    occurrencesQuery = occurrencesQuery.gte("start_time", fromStartTime);
+  }
+
+  const { data: occurrences, error: fetchError } = await occurrencesQuery;
+
+  if (fetchError) throw fetchError;
+
+  const removable = (occurrences || []).filter(
+    (o: any) => !(o.is_bookable === false && o.lead_id)
+  );
+  const skippedBooked = (occurrences || []).length - removable.length;
+
+  if (removable.length === 0) return { deleted: 0, skippedBooked };
+
+  const { error } = await (supabase as any)
+    .from("calendar_events")
+    .delete()
+    .in("id", removable.map((o: any) => o.id));
+
+  if (error) throw error;
+
+  return { deleted: removable.length, skippedBooked };
+};
 
 // Update calendar event and sync to Google Calendar
 export const updateCalendarEvent = async (id: string, updates: CalendarEventUpdate): Promise<CalendarEvent> => {

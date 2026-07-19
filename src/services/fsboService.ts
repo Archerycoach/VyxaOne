@@ -70,8 +70,20 @@ export interface FsboSearchResult {
   typology: string | null;
   propertyType: string | null;
   alreadySaved: boolean;
+  /** Id do registo na lista, quando já foi guardado. */
+  savedProspectId: string | null;
   buyerMatches: Array<{ leadId: string; name: string; score: number }>;
   buyerMatchCount: number;
+  /**
+   * Dias desde que vimos este anúncio pela primeira vez. `null` = primeira vez.
+   * É um mínimo: o anúncio pode já existir há mais tempo.
+   */
+  daysTracked: number | null;
+  /** Descida de preço detetada desde a primeira vez que vimos o anúncio. */
+  priceDrop: { from: number; to: number } | null;
+  /** Contacto publicado no anúncio. Só é guardado se o consultor o guardar. */
+  contactName: string | null;
+  contactPhone: string | null;
 }
 
 export interface FsboSearchParams {
@@ -176,6 +188,64 @@ export async function updateFsboProspect(
     .eq("id", id);
 
   if (error) throw error;
+}
+
+/**
+ * Regista uma chamada feita ao proprietário.
+ *
+ * Marca o imóvel como contactado, guarda a data e acrescenta uma linha ao
+ * histórico de notas. Se o imóvel ainda não estiver na lista (chamada feita
+ * diretamente a partir da pesquisa), é guardado primeiro — quem liga está a
+ * trabalhar aquele contacto, faz sentido que fique registado.
+ *
+ * Devolve o registo afetado.
+ */
+export async function registerFsboCall(params: {
+  prospectId?: string | null;
+  /** Dados do imóvel, para o caso de ainda não estar guardado. */
+  prospect?: Partial<FsboProspect>;
+}): Promise<FsboProspect | null> {
+  const { prospectId, prospect } = params;
+
+  const now = new Date();
+  const stamp = now.toLocaleString("pt-PT", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  const callNote = `Chamada efetuada em ${stamp}`;
+
+  const id = prospectId || null;
+
+  if (!id) {
+    if (!prospect) return null;
+    return await saveFsboProspect({
+      ...prospect,
+      status: "contactado",
+      contacted_at: now.toISOString(),
+      notes: callNote,
+    });
+  }
+
+  // Já existe: acrescenta ao histórico em vez de substituir.
+  const { data: existing } = await supabase
+    .from("fsbo_prospects" as any)
+    .select("notes")
+    .eq("id", id)
+    .maybeSingle();
+
+  const previousNotes = (existing as any)?.notes as string | null;
+  const notes = previousNotes ? `${previousNotes}\n${callNote}` : callNote;
+
+  await updateFsboProspect(id, {
+    status: "contactado",
+    contacted_at: now.toISOString(),
+    notes,
+  });
+
+  return null;
 }
 
 export async function deleteFsboProspect(id: string): Promise<void> {

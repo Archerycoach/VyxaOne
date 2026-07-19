@@ -636,18 +636,41 @@ export default async function handler(
               }
             }
 
-            if (Object.keys(fieldsToFill).length > 0) {
-              const { error: updateError } = await supabase
-                .from("leads")
-                .update({ ...fieldsToFill, updated_at: new Date().toISOString() })
-                .eq("id", existingLead.id);
+            // Marca a resubmissão: a lead volta ao topo da lista (a ordenação
+            // usa esta data em vez da criação) e passa a mostrar o indicador
+            // de que voltou a preencher um formulário.
+            const previousCount = Number((existingLead as any).form_submissions_count) || 1;
+            const resubmissionUpdate = {
+              ...fieldsToFill,
+              last_form_submission_at: new Date().toISOString(),
+              form_submissions_count: previousCount + 1,
+              updated_at: new Date().toISOString(),
+            };
 
-              if (updateError) {
-                console.error("❌ Erro ao atualizar campos da lead existente:", updateError);
-              } else {
-                console.log(`✅ Campos preenchidos na lead existente ${existingLead.id}:`, Object.keys(fieldsToFill));
-              }
+            const { error: updateError } = await supabase
+              .from("leads")
+              .update(resubmissionUpdate as any)
+              .eq("id", existingLead.id);
+
+            if (updateError) {
+              console.error("❌ Erro ao atualizar a lead existente:", updateError);
+            } else {
+              console.log(
+                `✅ Lead ${existingLead.id} voltou a submeter formulário (${previousCount + 1}ª vez). Campos preenchidos:`,
+                Object.keys(fieldsToFill)
+              );
             }
+
+            // Notifica o consultor — é um sinal de intenção forte.
+            await supabase.from("notifications").insert({
+              user_id: integration.user_id,
+              title: `🔁 ${existingLead.name || "Lead"} voltou a contactar`,
+              message: `Submeteu um novo formulário na Meta. É a ${previousCount + 1}ª submissão desta lead.`,
+              notification_type: "info",
+              is_read: false,
+              related_entity_id: existingLead.id,
+              related_entity_type: "lead",
+            } as any);
 
             await applyMetaFormAssociation(existingLead.id, formAssociation, existingLead.custom_fields);
 

@@ -264,12 +264,21 @@ async function syncEventsToGoogle(
       .is("google_event_id", null)
       .gte("start_time", pastWindow);
 
-    // Blocos criados pela IA que ainda estão "por confirmar" (ai_pending) NÃO
-    // vão para o Google — só depois de o consultor os confirmar no calendário
-    // (a confirmação sincroniza logo; se falhar, esta exportação apanha-os
-    // porque ficam com ai_pending=false e google_event_id null). Filtrado em
-    // JS e não na query para não partir em bases sem a coluna ainda.
-    const events = ((rawEvents as any[]) || []).filter((e) => !e.ai_pending);
+    // Dois tipos de bloco NÃO vão para o Google enquanto não forem confirmados:
+    //
+    // 1. ai_pending — sugestões da IA à espera de confirmação do consultor.
+    // 2. is_bookable — horários abertos a reservas. Enquanto ninguém reservar,
+    //    aquele tempo está LIVRE; exportá-lo faria o Google marcá-lo como
+    //    ocupado e bloquearia o horário para tudo o resto (incluindo para a
+    //    consulta de disponibilidade da própria aplicação).
+    //
+    // Em ambos os casos, quando passam a compromisso (a IA confirmada, ou a
+    // reserva feita pelo cliente) ficam com a flag a false e google_event_id
+    // null — e é esta exportação que os apanha.
+    //
+    // Filtrado em JS e não na query para não partir em bases onde as colunas
+    // ainda não existam.
+    const events = ((rawEvents as any[]) || []).filter((e) => !e.ai_pending && !e.is_bookable);
     console.log("[syncEventsToGoogle] Found", events.length, "events to sync");
     
     if (events.length === 0) return 0;

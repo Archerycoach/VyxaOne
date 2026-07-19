@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { BookingLinkButton } from "@/components/BookingLinkButton";
 import { Card } from "@/components/ui/card";
 import { DevelopmentForm } from "@/components/developments/DevelopmentForm";
 import { DevelopmentsList } from "@/components/developments/DevelopmentsList";
@@ -60,10 +61,13 @@ export function DevelopmentsContainer() {
             Gere lançamentos e projetos com data de publicação, tipologias e preços base.
           </p>
         </div>
-        <Button onClick={handleNew}>
-          <Plus className="mr-2 h-4 w-4" />
-          Novo Empreendimento
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <BookingLinkButton />
+          <Button onClick={handleNew}>
+            <Plus className="mr-2 h-4 w-4" />
+            Novo Empreendimento
+          </Button>
+        </div>
       </div>
 
       {isLoading ? (

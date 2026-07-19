@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { sendClientEmail } from "@/lib/server/sendClientEmail";
+import { syncEventToGoogle } from "@/lib/googleCalendar";
 
 /**
  * Confirma a reserva de um bloco disponível — endpoint público (sem
@@ -54,6 +55,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(409).json({ error: "Este horário já foi reservado ou já passou. Escolha outro." });
     }
 
+    // O consultor pode ter marcado um compromisso sobreposto entre o cliente
+    // abrir a página e confirmar. Revalidamos no momento da escrita.
+    const slotStart = new Date(slot.start_time).getTime();
+    const slotEnd = new Date(slot.end_time || slot.start_time).getTime();
+
+    const { data: conflicts } = await db
+      .from("calendar_events")
+      .select("id, start_time, end_time")
+      .eq("user_id", consultant.id)
+      .neq("is_bookable", true)
+      .lt("start_time", new Date(slotEnd).toISOString())
+      .gt("end_time", new Date(slotStart).toISOString())
+      .limit(1);
+
+    if (conflicts && conflicts.length > 0) {
+      return res.status(409).json({
+        error: "Este horário deixou de estar disponível. Escolha outro, por favor.",
+      });
+    }
+
     // Procura uma lead existente do consultor com o mesmo email; senão, cria uma nova.
     const { data: existingLead } = await db
       .from("leads")
@@ -95,11 +116,30 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       leadId = newLead.id;
     }
 
+    // Descrição do evento: é o que o consultor vê ao abrir o compromisso na
+    // agenda. Sem isto, tinha o nome no título mas os contactos ficavam só no
+    // campo "attendees", que a agenda não mostra — obrigando-o a ir procurar
+    // a lead antes de ligar.
+    const eventDescriptionLines = [
+      `Reserva feita pelo cliente através do link de agendamento.`,
+      "",
+      `👤 ${name.trim()}`,
+      `📧 ${email.trim()}`,
+    ];
+    if (phone?.trim()) {
+      eventDescriptionLines.push(`📞 ${phone.trim()}`);
+    }
+    if (answersNote) {
+      eventDescriptionLines.push("", answersNote);
+    }
+    const eventDescription = eventDescriptionLines.join("\n");
+
     const { error: updateError } = await db
       .from("calendar_events")
       .update({
         is_bookable: false,
         title: `Chamada agendada - ${name.trim()}`,
+        description: eventDescription,
         event_type: "call",
         lead_id: leadId,
         attendees: [{ name: name.trim(), email: email.trim(), phone: phone?.trim() || null }],
@@ -108,6 +148,32 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       .eq("is_bookable", true); // reconfirma o estado exatamente no momento da escrita
 
     if (updateError) throw updateError;
+
+    // Agora sim: o bloco deixou de ser disponibilidade e passou a compromisso
+    // real, por isso vai para o Google Calendar. Best-effort — se falhar, a
+    // reserva mantém-se válida e a sincronização periódica apanha-o depois
+    // (fica com google_event_id a null).
+    try {
+      const googleEventId = await syncEventToGoogle(
+        {
+          title: `Chamada agendada - ${name.trim()}`,
+          description: eventDescription,
+          start_time: slot.start_time,
+          end_time: slot.end_time,
+        },
+        null,
+        consultant.id
+      );
+
+      if (googleEventId) {
+        await db
+          .from("calendar_events")
+          .update({ google_event_id: googleEventId, is_synced: true })
+          .eq("id", eventId);
+      }
+    } catch (syncError) {
+      console.error("[booking/confirm] Falha ao sincronizar com o Google (não crítico):", syncError);
+    }
 
     const startDate = new Date(slot.start_time);
     const formattedDate = startDate.toLocaleString("pt-PT", {

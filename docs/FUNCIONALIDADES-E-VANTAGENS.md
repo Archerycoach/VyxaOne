@@ -65,19 +65,37 @@ o consultor não se lembrava que tinha em carteira.
 
 ### 3. Angariação a particulares (FSBO)
 
-O consultor encontra o anúncio de um particular, cola-o no Vyxa, e a aplicação:
+O consultor pesquisa no Idealista **de dentro do Vyxa**, por zona e preço, e a
+aplicação mostra só os anúncios de **particulares** — já cruzados com a
+carteira de compradores dele.
 
-- organiza os dados do imóvel;
-- avisa se afinal for de uma mediadora;
-- **diz quantos e quais dos compradores dele encaixam naquele imóvel**.
+Cada anúncio traz de imediato:
+
+- o **contacto** publicado no anúncio, com o número clicável para ligar;
+- **quantos e quais dos seus compradores encaixam**, com percentagem;
+- **há quanto tempo está no mercado** (a vermelho a partir de dois meses);
+- se **baixou o preço** desde que o começou a acompanhar.
+
+Toca no número e a chamada é **registada automaticamente** — o imóvel entra na
+lista de acompanhamento como contactado, com data e histórico. Sem apontar
+nada num papel.
 
 **Vantagem:** liga ao proprietário com o argumento mais forte que existe —
-*"tenho três compradores à procura exatamente disto"*.
+*"tenho três compradores à procura exatamente disto"* — e sabe de antemão se
+está a falar com alguém que já tem a casa parada há meses.
 
-**Nota importante para a comunicação:** o Vyxa **não faz prospeção automática
-nem contacta proprietários**. O consultor encontra e contacta; a aplicação
-organiza e cruza. Comunicar isto como "geração automática de leads" seria
-incorreto e traria problemas legais.
+**Rigor na comunicação — o que é exato dizer:**
+
+- ✅ "Pesquisa anúncios de particulares e cruza-os com a sua carteira"
+- ✅ "Mostra quais dos seus compradores encaixam antes de ligar"
+- ✅ "Mostra há quanto tempo o anúncio está no mercado"
+- ❌ "Gera leads de proprietários automaticamente" — mostra anúncios públicos;
+  não constrói listas de contactos.
+- ❌ "Contacta os proprietários por si" — o contacto é sempre do consultor.
+
+Os contactos são **apresentados** tal como estão publicados no anúncio, e só
+ficam **guardados** quando o consultor decide acompanhar aquele imóvel. Uma
+pesquisa de 200 anúncios não gera 200 contactos em base de dados.
 
 ---
 
@@ -101,12 +119,18 @@ mensagens recebidas atualizam a ficha do cliente sozinhas.
 
 ---
 
-### 6. Agenda profissional
+### 6. Agenda e marcações automáticas
 
-Grelha horária ao estilo do Google Calendar, sincronização bidirecional,
-arrastar para remarcar e link de reservas para os clientes marcarem sozinhos.
+Grelha horária ao estilo do Google Calendar, sincronização bidirecional e
+arrastar para remarcar.
 
-**Vantagem:** uma agenda só, sem duplicar informação entre sistemas.
+O **link de reservas** deixa o cliente marcar sozinho nos horários que o
+consultor abriu — que podem ser **recorrentes** (todas as terças, até ao fim
+do ano, criados de uma vez). Se entretanto surgir um compromisso por cima, o
+horário deixa de ser oferecido automaticamente.
+
+**Vantagem:** acaba o pingue-pongue de mensagens a combinar horas — e nunca há
+marcações em cima umas das outras.
 
 ---
 
@@ -117,6 +141,9 @@ arrastar para remarcar e link de reservas para os clientes marcarem sozinhos.
 - **Reativação** — recuperação de leads frias por sequências.
 - **Sem contacto há X dias** — filtro que mostra quem foi esquecido.
 - **Deteção de duplicados** — inclusive por semelhança de nomes.
+- **Leads que voltam** — quem já está na base e preenche novo formulário sobe
+  ao topo da lista com indicador próprio. Um cliente que procura duas vezes é
+  o mais quente que existe, e era o mais fácil de deixar passar.
 
 **Vantagem:** o dinheiro que se perde no imobiliário perde-se quase sempre por
 falta de seguimento, não por falta de leads.
@@ -179,8 +206,17 @@ Sugestões de temas. Adapta o tom ao canal.
   O Vyxa lê as tuas notas e encontra o imóvel — não só o que está nos filtros.
 
 - **"Já tens o comprador. Só falta a casa."**
-  Encontraste um particular a vender? O Vyxa diz-te quais dos teus clientes
-  encaixam antes de ligares.
+  Pesquisa particulares a vender e vê logo quais dos teus clientes encaixam,
+  antes sequer de ligares.
+
+- **"Aquela casa está à venda há 4 meses. Ele já te quer ouvir."**
+  O Vyxa diz-te há quanto tempo cada anúncio está parado — e quem já baixou o
+  preço.
+
+- **"Marcações sem trocar uma única mensagem."**
+  Abres os teus horários (uma vez, para as semanas todas), partilhas o link e
+  o cliente escolhe. Se marcares outra coisa por cima, o horário desaparece
+  sozinho.
 
 - **"Caderneta predial: 20 campos, 1 fotografia."**
   Envia o PDF. Os dados entram sozinhos.
@@ -217,9 +253,9 @@ Para evitar problemas legais e devoluções:
 
 | Não dizer | Porquê |
 |---|---|
-| "Gera leads automaticamente" | O Vyxa organiza e cruza; não faz prospeção externa. |
+| "Gera leads automaticamente" | Mostra anúncios públicos; não constrói listas de contactos. |
 | "Contacta os clientes por si" | Nada sai para o cliente sem ação do consultor. |
-| "Encontra proprietários na internet" | Não há recolha automática de dados de terceiros. |
+| "Recolhe contactos de proprietários" | São mostrados, não recolhidos em massa. |
 | "Aumenta as vendas em X%" | Só com dados medidos e verificáveis. |
 | "Substitui o consultor" | Além de falso, afasta exatamente quem compra. |
 
@@ -232,9 +268,9 @@ Para evitar problemas legais e devoluções:
 | IA | A ficha preenche-se sozinha e tudo é reversível. |
 | Pesquisa semântica | Encontra imóveis pelo que o cliente disse, não pelo que marcou. |
 | Particulares | Liga ao proprietário já com compradores na mão. |
-| Documentos | PDF ou foto entra; campos preenchidos saem. |
+| Documentos | PDF ou foto entra; ficha do imóvel preenchida sai. |
 | WhatsApp | Responde e qualifica quando o consultor não pode. |
-| Agenda | Uma só agenda, sincronizada, com reservas pelo cliente. |
+| Agenda | O cliente marca sozinho; nunca há sobreposições. |
 | Seguimento | Nada cai por esquecimento. |
 | Equipa | Visão real da atividade. |
 | Privacidade | Nem o administrador vê os dados dos clientes. |

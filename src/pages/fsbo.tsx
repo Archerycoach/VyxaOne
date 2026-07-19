@@ -16,10 +16,11 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import {
   Home, Loader2, Sparkles, Users, Phone, Trash2, AlertTriangle, ExternalLink, Search,
+  Clock, TrendingDown,
 } from "lucide-react";
 import {
   extractFsboListing, matchFsboBuyers, listFsboProspects, saveFsboProspect,
-  updateFsboProspect, deleteFsboProspect, searchFsboListings,
+  updateFsboProspect, deleteFsboProspect, searchFsboListings, registerFsboCall,
   type FsboProspect, type FsboBuyerMatch, type FsboStatus, type FsboSearchResult,
 } from "@/services/fsboService";
 
@@ -91,6 +92,65 @@ export default function FsboPage() {
     }
   };
 
+  /**
+   * O consultor tocou no número a partir da pesquisa. A chamada arranca de
+   * imediato (não bloqueamos o link) e o registo é feito em paralelo: o imóvel
+   * fica na lista como "Contactado", com a data e uma linha no histórico.
+   *
+   * Se afinal não chegou a falar, muda o estado no seletor — é um clique.
+   */
+  const handleCallFromSearch = async (result: FsboSearchResult) => {
+    try {
+      await registerFsboCall({
+        prospectId: result.savedProspectId,
+        prospect: {
+          source: "idealista",
+          source_url: result.url,
+          title: result.title,
+          description: result.description,
+          property_type: result.propertyType,
+          typology: result.typology,
+          price: result.price,
+          area: result.size,
+          bedrooms: result.rooms,
+          bathrooms: result.bathrooms,
+          city: result.municipality,
+          district: result.district,
+          matched_buyers: result.buyerMatchCount,
+          owner_name: result.contactName,
+          owner_phone: result.contactPhone,
+        },
+      });
+
+      setSearchResults((prev) =>
+        prev
+          ? prev.map((x) =>
+              x.propertyCode === result.propertyCode ? { ...x, alreadySaved: true } : x
+            )
+          : prev
+      );
+      toast({
+        title: "Chamada registada",
+        description: `${result.title} passou a "Contactado" na tua lista.`,
+      });
+      await load();
+    } catch (error) {
+      // A chamada é o que importa — o registo é secundário.
+      console.error("[fsbo] Falha ao registar a chamada:", error);
+    }
+  };
+
+  /** Chamada a partir da lista guardada. */
+  const handleCallProspect = async (prospect: FsboProspect) => {
+    try {
+      await registerFsboCall({ prospectId: prospect.id });
+      toast({ title: "Chamada registada" });
+      await load();
+    } catch (error) {
+      console.error("[fsbo] Falha ao registar a chamada:", error);
+    }
+  };
+
   const saveFromSearch = async (result: FsboSearchResult) => {
     try {
       await saveFsboProspect({
@@ -107,6 +167,8 @@ export default function FsboPage() {
         city: result.municipality,
         district: result.district,
         matched_buyers: result.buyerMatchCount,
+        owner_name: result.contactName,
+        owner_phone: result.contactPhone,
       });
       setSearchResults((prev) =>
         prev ? prev.map((r) => (r.propertyCode === result.propertyCode ? { ...r, alreadySaved: true } : r)) : prev
@@ -362,6 +424,32 @@ export default function FsboPage() {
                                 {r.buyerMatchCount} comprador{r.buyerMatchCount === 1 ? "" : "es"}
                               </Badge>
                             )}
+                            {r.daysTracked !== null && r.daysTracked >= 1 && (
+                              <Badge
+                                variant="outline"
+                                className={
+                                  r.daysTracked >= 60
+                                    ? "bg-red-100 text-red-800"
+                                    : r.daysTracked >= 21
+                                    ? "bg-amber-100 text-amber-800"
+                                    : "bg-slate-100 text-slate-700"
+                                }
+                                title="Tempo desde que este anúncio apareceu nas tuas pesquisas. Pode já existir há mais tempo."
+                              >
+                                <Clock className="mr-1 h-3 w-3" />
+                                há {r.daysTracked} dia{r.daysTracked === 1 ? "" : "s"}
+                              </Badge>
+                            )}
+                            {r.priceDrop && (
+                              <Badge
+                                variant="outline"
+                                className="bg-green-100 text-green-800"
+                                title={`Baixou de ${r.priceDrop.from.toLocaleString("pt-PT")} € para ${r.priceDrop.to.toLocaleString("pt-PT")} €`}
+                              >
+                                <TrendingDown className="mr-1 h-3 w-3" />
+                                Baixou o preço
+                              </Badge>
+                            )}
                             {r.alreadySaved && <Badge variant="secondary">Já na lista</Badge>}
                           </div>
                           <p className="truncate font-medium">{r.title}</p>
@@ -373,6 +461,25 @@ export default function FsboPage() {
                               r.price ? `${Number(r.price).toLocaleString("pt-PT")} €` : null,
                             ].filter(Boolean).join(" · ")}
                           </p>
+                          {(r.contactName || r.contactPhone) && (
+                            <p className="mt-1 flex items-center gap-1 text-sm">
+                              <Phone className="h-3 w-3 text-muted-foreground" />
+                              {r.contactPhone ? (
+                                <a
+                                  href={`tel:${r.contactPhone}`}
+                                  className="text-blue-600 hover:underline"
+                                  // Sem preventDefault: a chamada arranca na
+                                  // mesma; o registo corre em paralelo.
+                                  onClick={() => handleCallFromSearch(r)}
+                                >
+                                  {r.contactPhone}
+                                </a>
+                              ) : null}
+                              {r.contactName && (
+                                <span className="text-muted-foreground">· {r.contactName}</span>
+                              )}
+                            </p>
+                          )}
                           {r.buyerMatches.length > 0 && (
                             <p className="mt-1 text-xs text-muted-foreground">
                               {r.buyerMatches.map((m) => `${m.name} (${m.score}%)`).join(" · ")}
@@ -465,7 +572,20 @@ export default function FsboPage() {
                       {(p.owner_name || p.owner_phone) && (
                         <p className="mt-1 flex items-center gap-1 text-sm">
                           <Phone className="h-3 w-3 text-muted-foreground" />
-                          {[p.owner_name, p.owner_phone].filter(Boolean).join(" · ")}
+                          {p.owner_phone && (
+                            <a
+                              href={`tel:${p.owner_phone}`}
+                              className="text-blue-600 hover:underline"
+                              onClick={() => handleCallProspect(p)}
+                            >
+                              {p.owner_phone}
+                            </a>
+                          )}
+                          {p.owner_name && (
+                            <span className="text-muted-foreground">
+                              {p.owner_phone ? "· " : ""}{p.owner_name}
+                            </span>
+                          )}
                         </p>
                       )}
                     </div>

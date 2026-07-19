@@ -117,6 +117,12 @@ function layoutDayEvents(dayEvents: CalendarEvent[], day: Date): PositionedEvent
 
 function eventColor(event: CalendarEvent): string {
   if ((event as any).aiPending) return "bg-amber-100 border-amber-400 text-amber-900 border-dashed";
+  // Disponibilidade ainda por reservar: não é um compromisso, é espaço livre
+  // oferecido ao cliente. Fica discreto (verde claro, tracejado) para não
+  // dar a impressão de que a agenda está ocupada.
+  if ((event as any).isBookable) {
+    return "bg-green-50/70 border-green-400 text-green-800 border-dashed";
+  }
   if (!event.googleEventId) return "bg-purple-100 border-purple-300 text-purple-900";
   return "bg-blue-100 border-blue-300 text-blue-900";
 }
@@ -284,7 +290,8 @@ export function CalendarTimeGrid({
                       title={event.title}
                     >
                       <div className="font-medium truncate pr-4">
-                        {start.toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" })} {event.title}
+                        {start.toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" })}{" "}
+                        {(event as any).isBookable ? `Livre · ${event.title}` : event.title}
                       </div>
 
                       {/* Confirmar/Rejeitar para blocos sugeridos pela IA */}
