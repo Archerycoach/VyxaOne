@@ -54,6 +54,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(409).json({ error: "Este horário já foi reservado ou já passou. Escolha outro." });
     }
 
+    // O consultor pode ter marcado um compromisso sobreposto entre o cliente
+    // abrir a página e confirmar. Revalidamos no momento da escrita.
+    const slotStart = new Date(slot.start_time).getTime();
+    const slotEnd = new Date(slot.end_time || slot.start_time).getTime();
+
+    const { data: conflicts } = await db
+      .from("calendar_events")
+      .select("id, start_time, end_time")
+      .eq("user_id", consultant.id)
+      .neq("is_bookable", true)
+      .lt("start_time", new Date(slotEnd).toISOString())
+      .gt("end_time", new Date(slotStart).toISOString())
+      .limit(1);
+
+    if (conflicts && conflicts.length > 0) {
+      return res.status(409).json({
+        error: "Este horário deixou de estar disponível. Escolha outro, por favor.",
+      });
+    }
+
     // Procura uma lead existente do consultor com o mesmo email; senão, cria uma nova.
     const { data: existingLead } = await db
       .from("leads")

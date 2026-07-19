@@ -93,6 +93,21 @@ export function LeadCard({
   onSMS,
   onWhatsApp,
 }: LeadCardProps) {
+  /**
+   * Lead que já existia e voltou a preencher um formulário.
+   *
+   * O indicador desaparece assim que o consultor a contactar — usamos a data
+   * do último contacto como sinal de "já foi tratada", em vez de um prazo
+   * fixo: o que interessa não é há quanto tempo voltou, é se já lhe ligaram.
+   */
+  const hasReturned = (() => {
+    const submittedAt = (lead as any).last_form_submission_at;
+    if (!submittedAt) return false;
+    const lastContact = lead.last_contact_date;
+    if (!lastContact) return true;
+    return new Date(submittedAt).getTime() > new Date(lastContact).getTime();
+  })();
+
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [quickContactOpen, setQuickContactOpen] = useState(false);
   const [activitiesCount, setActivitiesCount] = useState<{
@@ -278,6 +293,15 @@ export function LeadCard({
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
               <h3 className="text-base font-semibold text-gray-900 truncate">{lead.name}</h3>
+              {hasReturned && (
+                <Badge
+                  className="text-xs flex-shrink-0 bg-orange-100 text-orange-800 border-orange-300"
+                  variant="outline"
+                  title={`${(lead as any).form_submissions_count || 2}ª submissão de formulário`}
+                >
+                  🔁 Voltou a contactar
+                </Badge>
+              )}
               {showArchived && (
                 <Badge variant="secondary" className="text-xs flex-shrink-0">
                   Arquivada

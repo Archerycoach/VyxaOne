@@ -11,11 +11,75 @@ import {
   useGoogleCalendarSync,
   useCalendarFilters,
 } from "../hooks";
-import { createCalendarEvent, updateCalendarEvent } from "@/services/calendarService";
+import {
+  createCalendarEvent,
+  updateCalendarEvent,
+  updateCalendarSeriesFromDate,
+  deleteCalendarSeriesFromDate,
+} from "@/services/calendarService";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
 import { updateTask, createTask } from "@/services/tasksService";
 import { setupAutoSync } from "@/lib/googleCalendar";
 import { useToast } from "@/hooks/use-toast";
 import type { CalendarEvent, Task } from "@/types";
+
+/**
+ * Datas de uma disponibilidade recorrente.
+ *
+ * Sem `repeatUntil`, devolve só a ocorrência original. Com data limite, repete
+ * semanalmente — nos dias da semana escolhidos, ou no mesmo dia da semana da
+ * data de início se nenhum for indicado. A duração é sempre preservada.
+ *
+ * O limite de 200 ocorrências é uma rede de segurança contra uma data limite
+ * disparatada (ex.: repetir todos os dias durante 5 anos).
+ */
+function buildRecurringOccurrences(
+  start: Date,
+  end: Date,
+  repeatUntil?: string,
+  weekdays?: number[]
+): Array<{ start: Date; end: Date }> {
+  const first = { start: new Date(start), end: new Date(end) };
+  if (!repeatUntil) return [first];
+
+  const limit = new Date(`${repeatUntil}T23:59:59`);
+  if (Number.isNaN(limit.getTime()) || limit <= start) return [first];
+
+  const durationMs = end.getTime() - start.getTime();
+  const targetDays = weekdays && weekdays.length > 0 ? [...weekdays].sort() : [start.getDay()];
+
+  const occurrences: Array<{ start: Date; end: Date }> = [];
+  const cursor = new Date(start);
+  cursor.setHours(0, 0, 0, 0);
+
+  while (cursor <= limit && occurrences.length < 200) {
+    if (targetDays.includes(cursor.getDay())) {
+      const occurrenceStart = new Date(cursor);
+      occurrenceStart.setHours(start.getHours(), start.getMinutes(), 0, 0);
+
+      // Não cria ocorrências no passado (ex.: dias anteriores da 1.ª semana).
+      if (occurrenceStart >= start) {
+        occurrences.push({
+          start: occurrenceStart,
+          end: new Date(occurrenceStart.getTime() + durationMs),
+        });
+      }
+    }
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  return occurrences.length > 0 ? occurrences : [first];
+}
 
 export function CalendarContainer() {
   const { toast } = useToast();
@@ -36,6 +100,15 @@ export function CalendarContainer() {
 
   // Diálogo com o registo de que eventos/tarefas estão sincronizados com o Google.
   const [syncStatusOpen, setSyncStatusOpen] = useState(false);
+
+  // Escolha de âmbito ao editar/eliminar uma ocorrência de uma série recorrente.
+  const [seriesPrompt, setSeriesPrompt] = useState<{
+    mode: "edit" | "delete";
+    groupId: string;
+    fromStartTime: string;
+    eventId: string;
+    payload?: Record<string, unknown>;
+  } | null>(null);
 
   // --- Sincronização automática (auto_sync) ---
   // Estado partilhado com o CalendarHeader (o interruptor) e usado para decidir
@@ -500,7 +573,7 @@ export function CalendarContainer() {
       }
 
       if (editingEvent) {
-        await updateCalendarEvent(editingEvent.id, {
+        const payload = {
           title: eventForm.title,
           description: eventForm.description || null,
           start_time: startTime.toISOString(),
@@ -509,24 +582,62 @@ export function CalendarContainer() {
           event_type: eventForm.eventType,
           lead_id: eventForm.leadId || null,
           is_bookable: eventForm.isBookable || false,
-        } as any);
+        };
+
+        // Faz parte de uma série? Perguntar o âmbito antes de gravar.
+        if (editingEvent.recurrenceGroupId) {
+          setSeriesPrompt({
+            mode: "edit",
+            groupId: editingEvent.recurrenceGroupId,
+            fromStartTime: editingEvent.startTime,
+            eventId: editingEvent.id,
+            payload,
+          });
+          return; // o diálogo trata do resto
+        }
+
+        await updateCalendarEvent(editingEvent.id, payload as any);
         toast({ title: "Evento atualizado com sucesso" });
       } else {
         const { supabase } = await import("@/integrations/supabase/client");
         const { data: { user } } = await supabase.auth.getUser();
 
-        await createCalendarEvent({
-          title: eventForm.title!,
-          description: eventForm.description || null,
-          start_time: startTime.toISOString(),
-          end_time: endTime.toISOString(),
-          location: eventForm.location || null,
-          event_type: eventForm.eventType || "viewing",
-          lead_id: eventForm.leadId || null,
-          user_id: user?.id || "",
-          is_bookable: eventForm.isBookable || false,
-        } as any);
-        toast({ title: "Evento criado com sucesso" });
+        // Disponibilidade recorrente: gera uma ocorrência por data, todas com
+        // o mesmo recurrence_group_id. Cada uma é um bloco reservável normal,
+        // o que mantém intactas a reserva, os conflitos e o sync do Google.
+        const repeatUntil = (eventForm as any).repeatUntil as string | undefined;
+        const occurrences = buildRecurringOccurrences(
+          startTime,
+          endTime,
+          repeatUntil,
+          (eventForm as any).repeatWeekdays as number[] | undefined
+        );
+
+        const recurrenceGroupId =
+          occurrences.length > 1 && typeof crypto !== "undefined" && crypto.randomUUID
+            ? crypto.randomUUID()
+            : null;
+
+        for (const occurrence of occurrences) {
+          await createCalendarEvent({
+            title: eventForm.title!,
+            description: eventForm.description || null,
+            start_time: occurrence.start.toISOString(),
+            end_time: occurrence.end.toISOString(),
+            location: eventForm.location || null,
+            event_type: eventForm.eventType || "viewing",
+            lead_id: eventForm.leadId || null,
+            user_id: user?.id || "",
+            is_bookable: eventForm.isBookable || false,
+            recurrence_group_id: recurrenceGroupId,
+          } as any);
+        }
+
+        toast({
+          title: occurrences.length > 1
+            ? `${occurrences.length} horários criados`
+            : "Evento criado com sucesso",
+        });
       }
       setShowEventForm(false);
       setEditingEvent(null);
@@ -687,6 +798,18 @@ export function CalendarContainer() {
   // Eliminar a partir do diálogo de edição do evento (disponível em qualquer vista).
   const handleDeleteEditingEvent = async () => {
     if (!editingEvent) return;
+
+    // Faz parte de uma série? Perguntar o âmbito.
+    if (editingEvent.recurrenceGroupId) {
+      setSeriesPrompt({
+        mode: "delete",
+        groupId: editingEvent.recurrenceGroupId,
+        fromStartTime: editingEvent.startTime,
+        eventId: editingEvent.id,
+      });
+      return;
+    }
+
     if (!window.confirm(`Eliminar o evento "${editingEvent.title}"? Esta ação não pode ser revertida.`)) return;
     try {
       await deleteEvent(editingEvent.id);
@@ -694,6 +817,62 @@ export function CalendarContainer() {
       setEditingEvent(null);
     } catch (error) {
       console.error(error);
+    }
+  };
+
+  /**
+   * Executa a alteração ou eliminação depois de o consultor escolher se quer
+   * afetar só aquela ocorrência ou aquela e as seguintes.
+   */
+  const applySeriesChoice = async (scope: "one" | "future") => {
+    const prompt = seriesPrompt;
+    if (!prompt) return;
+    setSeriesPrompt(null);
+
+    try {
+      if (prompt.mode === "edit") {
+        if (scope === "one") {
+          await updateCalendarEvent(prompt.eventId, prompt.payload as any);
+          toast({ title: "Ocorrência atualizada" });
+        } else {
+          // A ocorrência editada leva a alteração completa (incluindo a data);
+          // as seguintes recebem a nova hora e duração, mantendo os seus dias.
+          await updateCalendarEvent(prompt.eventId, prompt.payload as any);
+          const { updated, skippedBooked } = await updateCalendarSeriesFromDate(
+            prompt.groupId,
+            prompt.fromStartTime,
+            prompt.payload as any
+          );
+          toast({
+            title: `${updated} horário(s) atualizado(s)`,
+            description: skippedBooked > 0
+              ? `${skippedBooked} não foram alterados por já estarem reservados por clientes.`
+              : undefined,
+          });
+        }
+      } else {
+        if (scope === "one") {
+          await deleteEvent(prompt.eventId);
+        } else {
+          const { deleted, skippedBooked } = await deleteCalendarSeriesFromDate(
+            prompt.groupId,
+            prompt.fromStartTime
+          );
+          toast({
+            title: `${deleted} horário(s) eliminado(s)`,
+            description: skippedBooked > 0
+              ? `${skippedBooked} foram mantidos por já estarem reservados por clientes.`
+              : undefined,
+          });
+        }
+      }
+
+      setShowEventForm(false);
+      setEditingEvent(null);
+      refetchEvents();
+    } catch (error) {
+      console.error(error);
+      toast({ title: "Erro ao aplicar a alteração", variant: "destructive" });
     }
   };
 
@@ -824,6 +1003,38 @@ export function CalendarContainer() {
         isTaskEditing={!!editingTask}
         handleDeleteTask={handleDeleteTask}
       />
+
+      {/* Âmbito da alteração numa série recorrente */}
+      <AlertDialog open={!!seriesPrompt} onOpenChange={(open) => !open && setSeriesPrompt(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {seriesPrompt?.mode === "delete" ? "Eliminar horário recorrente" : "Alterar horário recorrente"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Este horário faz parte de uma série. Queres{" "}
+              {seriesPrompt?.mode === "delete" ? "eliminar" : "alterar"} apenas esta ocorrência ou
+              também as seguintes?
+              <br />
+              <span className="mt-2 block text-xs">
+                Ocorrências já reservadas por clientes são sempre preservadas.
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="sm:flex-col sm:space-x-0 sm:gap-2">
+            <AlertDialogAction onClick={() => applySeriesChoice("one")}>
+              Apenas esta ocorrência
+            </AlertDialogAction>
+            <Button
+              variant={seriesPrompt?.mode === "delete" ? "destructive" : "default"}
+              onClick={() => applySeriesChoice("future")}
+            >
+              Esta e as seguintes
+            </Button>
+            <AlertDialogCancel className="mt-0">Cancelar</AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -182,6 +182,85 @@ export function CalendarDialogs({
                 </div>
               )}
 
+              {/* Repetição — só faz sentido ao CRIAR uma disponibilidade nova */}
+              {!eventForm.leadId && eventForm.isBookable && !isEditing && (
+                <div className="space-y-3 rounded-md border p-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label htmlFor="event-repeat">Repetir este horário</Label>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        Cria o mesmo horário nas semanas seguintes, até à data que indicares.
+                      </p>
+                    </div>
+                    <Switch
+                      id="event-repeat"
+                      checked={!!(eventForm as any).repeatUntil}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          // Por omissão, repete durante um mês.
+                          const base = (eventForm as any).startTime
+                            ? new Date((eventForm as any).startTime)
+                            : new Date();
+                          base.setMonth(base.getMonth() + 1);
+                          setEventForm({
+                            ...eventForm,
+                            repeatUntil: base.toISOString().split("T")[0],
+                            repeatWeekdays: [],
+                          } as any);
+                        } else {
+                          setEventForm({ ...eventForm, repeatUntil: "", repeatWeekdays: [] } as any);
+                        }
+                      }}
+                    />
+                  </div>
+
+                  {(eventForm as any).repeatUntil && (
+                    <>
+                      <div>
+                        <Label htmlFor="event-repeat-until" className="text-xs">Repetir até</Label>
+                        <Input
+                          id="event-repeat-until"
+                          type="date"
+                          value={(eventForm as any).repeatUntil || ""}
+                          onChange={(e) =>
+                            setEventForm({ ...eventForm, repeatUntil: e.target.value } as any)
+                          }
+                        />
+                      </div>
+
+                      <div>
+                        <Label className="text-xs">Dias da semana</Label>
+                        <p className="mb-2 text-xs text-muted-foreground">
+                          Sem seleção, repete no mesmo dia da semana da data de início.
+                        </p>
+                        <div className="flex flex-wrap gap-1">
+                          {["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"].map((label, index) => {
+                            const selected = ((eventForm as any).repeatWeekdays || []).includes(index);
+                            return (
+                              <Button
+                                key={index}
+                                type="button"
+                                size="sm"
+                                variant={selected ? "default" : "outline"}
+                                onClick={() => {
+                                  const current: number[] = (eventForm as any).repeatWeekdays || [];
+                                  const next = selected
+                                    ? current.filter((d) => d !== index)
+                                    : [...current, index];
+                                  setEventForm({ ...eventForm, repeatWeekdays: next } as any);
+                                }}
+                              >
+                                {label}
+                              </Button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
               <DialogFooter className="sm:justify-between">
                 {isEditing && handleDeleteEvent ? (
                   <Button

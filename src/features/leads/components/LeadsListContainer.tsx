@@ -234,7 +234,14 @@ export function LeadsListContainer({
       let aVal: any = a[sortField as keyof typeof a];
       let bVal: any = b[sortField as keyof typeof b];
 
-      if (sortField === "created_at" || sortField === "last_contact_date") {
+      if (sortField === "created_at") {
+        // Uma lead que voltou a preencher um formulário sobe ao topo como se
+        // fosse nova: ordenamos pela data efetiva (resubmissão ou criação).
+        const effective = (lead: typeof a) =>
+          new Date((lead as any).last_form_submission_at || lead.created_at || 0).getTime();
+        aVal = effective(a);
+        bVal = effective(b);
+      } else if (sortField === "last_contact_date") {
         aVal = aVal ? new Date(aVal).getTime() : 0;
         bVal = bVal ? new Date(bVal).getTime() : 0;
       } else if (typeof aVal === "string") {
