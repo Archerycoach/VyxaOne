@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { MapPin, BedDouble, Bath, Ruler, Phone, Mail, CheckCircle2, MessageCircle } from "lucide-react";
+import { MapPin, BedDouble, Bath, Ruler, Phone, Mail, CheckCircle2, MessageCircle, CalendarDays } from "lucide-react";
 
 interface FormQuestion {
   id: string;
@@ -18,7 +18,14 @@ interface FormQuestion {
 interface LandingData {
   type: "property" | "development";
   entity: Record<string, any>;
-  agent: { name: string | null; email: string | null; phone: string | null; avatar: string | null } | null;
+  agent: {
+    name: string | null;
+    email: string | null;
+    phone: string | null;
+    avatar: string | null;
+    /** Token da página pública de agendamento, quando o consultor a tem ativa. */
+    bookingToken?: string | null;
+  } | null;
   questions: FormQuestion[];
 }
 
@@ -278,6 +285,13 @@ export default function LandingPage({ data, url, token }: PageProps) {
                     <a href={waHref} target="_blank" rel="noopener noreferrer">
                       <Button variant="outline" className="gap-2 text-green-700 border-green-200 hover:bg-green-50">
                         <MessageCircle className="h-4 w-4" /> WhatsApp
+                      </Button>
+                    </a>
+                  )}
+                  {data.agent?.bookingToken && (
+                    <a href={`/agendar/${data.agent.bookingToken}`} target="_blank" rel="noopener noreferrer">
+                      <Button variant="outline" className="gap-2">
+                        <CalendarDays className="h-4 w-4" /> Marcar visita
                       </Button>
                     </a>
                   )}

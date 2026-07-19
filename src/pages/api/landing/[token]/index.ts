@@ -60,7 +60,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   // Contacto do agente responsável (o utilizador dono do registo).
   const { data: agent } = await (supabaseAdmin.from("profiles") as any)
-    .select("full_name, email, phone, avatar_url")
+    .select("full_name, email, phone, avatar_url, booking_token")
     .eq("id", entity.user_id)
     .maybeSingle();
 
@@ -88,7 +88,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   return res.status(200).json({
     type: entityType,
     entity: entityType === "development" ? { ...safe, typology_details: typologyDetails } : safe,
-    agent: agent ? { name: agent.full_name, email: agent.email, phone: agent.phone, avatar: agent.avatar_url } : null,
+    // bookingToken: permite à landing page oferecer "Marcar visita" para o
+    // cliente reservar diretamente na agenda do consultor. Só é exposto o
+    // token da página pública de agendamento — nunca dados internos.
+    agent: agent
+      ? {
+          name: agent.full_name,
+          email: agent.email,
+          phone: agent.phone,
+          avatar: agent.avatar_url,
+          bookingToken: agent.booking_token || null,
+        }
+      : null,
     questions: questions || [],
   });
 }
