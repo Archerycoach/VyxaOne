@@ -33,20 +33,115 @@ const CLOSED_STATUSES = new Set([
  * interface apresenta-a como indício e mostra sempre o anunciante quando existe.
  */
 function isLikelyPrivateSeller(listing: any): boolean {
-  const professional = [
+  // O feed traz o tipo de anunciante explicitamente em contactInfo.userType
+  // ("private" / "professional"). Quando existe, é decisivo — não há que
+  // adivinhar.
+  const userType = String(listing.contactInfo?.userType || listing.userType || "")
+    .trim()
+    .toLowerCase();
+
+  if (userType === "private") return true;
+  if (userType) return false; // "professional", "agency", etc.
+
+  // Sem userType (feeds mais antigos): cai para os indícios de mediadora.
+  const professionalSignals = [
+    listing.contactInfo?.commercialName,
+    listing.contactInfo?.agencyLogo,
+    listing.contactInfo?.micrositeShortName,
     listing.professionalName,
     listing.clientName,
     listing.clientAlias,
     listing.logoUrl,
   ].filter((v) => typeof v === "string" && v.trim().length > 0);
 
-  if (professional.length > 0) return false;
+  return professionalSignals.length === 0;
+}
 
-  // Alguns feeds trazem o tipo de anunciante explicitamente.
-  const userType = String(listing.contactInfo?.userType || listing.userType || "").toLowerCase();
-  if (userType.includes("professional") || userType.includes("agency")) return false;
+/** Contacto que o anúncio publica, tal como aparece na página do portal. */
+function extractContact(listing: any): { name: string | null; phone: string | null } {
+  const info = listing.contactInfo || {};
+  const phone =
+    info.phone1?.phoneNumberForMobileDialing ||
+    info.phone1?.formattedPhone ||
+    info.phone1?.phoneNumber ||
+    null;
 
-  return true;
+  return {
+    name: info.contactName || null,
+    phone: phone ? String(phone) : null,
+  };
+}
+
+interface Sighting {
+  firstSeenAt: string;
+  firstPrice: number | null;
+  lastPrice: number | null;
+}
+
+/**
+ * Regista a passagem por estes anúncios e devolve o que já sabíamos sobre
+ * cada um (primeira vez que o vimos e preço nessa altura).
+ *
+ * Best-effort: se falhar, a pesquisa continua sem o tempo de mercado.
+ */
+async function recordAndLoadSightings(
+  userId: string,
+  listings: any[]
+): Promise<Map<string, Sighting>> {
+  const result = new Map<string, Sighting>();
+  if (listings.length === 0) return result;
+
+  const codes = listings.map((l) => String(l.propertyCode)).filter(Boolean);
+  if (codes.length === 0) return result;
+
+  try {
+    // O que já conhecíamos ANTES desta pesquisa.
+    const { data: known } = await (supabaseAdmin as any)
+      .from("fsbo_listing_sightings")
+      .select("property_code, first_seen_at, first_price, last_price")
+      .eq("user_id", userId)
+      .in("property_code", codes);
+
+    for (const row of known || []) {
+      result.set(row.property_code, {
+        firstSeenAt: row.first_seen_at,
+        firstPrice: row.first_price,
+        lastPrice: row.last_price,
+      });
+    }
+
+    const now = new Date().toISOString();
+
+    // Anúncios novos: passam a ser acompanhados a partir de agora.
+    const unseen = listings.filter((l) => !result.has(String(l.propertyCode)));
+    if (unseen.length > 0) {
+      await (supabaseAdmin as any).from("fsbo_listing_sightings").insert(
+        unseen.map((l) => ({
+          user_id: userId,
+          property_code: String(l.propertyCode),
+          first_seen_at: now,
+          last_seen_at: now,
+          first_price: l.price ?? null,
+          last_price: l.price ?? null,
+        }))
+      );
+    }
+
+    // Anúncios já conhecidos: atualiza a última passagem e o preço atual.
+    for (const listing of listings) {
+      const code = String(listing.propertyCode);
+      if (!result.has(code)) continue;
+      await (supabaseAdmin as any)
+        .from("fsbo_listing_sightings")
+        .update({ last_seen_at: now, last_price: listing.price ?? null })
+        .eq("user_id", userId)
+        .eq("property_code", code);
+    }
+  } catch (error) {
+    console.error("[fsbo/search] Falha ao registar o histórico de anúncios:", error);
+  }
+
+  return result;
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -101,14 +196,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const privateListings = (listings || []).filter(isLikelyPrivateSeller);
 
+    // Tempo de mercado: o feed não traz data de publicação, por isso
+    // registamos quando vimos cada anúncio pela primeira vez.
+    const sightings = await recordAndLoadSightings(user.id, privateListings);
+
     // Já guardados na lista do consultor — para não aparecerem como novidade.
     const { data: existing } = await (supabaseAdmin as any)
       .from("fsbo_prospects")
-      .select("source_url")
+      .select("id, source_url")
       .eq("user_id", user.id);
 
-    const knownUrls = new Set(
-      (existing || []).map((p: any) => p.source_url).filter(Boolean)
+    // url → id, para os resultados já guardados poderem ser atualizados
+    // diretamente (ex.: registar uma chamada) sem criar duplicados.
+    const savedByUrl = new Map<string, string>(
+      (existing || [])
+        .filter((p: any) => p.source_url)
+        .map((p: any) => [p.source_url, p.id])
     );
 
     // Compradores ativos, para o cruzamento.
@@ -148,10 +251,38 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         .sort((a, b) => b.score - a.score)
         .slice(0, 5);
 
+      // Tempo de mercado a partir da primeira vez que vimos o anúncio.
+      const sighting = sightings.get(String(listing.propertyCode));
+      let daysTracked: number | null = null;
+      let priceDrop: { from: number; to: number } | null = null;
+
+      if (sighting) {
+        const ms = Date.now() - new Date(sighting.firstSeenAt).getTime();
+        daysTracked = Math.max(0, Math.floor(ms / (1000 * 60 * 60 * 24)));
+
+        if (
+          sighting.firstPrice != null &&
+          listing.price != null &&
+          Number(listing.price) < Number(sighting.firstPrice)
+        ) {
+          priceDrop = { from: Number(sighting.firstPrice), to: Number(listing.price) };
+        }
+      }
+
+      // Contacto: mostrado ao consultor tal como está publicado no anúncio,
+      // para lhe poupar o clique. NÃO é guardado em lado nenhum nesta fase —
+      // só passa a ficar registado se ele decidir guardar aquele imóvel na
+      // sua lista, que é um ato deliberado e individual.
+      const contact = extractContact(listing);
+
       return {
         propertyCode: listing.propertyCode,
         url: listing.url,
         thumbnail: listing.thumbnail,
+        daysTracked,
+        priceDrop,
+        contactName: contact.name,
+        contactPhone: contact.phone,
         title: listing.suggestedTexts?.title || listing.address || "Imóvel",
         description: (listing.description || "").substring(0, 300),
         price: listing.price,
@@ -162,14 +293,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         district: listing.district || listing.province,
         typology: listing.detailedType?.typology || null,
         propertyType: listing.propertyType,
-        alreadySaved: knownUrls.has(listing.url),
+        alreadySaved: savedByUrl.has(listing.url),
+        savedProspectId: savedByUrl.get(listing.url) || null,
         buyerMatches: matches,
         buyerMatchCount: matches.length,
       };
     });
 
-    // Primeiro os que interessam mais: com compradores na carteira.
-    results.sort((a, b) => b.buyerMatchCount - a.buyerMatchCount);
+    // Primeiro os que interessam mais: com compradores na carteira. Em
+    // igualdade, os que estão no mercado há mais tempo — são os vendedores
+    // mais recetivos a falar com um consultor.
+    results.sort((a, b) => {
+      if (b.buyerMatchCount !== a.buyerMatchCount) {
+        return b.buyerMatchCount - a.buyerMatchCount;
+      }
+      return (b.daysTracked ?? 0) - (a.daysTracked ?? 0);
+    });
 
     return res.status(200).json({
       success: true,

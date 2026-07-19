@@ -66,28 +66,36 @@ o consultor não se lembrava que tinha em carteira.
 ### 3. Angariação a particulares (FSBO)
 
 O consultor pesquisa no Idealista **de dentro do Vyxa**, por zona e preço, e a
-aplicação mostra só os anúncios que aparentam ser de **particulares** — já
-cruzados com a carteira de compradores dele.
+aplicação mostra só os anúncios de **particulares** — já cruzados com a
+carteira de compradores dele.
 
-Para cada imóvel vê **quantos e quais dos seus compradores encaixam**, com
-percentagem de afinidade. Abre o anúncio, contacta o proprietário e acompanha
-o estado da angariação.
+Cada anúncio traz de imediato:
+
+- o **contacto** publicado no anúncio, com o número clicável para ligar;
+- **quantos e quais dos seus compradores encaixam**, com percentagem;
+- **há quanto tempo está no mercado** (a vermelho a partir de dois meses);
+- se **baixou o preço** desde que o começou a acompanhar.
+
+Toca no número e a chamada é **registada automaticamente** — o imóvel entra na
+lista de acompanhamento como contactado, com data e histórico. Sem apontar
+nada num papel.
 
 **Vantagem:** liga ao proprietário com o argumento mais forte que existe —
-*"tenho três compradores à procura exatamente disto"*. E deixa de perder tempo
-a filtrar anúncios de mediadoras.
+*"tenho três compradores à procura exatamente disto"* — e sabe de antemão se
+está a falar com alguém que já tem a casa parada há meses.
 
 **Rigor na comunicação — o que é exato dizer:**
 
 - ✅ "Pesquisa anúncios de particulares e cruza-os com a sua carteira"
-- ✅ "Mostra-lhe quais dos seus compradores encaixam antes de ligar"
-- ❌ "Gera leads de proprietários automaticamente" — a aplicação mostra
-  anúncios públicos, não constrói listas de contactos.
-- ❌ "Contacta os proprietários por si" — o contacto é sempre do consultor; a
-  aplicação não envia nada.
+- ✅ "Mostra quais dos seus compradores encaixam antes de ligar"
+- ✅ "Mostra há quanto tempo o anúncio está no mercado"
+- ❌ "Gera leads de proprietários automaticamente" — mostra anúncios públicos;
+  não constrói listas de contactos.
+- ❌ "Contacta os proprietários por si" — o contacto é sempre do consultor.
 
-O contacto do proprietário **não é recolhido nem armazenado** pela aplicação:
-o consultor abre o anúncio no portal para o obter, tal como numa busca manual.
+Os contactos são **apresentados** tal como estão publicados no anúncio, e só
+ficam **guardados** quando o consultor decide acompanhar aquele imóvel. Uma
+pesquisa de 200 anúncios não gera 200 contactos em base de dados.
 
 ---
 
@@ -201,6 +209,10 @@ Sugestões de temas. Adapta o tom ao canal.
   Pesquisa particulares a vender e vê logo quais dos teus clientes encaixam,
   antes sequer de ligares.
 
+- **"Aquela casa está à venda há 4 meses. Ele já te quer ouvir."**
+  O Vyxa diz-te há quanto tempo cada anúncio está parado — e quem já baixou o
+  preço.
+
 - **"Marcações sem trocar uma única mensagem."**
   Abres os teus horários (uma vez, para as semanas todas), partilhas o link e
   o cliente escolhe. Se marcares outra coisa por cima, o horário desaparece
@@ -243,7 +255,7 @@ Para evitar problemas legais e devoluções:
 |---|---|
 | "Gera leads automaticamente" | Mostra anúncios públicos; não constrói listas de contactos. |
 | "Contacta os clientes por si" | Nada sai para o cliente sem ação do consultor. |
-| "Recolhe contactos de proprietários" | Os contactos não são recolhidos nem guardados. |
+| "Recolhe contactos de proprietários" | São mostrados, não recolhidos em massa. |
 | "Aumenta as vendas em X%" | Só com dados medidos e verificáveis. |
 | "Substitui o consultor" | Além de falso, afasta exatamente quem compra. |
 

@@ -116,11 +116,30 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       leadId = newLead.id;
     }
 
+    // Descrição do evento: é o que o consultor vê ao abrir o compromisso na
+    // agenda. Sem isto, tinha o nome no título mas os contactos ficavam só no
+    // campo "attendees", que a agenda não mostra — obrigando-o a ir procurar
+    // a lead antes de ligar.
+    const eventDescriptionLines = [
+      `Reserva feita pelo cliente através do link de agendamento.`,
+      "",
+      `👤 ${name.trim()}`,
+      `📧 ${email.trim()}`,
+    ];
+    if (phone?.trim()) {
+      eventDescriptionLines.push(`📞 ${phone.trim()}`);
+    }
+    if (answersNote) {
+      eventDescriptionLines.push("", answersNote);
+    }
+    const eventDescription = eventDescriptionLines.join("\n");
+
     const { error: updateError } = await db
       .from("calendar_events")
       .update({
         is_bookable: false,
         title: `Chamada agendada - ${name.trim()}`,
+        description: eventDescription,
         event_type: "call",
         lead_id: leadId,
         attendees: [{ name: name.trim(), email: email.trim(), phone: phone?.trim() || null }],
@@ -138,7 +157,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const googleEventId = await syncEventToGoogle(
         {
           title: `Chamada agendada - ${name.trim()}`,
-          description: `Reserva feita pelo cliente através do link de agendamento.\nContacto: ${email.trim()}${phone ? ` · ${phone.trim()}` : ""}`,
+          description: eventDescription,
           start_time: slot.start_time,
           end_time: slot.end_time,
         },

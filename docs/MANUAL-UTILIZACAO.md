@@ -212,22 +212,52 @@ Para angariação junto de quem vende sem mediadora. Tem dois separadores.
 #### Procurar
 
 Pesquisa no **Idealista** por zona e intervalo de preço, e mostra apenas os
-anúncios **sem mediadora identificada** — os que aparentam ser de particulares.
+anúncios de **particulares** (o portal identifica o tipo de anunciante, por
+isso a filtragem é exata — não deixa passar mediadoras).
 
-Para cada resultado vês quantos dos **teus compradores** encaixam naquele
-imóvel, com os nomes e a percentagem de afinidade. A lista vem ordenada pelos
-que têm mais compradores, que são os que interessa contactar primeiro.
+Cada resultado mostra logo:
+
+| Indicador | O que diz |
+|---|---|
+| 📞 **Contacto** | Nome e telefone publicados no anúncio, com o número clicável |
+| 👥 **Compradores** | Quantos e quais dos teus clientes encaixam, com percentagem |
+| 🕐 **Tempo de mercado** | Cinzento até 3 semanas · **âmbar** a partir de 21 dias · **vermelho** a partir de 60 |
+| 📉 **Baixou o preço** | Se o valor desceu desde que o começaste a acompanhar |
+
+A lista vem ordenada pelos que têm mais compradores; em igualdade, aparecem
+primeiro os que estão há mais tempo no mercado — os vendedores mais recetivos.
 
 - **Abrir** — vai ao anúncio no Idealista.
-- **Guardar** — passa-o para a tua lista de acompanhamento.
+- **Guardar** — passa-o para a tua lista de acompanhamento, já com o contacto.
+- **Tocar no número** — liga e **regista a chamada** (ver abaixo).
 
-> **O contacto do proprietário não vem na pesquisa.** O Idealista não o
-> disponibiliza por essa via — abres o anúncio e contactas a partir de lá,
-> como farias numa busca manual.
+#### Registo automático de chamadas
+
+Sempre que tocas no número — na pesquisa ou na tua lista — a chamada arranca e
+o Vyxa regista-a:
+
+- o imóvel passa a **Contactado**, com a data;
+- fica uma linha no histórico (*"Chamada efetuada em 19/07/2026 14:32"*), que
+  se acumula se ligares mais vezes;
+- se o imóvel ainda não estava na tua lista, **é guardado nesse momento** com
+  os dados do anúncio e o contacto.
+
+> A chamada arranca sempre primeiro — o registo corre em paralelo e nunca a
+> atrasa. Se a rede falhar, a chamada faz-se na mesma.
 >
-> A deteção de "particular" é um **indício**, não uma garantia: baseia-se na
-> ausência de identificação profissional no anúncio. Pode escapar alguma
-> mediadora mal identificada.
+> **Um clique não garante uma conversa.** Se ligaste e não atenderam, o imóvel
+> fica na mesma como "Contactado" — muda o estado no seletor, é um clique. O
+> histórico diz "Chamada efetuada", não "Falei com o proprietário".
+
+> **Sobre o tempo de mercado:** o Idealista não indica a data de publicação, por
+> isso o Vyxa conta a partir da **primeira vez que viu o anúncio** numa
+> pesquisa tua. É um mínimo garantido — o anúncio pode já existir há mais
+> tempo. A precisão melhora à medida que fores pesquisando as tuas zonas com
+> regularidade.
+>
+> **Sobre os contactos:** são apresentados tal como estão publicados no
+> anúncio, para te poupar o clique. **Só ficam guardados se carregares em
+> Guardar** naquele imóvel — a pesquisa não cria listas de contactos.
 
 #### Colar anúncio
 
@@ -290,7 +320,12 @@ atualiza sozinha.
 ### 6.2 Link de Reservas
 
 Partilha com os clientes para eles marcarem diretamente nos teus horários
-livres. O botão está no topo da Agenda.
+livres.
+
+O botão **Link de Reservas** está em três sítios — **Agenda**, **Imóveis** e
+**Empreendimentos** — para o poderes copiar no momento em que estás a falar
+com o cliente sobre um imóvel, sem ter de ir à Agenda. É sempre o mesmo link
+(um por consultor).
 
 #### Criar horários disponíveis
 
@@ -448,28 +483,40 @@ na **Cronologia** da lead, a par das edições manuais.
 
 ## 11. Referência rápida do menu
 
+### Menu principal
+
 | Menu | Para quê |
 |---|---|
 | O Meu Dia | O que interessa hoje |
-| Agente IA | Conversar com o assistente |
-| Assistente IA | Aprovar e auditar o que a IA faz |
 | Dashboard | Visão geral |
 | Leads | Clientes e potenciais clientes |
 | Pipeline | Negócios por fase |
 | Imóveis | A tua carteira |
-| Particulares | Angariação a quem vende sem mediadora |
 | Empreendimentos | Construção nova |
 | Contactos | Agenda de contactos |
-| Radar | Acompanhamento ativo |
-| Agenda | Calendário |
+| Agenda | Calendário e link de reservas |
 | Tarefas | O que há para fazer |
-| Idealista | Pesquisa no portal |
-| Negócios / Objetivos / Relatórios | Gestão comercial |
-| Mensagens | Envios em massa |
-| Emails por Procura | Campanhas segmentadas |
-| Financiamento / Avaliação / Documentos | Ferramentas |
-| Coach de Performance | Aconselhamento de IA |
-| Equipa / Subscrição / Definições | Administração |
+
+### Grupos
+
+**Análise de Desempenho** — Negócios · Performance · Objetivos · Relatórios
+
+**Ferramentas** — Particulares · Idealista · Mensagens · Registo de Envios
+Automáticos · Financiamento · Avaliação de Imóvel · Documentos
+
+**Inteligência Artificial** — Assistente IA · Agente IA · Emails por Procura ·
+Coach de Performance
+
+**Administração** — Equipa · Subscrição · Definições
+
+### Onde encontrar o que não tem menu próprio
+
+| Funcionalidade | Onde está |
+|---|---|
+| **Radar** | Botão na barra da página **Leads** |
+| **Link de Reservas** | Agenda, Imóveis e Empreendimentos |
+| **Duplicados** | A partir da lista de Leads |
+| **Portal do Cliente** | Separador na ficha de cada lead |
 
 ---
 
@@ -497,6 +544,14 @@ cliente o reservar.
 
 **Marquei uma visita por cima de um horário livre. Tenho de o apagar?**
 Não. Deixa de ser oferecido ao cliente automaticamente.
+
+**Liguei a um particular e não atenderam — fica como contactado?**
+Fica. O registo marca a **tentativa**, não a conversa. Se quiseres voltar a
+tê-lo por contactar, muda o estado no seletor.
+
+**Cliquei no número no computador e não aconteceu nada.**
+A chamada depende de teres uma aplicação de telefone associada. O registo é
+feito à mesma.
 
 **Como cancelo todos os horários de uma série?**
 Abre uma ocorrência qualquer, carrega em Eliminar e escolhe **"Eliminar toda a

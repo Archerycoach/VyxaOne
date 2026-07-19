@@ -139,7 +139,6 @@ export function Navigation() {
     { icon: Building2, label: "Imóveis", path: "/properties" },
     { icon: Building2, label: "Empreendimentos", path: "/developments" },
     { icon: Users, label: "Contactos", path: "/contacts" },
-    { icon: Sparkles, label: "Assistente IA", path: "/ai-inbox" },
     { icon: Calendar, label: "Agenda", path: "/calendar" },
     { icon: CheckSquare, label: "Tarefas", path: "/tasks" },
 
@@ -175,6 +174,7 @@ export function Navigation() {
       icon: Sparkles,
       label: "Inteligência Artificial",
       subItems: [
+        { icon: Sparkles, label: "Assistente IA", path: "/ai-inbox" },
         { icon: Bot, label: "Agente IA", path: "/ai-agent" },
         { icon: BrainCircuit, label: "Emails por Procura", path: "/ai-email-campaigns" },
         { icon: Brain, label: "Coach de Performance", path: "/ai-performance-coach" },
