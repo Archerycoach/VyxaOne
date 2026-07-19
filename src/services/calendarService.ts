@@ -300,6 +300,18 @@ export const createCalendarEvent = async (event: CalendarEventInsert & { contact
 
   console.log("[calendarService] ✅ Event created locally:", data.id);
 
+  // Blocos de DISPONIBILIDADE não vão para o Google.
+  //
+  // Enquanto ninguém reservar, aquele tempo continua livre na agenda do
+  // consultor — sincronizá-lo faria o Google mostrá-lo como ocupado e
+  // bloquearia o horário a toda a gente (incluindo à consulta de
+  // disponibilidade da própria aplicação). Só quando um cliente reserva é que
+  // o bloco passa a compromisso e é enviado para o Google (ver confirm.ts).
+  if (isBookable) {
+    console.log("[calendarService] ⏭️ Bloco disponível para reserva — não sincroniza com o Google até ser reservado.");
+    return mapDbEventToFrontend(data);
+  }
+
   // Try to sync to Google Calendar immediately (non-blocking)
   try {
     console.log("[calendarService] 🔄 Attempting to sync to Google Calendar...");
@@ -373,7 +385,8 @@ export const createEvent = createCalendarEvent;
  */
 export const updateCalendarSeriesFromDate = async (
   recurrenceGroupId: string,
-  fromStartTime: string,
+  /** Só as ocorrências a partir desta data. `null` = toda a série. */
+  fromStartTime: string | null,
   updates: {
     title?: string;
     description?: string | null;
@@ -389,12 +402,17 @@ export const updateCalendarSeriesFromDate = async (
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error("Sessão expirada.");
 
-  const { data: occurrences, error: fetchError } = await (supabase as any)
+  let occurrencesQuery = (supabase as any)
     .from("calendar_events")
     .select("id, start_time, end_time, is_bookable, lead_id")
     .eq("recurrence_group_id", recurrenceGroupId)
-    .eq("user_id", user.id)
-    .gte("start_time", fromStartTime);
+    .eq("user_id", user.id);
+
+  if (fromStartTime) {
+    occurrencesQuery = occurrencesQuery.gte("start_time", fromStartTime);
+  }
+
+  const { data: occurrences, error: fetchError } = await occurrencesQuery;
 
   if (fetchError) throw fetchError;
   if (!occurrences || occurrences.length === 0) return { updated: 0, skippedBooked: 0 };
@@ -455,17 +473,23 @@ export const updateCalendarSeriesFromDate = async (
  */
 export const deleteCalendarSeriesFromDate = async (
   recurrenceGroupId: string,
-  fromStartTime: string
+  /** Só as ocorrências a partir desta data. `null` = toda a série. */
+  fromStartTime: string | null
 ): Promise<{ deleted: number; skippedBooked: number }> => {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error("Sessão expirada.");
 
-  const { data: occurrences, error: fetchError } = await (supabase as any)
+  let occurrencesQuery = (supabase as any)
     .from("calendar_events")
     .select("id, is_bookable, lead_id")
     .eq("recurrence_group_id", recurrenceGroupId)
-    .eq("user_id", user.id)
-    .gte("start_time", fromStartTime);
+    .eq("user_id", user.id);
+
+  if (fromStartTime) {
+    occurrencesQuery = occurrencesQuery.gte("start_time", fromStartTime);
+  }
+
+  const { data: occurrences, error: fetchError } = await occurrencesQuery;
 
   if (fetchError) throw fetchError;
 

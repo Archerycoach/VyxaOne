@@ -824,10 +824,14 @@ export function CalendarContainer() {
    * Executa a alteração ou eliminação depois de o consultor escolher se quer
    * afetar só aquela ocorrência ou aquela e as seguintes.
    */
-  const applySeriesChoice = async (scope: "one" | "future") => {
+  const applySeriesChoice = async (scope: "one" | "future" | "all") => {
     const prompt = seriesPrompt;
     if (!prompt) return;
     setSeriesPrompt(null);
+
+    // "all" percorre a série toda (inclui ocorrências anteriores a esta);
+    // "future" começa nesta ocorrência.
+    const fromDate = scope === "all" ? null : prompt.fromStartTime;
 
     try {
       if (prompt.mode === "edit") {
@@ -836,11 +840,11 @@ export function CalendarContainer() {
           toast({ title: "Ocorrência atualizada" });
         } else {
           // A ocorrência editada leva a alteração completa (incluindo a data);
-          // as seguintes recebem a nova hora e duração, mantendo os seus dias.
+          // as restantes recebem a nova hora e duração, mantendo os seus dias.
           await updateCalendarEvent(prompt.eventId, prompt.payload as any);
           const { updated, skippedBooked } = await updateCalendarSeriesFromDate(
             prompt.groupId,
-            prompt.fromStartTime,
+            fromDate,
             prompt.payload as any
           );
           toast({
@@ -856,7 +860,7 @@ export function CalendarContainer() {
         } else {
           const { deleted, skippedBooked } = await deleteCalendarSeriesFromDate(
             prompt.groupId,
-            prompt.fromStartTime
+            fromDate
           );
           toast({
             title: `${deleted} horário(s) eliminado(s)`,
@@ -1012,11 +1016,11 @@ export function CalendarContainer() {
               {seriesPrompt?.mode === "delete" ? "Eliminar horário recorrente" : "Alterar horário recorrente"}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              Este horário faz parte de uma série. Queres{" "}
-              {seriesPrompt?.mode === "delete" ? "eliminar" : "alterar"} apenas esta ocorrência ou
-              também as seguintes?
+              Este horário faz parte de uma série. A que ocorrências queres aplicar{" "}
+              {seriesPrompt?.mode === "delete" ? "a eliminação" : "a alteração"}?
               <br />
               <span className="mt-2 block text-xs">
+                &quot;Toda a série&quot; inclui também as ocorrências anteriores a esta.
                 Ocorrências já reservadas por clientes são sempre preservadas.
               </span>
             </AlertDialogDescription>
@@ -1030,6 +1034,12 @@ export function CalendarContainer() {
               onClick={() => applySeriesChoice("future")}
             >
               Esta e as seguintes
+            </Button>
+            <Button
+              variant={seriesPrompt?.mode === "delete" ? "destructive" : "secondary"}
+              onClick={() => applySeriesChoice("all")}
+            >
+              {seriesPrompt?.mode === "delete" ? "Eliminar toda a série" : "Toda a série"}
             </Button>
             <AlertDialogCancel className="mt-0">Cancelar</AlertDialogCancel>
           </AlertDialogFooter>

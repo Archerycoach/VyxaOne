@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { sendClientEmail } from "@/lib/server/sendClientEmail";
+import { syncEventToGoogle } from "@/lib/googleCalendar";
 
 /**
  * Confirma a reserva de um bloco disponível — endpoint público (sem
@@ -128,6 +129,32 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       .eq("is_bookable", true); // reconfirma o estado exatamente no momento da escrita
 
     if (updateError) throw updateError;
+
+    // Agora sim: o bloco deixou de ser disponibilidade e passou a compromisso
+    // real, por isso vai para o Google Calendar. Best-effort — se falhar, a
+    // reserva mantém-se válida e a sincronização periódica apanha-o depois
+    // (fica com google_event_id a null).
+    try {
+      const googleEventId = await syncEventToGoogle(
+        {
+          title: `Chamada agendada - ${name.trim()}`,
+          description: `Reserva feita pelo cliente através do link de agendamento.\nContacto: ${email.trim()}${phone ? ` · ${phone.trim()}` : ""}`,
+          start_time: slot.start_time,
+          end_time: slot.end_time,
+        },
+        null,
+        consultant.id
+      );
+
+      if (googleEventId) {
+        await db
+          .from("calendar_events")
+          .update({ google_event_id: googleEventId, is_synced: true })
+          .eq("id", eventId);
+      }
+    } catch (syncError) {
+      console.error("[booking/confirm] Falha ao sincronizar com o Google (não crítico):", syncError);
+    }
 
     const startDate = new Date(slot.start_time);
     const formattedDate = startDate.toLocaleString("pt-PT", {

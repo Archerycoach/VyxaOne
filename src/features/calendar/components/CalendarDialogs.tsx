@@ -6,6 +6,9 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { CalendarIcon } from "lucide-react";
 import { LeadActivitiesPanel } from "./LeadActivitiesPanel";
 import type { CalendarEvent, Task } from "@/types";
 
@@ -217,15 +220,62 @@ export function CalendarDialogs({
                   {(eventForm as any).repeatUntil && (
                     <>
                       <div>
-                        <Label htmlFor="event-repeat-until" className="text-xs">Repetir até</Label>
-                        <Input
-                          id="event-repeat-until"
-                          type="date"
-                          value={(eventForm as any).repeatUntil || ""}
-                          onChange={(e) =>
-                            setEventForm({ ...eventForm, repeatUntil: e.target.value } as any)
-                          }
-                        />
+                        <Label className="text-xs">Repetir até</Label>
+                        {/*
+                          Seletor em vez de campo de texto: num <input type="date">
+                          controlado, cada dígito incompleto faz o browser reportar
+                          valor vazio, o estado é reposto e a escrita salta do campo.
+                        */}
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="w-full justify-start font-normal"
+                            >
+                              <CalendarIcon className="mr-2 h-4 w-4" />
+                              {(eventForm as any).repeatUntil
+                                ? new Date(`${(eventForm as any).repeatUntil}T00:00:00`)
+                                    .toLocaleDateString("pt-PT", {
+                                      weekday: "long",
+                                      day: "2-digit",
+                                      month: "long",
+                                      year: "numeric",
+                                    })
+                                : "Escolher data"}
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0" align="start">
+                            <Calendar
+                              mode="single"
+                              selected={
+                                (eventForm as any).repeatUntil
+                                  ? new Date(`${(eventForm as any).repeatUntil}T00:00:00`)
+                                  : undefined
+                              }
+                              onSelect={(date) => {
+                                if (!date) return;
+                                // Data local em YYYY-MM-DD (toISOString converteria
+                                // para UTC e podia recuar um dia).
+                                const yyyy = date.getFullYear();
+                                const mm = String(date.getMonth() + 1).padStart(2, "0");
+                                const dd = String(date.getDate()).padStart(2, "0");
+                                setEventForm({
+                                  ...eventForm,
+                                  repeatUntil: `${yyyy}-${mm}-${dd}`,
+                                } as any);
+                              }}
+                              disabled={(date) => {
+                                const start = (eventForm as any).startTime
+                                  ? new Date((eventForm as any).startTime)
+                                  : new Date();
+                                start.setHours(0, 0, 0, 0);
+                                return date < start;
+                              }}
+                              initialFocus
+                            />
+                          </PopoverContent>
+                        </Popover>
                       </div>
 
                       <div>
