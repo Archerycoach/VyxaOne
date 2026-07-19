@@ -226,7 +226,14 @@ export function CalendarDialogs({
                           controlado, cada dígito incompleto faz o browser reportar
                           valor vazio, o estado é reposto e a escrita salta do campo.
                         */}
-                        <Popover>
+                        {/*
+                          modal: sem isto, o Popover é renderizado em portal
+                          (fora do DOM do Dialog) e a armadilha de foco do
+                          Dialog rouba-lhe o foco ao clicar nas setas de
+                          navegação — o Popover lê isso como interação exterior
+                          e fecha-se a meio da escolha do mês.
+                        */}
+                        <Popover modal>
                           <PopoverTrigger asChild>
                             <Button
                               type="button"
@@ -272,7 +279,6 @@ export function CalendarDialogs({
                                 start.setHours(0, 0, 0, 0);
                                 return date < start;
                               }}
-                              initialFocus
                             />
                           </PopoverContent>
                         </Popover>
