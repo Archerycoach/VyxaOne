@@ -167,11 +167,17 @@ Escolhes qual fica como principal e fundes. **Nunca funde sozinho.**
 A tua carteira. Ao criar ou editar um imóvel tens duas ajudas:
 
 **Preencher a partir de um documento** — envia um **PDF ou fotografia** da
-caderneta predial, certificado energético ou CPCV, e os campos preenchem-se
-sozinhos (morada, área, tipologia, quartos, classe energética, preço).
+caderneta predial, certificado energético ou CPCV, e a ficha preenche-se
+sozinha: morada, concelho, distrito, código postal, tipo de imóvel, tipologia,
+área, quartos, casas de banho, andar, classe energética, ano de construção,
+preço, **artigo matricial** e **valor patrimonial (VPT)**.
 
-> Em PDF a leitura é fiável. Em fotografia, confirma sempre os números —
-> a aplicação avisa quando a imagem não estava clara.
+Se o título estiver vazio, é composto a partir do documento (ex.: "T3 ·
+Apartamento · Lisboa") — dá para gravar a ficha sem escrever nada.
+
+> Em PDF a leitura é fiável, porque o texto é extraído diretamente. Em
+> fotografia, confirma sempre os números — a aplicação marca a leitura como
+> duvidosa quando a imagem não estava clara.
 > PDFs digitalizados a partir de papel não têm texto: nesse caso, fotografa o
 > documento.
 
