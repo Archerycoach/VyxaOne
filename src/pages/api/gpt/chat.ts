@@ -134,7 +134,37 @@ interface DebugNote {
  * recentemente atualizadas e informamos o modelo do total real, para ele
  * nunca apresentar este subconjunto como sendo a base toda.
  */
-const LEAD_CONTEXT_LIMIT = 2000;
+/**
+ * Só as leads de trabalho ativo vão em detalhe para o contexto.
+ *
+ * Conta que justifica este número: cada lead ocupa ~126 tokens. Com 1085
+ * leads seriam ~137 000 tokens — acima do limite de 128 000 do GPT-4o, e o
+ * chat deixaria de responder. Mesmo cabendo (Claude, Gemini), custaria ~$0,34
+ * por MENSAGEM em GPT-4o, repetidos em toda a conversa.
+ *
+ * Tudo o que esteja fora deste conjunto continua acessível através da
+ * ferramenta de consulta (leadQueryTool), que lê a base COMPLETA por uma
+ * fração do custo e com contagens exatas.
+ */
+const LEAD_CONTEXT_LIMIT = 300;
+
+/**
+ * Tecto da audiência de uma campanha de email.
+ *
+ * Muito acima do contexto do chat porque estas leads NÃO vão todas para o
+ * modelo: são filtradas por critérios (zona, tipologia, orçamento) antes de
+ * chegarem à IA. O custo aqui é de base de dados, que é desprezável.
+ */
+const CAMPAIGN_AUDIENCE_LIMIT = 5000;
+
+/**
+ * Quantas candidatas podem ir ao modelo para refinar a audiência.
+ *
+ * Acima disto, a seleção fica-se pelos critérios determinísticos — mais vale
+ * uma campanha que abrange todas as leads elegíveis do que uma que a IA
+ * reduziu por não caber no contexto.
+ */
+const MAX_LEADS_FOR_AUDIENCE_AI = 400;
 
 /**
  * A pergunta é analítica (totais, distribuições, listagens)?
@@ -695,9 +725,35 @@ async function selectEmailCampaignAudience(params: {
     params.criteria,
     params.previousRecipientLeadIds || [],
   );
+
   const fallbackSummary =
     buildCampaignFilterSummary(params.criteria) ||
     (params.previousRecipientLeadIds?.length ? "a audiência afinada na conversa" : "o perfil pedido");
+  // A audiência é escolhida sobre a carteira COMPLETA, mas nem toda pode ir
+  // para o modelo — milhares de leads rebentariam o contexto e o custo.
+  //
+  // Estreitamos primeiro pelos critérios de forma determinística (zona,
+  // tipologia, finalidade, tipo de imóvel). Se ainda assim forem demasiadas,
+  // a seleção fica-se pelo filtro determinístico: é preferível uma campanha
+  // que chega a TODAS as leads elegíveis do que uma seleção "inteligente"
+  // que silenciosamente deixa metade de fora.
+  const candidateIdSet = new Set(fallbackLeadIds);
+  const candidates = params.leads.filter((lead) => candidateIdSet.has(lead.id));
+  const leadsForAi = candidates.length > 0 ? candidates : params.leads;
+
+  if (leadsForAi.length > MAX_LEADS_FOR_AUDIENCE_AI) {
+    addDebugNote(
+      params.debugNotes,
+      "email_campaign_audience_deterministic",
+      "Audiência demasiado grande para refinamento por IA — usados os critérios diretamente.",
+      { candidates: leadsForAi.length, limit: MAX_LEADS_FOR_AUDIENCE_AI },
+    );
+    return {
+      selectedLeadIds: leadsForAi.map((lead) => lead.id),
+      filterSummary: fallbackSummary,
+    };
+  }
+
   const hasListingContent = Boolean(params.listingContent?.trim());
 
   try {
@@ -719,7 +775,7 @@ async function selectEmailCampaignAudience(params: {
             imovel_a_divulgar: params.listingContent?.trim() || null,
             historico_recente: (params.history || []).slice(-6),
             lead_ids_anteriores: params.previousRecipientLeadIds || [],
-            leads_disponiveis: params.leads.map((lead) => ({
+            leads_disponiveis: leadsForAi.map((lead) => ({
               id: lead.id,
               nome: lead.name,
               estado: lead.status,
@@ -1342,11 +1398,34 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         // Exclui sempre quem foi marcado para ficar de fora das listas de
         // distribuição automáticas de IA (mesma flag usada pelo Property
         // Matcher e pelos Alertas de Procura) — nunca entram na campanha.
-        const campaignEligibleLeads = activeLeads.filter((lead) => !(lead as any).exclude_from_ai_lists);
+        // As campanhas leem a base COMPLETA, não o subconjunto do contexto.
+        //
+        // Antes, os destinatários eram escolhidos de entre as leads que
+        // coubessem no contexto — por isso um email "para todas as leads que
+        // procuram T3 em Lisboa" saía apenas para as que por acaso lá
+        // estivessem. Uma campanha tem de considerar toda a carteira, senão
+        // deixa clientes de fora sem ninguém dar por isso.
+        const { data: allEligible } = await (userScopedSupabase
+          .from("leads")
+          .select(
+            "id, name, phone, email, status, lead_type, next_follow_up, property_type, location_preference, buy_purpose, budget, budget_min, budget_max, min_area, max_area, bedrooms, bathrooms, source, meta_form_id, typology, exclude_from_ai_lists",
+          )
+          .or(`assigned_to.eq.${user.id},user_id.eq.${user.id}`)
+          .is("archived_at", null)
+          .not("email", "is", null)
+          .limit(CAMPAIGN_AUDIENCE_LIMIT) as any);
+
+        // Exclui sempre quem foi marcado para ficar de fora das listas de
+        // distribuição automáticas de IA (mesma flag usada pelo Property
+        // Matcher e pelos Alertas de Procura) — nunca entram na campanha.
+        const campaignEligibleLeads = ((allEligible || []) as LeadContext[]).filter(
+          (lead) => !(lead as any).exclude_from_ai_lists
+        );
 
         addDebugNote(debugRequested ? debugNotes : undefined, "email_campaign_start", "Início da geração de campanha por email.", {
           activeLeads: activeLeads.length,
           eligibleLeads: campaignEligibleLeads.length,
+          audienceSource: "base completa",
           requestedBedrooms,
           previousRecipientLeadIds: campaignContext?.recipientLeadIds?.length || 0,
         });
