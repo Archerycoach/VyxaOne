@@ -8,6 +8,7 @@ import {
 } from "@/services/idealistaService";
 import { getIdealistaCredentials } from "@/lib/server/idealistaCredentials";
 import { buildLeadUpdateProposal, FIELD_LABELS as LEAD_FIELD_LABELS } from "@/lib/server/leadChatUpdate";
+import { sanitizeQuerySpec, executeLeadQuery, LEAD_QUERY_TOOL_PROMPT } from "@/lib/server/leadQueryTool";
 
 interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -123,6 +124,33 @@ interface DebugNote {
   stage: string;
   message: string;
   details?: Record<string, unknown>;
+}
+
+/**
+ * Quantas leads vão em DETALHE para o contexto do modelo.
+ *
+ * Não é possível enviar a carteira inteira: cada lead ocupa tokens, e uma
+ * base com milhares rebentaria o contexto e o custo. Enviamos as mais
+ * recentemente atualizadas e informamos o modelo do total real, para ele
+ * nunca apresentar este subconjunto como sendo a base toda.
+ */
+const LEAD_CONTEXT_LIMIT = 2000;
+
+/**
+ * A pergunta é analítica (totais, distribuições, listagens)?
+ *
+ * Só nestes casos vale a pena o passo extra da ferramenta de consulta —
+ * conversa normal e redação de textos não precisam de tocar na base.
+ */
+function looksAnalytical(message: string): boolean {
+  const text = message
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase();
+
+  return /\b(quant[ao]s?|total|totais|percentagem|percentual|media|média|distribu|agrup|por fase|por estado|por temperatura|por origem|por tipo|lista(r|gem)?|quais|todas as|todos os|relatorio|resumo geral|estatistic)/.test(
+    text
+  );
 }
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -1281,13 +1309,31 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       .or(`assigned_to.eq.${user.id},user_id.eq.${user.id}`)
       .is("archived_at", null)
       .order("updated_at", { ascending: false })
-      .limit(200) as any);
+      .limit(LEAD_CONTEXT_LIMIT) as any);
 
     if (leadsError) {
       throw leadsError;
     }
 
     const activeLeads = (leads || []) as LeadContext[];
+
+    // Quantas leads existem REALMENTE.
+    //
+    // O contexto do modelo não comporta a carteira inteira, por isso só vão as
+    // mais recentes em detalhe. Sem esta contagem, o agente assumia que as
+    // leads que recebeu eram todas e respondia "tens 200 leads" a quem tem
+    // 1085 — um erro de facto sobre o negócio do consultor.
+    //
+    // A contagem usa `head: true`: devolve só o número, sem transportar dados
+    // nem gastar tokens.
+    const { count: totalLeadsInCrm } = await (userScopedSupabase
+      .from("leads")
+      .select("id", { count: "exact", head: true })
+      .or(`assigned_to.eq.${user.id},user_id.eq.${user.id}`)
+      .is("archived_at", null) as any);
+
+    const realTotal = totalLeadsInCrm ?? activeLeads.length;
+    const isPartialView = realTotal > activeLeads.length;
 
     const requestedBedrooms = detectRequestedBedrooms(message);
 
@@ -1745,7 +1791,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       content: `És um assistente imobiliário virtual e conselheiro de negócio integrado no CRM Vyxa. Estás a falar com o agente imobiliário ${profile?.full_name || "Utilizador"}.
 
 📊 DADOS DISPONÍVEIS EM TEMPO REAL:
-- "leads": array com ${activeLeads.length} leads ativas
+- "leads": array com ${activeLeads.length} leads ativas${isPartialView ? ` (de um TOTAL de ${realTotal} na carteira)` : ""}
 - "portfolio_properties": array com ${properties.length} imóveis acessíveis ao agente
 - "portfolio_developments": array com ${developments.length} empreendimentos acessíveis ao agente
 - "upcoming_events": array com ${(events || []).length} eventos futuros
@@ -1755,7 +1801,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 📋 CONTEXTO COMPLETO (JSON):
 ${contextStr}
 
-INSTRUÇÕES IMPORTANTES:
+${isPartialView ? `⚠️ NÚMERO REAL DE LEADS: o agente tem **${realTotal} leads** na carteira. Recebeste apenas as **${activeLeads.length} mais recentemente atualizadas**, porque a carteira completa não cabe nesta conversa.
+
+REGRAS OBRIGATÓRIAS SOBRE ESTE PONTO:
+- Quando fores questionado sobre QUANTAS leads existem, responde **${realTotal}** — nunca ${activeLeads.length}.
+- Em contagens, percentagens ou relatórios, diz sempre que a análise cobre ${activeLeads.length} das ${realTotal} leads.
+- NUNCA apresentes uma análise deste subconjunto como se fosse a carteira toda.
+- Se o agente pedir algo que exija a carteira completa (totais por fase, listagens exaustivas), diz que essa análise deve ser feita nos Relatórios, que leem a base inteira.
+
+` : ""}INSTRUÇÕES IMPORTANTES:
 - Os dados fornecidos representam a carteira real do agente (Leads globais, Tarefas Pendentes, Eventos, A TUA CARTEIRA DE IMÓVEIS no array portfolio_properties e Histórico Recente de Interações/Emails).
 - **IMPORTANTE**: TENS ACESSO DIRETO E COMPLETO a ${properties.length} imóveis no array "portfolio_properties" com TODOS os detalhes reais da plataforma. USA SEMPRE ESTES DADOS quando o agente perguntar sobre os seus imóveis.
 - **IMPORTANTE**: TENS ACESSO DIRETO E COMPLETO a ${developments.length} empreendimentos no array "portfolio_developments" com TODOS os detalhes reais da plataforma. USA SEMPRE ESTES DADOS quando o agente perguntar sobre os seus empreendimentos.
@@ -1795,7 +1849,62 @@ ${developments.length > 0
 - Sê proativo, analítico e atua como um verdadeiro parceiro de negócio. Usa formatação em Markdown sempre que ajudar à leitura.`,
     };
 
-    const messages: ChatMessage[] = [systemMessage, ...((history || []) as ChatMessage[]), { role: "user", content: message }];
+    // ── Ferramenta de consulta ────────────────────────────────────────────
+    //
+    // Perguntas sobre totais, distribuições ou listagens têm de cobrir a base
+    // COMPLETA, não apenas as leads que couberam no contexto. Antes de
+    // responder, perguntamos ao modelo se precisa de consultar; se sim, a
+    // consulta é executada aqui (parametrizada, nunca SQL vindo do modelo) e
+    // os resultados reais entram no contexto da resposta.
+    //
+    // Só corre quando a pergunta é analítica — conversa normal não paga este
+    // passo extra.
+    let queryResultBlock = "";
+
+    if (looksAnalytical(message)) {
+      try {
+        const toolResponse = await runAI({
+          userId: user.id,
+          task: "chat_query_tool",
+          messages: [
+            { role: "system", content: LEAD_QUERY_TOOL_PROMPT },
+            { role: "user", content: message },
+          ],
+          jsonMode: true,
+          temperature: 0,
+          maxTokens: 500,
+        });
+
+        const parsed = JSON.parse(toolResponse.text);
+        if (parsed?.needsQuery) {
+          const { spec, notes } = sanitizeQuerySpec(parsed.query);
+          if (spec) {
+            const result = await executeLeadQuery(spec, user.id, userScopedSupabase);
+            queryResultBlock = `
+🔎 CONSULTA À BASE DE DADOS COMPLETA (${result.description}):
+${JSON.stringify(result, null, 2)}
+
+Estes números vêm da carteira INTEIRA, não do subconjunto no contexto.
+Usa-os como fonte de verdade para totais e distribuições, e cita-os tal como estão.
+${notes.length > 0 ? `Notas: ${notes.join("; ")}` : ""}
+`;
+            addDebugNote(debugRequested ? debugNotes : undefined, "lead_query_tool", "Consulta executada.", {
+              spec,
+              resultCount: result.count ?? result.groups?.length ?? 0,
+            });
+          }
+        }
+      } catch (toolError) {
+        // Falhar aqui não pode impedir a resposta: seguimos sem a consulta.
+        console.error("[chat] Ferramenta de consulta falhou:", toolError);
+      }
+    }
+
+    const systemWithQuery: ChatMessage = queryResultBlock
+      ? { ...systemMessage, content: `${systemMessage.content}\n${queryResultBlock}` }
+      : systemMessage;
+
+    const messages: ChatMessage[] = [systemWithQuery, ...((history || []) as ChatMessage[]), { role: "user", content: message }];
 
     const aiResponse = await runAI({
       userId: user.id,

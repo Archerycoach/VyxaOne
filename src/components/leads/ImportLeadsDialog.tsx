@@ -68,7 +68,17 @@ export function ImportLeadsDialog({ open, onOpenChange, onImported }: ImportLead
       body: JSON.stringify({ fileBase64: base64, apply }),
     });
     const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "Erro ao processar o ficheiro.");
+    if (!response.ok) {
+      // Quando o formato não é reconhecido, o servidor devolve as colunas que
+      // encontrou. Mostrá-las evita ter de pedir o ficheiro para diagnosticar.
+      if (data.columnsFound?.length) {
+        throw new Error(
+          `${data.error}\n\nColunas encontradas: ${data.columnsFound.join(" · ")}` +
+            (data.sheets?.length > 1 ? `\nFolhas: ${data.sheets.join(", ")}` : "")
+        );
+      }
+      throw new Error(data.error || "Erro ao processar o ficheiro.");
+    }
     return data;
   };
 
@@ -100,6 +110,7 @@ export function ImportLeadsDialog({ open, onOpenChange, onImported }: ImportLead
           title: "Não foi possível ler",
           description: error instanceof Error ? error.message : "Tenta outro ficheiro.",
           variant: "destructive",
+          duration: 20000, // as colunas encontradas são longas: dá tempo de ler/copiar
         });
         reset();
       } finally {

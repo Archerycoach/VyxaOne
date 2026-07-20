@@ -1,7 +1,7 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import XLSX from "xlsx";
-import { parseRows, type ParsedLead } from "@/lib/server/leadSpreadsheetImport";
+import { parseRows, readSheetRows, type ParsedLead } from "@/lib/server/leadSpreadsheetImport";
 import { getPipelineStagesForLead } from "@/lib/server/pipelineStages";
 
 /**
@@ -50,15 +50,41 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     const base64 = fileBase64.includes(",") ? fileBase64.split(",")[1] : fileBase64;
     const workbook = XLSX.read(Buffer.from(base64, "base64"), { type: "buffer" });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(sheet, { defval: null }) as Record<string, unknown>[];
 
-    const parsed = parseRows(rows);
+    // Procura em TODAS as folhas e, em cada uma, na linha de cabeçalho certa.
+    // Exportações do mesmo CRM variam: a folha útil nem sempre é a primeira, e
+    // há ficheiros com linhas de título antes do cabeçalho.
+    let rows: Record<string, unknown>[] = [];
+    let foundFormat = false;
+    let columnsSeen: string[] = [];
+
+    for (const sheetName of workbook.SheetNames) {
+      const sheet = workbook.Sheets[sheetName];
+      const result = readSheetRows((opts) =>
+        XLSX.utils.sheet_to_json(sheet, { defval: null, ...opts }) as Record<string, unknown>[]
+      );
+
+      if (result.rows.length > 0 && columnsSeen.length === 0) {
+        columnsSeen = Object.keys(result.rows[0]);
+      }
+
+      if (result.format !== "desconhecido") {
+        rows = result.rows;
+        foundFormat = true;
+        break;
+      }
+    }
+
+    const parsed = foundFormat ? parseRows(rows) : { format: "desconhecido" as const, leads: [], skipped: [] };
 
     if (parsed.format === "desconhecido") {
       return res.status(422).json({
         error:
           "Formato não reconhecido. Este importador aceita as exportações de Leads (MaxWork) e de Oportunidades.",
+        // As colunas encontradas ajudam a perceber PORQUE não foi reconhecido —
+        // sem isto, um ficheiro que falhe é impossível de diagnosticar à distância.
+        columnsFound: columnsSeen.slice(0, 40),
+        sheets: workbook.SheetNames,
       });
     }
 

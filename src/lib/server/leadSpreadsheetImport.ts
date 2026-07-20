@@ -271,12 +271,92 @@ function mapPropertyType(value: string | null): string | null {
 
 // ------------------------------------------------------------------ deteção
 
-export function detectFormat(columns: string[]): ImportFormat {
-  const set = new Set(columns.map((c) => c.trim()));
+/**
+ * Colunas que identificam cada formato.
+ *
+ * A deteção é por PONTUAÇÃO, não por correspondência exata: basta um número
+ * mínimo de colunas conhecidas. Exigir nomes exatos fazia a importação falhar
+ * com "formato não reconhecido" em exportações do mesmo CRM feitas por outro
+ * utilizador — basta ter escolhido colunas diferentes, ou uma versão com
+ * cabeçalhos ligeiramente distintos.
+ */
+const FORMAT_SIGNATURES: Array<{
+  format: ImportFormat;
+  columns: string[];
+  minMatches: number;
+}> = [
+  {
+    format: "leads_maxwork",
+    columns: [
+      "nome lead", "nome contacto", "data criacao no maxwork", "data criacao na origem",
+      "estado", "origem", "telemovel_1", "email_1", "perfil de cliente",
+      "tipo de negocio", "tipo de imovel", "complemento origem lead",
+    ],
+    minMatches: 3,
+  },
+  {
+    format: "oportunidades",
+    columns: [
+      "nome da oportunidade", "nome de contacto", "email de contacto",
+      "telemovel de contacto", "etapa do funil", "iniciado em", "temp.",
+      "fonte", "canal", "interesse", "responsavel",
+    ],
+    minMatches: 3,
+  },
+];
 
-  if (set.has("Nome Lead") && set.has("Data criação no Maxwork")) return "leads_maxwork";
-  if (set.has("Nome da oportunidade") && set.has("Etapa do Funil")) return "oportunidades";
-  return "desconhecido";
+/** Sem acentos, minúsculas, espaços normalizados — para comparar cabeçalhos. */
+function canonHeader(value: string): string {
+  return String(value)
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function detectFormat(columns: string[]): ImportFormat {
+  const present = new Set(columns.map(canonHeader));
+
+  let best: { format: ImportFormat; score: number } | null = null;
+
+  for (const sig of FORMAT_SIGNATURES) {
+    const score = sig.columns.filter((c) => present.has(c)).length;
+    if (score >= sig.minMatches && (!best || score > best.score)) {
+      best = { format: sig.format, score };
+    }
+  }
+
+  return best?.format || "desconhecido";
+}
+
+/**
+ * Encontra a linha do cabeçalho e devolve as linhas de dados.
+ *
+ * Algumas exportações trazem linhas de título, logótipo ou filtros antes do
+ * cabeçalho verdadeiro. Nesse caso, ler a primeira linha como cabeçalho dá
+ * colunas sem sentido ("__EMPTY_1") e a deteção falha. Percorremos as
+ * primeiras linhas até encontrar uma que produza um formato reconhecível.
+ */
+export function readSheetRows(
+  sheetToJson: (opts: { range?: number }) => Record<string, unknown>[]
+): { rows: Record<string, unknown>[]; format: ImportFormat; headerRow: number } {
+  const MAX_HEADER_SCAN = 8;
+
+  for (let headerRow = 0; headerRow < MAX_HEADER_SCAN; headerRow++) {
+    const rows = sheetToJson({ range: headerRow });
+    if (rows.length === 0) continue;
+
+    const format = detectFormat(Object.keys(rows[0]));
+    if (format !== "desconhecido") {
+      return { rows, format, headerRow };
+    }
+  }
+
+  // Nenhuma linha produziu um formato conhecido: devolvemos a leitura normal,
+  // para quem chama poder mostrar as colunas encontradas no erro.
+  const rows = sheetToJson({});
+  return { rows, format: "desconhecido", headerRow: 0 };
 }
 
 /**
