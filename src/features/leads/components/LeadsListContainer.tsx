@@ -19,7 +19,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { LayoutGrid, List, Edit, MoreVertical, Eye, Mail, MessageSquare, MessageCircle, CalendarDays, StickyNote, UserCheck, Phone, Trash2, Users, ArrowDownAZ, ArrowUpZA, Download, Radar } from "lucide-react";
+import { LayoutGrid, List, Edit, MoreVertical, Eye, Mail, MessageSquare, MessageCircle, CalendarDays, StickyNote, UserCheck, Phone, Trash2, Users, ArrowDownAZ, ArrowUpZA, Download, Radar, Upload } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -45,6 +45,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ScopeSelector } from "@/components/ScopeSelector";
 import { getStagesForUsers, type PipelineStage } from "@/services/pipelineSettingsService";
 import { LeadAdvancedFilters, EMPTY_QUALIFICATION_FILTERS, leadMatchesQualificationFilters, type LeadQualificationFilters } from "./LeadAdvancedFilters";
+import { ImportLeadsDialog } from "@/components/leads/ImportLeadsDialog";
 
 // Default columns configuration for fallback
 const DEFAULT_COLUMNS: LeadColumnConfig[] = [
@@ -211,6 +212,7 @@ export function LeadsListContainer({
   // (last_contact_date null) OU se o último contacto foi há mais de X dias.
   const [notContactedDays, setNotContactedDays] = useState<string>("all");
   const [qualFilters, setQualFilters] = useState<LeadQualificationFilters>(EMPTY_QUALIFICATION_FILTERS);
+  const [importOpen, setImportOpen] = useState(false);
   const contactFilteredLeads = useMemo(() => {
     let list = filteredLeads;
 
@@ -837,6 +839,17 @@ export function LeadsListContainer({
             <span className="hidden lg:inline">Radar</span>
           </Button>
 
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-9 gap-2"
+            onClick={() => setImportOpen(true)}
+            title="Importar leads de outro CRM (Excel)"
+          >
+            <Upload className="h-4 w-4" />
+            <span className="hidden lg:inline">Importar</span>
+          </Button>
+
           <LeadAdvancedFilters filters={qualFilters} onChange={setQualFilters} />
           <Select value={notContactedDays} onValueChange={setNotContactedDays}>
             <SelectTrigger
@@ -1241,6 +1254,12 @@ export function LeadsListContainer({
         setSelectedAgent={setSelectedAgent}
         onAssignLead={handleAssignLead}
         selectedLead={selectedLead}
+      />
+
+      <ImportLeadsDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        onImported={stableRefetch}
       />
 
       {selectedLead && (
