@@ -67,6 +67,14 @@ export interface AppliedAutoAnalysis {
   next_actions: string[];
   /** Ações que ficaram à espera de aprovação na caixa de entrada. */
   proposed: string[];
+  /** Blocos criados que se sobrepõem a compromissos já existentes. */
+  agenda_conflicts: string[];
+  /**
+   * Blocos que a IA propôs mas não foram criados, com o motivo.
+   * Nunca descartamos em silêncio: se a IA percebeu um compromisso e ele não
+   * chegou à agenda, o consultor tem de ficar a saber.
+   */
+  agenda_skipped: string[];
 }
 
 export interface RunLeadAutoAnalysisParams {
@@ -194,6 +202,8 @@ export async function runLeadAutoAnalysis(
       tasks_created: [],
       agenda_blocks_pending: [],
       proposed: [],
+      agenda_conflicts: [],
+      agenda_skipped: [],
       next_actions: Array.isArray(analysis.next_actions)
         ? analysis.next_actions.filter((a) => typeof a === "string" && a.trim()).slice(0, 3)
         : [],
@@ -348,12 +358,39 @@ export async function runLeadAutoAnalysis(
           .filter((b) => b && typeof b.title === "string" && b.title.trim() && b.start_time)
           .slice(0, 2);
     for (const block of agendaBlocks) {
-      const start = new Date(block.start_time);
-      if (Number.isNaN(start.getTime()) || start.getTime() < Date.now()) {
-        // Sem data válida ou no passado — a IA baralhou-se; ignorar.
+      const rawStart = new Date(block.start_time);
+
+      if (Number.isNaN(rawStart.getTime())) {
+        applied.agenda_skipped.push(`${block.title} (data inválida)`);
         continue;
       }
-      const end = block.end_time ? new Date(block.end_time) : new Date(start.getTime() + 60 * 60 * 1000);
+
+      // Data no passado: quase sempre é a IA a resolver um dia da semana para
+      // a ocorrência que já passou ("quarta" quando hoje é sexta). Nesse caso
+      // avançamos uma semana, que é o que o cliente quis dizer. Só dentro de
+      // 7 dias — mais do que isso já não é referência a dia da semana e não
+      // devemos adivinhar.
+      let shiftMs = 0;
+      if (rawStart.getTime() < Date.now()) {
+        const daysInPast = (Date.now() - rawStart.getTime()) / (1000 * 60 * 60 * 24);
+        if (daysInPast > 7) {
+          applied.agenda_skipped.push(
+            `${block.title} (data no passado: ${rawStart.toLocaleDateString("pt-PT")})`
+          );
+          continue;
+        }
+        shiftMs = 7 * 24 * 60 * 60 * 1000;
+        console.log(
+          `[Lead Auto Analysis] Bloco "${block.title}" vinha no passado (${rawStart.toISOString()}); avançado uma semana.`
+        );
+      }
+
+      // O mesmo deslocamento aplica-se ao fim, senão a duração ficava errada.
+      const start = new Date(rawStart.getTime() + shiftMs);
+      const rawEnd = block.end_time ? new Date(block.end_time) : null;
+      const end = rawEnd && !Number.isNaN(rawEnd.getTime())
+        ? new Date(rawEnd.getTime() + shiftMs)
+        : new Date(start.getTime() + 60 * 60 * 1000);
       const eventType = ["viewing", "meeting", "call", "followup"].includes(block.event_type || "")
         ? (block.event_type as string)
         : "meeting";
@@ -363,9 +400,27 @@ export async function runLeadAutoAnalysis(
       // e identificáveis na agenda. O título descritivo da IA vai para a
       // descrição, junto com o excerto que originou o bloco.
       const eventTitle = buildLeadEventTitle(eventType, lead.name);
+
+      // O horário já está ocupado? O bloco é criado na mesma — o consultor
+      // pode ter boas razões para sobrepor — mas fica avisado para resolver.
+      // Blocos de disponibilidade (is_bookable) não contam como ocupação.
+      const { data: overlapping } = await supabaseAdmin
+        .from("calendar_events")
+        .select("title, start_time, end_time")
+        .eq("user_id", userId)
+        .neq("is_bookable", true)
+        .lt("start_time", end.toISOString())
+        .gt("end_time", start.toISOString())
+        .limit(3);
+
+      const conflicts = (overlapping || []) as Array<{ title: string; start_time: string }>;
+
       const descriptionParts = [
         block.title,
         block.description || "",
+        conflicts.length > 0
+          ? `⚠️ CONFLITO: sobrepõe-se a ${conflicts.map((c) => c.title).join(", ")}. Confirma se queres manter os dois ou mudar a hora.`
+          : "",
         `Criado automaticamente pela IA a partir de: "${newContent.substring(0, 200)}"`,
       ].filter((part) => part && part.trim());
 
@@ -381,8 +436,21 @@ export async function runLeadAutoAnalysis(
       });
       if (eventError) {
         console.error(`[Lead Auto Analysis] Erro ao criar bloco de agenda (lead ${leadId}):`, eventError);
+        applied.agenda_skipped.push(`${block.title} (erro ao gravar)`);
       } else {
-        applied.agenda_blocks_pending.push(eventTitle);
+        const when = start.toLocaleString("pt-PT", {
+          weekday: "long",
+          day: "2-digit",
+          month: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+        applied.agenda_blocks_pending.push(`${eventTitle} — ${when}`);
+        if (conflicts.length > 0) {
+          applied.agenda_conflicts.push(
+            `${eventTitle} (${when}) sobrepõe-se a: ${conflicts.map((c) => c.title).join(", ")}`
+          );
+        }
       }
     }
 
@@ -415,6 +483,19 @@ export async function runLeadAutoAnalysis(
     }
     for (const title of applied.agenda_blocks_pending) {
       notificationLines.push(`📅 Bloco na agenda POR CONFIRMAR: ${title}`);
+    }
+    if (applied.agenda_conflicts.length > 0) {
+      notificationLines.push(
+        `⚠️ CONFLITO DE HORÁRIO — resolve na agenda (manter os dois ou mudar a hora):`
+      );
+      for (const conflict of applied.agenda_conflicts) {
+        notificationLines.push(`   • ${conflict}`);
+      }
+    }
+    if (applied.agenda_skipped.length > 0) {
+      notificationLines.push(
+        `❌ Compromissos que NÃO foram para a agenda: ${applied.agenda_skipped.join(" · ")}`
+      );
     }
     if (applied.proposed.length > 0) {
       notificationLines.push(

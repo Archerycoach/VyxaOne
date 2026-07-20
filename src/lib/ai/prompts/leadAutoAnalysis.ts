@@ -110,7 +110,15 @@ Propõe no MÁXIMO 2 tarefas concretas e acionáveis que decorram diretamente da
 Cada tarefa: { "title", "description", "due_date": "YYYY-MM-DD", "priority": "urgent"|"high"|"medium"|"low" }
 
 **TAREFA 4 — Blocos de agenda (agenda_blocks):**
-APENAS se o novo registo mencionar um compromisso com data E hora concretas (ex.: "visita sábado às 15h", "reunião dia 20 às 10:30"), cria um bloco de agenda. Usa a data/hora atual acima para resolver referências relativas ("amanhã", "sábado"). NUNCA inventes compromissos nem horários — na dúvida, devolve [].
+Cria um bloco de agenda sempre que o novo registo indicar data E hora concretas, tanto para compromissos já combinados como para pedidos do cliente:
+- Compromissos: "visita sábado às 15h", "reunião dia 20 às 10:30"
+- **Pedidos de contacto**: "quer ser contactado na quarta às 13:30", "pediu para ligar amanhã de manhã às 10h", "prefere que lhe telefonem 6ª às 17h" → bloco do tipo "call"
+
+Um pedido do cliente para ser contactado a uma hora concreta É um compromisso — trata-o como tal.
+
+Usa a data/hora atual acima para resolver referências relativas ("amanhã", "sábado", "quarta"). Referências a dias da semana significam SEMPRE a próxima ocorrência futura, nunca uma data que já passou.
+
+NUNCA inventes compromissos nem horários — sem hora concreta, devolve [] e regista antes como tarefa.
 Cada bloco: { "title", "description", "start_time": ISO 8601 com timezone de Lisboa, "end_time": ISO 8601 (por defeito 1 hora depois), "event_type": "viewing" (visita) | "meeting" (reunião) | "call" (chamada) | "followup" }
 
 **TAREFA 5 — Próximas ações (next_actions):**

@@ -11,6 +11,8 @@
  * para que o consultor possa auditar e reverter.
  */
 
+import { buildLeadEventTitle } from "@/lib/leadEventTitle";
+
 export type AiCapability =
   | "lead_qualification"
   | "lead_temperature"
@@ -240,13 +242,36 @@ export async function applyAiAction(params: {
 
       case "calendar_block": {
         const event = (action.payload?.event || {}) as Record<string, unknown>;
+
+        // Título uniforme "Tema - Nome da lead" (ex.: "Chamada - David
+        // Esteves"), como em todos os outros fluxos que criam eventos a partir
+        // de uma lead. O título original da IA vai para a descrição.
+        let eventTitle = String(event.title || "Evento");
+        let eventDescription = (event.description as string) || null;
+
+        if (action.lead_id) {
+          const { data: lead } = await supabaseAdmin
+            .from("leads")
+            .select("name")
+            .eq("id", action.lead_id)
+            .maybeSingle();
+
+          if (lead?.name) {
+            const original = eventTitle;
+            eventTitle = buildLeadEventTitle(String(event.event_type || "meeting"), lead.name);
+            if (original && original !== eventTitle) {
+              eventDescription = [original, eventDescription].filter(Boolean).join("\n\n");
+            }
+          }
+        }
+
         const { data, error } = await supabaseAdmin
           .from("calendar_events")
           .insert({
             user_id: action.user_id,
             lead_id: action.lead_id,
-            title: event.title,
-            description: event.description || null,
+            title: eventTitle,
+            description: eventDescription,
             start_time: event.start_time,
             end_time: event.end_time,
             event_type: event.event_type || "meeting",

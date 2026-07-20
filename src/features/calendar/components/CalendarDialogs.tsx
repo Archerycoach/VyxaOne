@@ -9,6 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { CalendarIcon } from "lucide-react";
+import { buildLeadEventTitle, isAutoLeadEventTitle } from "@/lib/leadEventTitle";
 import { LeadActivitiesPanel } from "./LeadActivitiesPanel";
 import type { CalendarEvent, Task } from "@/types";
 
@@ -153,9 +154,23 @@ export function CalendarDialogs({
                 <Label htmlFor="event-type">Tipo</Label>
                 <Select
                   value={eventForm.eventType || "viewing"}
-                  onValueChange={(value) =>
-                    setEventForm({ ...eventForm, eventType: value as any })
-                  }
+                  onValueChange={(value) => {
+                    // Com uma lead associada, o título acompanha o tipo:
+                    // "Chamada - David Esteves". Só se o título ainda for
+                    // automático (ou estiver vazio) — um título escrito pelo
+                    // consultor nunca é substituído.
+                    const leadName = eventForm.leadName;
+                    const shouldUpdateTitle =
+                      !!leadName && isAutoLeadEventTitle(eventForm.title, leadName);
+
+                    setEventForm({
+                      ...eventForm,
+                      eventType: value as any,
+                      ...(shouldUpdateTitle
+                        ? { title: buildLeadEventTitle(value, leadName!) }
+                        : {}),
+                    });
+                  }}
                 >
                   <SelectTrigger id="event-type">
                     <SelectValue />
