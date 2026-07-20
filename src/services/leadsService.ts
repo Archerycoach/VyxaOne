@@ -134,6 +134,257 @@ const applyVisibilityOrSharedFilter = (query: any, visibleUserIds: string[], sha
   return query.or(orParts.join(","));
 };
 
+/**
+ * Resolve que leads este utilizador pode ver, segundo o seu papel.
+ *
+ * Extraído para poder ser usado tanto pela listagem como pelas contagens —
+ * se as duas divergissem, os totais no topo deixariam de bater certo com a
+ * lista, que é precisamente o problema que estas contagens vêm resolver.
+ */
+interface LeadVisibility {
+  /** Broker e admin veem tudo — não é preciso filtrar. */
+  seeAll: boolean;
+  visibleUserIds: string[];
+  sharedLeadIds: string[];
+}
+
+async function resolveLeadVisibility(profile: any): Promise<LeadVisibility> {
+  if (profile.role === "admin" || profile.role === "broker") {
+    return { seeAll: true, visibleUserIds: [], sharedLeadIds: [] };
+  }
+
+  if (profile.role === "team_lead") {
+    const teamMemberIds = await getTeamMemberIds(profile.id);
+    return {
+      seeAll: false,
+      visibleUserIds: [profile.id, ...teamMemberIds],
+      sharedLeadIds: await getSharedLeadIds(profile.id),
+    };
+  }
+
+  const sharedIds = await getSharedVisibilityUserIds(profile.id, profile.team_lead_id);
+  return {
+    seeAll: false,
+    visibleUserIds: [profile.id, ...sharedIds],
+    sharedLeadIds: await getSharedLeadIds(profile.id),
+  };
+}
+
+export interface LeadsStats {
+  total: number;
+  buyers: number;
+  sellers: number;
+  byStatus: Record<string, number>;
+}
+
+/**
+ * Contagens reais das leads, direto da base de dados.
+ *
+ * Não passam pelo limite de 1000 linhas por pedido do Supabase porque usam
+ * `head: true` — devolvem só o número, sem transportar dados. É isto que
+ * permite os indicadores no topo mostrarem o total verdadeiro mesmo quando a
+ * lista está paginada.
+ *
+ * @param scopeUserId Quando indicado, conta só as leads atribuídas a esse
+ *                    consultor (seletor de âmbito).
+ */
+export const getLeadsStats = async (
+  scopeUserId?: string,
+  statuses: string[] = ["novo", "contactado", "qualificado", "proposta", "fechado"]
+): Promise<LeadsStats> => {
+  const profile = await getCurrentUserProfile();
+  if (!profile) return { total: 0, buyers: 0, sellers: 0, byStatus: {} };
+
+  const visibility = await resolveLeadVisibility(profile);
+
+  const buildQuery = () => {
+    let query = supabase
+      .from("leads")
+      .select("id", { count: "exact", head: true })
+      .is("archived_at", null);
+
+    if (!visibility.seeAll) {
+      query = applyVisibilityOrSharedFilter(query, visibility.visibleUserIds, visibility.sharedLeadIds);
+    }
+    if (scopeUserId && scopeUserId !== "all") {
+      query = query.eq("assigned_to", scopeUserId);
+    }
+    return query;
+  };
+
+  const countOf = async (refine?: (q: any) => any): Promise<number> => {
+    const query = refine ? refine(buildQuery()) : buildQuery();
+    const { count, error } = await query;
+    if (error) {
+      console.error("[leadsService] Erro ao contar leads:", error);
+      return 0;
+    }
+    return count || 0;
+  };
+
+  const [total, buyers, sellers, ...statusCounts] = await Promise.all([
+    countOf(),
+    countOf((q) => q.in("lead_type", ["buyer", "both"])),
+    countOf((q) => q.in("lead_type", ["seller", "both"])),
+    ...statuses.map((status) => countOf((q) => q.eq("status", status))),
+  ]);
+
+  const byStatus: Record<string, number> = {};
+  statuses.forEach((status, i) => {
+    byStatus[status] = statusCounts[i] || 0;
+  });
+
+  return { total, buyers, sellers, byStatus };
+};
+
+export interface LeadsPageFilters {
+  /** Pesquisa por nome, email ou telefone. */
+  search?: string;
+  /** "all" | "buyer" | "seller" */
+  type?: string;
+  /** Consultor selecionado no seletor de âmbito, ou "all". */
+  scopeUserId?: string;
+  showArchived?: boolean;
+  /** Leads sem contacto há N dias (0/indefinido = sem filtro). */
+  notContactedDays?: number;
+  status?: string;
+  temperature?: string;
+  property_type?: string;
+  buy_purpose?: string;
+  typology?: string;
+  location?: string;
+  budgetMin?: number;
+  budgetMax?: number;
+  /** "all" | "yes" | "no" */
+  needs_financing?: string;
+  has_property_to_sell?: string;
+  purchase_timeline?: string;
+  /** Campo de ordenação; por omissão a data efetiva (mais recente primeiro). */
+  sortField?: string;
+  sortOrder?: "asc" | "desc";
+}
+
+export interface LeadsPage {
+  leads: any[];
+  /** Há mais páginas a seguir? */
+  hasMore: boolean;
+}
+
+export const LEADS_PAGE_SIZE = 100;
+
+/**
+ * Uma página de leads, já filtrada e ordenada pela base de dados.
+ *
+ * Substitui o carregamento integral: com carteiras grandes, trazer tudo era
+ * lento e ainda por cima truncava em silêncio no limite de 1000 linhas do
+ * Supabase. Aqui só vêm 100 de cada vez, e os filtros são aplicados em SQL —
+ * se fossem aplicados só às linhas carregadas, dariam resultados errados.
+ *
+ * A ordenação por omissão usa effective_date: a data de criação, ou a da
+ * resubmissão de formulário quando existe, que é o que faz uma lead antiga
+ * saltar para o topo quando volta a contactar.
+ */
+export const getLeadsPage = async (
+  filters: LeadsPageFilters = {},
+  page = 0,
+  pageSize = LEADS_PAGE_SIZE
+): Promise<LeadsPage> => {
+  const profile = await getCurrentUserProfile();
+  if (!profile) return { leads: [], hasMore: false };
+
+  const visibility = await resolveLeadVisibility(profile);
+
+  // `any` deliberado: encadear dezenas de filtros condicionais faz o
+  // TypeScript rebentar a profundidade de inferência dos tipos do Supabase.
+  let query: any = supabase
+    .from("leads")
+    .select(`
+      *,
+      contact:contacts!leads_contact_id_fkey(id, name, email, phone),
+      assigned_user:profiles!leads_assigned_to_fkey(id, full_name, email)
+    `);
+
+  query = filters.showArchived
+    ? query.not("archived_at", "is", null)
+    : query.is("archived_at", null);
+
+  if (!visibility.seeAll) {
+    query = applyVisibilityOrSharedFilter(query, visibility.visibleUserIds, visibility.sharedLeadIds);
+  }
+
+  if (filters.scopeUserId && filters.scopeUserId !== "all") {
+    query = query.eq("assigned_to", filters.scopeUserId);
+  }
+
+  if (filters.search?.trim()) {
+    const term = filters.search.trim().replace(/[%,]/g, "");
+    query = query.or(`name.ilike.%${term}%,email.ilike.%${term}%,phone.ilike.%${term}%`);
+  }
+
+  if (filters.type && filters.type !== "all") {
+    query = query.in("lead_type", [filters.type, "both"]);
+  }
+
+  // Sem contacto há N dias: inclui quem nunca foi contactado.
+  if (filters.notContactedDays && filters.notContactedDays > 0) {
+    const cutoff = new Date(Date.now() - filters.notContactedDays * 86400000).toISOString();
+    query = query.or(`last_contact_date.is.null,last_contact_date.lt.${cutoff}`);
+  }
+
+  const exact: Array<[keyof LeadsPageFilters, string]> = [
+    ["status", "status"],
+    ["temperature", "temperature"],
+    ["property_type", "property_type"],
+    ["buy_purpose", "buy_purpose"],
+    ["typology", "typology"],
+    ["purchase_timeline", "purchase_timeline"],
+  ];
+  for (const [key, column] of exact) {
+    const value = filters[key] as string | undefined;
+    if (value && value !== "all") query = query.eq(column, value);
+  }
+
+  if (filters.location?.trim()) {
+    query = query.ilike("location_preference", `%${filters.location.trim()}%`);
+  }
+  if (typeof filters.budgetMin === "number") {
+    query = query.gte("budget", filters.budgetMin);
+  }
+  if (typeof filters.budgetMax === "number") {
+    query = query.lte("budget", filters.budgetMax);
+  }
+
+  const bool: Array<[keyof LeadsPageFilters, string]> = [
+    ["needs_financing", "needs_financing"],
+    ["has_property_to_sell", "has_property_to_sell"],
+  ];
+  for (const [key, column] of bool) {
+    const value = filters[key] as string | undefined;
+    if (value === "yes") query = query.eq(column, true);
+    else if (value === "no") query = query.eq(column, false);
+  }
+
+  const sortField = filters.sortField || "effective_date";
+  const ascending = filters.sortOrder === "asc";
+
+  // Pedimos uma linha a mais do que a página para saber se há continuação,
+  // sem precisar de uma contagem à parte.
+  const from = page * pageSize;
+  const { data, error } = await query
+    .order(sortField, { ascending, nullsFirst: false })
+    .range(from, from + pageSize);
+
+  if (error) {
+    console.error("[leadsService] Erro ao carregar página de leads:", error);
+    throw error;
+  }
+
+  const rows = data || [];
+  const hasMore = rows.length > pageSize;
+
+  return { leads: hasMore ? rows.slice(0, pageSize) : rows, hasMore };
+};
+
 // Get all leads with proper visibility rules
 export const getLeads = async (useCache = false) => {
   try {
@@ -186,7 +437,31 @@ export const getLeads = async (useCache = false) => {
       query = applyVisibilityOrSharedFilter(query, visibleUserIds, sharedLeadIds);
     }
 
-    const { data, error } = await query.order("created_at", { ascending: false });
+    // O Supabase devolve no máximo 1000 linhas por pedido. Sem paginação, uma
+    // carteira com mais de 1000 leads ficava silenciosamente truncada: a lista
+    // escondia o resto e os totais no topo mostravam 1000 em vez do número
+    // real. Percorremos as páginas até vir uma incompleta.
+    const PAGE_SIZE = 1000;
+    const MAX_PAGES = 50; // rede de segurança (50 000 leads)
+
+    let data: any[] = [];
+    let error: any = null;
+
+    for (let page = 0; page < MAX_PAGES; page++) {
+      const from = page * PAGE_SIZE;
+      const { data: pageData, error: pageError } = await query
+        .order("created_at", { ascending: false })
+        .range(from, from + PAGE_SIZE - 1);
+
+      if (pageError) {
+        error = pageError;
+        break;
+      }
+
+      data = data.concat(pageData || []);
+
+      if (!pageData || pageData.length < PAGE_SIZE) break;
+    }
 
     if (error) {
       console.log("[leadsService] ❌ Error fetching leads:", error);

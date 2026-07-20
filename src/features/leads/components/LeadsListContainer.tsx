@@ -19,7 +19,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { LayoutGrid, List, Edit, MoreVertical, Eye, Mail, MessageSquare, MessageCircle, CalendarDays, StickyNote, UserCheck, Phone, Trash2, Users, ArrowDownAZ, ArrowUpZA, Download, Radar, Upload } from "lucide-react";
+import { LayoutGrid, List, Edit, MoreVertical, Eye, Mail, MessageSquare, MessageCircle, CalendarDays, StickyNote, UserCheck, Phone, Trash2, Users, ArrowDownAZ, ArrowUpZA, Download, Radar, Upload, Loader2 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -30,7 +30,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import {
   useLeads,
-  useLeadFilters,
+  useLeadsPaginated,
   useLeadMutations,
   useLeadInteractions,
   useLeadActions,
@@ -44,7 +44,7 @@ import { getLeadQualification } from "@/lib/leadQualification";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScopeSelector } from "@/components/ScopeSelector";
 import { getStagesForUsers, type PipelineStage } from "@/services/pipelineSettingsService";
-import { LeadAdvancedFilters, EMPTY_QUALIFICATION_FILTERS, leadMatchesQualificationFilters, type LeadQualificationFilters } from "./LeadAdvancedFilters";
+import { LeadAdvancedFilters, EMPTY_QUALIFICATION_FILTERS, type LeadQualificationFilters } from "./LeadAdvancedFilters";
 import { ImportLeadsDialog } from "@/components/leads/ImportLeadsDialog";
 
 // Default columns configuration for fallback
@@ -145,12 +145,14 @@ export function LeadsListContainer({
     }
   };
 
-  // Fetch leads data with archived / transferred support
-  const { leads, isLoading, error, refetch } = useLeads(showArchived, showTransferred);
+  // A vista de "transferidas por mim" é uma consulta curta e pontual — vem
+  // inteira. As vistas normal e arquivada usam paginação (useLeadsPaginated).
+  const { leads: transferredLeads, error, refetch } = useLeads(false, showTransferred);
 
-  // Stabilize refetch callback
+  // Stabilize refetch callback — recarrega a vista que estiver ativa.
   const stableRefetch = async () => {
-    await refetch();
+    if (showTransferred) await refetch();
+    else await refetchPage();
   };
 
   // Debounced refetch to prevent cascade re-renders
@@ -169,10 +171,13 @@ export function LeadsListContainer({
   // pessoa. Aplicado antes da pesquisa/tipo, para os cartões de estatísticas
   // também reagirem ao âmbito escolhido.
   const [scopeFilter, setScopeFilter] = useState<string>("all");
-  const scopedLeads = useMemo(() => {
-    if (scopeFilter === "all") return leads;
-    return leads.filter((lead) => lead.assigned_to === scopeFilter);
-  }, [leads, scopeFilter]);
+
+  // Só a vista de transferidas filtra em memória; nas restantes o âmbito vai
+  // na consulta (ver pageFilters).
+  const sortedTransferred = useMemo(() => {
+    if (scopeFilter === "all") return transferredLeads;
+    return transferredLeads.filter((lead) => lead.assigned_to === scopeFilter);
+  }, [transferredLeads, scopeFilter]);
 
   // Fases do pipeline são isoladas por consultor — carregamos, de uma só
   // vez, as fases de todos os donos das leads visíveis (pode haver várias
@@ -181,15 +186,93 @@ export function LeadsListContainer({
   const [buyerStagesByOwner, setBuyerStagesByOwner] = useState<Record<string, PipelineStage[]>>({});
   const [sellerStagesByOwner, setSellerStagesByOwner] = useState<Record<string, PipelineStage[]>>({});
 
+
+
+  // Estado dos filtros. Ao contrário de antes, não filtram um array em
+  // memória — alimentam a consulta à base de dados (ver useLeadsPaginated).
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterType, setFilterType] = useState<string>("all");
+  const [notContactedDays, setNotContactedDays] = useState<string>("all");
+  const [qualFilters, setQualFilters] = useState<LeadQualificationFilters>(EMPTY_QUALIFICATION_FILTERS);
+  const [importOpen, setImportOpen] = useState(false);
+
+  const pageFilters = useMemo(() => {
+    const days = notContactedDays !== "all" ? parseInt(notContactedDays, 10) : 0;
+    const toNumber = (v: string) => {
+      const n = parseFloat(v);
+      return Number.isFinite(n) ? n : undefined;
+    };
+
+    return {
+      search: searchTerm.trim() || undefined,
+      type: filterType,
+      scopeUserId: scopeFilter,
+      showArchived,
+      notContactedDays: Number.isFinite(days) ? days : 0,
+      status: qualFilters.status,
+      temperature: qualFilters.temperature,
+      property_type: qualFilters.property_type,
+      buy_purpose: qualFilters.buy_purpose,
+      typology: qualFilters.typology,
+      location: qualFilters.location || undefined,
+      budgetMin: toNumber(qualFilters.budgetMin),
+      budgetMax: toNumber(qualFilters.budgetMax),
+      needs_financing: qualFilters.needs_financing,
+      has_property_to_sell: qualFilters.has_property_to_sell,
+      purchase_timeline: qualFilters.purchase_timeline,
+      // "created_at" na UI significa a data efetiva (que faz uma lead subir
+      // ao topo quando volta a preencher um formulário).
+      sortField: sortField === "created_at" ? "effective_date" : sortField,
+      sortOrder,
+    };
+  }, [
+    searchTerm, filterType, scopeFilter, showArchived, notContactedDays,
+    qualFilters, sortField, sortOrder,
+  ]);
+
+  const {
+    leads: pagedLeads,
+    stats: serverStats,
+    isLoading: isLoadingPage,
+    isLoadingMore,
+    hasMore,
+    loadMore,
+    refetch: refetchPage,
+  } = useLeadsPaginated(pageFilters);
+
+  // A vista de "transferidas" continua a vir inteira: é uma consulta pontual
+  // e curta, não justifica paginação.
+  const sortedLeads = showTransferred ? sortedTransferred : pagedLeads;
+
+  // Sentinela do scroll infinito: quando entra no ecrã, pede a página seguinte.
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    const buyerOwnerIds = scopedLeads
-      .filter((l) => l.lead_type === "buyer" || l.lead_type === "both")
-      .map((l) => l.assigned_to)
-      .filter((id): id is string => Boolean(id));
-    const sellerOwnerIds = scopedLeads
-      .filter((l) => l.lead_type === "seller" || l.lead_type === "both")
-      .map((l) => l.assigned_to)
-      .filter((id): id is string => Boolean(id));
+    if (showTransferred || !hasMore) return;
+    const node = sentinelRef.current;
+    if (!node) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) loadMore();
+      },
+      { rootMargin: "400px" } // antecipa o carregamento antes de chegar ao fim
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [hasMore, loadMore, showTransferred]);
+
+  useEffect(() => {
+    // Só precisamos das fases dos donos das leads ATUALMENTE visíveis; à
+    // medida que o scroll traz mais páginas, este efeito volta a correr e
+    // acrescenta as que faltarem.
+    const buyerOwnerIds = sortedLeads
+      .filter((l: any) => l.lead_type === "buyer" || l.lead_type === "both")
+      .map((l: any) => l.assigned_to)
+      .filter((id: any): id is string => Boolean(id));
+    const sellerOwnerIds = sortedLeads
+      .filter((l: any) => l.lead_type === "seller" || l.lead_type === "both")
+      .map((l: any) => l.assigned_to)
+      .filter((id: any): id is string => Boolean(id));
 
     if (buyerOwnerIds.length > 0) {
       getStagesForUsers(buyerOwnerIds, "buyer").then(setBuyerStagesByOwner);
@@ -197,65 +280,7 @@ export function LeadsListContainer({
     if (sellerOwnerIds.length > 0) {
       getStagesForUsers(sellerOwnerIds, "seller").then(setSellerStagesByOwner);
     }
-  }, [scopedLeads]);
-
-  // Filter logic
-  const {
-    searchTerm,
-    setSearchTerm,
-    filterType,
-    setFilterType,
-    filteredLeads,
-  } = useLeadFilters(scopedLeads);
-
-  // Filtro "sem contacto há X dias": uma lead entra se nunca foi contactada
-  // (last_contact_date null) OU se o último contacto foi há mais de X dias.
-  const [notContactedDays, setNotContactedDays] = useState<string>("all");
-  const [qualFilters, setQualFilters] = useState<LeadQualificationFilters>(EMPTY_QUALIFICATION_FILTERS);
-  const [importOpen, setImportOpen] = useState(false);
-  const contactFilteredLeads = useMemo(() => {
-    let list = filteredLeads;
-
-    if (notContactedDays !== "all") {
-      const days = parseInt(notContactedDays, 10);
-      if (Number.isFinite(days)) {
-        const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
-        list = list.filter((l) => !l.last_contact_date || new Date(l.last_contact_date).getTime() < cutoff);
-      }
-    }
-
-    // Filtros avançados de qualificação (tipo, objetivo, tipologia, orçamento,
-    // localização, financiamento, imóvel a vender, estado, temperatura, prazo).
-    list = list.filter((l) => leadMatchesQualificationFilters(l, qualFilters));
-
-    return list;
-  }, [filteredLeads, notContactedDays, qualFilters]);
-
-  const sortedLeads = useMemo(() => {
-    return [...contactFilteredLeads].sort((a, b) => {
-      let aVal: any = a[sortField as keyof typeof a];
-      let bVal: any = b[sortField as keyof typeof b];
-
-      if (sortField === "created_at") {
-        // Uma lead que voltou a preencher um formulário sobe ao topo como se
-        // fosse nova: ordenamos pela data efetiva (resubmissão ou criação).
-        const effective = (lead: typeof a) =>
-          new Date((lead as any).last_form_submission_at || lead.created_at || 0).getTime();
-        aVal = effective(a);
-        bVal = effective(b);
-      } else if (sortField === "last_contact_date") {
-        aVal = aVal ? new Date(aVal).getTime() : 0;
-        bVal = bVal ? new Date(bVal).getTime() : 0;
-      } else if (typeof aVal === "string") {
-        aVal = aVal.toLowerCase();
-        bVal = (bVal || "").toLowerCase();
-      }
-
-      if (aVal < bVal) return sortOrder === "asc" ? -1 : 1;
-      if (aVal > bVal) return sortOrder === "asc" ? 1 : -1;
-      return 0;
-    });
-  }, [contactFilteredLeads, sortField, sortOrder]);
+  }, [sortedLeads]);
 
   // CRUD operations - destructure from useLeadMutations hook
   const { convertLead, deleteLead, restore, permanentlyDelete, assign } = useLeadMutations(stableRefetch);
@@ -380,9 +405,9 @@ export function LeadsListContainer({
   useEffect(() => {
     if (deepLinkHandledRef.current) return;
     const queryLeadId = router.query.leadId;
-    if (typeof queryLeadId !== "string" || leads.length === 0) return;
+    if (typeof queryLeadId !== "string" || sortedLeads.length === 0) return;
 
-    const targetLead = leads.find((lead) => lead.id === queryLeadId);
+    const targetLead = sortedLeads.find((lead: any) => lead.id === queryLeadId);
     if (targetLead) {
       deepLinkHandledRef.current = true;
       handleViewDetails(targetLead);
@@ -390,7 +415,7 @@ export function LeadsListContainer({
       const { leadId: _leadId, ...restQuery } = router.query;
       router.replace({ pathname: router.pathname, query: restQuery }, undefined, { shallow: true });
     }
-  }, [router.query.leadId, leads]);
+  }, [router.query.leadId, sortedLeads]);
 
   const handleAssign = (lead: LeadWithContacts) => {
     if (openingAssignRef.current) {
@@ -736,24 +761,29 @@ export function LeadsListContainer({
     }
   };
 
-  // Calculate statistics
+  // Estatísticas: vêm de contagens feitas na base de dados, não do que está
+  // carregado. É isto que faz os indicadores mostrarem o total REAL da
+  // carteira mesmo com a lista paginada — antes mostravam o tamanho do array,
+  // que parava nas 1000 linhas devolvidas pelo Supabase.
   const stats = React.useMemo(() => {
+    const byStatus = serverStats?.byStatus || {};
     return {
-      total: scopedLeads.length,
-      buyers: scopedLeads.filter(l => l.lead_type === 'buyer' || l.lead_type === 'both').length,
-      sellers: scopedLeads.filter(l => l.lead_type === 'seller' || l.lead_type === 'both').length,
+      total: serverStats?.total ?? 0,
+      buyers: serverStats?.buyers ?? 0,
+      sellers: serverStats?.sellers ?? 0,
       pipeline: {
-        new: scopedLeads.filter(l => l.status === 'new').length,
-        contacted: scopedLeads.filter(l => l.status === 'contacted').length,
-        qualified: scopedLeads.filter(l => l.status === 'qualified').length,
-        proposal: scopedLeads.filter(l => l.status === 'proposal').length,
-        negotiation: scopedLeads.filter(l => l.status === 'negotiation').length,
-        won: scopedLeads.filter(l => l.status === 'won').length,
+        new: byStatus["novo"] ?? 0,
+        contacted: byStatus["contactado"] ?? 0,
+        qualified: byStatus["qualificado"] ?? 0,
+        proposal: byStatus["proposta"] ?? 0,
+        negotiation: byStatus["negociacao"] ?? 0,
+        won: byStatus["fechado"] ?? 0,
       }
     };
-  }, [scopedLeads]);
+  }, [serverStats]);
 
   // Loading and error states
+  const isLoading = showTransferred ? false : isLoadingPage;
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -967,7 +997,7 @@ export function LeadsListContainer({
             ))}
           </div>
         )
-      ) : filteredLeads.length === 0 ? (
+      ) : sortedLeads.length === 0 ? (
         <div className="text-center py-12 text-gray-500">
           {searchTerm || filterType !== "all" ? (
             <p>Nenhum lead encontrado com os filtros aplicados.</p>
@@ -1229,6 +1259,30 @@ export function LeadsListContainer({
             </table>
           </div>
         </div>
+      )}
+
+      {/* Scroll infinito: a sentinela entra no ecrã e pede a página seguinte.
+          Fica fora dos dois modos de vista (grelha e lista) para funcionar em
+          ambos sem duplicar. */}
+      {!showTransferred && (hasMore || isLoadingMore) && (
+        <div ref={sentinelRef} className="flex items-center justify-center py-6">
+          {isLoadingMore ? (
+            <span className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              A carregar mais leads…
+            </span>
+          ) : (
+            <Button variant="outline" size="sm" onClick={loadMore}>
+              Carregar mais
+            </Button>
+          )}
+        </div>
+      )}
+
+      {!showTransferred && !hasMore && sortedLeads.length > 0 && stats.total > sortedLeads.length && (
+        <p className="py-4 text-center text-sm text-muted-foreground">
+          {sortedLeads.length} de {stats.total} leads
+        </p>
       )}
 
       <LeadDialogs

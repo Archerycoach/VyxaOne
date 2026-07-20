@@ -223,9 +223,42 @@ const normalizeStatus = (value: any): string => {
   return "new";
 };
 
+/**
+ * Exportações de outros CRMs que este importador genérico NÃO sabe ler.
+ *
+ * Estes ficheiros têm colunas próprias ("Nome Lead", "Nome de contacto") que
+ * não correspondem às do modelo, e o importador genérico acabaria a criar
+ * centenas de leads "Sem Nome" com o email do agente — foi o que aconteceu
+ * uma vez. Em vez de as aceitar e estragar a base, recusamos e encaminhamos
+ * para o importador certo, que sabe mapear estes formatos.
+ */
+const CRM_EXPORT_SIGNATURES: Array<{ columns: string[]; label: string }> = [
+  { columns: ["Nome Lead", "Data criação no Maxwork"], label: "Leads (MaxWork/RE/MAX)" },
+  { columns: ["Nome da oportunidade", "Etapa do Funil"], label: "Oportunidades" },
+];
+
+export function detectUnsupportedCrmExport(data: any[]): string | null {
+  if (!Array.isArray(data) || data.length === 0) return null;
+
+  const columns = new Set(Object.keys(data[0] || {}).map((c) => String(c).trim()));
+  const match = CRM_EXPORT_SIGNATURES.find((sig) => sig.columns.every((c) => columns.has(c)));
+
+  return match ? match.label : null;
+}
+
 export const importLeads = async (data: any[]): Promise<ImportResult> => {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error("Not authenticated");
+
+  // Ficheiro de exportação de outro CRM? Este importador não o sabe ler.
+  const crmExport = detectUnsupportedCrmExport(data);
+  if (crmExport) {
+    throw new Error(
+      `Este ficheiro é uma exportação de "${crmExport}" e não segue o modelo deste importador. ` +
+        `Usa o botão "Importar" na barra de filtros das Leads — esse reconhece este formato, ` +
+        `mapeia os campos corretos, mantém as datas de criação originais e atualiza as leads que já existam.`
+    );
+  }
 
   const leadsToInsert: LeadInsert[] = [];
   const errors: any[] = [];
