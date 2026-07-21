@@ -1,4 +1,14 @@
 import { calculateMatchScore } from "@/services/matchingService";
+// As regras de tipologia vivem num módulo neutro — a pesquisa do Idealista
+// corre no cliente e precisa exatamente das mesmas.
+import {
+  typologyToBedrooms,
+  parseTypologyList,
+  typologyBedroomsList,
+  typologyAcceptsBedrooms,
+} from "@/lib/typology";
+
+export { typologyToBedrooms, parseTypologyList, typologyBedroomsList, typologyAcceptsBedrooms };
 
 /**
  * Buyer Match — cruza leads compradoras com imóveis E empreendimentos.
@@ -92,34 +102,6 @@ function normalizeText(value: string | null | undefined): string {
     .trim();
 }
 
-/** Extrai o nº de quartos de uma tipologia PT ("T2", "t3 duplex" → 2, 3). */
-export function typologyToBedrooms(typology: string | null | undefined): number | null {
-  const match = /t\s*(\d+)/i.exec(typology || "");
-  return match ? Number(match[1]) : null;
-}
-
-/**
- * Uma lead pode procurar mais do que uma tipologia ("T1, T2"). O campo é
- * texto, com as tipologias separadas por vírgula.
- *
- * Sem isto, `typologyToBedrooms` devolvia só a PRIMEIRA — uma lead aberta a
- * T1 ou T2 nunca era cruzada com os T2 disponíveis.
- */
-export function parseTypologyList(typology: string | null | undefined): string[] {
-  return String(typology || "")
-    .split(/[,;/]+/)
-    .map((part) => part.trim())
-    .filter((part) => part.length > 0);
-}
-
-/** Todos os nºs de quartos aceites pela lead, a partir da lista de tipologias. */
-export function typologyBedroomsList(typology: string | null | undefined): number[] {
-  const values = parseTypologyList(typology)
-    .map((part) => typologyToBedrooms(part))
-    .filter((value): value is number => value != null);
-  return Array.from(new Set(values));
-}
-
 /**
  * Nº de quartos "efetivo" da lead: bedrooms se preenchido, senão derivado da
  * tipologia ("T2" → 2).
@@ -211,6 +193,7 @@ export function scoreLeadAgainstDevelopment(
       const rowNorm = normalizeText(row.typology);
       const rowBedrooms = typologyToBedrooms(row.typology);
       if (leadTypologyNorms.some((norm) => rowNorm === norm || rowNorm.startsWith(norm))) return true;
+      if (typologyAcceptsBedrooms(lead.typology, rowBedrooms)) return true;
       if (rowBedrooms != null && leadBedroomsList.includes(rowBedrooms)) return true;
       return false;
     });
@@ -255,6 +238,7 @@ export function scoreLeadAgainstDevelopment(
       globalTypologies.some((t) => {
         if (leadTypologyNorms.includes(t)) return true;
         const globalBedrooms = typologyToBedrooms(t);
+        if (typologyAcceptsBedrooms(lead.typology, globalBedrooms)) return true;
         return globalBedrooms != null && leadBedroomsList.includes(globalBedrooms);
       })
     ) {

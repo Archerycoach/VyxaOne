@@ -48,6 +48,12 @@ export default function Integrations() {
   });
   const [isWhatsappConfigured, setIsWhatsappConfigured] = useState(false);
 
+  // Geoapify — mapas estáticos nos documentos entregues ao cliente.
+  // Chave global: o operador configura uma vez, todos os consultores usam.
+  const [geoapifyKey, setGeoapifyKey] = useState("");
+  const [geoapifyConfigured, setGeoapifyConfigured] = useState(false);
+  const [geoapifyMaskedKey, setGeoapifyMaskedKey] = useState("");
+
   // Idealista Settings
   const [idealistaConfigured, setIdealistaConfigured] = useState(false);
   const [idealistaKey, setIdealistaKey] = useState("");
@@ -88,6 +94,13 @@ export default function Integrations() {
       setIdealistaEndpoint(data.idealista_rapidapi_list_endpoint || "/properties/list");
       setIdealistaAutoSuggest(data.idealista_auto_suggest_enabled === "true");
       setIdealistaAgencyFilter(data.idealista_agency_filter || "");
+
+      const geoRes = await adminFetch("/api/admin/system-settings?keys=geoapify_api_key");
+      if (geoRes.ok) {
+        const geoData = await geoRes.json();
+        setGeoapifyConfigured(geoData.geoapify_api_key_configured || false);
+        setGeoapifyMaskedKey(geoData.geoapify_api_key || "");
+      }
     } catch (error) {
       console.error("Error loading Idealista settings:", error);
     }
@@ -116,6 +129,10 @@ export default function Integrations() {
       // Only include key if user typed a new one
       if (idealistaKey.trim()) {
         payload.idealista_rapidapi_key = idealistaKey.trim();
+      }
+
+      if (geoapifyKey.trim()) {
+        payload.geoapify_api_key = geoapifyKey.trim();
       }
 
       const res = await adminFetch("/api/admin/system-settings", {
@@ -765,6 +782,29 @@ export default function Integrations() {
                     onChange={(e) => setIdealistaHost(e.target.value)}
                     placeholder="idealista2.p.rapidapi.com"
                   />
+                </div>
+
+                {/* Geoapify: mapas nos documentos. Fica aqui por ser, como o
+                    Idealista, uma chave global que o operador configura uma
+                    vez para toda a equipa. */}
+                <div className="space-y-2 pt-4 border-t">
+                  <Label>Chave Geoapify (mapas nos documentos)</Label>
+                  <Input
+                    type="password"
+                    placeholder={geoapifyConfigured ? "••••••••" : "Insira a chave Geoapify"}
+                    value={geoapifyKey}
+                    onChange={(e) => setGeoapifyKey(e.target.value)}
+                  />
+                  {geoapifyConfigured && geoapifyMaskedKey && (
+                    <p className="text-xs text-muted-foreground">
+                      Chave atual: {geoapifyMaskedKey}
+                    </p>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    Usada para o mapa da localização na avaliação de mercado. Os pontos de
+                    interesse vêm do OpenStreetMap e não precisam de chave. Sem chave, o
+                    documento é gerado na mesma, apenas sem o mapa.
+                  </p>
                 </div>
 
                 <div className="space-y-2">

@@ -506,3 +506,120 @@ export function addBodyText(doc: jsPDF, text: string, y: number): number {
 
   return y + 4;
 }
+
+export interface LocationPoi {
+  name: string;
+  category: string;
+  walkMinutes: number;
+}
+
+const POI_SECTION_LABELS: Record<string, string> = {
+  escolas: "Escolas",
+  transportes: "Transportes",
+  comercio: "Supermercados",
+  restauracao: "Restauração",
+  saude: "Saúde",
+};
+
+/**
+ * Mapa da localização. A imagem vem em data URI do servidor (Geoapify);
+ * sem chave configurada não há imagem e a secção é simplesmente omitida.
+ */
+export function addLocationMap(doc: jsPDF, mapDataUri: string | null, y: number): number {
+  if (!mapDataUri) return y;
+
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const width = pageWidth - MARGIN * 2;
+  const height = width * (360 / 640); // proporção pedida ao Geoapify
+
+  try {
+    doc.addImage(mapDataUri, "JPEG", MARGIN, y, width, height);
+  } catch (error) {
+    // Uma imagem corrompida não pode impedir o documento de sair.
+    console.warn("[pdfDocument] Mapa não embebido:", error);
+    return y;
+  }
+
+  doc.setFontSize(7);
+  doc.setTextColor(MUTED.r, MUTED.g, MUTED.b);
+  doc.text("Mapa: © OpenStreetMap contributors · Geoapify", MARGIN, y + height + 4);
+
+  return y + height + 10;
+}
+
+/**
+ * Pontos de interesse agrupados por categoria, em duas colunas.
+ *
+ * Os tempos são estimativas a partir da distância em linha reta — o documento
+ * di-lo explicitamente, para não passarem por percursos medidos.
+ */
+export function addPointsOfInterest(doc: jsPDF, pois: LocationPoi[], y: number): number {
+  if (!pois || pois.length === 0) return y;
+
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const columnWidth = (pageWidth - MARGIN * 2 - 8) / 2;
+
+  const categories = Array.from(new Set(pois.map((poi) => poi.category)));
+
+  let column = 0;
+  let columnTop = y;
+  let cursor = y;
+
+  for (const category of categories) {
+    const items = pois.filter((poi) => poi.category === category);
+    const blockHeight = 7 + items.length * 5 + 4;
+
+    // Muda de coluna, e só depois de página — duas colunas aproveitam melhor
+    // o espaço numa lista de nomes curtos.
+    if (cursor + blockHeight > pageHeight - 25) {
+      if (column === 0) {
+        column = 1;
+        cursor = columnTop;
+      } else {
+        doc.addPage();
+        column = 0;
+        columnTop = 25;
+        cursor = 25;
+      }
+    }
+
+    const x = MARGIN + column * (columnWidth + 8);
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9.5);
+    doc.setTextColor(BRAND.r, BRAND.g, BRAND.b);
+    doc.text(POI_SECTION_LABELS[category] || category, x, cursor);
+    cursor += 6;
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.5);
+
+    for (const item of items) {
+      const minutes = `${item.walkMinutes} min`;
+      const minutesWidth = doc.getTextWidth(minutes);
+
+      doc.setTextColor(55, 65, 81);
+      // Trunca o nome para o tempo nunca ser empurrado para fora da coluna.
+      const name = doc.splitTextToSize(item.name, columnWidth - minutesWidth - 6)[0];
+      doc.text(name, x, cursor);
+
+      doc.setTextColor(MUTED.r, MUTED.g, MUTED.b);
+      doc.text(minutes, x + columnWidth - minutesWidth, cursor);
+
+      cursor += 5;
+    }
+
+    cursor += 4;
+  }
+
+  doc.setFontSize(7);
+  doc.setTextColor(MUTED.r, MUTED.g, MUTED.b);
+  doc.text(
+    "Tempos a pé estimados a partir da distância. Dados: © OpenStreetMap contributors.",
+    MARGIN,
+    Math.min(cursor + 2, pageHeight - 12)
+  );
+
+  return cursor + 8;
+}

@@ -21,6 +21,7 @@ import { jsPDF } from "jspdf";
 import {
   addCoverPage, addAboutPage, addClosingPage, addPageHeader, addPageNumbers,
   addSectionTitle, addKeyValueTable, addValueEstimate, addComparableCard, addBodyText,
+  addLocationMap, addPointsOfInterest,
   buildConsultantIdentity, type ConsultantIdentity,
 } from "@/lib/pdfDocument";
 
@@ -245,6 +246,19 @@ export default function ValuationPage() {
       },
       y
     );
+
+    // --- Envolvente (mapa + pontos de interesse) ---
+    // Só existe se as fontes externas responderam; caso contrário o documento
+    // segue sem esta página, sem qualquer aviso ao cliente.
+    const insights = (result as any).locationInsights;
+    if (insights && (insights.mapDataUri || (insights.pois || []).length > 0)) {
+      doc.addPage();
+      addPageHeader(doc, identity, "Envolvente");
+      y = 46;
+      y = addSectionTitle(doc, "Localização e envolvente", y);
+      y = addLocationMap(doc, insights.mapDataUri || null, y);
+      y = addPointsOfInterest(doc, insights.pois || [], y);
+    }
 
     // --- Comparáveis ---
     doc.addPage();

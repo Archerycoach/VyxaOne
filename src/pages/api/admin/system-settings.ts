@@ -13,6 +13,7 @@ const SECRET_KEYS = [
   'smtp_password',
   'eupago_api_key',
   'notion_api_key',
+  'geoapify_api_key',
 ];
 
 /**

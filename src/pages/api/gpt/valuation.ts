@@ -4,6 +4,8 @@ import { runAI } from "@/lib/ai/provider";
 import { getCmaReportPrompt } from "@/lib/ai/prompts/cmaReport";
 import { searchIdealistaProperties, leadToIdealistaParams } from "@/services/idealistaService";
 import { getIdealistaCredentials } from "@/lib/server/idealistaCredentials";
+import { getLocationInsights } from "@/lib/server/locationInsights";
+import { getGeoapifyKey } from "@/lib/server/geoapifyCredentials";
 
 interface ComparableSummary {
   source: string;
@@ -137,6 +139,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       console.error("[Valuation] Falha ao gerar narrativa IA:", aiError);
     }
 
+    // Envolvente da localização (mapa + pontos de interesse). Nunca lança e
+    // nunca impede a avaliação de sair: se as fontes externas falharem, o
+    // documento é gerado sem esta página.
+    let locationInsights = null;
+    try {
+      const geoapifyKey = await getGeoapifyKey();
+      locationInsights = await getLocationInsights(address, geoapifyKey);
+    } catch (insightsError) {
+      console.warn("[Valuation] Envolvente indisponível:", insightsError);
+    }
+
     return res.status(200).json({
       comparables,
       soldAvgPricePerSqm,
@@ -144,6 +157,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       suggestedMin,
       suggestedMax,
       narrative,
+      locationInsights,
     });
   } catch (error: any) {
     console.error("[Valuation] Erro:", error);

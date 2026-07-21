@@ -1,3 +1,8 @@
+import {
+  typologyBedroomsList,
+  typologyAcceptsBedrooms,
+  isOpenEndedTypology,
+} from "@/lib/typology";
 import { supabase } from "@/integrations/supabase/client";
 
 interface IdealistaSearchParams {
@@ -10,6 +15,12 @@ interface IdealistaSearchParams {
   minSize?: number;
   maxSize?: number;
   bedrooms?: string | number;
+  /**
+   * Tipologia procurada tal como está na lead ("T1, T2" ou "T2+"). Quando há
+   * mais do que uma tipologia — ou um mínimo aberto — não se pode enviar um
+   * `bedrooms` único à API sem perder as restantes; filtra-se localmente.
+   */
+  typology?: string | null;
   center?: string;
   searchCenters?: string[];
   distance?: number;
@@ -252,7 +263,14 @@ export async function searchIdealistaProperties(
     if (params.minSize) queryParams.append("minSize", params.minSize.toString());
     if (params.maxSize) queryParams.append("maxSize", params.maxSize.toString());
     
-    if (params.bedrooms && params.bedrooms !== "any") {
+    // Com várias tipologias aceites (ou um mínimo aberto), o `bedrooms` da API
+    // — que só aceita um valor — deixaria de fora tudo o resto. Nesse caso não
+    // se filtra na API e passa-se a filtrar sobre os resultados.
+    const acceptedBedrooms = typologyBedroomsList(params.typology);
+    const openEndedTypology = isOpenEndedTypology(params.typology);
+    const filterRoomsLocally = acceptedBedrooms.length > 1 || openEndedTypology;
+
+    if (!filterRoomsLocally && params.bedrooms && params.bedrooms !== "any") {
       queryParams.append("bedrooms", params.bedrooms.toString());
     }
     
@@ -269,7 +287,7 @@ export async function searchIdealistaProperties(
     let allResults: IdealistaProperty[] = [];
     
     // Pesquisa em Lotes (Batches) para evitar Rate Limits da API e Timeouts do servidor
-    const maxPagesToFetch = hasAgencyFilter ? 6 : 1; 
+    const maxPagesToFetch = hasAgencyFilter ? 6 : filterRoomsLocally ? 3 : 1; 
     const startPage = params.numPage || 1;
     const batchSize = 2;
     
@@ -399,6 +417,17 @@ export async function searchIdealistaProperties(
             ].map(normalizeString).join(" | ");
             
             return searchSpace.includes(agencyLower);
+          });
+        }
+
+        // Filtro de tipologia sobre os resultados (ver filterRoomsLocally).
+        // Um imóvel sem nº de quartos declarado passa: excluí-lo esconderia
+        // resultados válidos por falta de dados do anúncio.
+        if (filterRoomsLocally && pageResults.length > 0) {
+          pageResults = pageResults.filter((p: any) => {
+            const rooms = typeof p.rooms === "number" ? p.rooms : Number(p.rooms);
+            if (!Number.isFinite(rooms)) return true;
+            return typologyAcceptsBedrooms(params.typology, rooms);
           });
         }
 
@@ -558,7 +587,10 @@ export function leadToIdealistaParams(lead: any): IdealistaSearchParams {
     params.maxSize = lead.max_area;
   }
 
-  // Quartos
+  // Quartos / tipologia
+  if (lead.typology) {
+    params.typology = lead.typology;
+  }
   if (lead.bedrooms) {
     params.bedrooms = lead.bedrooms;
   }

@@ -72,8 +72,24 @@ const TYPOLOGY_OPTIONS = [
   { value: "T2", label: "T2" },
   { value: "T3", label: "T3" },
   { value: "T4", label: "T4" },
-  { value: "T5+", label: "T5 ou mais" },
+  { value: "T5", label: "T5" },
 ];
+
+/**
+ * Texto legível da tipologia procurada. "T1, T2" -> "T1 ou T2";
+ * "T2+" -> "T2 ou superior". Uma lista crua não se lê bem numa ficha.
+ */
+export function describeTypologies(value: string | null | undefined): string {
+  const parts = parseTypologies(value);
+  if (parts.length === 0) return "";
+
+  const readable = parts.map((part) =>
+    part.includes("+") ? `${part.replace("+", "")} ou superior` : part
+  );
+
+  if (readable.length === 1) return readable[0];
+  return `${readable.slice(0, -1).join(", ")} ou ${readable[readable.length - 1]}`;
+}
 
 /** "T1, T2" -> ["T1", "T2"]. O campo é texto; a vírgula separa. */
 export function parseTypologies(value: string | null | undefined): string[] {
@@ -163,7 +179,7 @@ function buildRows(lead: LeadLike): Row[] {
 
   // Tipologia / quartos (comum)
   const typologyText = hasText(lead.typology)
-    ? lead.typology
+    ? describeTypologies(lead.typology)
     : num(lead.bedrooms)
       ? `T${lead.bedrooms}`
       : "";
@@ -352,9 +368,30 @@ export function LeadQualificationOverview({ lead, onSave }: Props) {
    * quartos aceite — é o campo numérico único que o resto da aplicação lê, e
    * o mínimo é o que não exclui imóveis que a lead aceitaria.
    */
+  // Derivado do valor guardado: se a última tipologia tem "+", o modo é aberto.
+  const acceptsAbove = parseTypologies(values.typology).some((item) => item.includes("+"));
+
+  const setAcceptsAbove = (enabled: boolean) => {
+    setValues((prev) => {
+      const parts = parseTypologies(prev.typology).map((item) => item.replace("+", ""));
+      if (parts.length === 0) return prev;
+
+      // O "+" aplica-se só à maior tipologia escolhida — é o limite superior
+      // que fica aberto, não cada uma delas.
+      const sorted = [...parts].sort(
+        (a, b) => (parseInt(a.replace(/\D/g, ""), 10) || 0) - (parseInt(b.replace(/\D/g, ""), 10) || 0)
+      );
+      if (enabled) {
+        sorted[sorted.length - 1] = `${sorted[sorted.length - 1]}+`;
+      }
+      return { ...prev, typology: sorted.join(", ") };
+    });
+  };
+
   const toggleTypology = (option: string) => {
     setValues((prev) => {
-      const current = parseTypologies(prev.typology);
+      const wasOpenEnded = parseTypologies(prev.typology).some((item) => item.includes("+"));
+      const current = parseTypologies(prev.typology).map((item) => item.replace("+", ""));
       const next = current.includes(option)
         ? current.filter((item) => item !== option)
         : [...current, option];
@@ -365,6 +402,11 @@ export function LeadQualificationOverview({ lead, onSave }: Props) {
       const bedroomsValues = next
         .map((item) => parseInt(item.replace(/\D/g, ""), 10))
         .filter((value) => Number.isFinite(value));
+
+      // Se o modo "ou superior" estava ligado, mantém-se na nova maior.
+      if (wasOpenEnded && next.length > 0) {
+        next[next.length - 1] = `${next[next.length - 1]}+`;
+      }
 
       return {
         ...prev,
@@ -550,7 +592,9 @@ export function LeadQualificationOverview({ lead, onSave }: Props) {
                   no mesmo campo de texto. */}
               <div className="flex flex-wrap gap-1.5">
                 {TYPOLOGY_OPTIONS.map((option) => {
-                  const selected = parseTypologies(values.typology).includes(option.value);
+                  const selected = parseTypologies(values.typology)
+                    .map((item) => item.replace("+", ""))
+                    .includes(option.value);
                   return (
                     <button
                       key={option.value}
@@ -567,6 +611,18 @@ export function LeadQualificationOverview({ lead, onSave }: Props) {
                   );
                 })}
               </div>
+              {/* "Ou superior" transforma a MAIOR tipologia escolhida num
+                  mínimo aberto ("T2+"). Quem procura no mínimo um T2 aceita
+                  T3 ou T4 — o que limita é o orçamento, verificado à parte. */}
+              <label className="flex items-center gap-2 text-sm text-gray-700 mt-1.5">
+                <input
+                  type="checkbox"
+                  checked={acceptsAbove}
+                  onChange={(event) => setAcceptsAbove(event.target.checked)}
+                  className="h-4 w-4"
+                />
+                Aceita tipologias superiores (dentro do orçamento)
+              </label>
             </div>
 
             {isBuyer && (
