@@ -11,6 +11,7 @@ type CalendarEvent = Database["public"]["Tables"]["calendar_events"]["Row"];
 interface Stats {
   totalLeads: number;
   activeLeads: number;
+  leadsByMonth: Array<{ month: string; novas: number }>;
   wonLeads: number;
   lostLeads: number;
   conversionRate: number;
@@ -58,6 +59,7 @@ export function useDashboardData({ userRole, currentUserId, selectedAgentId, lea
   const [stats, setStats] = useState<Stats>({
     totalLeads: 0,
     activeLeads: 0,
+    leadsByMonth: [],
     wonLeads: 0,
     lostLeads: 0,
     conversionRate: 0,
@@ -127,20 +129,41 @@ export function useDashboardData({ userRole, currentUserId, selectedAgentId, lea
       const targetUserId = selectedAgentId && selectedAgentId !== "all" ? selectedAgentId : null;
 
       // 4. Fetch Leads
-      let leadsQuery = supabase.from("leads").select("*");
+      //
+      // O Supabase devolve no máximo 1000 linhas por pedido. Uma consulta
+      // única fazia com que o dashboard mostrasse sempre "1000" a partir do
+      // momento em que a base passou esse número, por isso percorre-se por
+      // páginas até vir tudo. Só se pedem as colunas usadas nas métricas —
+      // `select("*")` traria dezenas de campos que aqui não servem para nada.
+      const LEADS_BATCH = 1000;
+      const leadColumns =
+        "id, lead_type, status, assigned_to, created_at, archived_at, budget_max, budget_min";
 
-      if (userRole === "admin" || userRole === "broker" || userRole === "team_lead") {
-        if (targetUserId) {
-          leadsQuery = leadsQuery.eq("assigned_to", targetUserId);
+      const fetchLeadsPage = async (from: number) => {
+        let leadsQuery: any = supabase
+          .from("leads")
+          .select(leadColumns)
+          .range(from, from + LEADS_BATCH - 1);
+
+        if (userRole === "admin" || userRole === "broker" || userRole === "team_lead") {
+          if (targetUserId) {
+            leadsQuery = leadsQuery.eq("assigned_to", targetUserId);
+          }
+        } else {
+          leadsQuery = leadsQuery.eq("assigned_to", currentUserId);
         }
-      } else {
-        leadsQuery = leadsQuery.eq("assigned_to", currentUserId);
+
+        const { data, error } = await leadsQuery;
+        if (error) throw error;
+        return (data || []) as any[];
+      };
+
+      let leads: any[] = [];
+      for (let offset = 0; ; offset += LEADS_BATCH) {
+        const batch = await fetchLeadsPage(offset);
+        leads = leads.concat(batch);
+        if (batch.length < LEADS_BATCH) break;
       }
-
-      const { data: leadsData, error: leadsError } = await leadsQuery;
-      if (leadsError) throw leadsError;
-
-      let leads = leadsData || [];
 
       // Filter by Lead Type
       if (leadTypeFilter === "buyer") {
@@ -254,6 +277,32 @@ export function useDashboardData({ userRole, currentUserId, selectedAgentId, lea
 
       // 10. Calculate Metrics
       const totalLeads = leads.length;
+
+      // Evolução das leads: contagem por mês de criação nos últimos 6 meses.
+      // Os meses sem leads têm de aparecer na mesma (a zero) — se fossem
+      // omitidos, o gráfico comprimia o eixo e sugeria uma continuidade que
+      // não existe.
+      const monthBuckets: Array<{ month: string; key: string; novas: number }> = [];
+      const today = new Date();
+      for (let i = 5; i >= 0; i--) {
+        const date = new Date(today.getFullYear(), today.getMonth() - i, 1);
+        monthBuckets.push({
+          month: date.toLocaleDateString("pt-PT", { month: "short" }),
+          key: `${date.getFullYear()}-${date.getMonth()}`,
+          novas: 0,
+        });
+      }
+
+      const bucketByKey = new Map(monthBuckets.map((bucket) => [bucket.key, bucket]));
+      for (const lead of leads) {
+        if (!lead.created_at) continue;
+        const created = new Date(lead.created_at);
+        if (Number.isNaN(created.getTime())) continue;
+        const bucket = bucketByKey.get(`${created.getFullYear()}-${created.getMonth()}`);
+        if (bucket) bucket.novas++;
+      }
+
+      const leadsByMonth = monthBuckets.map(({ month, novas }) => ({ month, novas }));
       
       // Identify which stages count as "Acquisition/Angariação"
       // It counts if the stage name implies acquisition
@@ -271,7 +320,7 @@ export function useDashboardData({ userRole, currentUserId, selectedAgentId, lea
       };
 
       // Calculate won/lost/active leads
-      const wonLeads = leads.filter(l => {
+      const isWon = (l: any) => {
         const status = l.status || "";
         const statusStr = status.toLowerCase();
         
@@ -292,10 +341,17 @@ export function useDashboardData({ userRole, currentUserId, selectedAgentId, lea
         }
         
         return false;
-      }).length;
+      };
+
+      const wonLeads = leads.filter(isWon).length;
 
       const lostLeads = leads.filter(l => l.status === "lost").length;
-      const activeLeads = leads.length - wonLeads - lostLeads; // Simplified active logic
+      // Ativas = nem ganhas, nem perdidas, nem arquivadas. Calculado por
+      // filtro direto e não por subtração: won/lost incluem leads arquivadas,
+      // pelo que subtrair podia dar um número abaixo do real (ou negativo).
+      const activeLeads = leads.filter(
+        (l: any) => !l.archived_at && l.status !== "lost" && !isWon(l)
+      ).length;
       const conversionRate = totalLeads > 0 ? (wonLeads / totalLeads) * 100 : 0;
 
       // Revenue Calculations - ALWAYS use deals, no fallback
@@ -355,6 +411,7 @@ export function useDashboardData({ userRole, currentUserId, selectedAgentId, lea
       setStats({
         totalLeads,
         activeLeads,
+        leadsByMonth,
         wonLeads,
         lostLeads,
         conversionRate,

@@ -12,11 +12,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ClipboardList, CheckCircle2, AlertCircle, Pencil, Loader2, X } from "lucide-react";
+import { ClipboardList, CheckCircle2, AlertCircle, Pencil, Loader2, X, Building2, Home, User, Mail, Phone } from "lucide-react";
+import { useEffect } from "react";
+import { supabase } from "@/integrations/supabase/client";
 
 type Role = "buyer" | "seller";
 
 interface LeadLike {
+  id?: string | null;
+  name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  development_id?: string | null;
+  development_name?: string | null;
   lead_type?: string | null;
   property_type?: string | null;
   buy_purpose?: string | null;
@@ -190,6 +198,9 @@ function buildRows(lead: LeadLike): Row[] {
 }
 
 interface EditValues {
+  name: string;
+  email: string;
+  phone: string;
   property_type: string;
   buy_purpose: string;
   purchase_timeline: string;
@@ -208,6 +219,9 @@ interface EditValues {
 
 function buildEditValues(lead: LeadLike): EditValues {
   return {
+    name: lead.name || "",
+    email: lead.email || "",
+    phone: lead.phone || "",
     property_type: lead.property_type || "",
     buy_purpose: lead.buy_purpose || "",
     purchase_timeline: lead.purchase_timeline || "",
@@ -234,6 +248,11 @@ function buildUpdatePayload(values: EditValues): Record<string, unknown> {
   };
 
   return {
+    // Informações básicas: o nome nunca é apagado por engano — um nome vazio
+    // deixaria a lead irreconhecível em toda a aplicação.
+    ...(values.name.trim() ? { name: values.name.trim() } : {}),
+    email: values.email.trim() || null,
+    phone: values.phone.trim() || null,
     property_type: values.property_type || null,
     buy_purpose: values.buy_purpose || null,
     purchase_timeline: values.purchase_timeline.trim() || null,
@@ -261,6 +280,29 @@ export function LeadQualificationOverview({ lead, onSave }: Props) {
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [values, setValues] = useState<EditValues>(() => buildEditValues(lead));
+
+  // Imóveis ligados a esta lead (properties.lead_id). O empreendimento vem já
+  // na própria lead, mas os imóveis são uma relação inversa e têm de ser lidos.
+  const [linkedProperties, setLinkedProperties] = useState<
+    Array<{ id: string; title: string | null; address: string | null; price: number | null }>
+  >([]);
+
+  useEffect(() => {
+    if (!lead.id) return;
+    let active = true;
+
+    (supabase as any)
+      .from("properties")
+      .select("id, title, address, price")
+      .eq("lead_id", lead.id)
+      .then(({ data }: any) => {
+        if (active) setLinkedProperties(data || []);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [lead.id]);
 
   const rows = buildRows(lead);
   if (rows.length === 0) return null;
@@ -325,7 +367,58 @@ export function LeadQualificationOverview({ lead, onSave }: Props) {
       </CardHeader>
 
       {!isEditing ? (
-        <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <CardContent className="space-y-4">
+          {/* Informações básicas e associações — o consultor precisa disto à
+              vista sem ter de abrir "Editar Lead". */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="flex items-start gap-2 rounded-md border border-gray-100 p-2.5">
+              <User className="h-4 w-4 text-gray-400 mt-0.5 shrink-0" />
+              <div className="min-w-0">
+                <p className="text-sm text-gray-500">Nome</p>
+                <p className="font-medium break-words">{lead.name || "—"}</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-2 rounded-md border border-gray-100 p-2.5">
+              <Mail className="h-4 w-4 text-gray-400 mt-0.5 shrink-0" />
+              <div className="min-w-0">
+                <p className="text-sm text-gray-500">Email</p>
+                <p className="font-medium break-words">{lead.email || "—"}</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-2 rounded-md border border-gray-100 p-2.5">
+              <Phone className="h-4 w-4 text-gray-400 mt-0.5 shrink-0" />
+              <div className="min-w-0">
+                <p className="text-sm text-gray-500">Telefone</p>
+                <p className="font-medium break-words">{lead.phone || "—"}</p>
+              </div>
+            </div>
+          </div>
+
+          {(lead.development_name || linkedProperties.length > 0) && (
+            <div className="rounded-md border border-indigo-100 bg-indigo-50/50 p-3 space-y-2">
+              <p className="text-sm font-medium text-indigo-950">Associações</p>
+
+              {lead.development_name && (
+                <div className="flex items-center gap-2 text-sm text-indigo-900">
+                  <Building2 className="h-4 w-4 shrink-0" />
+                  <span>Empreendimento: <strong>{lead.development_name}</strong></span>
+                </div>
+              )}
+
+              {linkedProperties.map((property) => (
+                <div key={property.id} className="flex items-center gap-2 text-sm text-indigo-900">
+                  <Home className="h-4 w-4 shrink-0" />
+                  <span className="min-w-0 truncate">
+                    {property.title || "Imóvel sem título"}
+                    {property.address ? ` — ${property.address}` : ""}
+                    {property.price ? ` · ${eur(property.price)}` : ""}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {rows.map((row) => (
             <div
               key={row.label}
@@ -352,9 +445,29 @@ export function LeadQualificationOverview({ lead, onSave }: Props) {
               </div>
             </div>
           ))}
+          </div>
         </CardContent>
       ) : (
         <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="space-y-2">
+              <Label>Nome</Label>
+              <Input value={values.name} onChange={(e) => set("name", e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>Email</Label>
+              <Input
+                type="email"
+                value={values.email}
+                onChange={(e) => set("email", e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Telefone</Label>
+              <Input value={values.phone} onChange={(e) => set("phone", e.target.value)} />
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Tipo de imóvel</Label>

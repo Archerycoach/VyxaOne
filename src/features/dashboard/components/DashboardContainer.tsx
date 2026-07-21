@@ -28,6 +28,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { AiAssistantCard } from "./AiAssistantCard";
 import { RadarWidget } from "@/components/radar/RadarWidget";
 import { ActivityWidget } from "./ActivityWidget";
+import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 interface TeamMember {
   id: string;
@@ -171,7 +172,7 @@ export function DashboardContainer() {
               <p className="text-sm font-medium text-muted-foreground mb-1">
                 Leads Ativos
               </p>
-              <p className="text-4xl font-bold mb-2">{stats?.totalLeads || 0}</p>
+              <p className="text-4xl font-bold mb-2">{stats?.activeLeads || 0}</p>
               <p className="text-xs text-muted-foreground">
                 Em processo
               </p>
@@ -347,12 +348,56 @@ export function DashboardContainer() {
             </div>
           )}
 
-          {/* Chart Section */}
+          {/* Evolução das leads — série única, por isso sem legenda: o título
+              já diz o que está a ser mostrado. */}
           <Card className="p-6">
             <h3 className="text-lg font-semibold mb-4">Evolução de Leads (Últimos 6 Meses)</h3>
-            <div className="h-64 flex items-center justify-center text-muted-foreground">
-              <p>Gráfico em desenvolvimento</p>
-            </div>
+            {(stats?.leadsByMonth?.length ?? 0) === 0 ? (
+              <div className="h-64 flex items-center justify-center text-muted-foreground">
+                <p>Ainda não há leads suficientes para desenhar o gráfico.</p>
+              </div>
+            ) : (
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={stats?.leadsByMonth || []} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="leadsEvolutionFill" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#4f46e5" stopOpacity={0.28} />
+                        <stop offset="100%" stopColor="#4f46e5" stopOpacity={0.02} />
+                      </linearGradient>
+                    </defs>
+                    {/* Grelha e eixos recessivos: os dados é que devem saltar à vista. */}
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+                    <XAxis
+                      dataKey="month"
+                      tickLine={false}
+                      axisLine={false}
+                      tick={{ fill: "#6b7280", fontSize: 12 }}
+                    />
+                    <YAxis
+                      allowDecimals={false}
+                      tickLine={false}
+                      axisLine={false}
+                      width={40}
+                      tick={{ fill: "#6b7280", fontSize: 12 }}
+                    />
+                    <Tooltip
+                      formatter={(value: any) => [`${value}`, "Novas leads"]}
+                      contentStyle={{ borderRadius: 8, border: "1px solid #e5e7eb", fontSize: 13 }}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="novas"
+                      stroke="#4f46e5"
+                      strokeWidth={2}
+                      fill="url(#leadsEvolutionFill)"
+                      dot={{ r: 4, fill: "#4f46e5", stroke: "#ffffff", strokeWidth: 2 }}
+                      activeDot={{ r: 6 }}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            )}
           </Card>
         </TabsContent>
 

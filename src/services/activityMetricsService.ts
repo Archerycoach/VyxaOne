@@ -73,41 +73,68 @@ export async function getActivityMetrics(range: ActivityRange, agentId?: string)
     uid = user.id;
   }
 
-  const [interactionsRes, eventsRes] = await Promise.all([
-    supabase
+  // Contagens exatas em vez de trazer as linhas e contá-las no cliente.
+  //
+  // O Supabase devolve no máximo 1000 linhas por pedido, por isso a versão
+  // anterior — que trazia as interações todas e as somava aqui — parava de
+  // crescer assim que a atividade do período passava as 1000 ações. Era o
+  // motivo de os emails enviados em massa nunca aparecerem no total.
+  const countInteractions = async (types: string[]) => {
+    const { count, error } = await supabase
       .from("interactions")
-      .select("interaction_type")
+      .select("id", { count: "exact", head: true })
       .eq("user_id", uid)
+      .in("interaction_type", types)
       .gte("interaction_date", range.from)
-      .lte("interaction_date", range.to),
-    supabase
+      .lte("interaction_date", range.to);
+    if (error) {
+      console.error("[activityMetrics] Erro a contar interações:", error);
+      return 0;
+    }
+    return count ?? 0;
+  };
+
+  // Eventos de agenda: contam como realizados (exclui no-show).
+  const countEvents = async (types: string[]) => {
+    const { count, error } = await supabase
       .from("calendar_events")
-      .select("event_type, no_show_at")
+      .select("id", { count: "exact", head: true })
       .eq("user_id", uid)
+      .in("event_type", types)
+      .is("no_show_at", null)
       .gte("start_time", range.from)
-      .lte("start_time", range.to),
+      .lte("start_time", range.to);
+    if (error) {
+      console.error("[activityMetrics] Erro a contar eventos:", error);
+      return 0;
+    }
+    return count ?? 0;
+  };
+
+  const [
+    callInteractions, emails, whatsapp, meetingInteractions, visitInteractions, notes,
+    callEvents, meetingEvents, visitEvents,
+  ] = await Promise.all([
+    countInteractions(["call"]),
+    countInteractions(["email"]),
+    countInteractions(["whatsapp", "whatsapp_outbound"]),
+    countInteractions(["meeting"]),
+    countInteractions(["visit"]),
+    countInteractions(["note"]),
+    countEvents(["call"]),
+    countEvents(["meeting"]),
+    countEvents(["viewing", "visit"]),
   ]);
 
-  const counts: ActivityCounts = { ...EMPTY };
-
-  for (const row of (interactionsRes.data || []) as { interaction_type: string | null }[]) {
-    const t = (row.interaction_type || "").toLowerCase();
-    if (t === "call") counts.calls++;
-    else if (t === "email") counts.emails++;
-    else if (t === "whatsapp" || t === "whatsapp_outbound") counts.whatsapp++;
-    else if (t === "meeting") counts.meetings++;
-    else if (t === "visit") counts.visits++;
-    else if (t === "note") counts.notes++;
-  }
-
-  // Eventos de agenda: contam como reuniões/visitas realizadas (exclui no-show).
-  for (const row of (eventsRes.data || []) as { event_type: string | null; no_show_at: string | null }[]) {
-    if (row.no_show_at) continue;
-    const t = (row.event_type || "").toLowerCase();
-    if (t === "meeting") counts.meetings++;
-    else if (t === "viewing" || t === "visit") counts.visits++;
-    else if (t === "call") counts.calls++;
-  }
+  const counts: ActivityCounts = {
+    ...EMPTY,
+    calls: callInteractions + callEvents,
+    emails,
+    whatsapp,
+    meetings: meetingInteractions + meetingEvents,
+    visits: visitInteractions + visitEvents,
+    notes,
+  };
 
   counts.total = counts.calls + counts.emails + counts.whatsapp + counts.meetings + counts.visits + counts.notes;
   return counts;

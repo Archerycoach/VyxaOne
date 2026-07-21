@@ -647,7 +647,7 @@ export function LeadDetailsDialog({
     if (!leadId) return;
     try {
       await updateLead(leadId, updates as any);
-      toast({ title: "✅ Dados de qualificação atualizados" });
+      toast({ title: "✅ Dados da lead atualizados" });
       const updatedLead = await getLeadById(leadId);
       setLead(updatedLead);
     } catch (e: any) {

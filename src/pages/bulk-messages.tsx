@@ -27,6 +27,8 @@ import { getAllContacts, type Contact } from "@/services/contactsService";
 import { getCurrentUser } from "@/services/authService";
 import { getWorkflowRules } from "@/services/workflowService";
 import { supabase } from "@/integrations/supabase/client";
+import { startCampaign, finishCampaign } from "@/services/bulkCampaignsService";
+import { BulkCampaignsReport } from "@/components/bulk/BulkCampaignsReport";
 import { toast } from "@/hooks/use-toast";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
 import { collapseEmptyBlocks } from "@/lib/emailSignatureFormat";
@@ -939,6 +941,20 @@ export default function BulkMessages() {
         // cópia basta para ficar no histórico.
         let copyToSelfPending = sendCopyToSelf && Boolean(copyEmail);
 
+        // Regista a campanha antes de enviar, para o relatório saber quantos
+        // emails saíram mesmo — inclusive se o envio for interrompido a meio.
+        const campaignId = await startCampaign({
+          subject,
+          audienceSource: router.query.aiDraft === "1" ? "ai_search" : "manual",
+          criteria: {
+            location: router.query.location || null,
+            typology: router.query.typology || null,
+            buyPurpose: router.query.buyPurpose || null,
+            propertyType: router.query.propertyType || null,
+          },
+          recipientsTotal: selectedData.length,
+        });
+
         // Send emails sequentially to avoid overwhelming the SMTP server
         for (const recipient of selectedData) {
           if (!recipient.email) {
@@ -1015,6 +1031,12 @@ export default function BulkMessages() {
           // Small delay between emails to avoid rate limiting
           await new Promise((resolve) => setTimeout(resolve, 100));
         }
+
+        await finishCampaign(campaignId, {
+          sent: successCount,
+          failed: failCount,
+          errors,
+        });
 
         // Show results
         if (successCount > 0) {
@@ -1165,6 +1187,10 @@ export default function BulkMessages() {
               <AlertDescription>{aiDraftNotice}</AlertDescription>
             </Alert>
           )}
+
+          <div className="mb-6">
+            <BulkCampaignsReport />
+          </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Recipients Panel */}
