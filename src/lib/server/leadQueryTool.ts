@@ -55,6 +55,8 @@ export interface LeadQuerySpec {
   groupBy?: GroupableField;
   /** Pesquisa livre por nome, email ou telefone. */
   search?: string;
+  /** Nome COMEÇA por este texto (distinto de "contém"). */
+  nameStartsWith?: string;
   /** Texto contido na zona de preferência. */
   location?: string;
   budgetMin?: number;
@@ -120,6 +122,8 @@ export function sanitizeQuerySpec(raw: any): { spec: LeadQuerySpec | null; notes
       filters,
       groupBy,
       search: typeof raw.search === "string" ? raw.search.trim() || undefined : undefined,
+      nameStartsWith:
+        typeof raw.nameStartsWith === "string" ? raw.nameStartsWith.trim() || undefined : undefined,
       location: typeof raw.location === "string" ? raw.location.trim() || undefined : undefined,
       budgetMin: num(raw.budgetMin),
       budgetMax: num(raw.budgetMax),
@@ -129,6 +133,20 @@ export function sanitizeQuerySpec(raw: any): { spec: LeadQuerySpec | null; notes
     },
     notes,
   };
+}
+
+/**
+ * Caracteres que o PostgREST interpreta como sintaxe dentro de `.or()`.
+ * Com qualquer um destes, evitamos o `.or()` e usamos um filtro simples.
+ */
+function hasPostgrestSpecialChars(value: string): boolean {
+  return /[(),."']/.test(value);
+}
+
+/** Limpa o termo de pesquisa, mantendo o que é útil para o ilike. */
+function sanitizeSearchTerm(value: string): string {
+  // % e _ são wildcards do LIKE; a barra invertida é o escape.
+  return value.replace(/[%_\\]/g, "").trim();
 }
 
 /** Aplica os filtros comuns a qualquer das operações. */
@@ -143,8 +161,24 @@ function applyFilters(query: any, spec: LeadQuerySpec, userId: string) {
   }
 
   if (spec.search) {
-    const term = spec.search.replace(/[%,]/g, "");
-    query = query.or(`name.ilike.%${term}%,email.ilike.%${term}%,phone.ilike.%${term}%`);
+    const term = sanitizeSearchTerm(spec.search);
+    if (term) {
+      // Parênteses, vírgulas e aspas são sintaticamente significativos no
+      // `.or()` do PostgREST — sem os isolar, procurar por "(" gerava uma
+      // consulta inválida e a resposta vinha vazia ("não há leads").
+      // Com caracteres especiais, filtramos só pelo nome (sem `.or()`).
+      if (hasPostgrestSpecialChars(spec.search)) {
+        query = query.ilike("name", `%${term}%`);
+      } else {
+        query = query.or(`name.ilike.%${term}%,email.ilike.%${term}%,phone.ilike.%${term}%`);
+      }
+    }
+  }
+
+  // Nome COMEÇA por (prefixo), distinto de "contém".
+  if (spec.nameStartsWith) {
+    const prefix = sanitizeSearchTerm(spec.nameStartsWith);
+    if (prefix) query = query.ilike("name", `${prefix}%`);
   }
   if (spec.location) {
     query = query.ilike("location_preference", `%${spec.location.replace(/[%,]/g, "")}%`);
@@ -171,6 +205,7 @@ function describe(spec: LeadQuerySpec): string {
     parts.push(`${field} = ${value}`);
   }
   if (spec.search) parts.push(`pesquisa "${spec.search}"`);
+  if (spec.nameStartsWith) parts.push(`nome começa por "${spec.nameStartsWith}"`);
   if (spec.location) parts.push(`zona contém "${spec.location}"`);
   if (spec.budgetMin) parts.push(`orçamento ≥ ${spec.budgetMin}`);
   if (spec.budgetMax) parts.push(`orçamento ≤ ${spec.budgetMax}`);
@@ -260,6 +295,7 @@ Devolve APENAS um JSON com esta estrutura:
     "groupBy": "status" | "temperature" | "lead_type" | "property_type" | "source" | "typology" | "purchase_timeline",
     "filters": { "status": "...", "temperature": "hot|warm|cold", "lead_type": "buyer|seller", "property_type": "...", "source": "...", "needs_financing": true|false },
     "search": "texto livre (nome, email, telefone)",
+    "nameStartsWith": "usa quando pedirem nomes que COMEÇAM por algo (ex.: \"começa por A\", \"começam por parêntese\")",
     "location": "texto contido na zona de preferência",
     "budgetMin": número, "budgetMax": número,
     "createdWithinDays": número, "notContactedDays": número,
@@ -274,6 +310,8 @@ Exemplos:
 - "quantas leads tenho?" → { "needsQuery": true, "query": { "operation": "count" } }
 - "quantas por fase?" → { "needsQuery": true, "query": { "operation": "group", "groupBy": "status" } }
 - "leads quentes de Cascais" → { "needsQuery": true, "query": { "operation": "list", "filters": { "temperature": "hot" }, "location": "Cascais" } }
+- "leads cujo nome começa por (" → { "needsQuery": true, "query": { "operation": "list", "nameStartsWith": "(", "limit": 100 } }
+- "leads cujo nome começa por Ana" → { "needsQuery": true, "query": { "operation": "list", "nameStartsWith": "Ana", "limit": 100 } }
 - "escreve um email para a Ana" → { "needsQuery": false }
 
 Responde só com o JSON.`;

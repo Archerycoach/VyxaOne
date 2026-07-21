@@ -1087,7 +1087,19 @@ function isGenericPortalSearchRequest(message: string): boolean {
 
 function isLeadUpdateRequest(message: string): boolean {
   const normalizedMessage = normalizeText(message);
-  const hasUpdateIntent = /(atualiza|atualizar|altera|alterar|muda|mudar|associa|associar|define|definir|marca|marcar|coloca|colocar|poe|por\b|executa|executar|aplica|aplicar|confirma|confirmar|avanca|avancar|procede|proceder)/.test(
+
+  // Pedidos de CONSULTA nunca são updates, por muito que contenham verbos que
+  // à letra parecem de alteração. "leads cujo nome começa POR A" era lido
+  // como intenção de alterar (por causa do "por"), e o pedido caía no fluxo
+  // de propostas de edição em vez de devolver a lista.
+  const isQuery = /(lista|listar|mostra|mostrar|diz-me|diz me|quais|quantas|quantos|procura|procurar|encontra|encontrar|pesquisa|pesquisar|da-me|dá-me|indica|indicar|ver\b)/.test(
+    normalizedMessage,
+  );
+  if (isQuery) {
+    return false;
+  }
+
+  const hasUpdateIntent = /(atualiza|atualizar|altera|alterar|muda|mudar|associa|associar|define|definir|marca|marcar|coloca|colocar|poe|executa|executar|aplica|aplicar|confirma|confirmar|avanca|avancar|procede|proceder)/.test(
     normalizedMessage,
   );
   const hasLeadReference = /(lead|leads|todas as leads|todos os leads)/.test(normalizedMessage);
