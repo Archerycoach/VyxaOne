@@ -264,6 +264,61 @@ export function MetaFormsManagement({ integrationId, integrationName }: MetaForm
     }
   };
 
+  // Aplica a associação do formulário às leads que já entraram por ele.
+  // Pede confirmação com a contagem real antes de gravar (dry run primeiro).
+  const [backfilling, setBackfilling] = useState(false);
+
+  const handleBackfillAssociation = async (formId: string) => {
+    try {
+      setBackfilling(true);
+      const session = await supabase.auth.getSession();
+      const token = session.data.session?.access_token;
+
+      const call = async (dryRun: boolean) => {
+        const response = await fetch("/api/meta/backfill-form-association", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ form_id: formId, dry_run: dryRun }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data?.error || "Erro ao aplicar a associação.");
+        return data;
+      };
+
+      const preview = await call(true);
+
+      if (!preview.would_update) {
+        toast({
+          title: "Nada a alterar",
+          description:
+            preview.total_in_form > 0
+              ? `As ${preview.total_in_form} leads deste formulário já têm empreendimento associado.`
+              : "Não há leads registadas com este formulário.",
+        });
+        return;
+      }
+
+      const confirmed = window.confirm(
+        `Vão ser associadas ${preview.would_update} leads ao empreendimento "${preview.development_name}". Continuar?`
+      );
+      if (!confirmed) return;
+
+      const result = await call(false);
+      toast({
+        title: "Leads associadas",
+        description: `${result.updated} leads ficaram associadas a ${result.development_name}.`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Erro",
+        description: error?.message || "Erro ao aplicar a associação.",
+        variant: "destructive",
+      });
+    } finally {
+      setBackfilling(false);
+    }
+  };
+
   const handleSaveConfig = async () => {
     try {
       if (!selectedForm) return;
@@ -1125,6 +1180,27 @@ export function MetaFormsManagement({ integrationId, integrationName }: MetaForm
                       <p className="text-xs text-gray-500">
                         A lead ficará marcada com o empreendimento selecionado quando entrar por este formulário.
                       </p>
+
+                      {/* A associação só se aplica às leads que entram a partir
+                          daqui. Quem configura isto com a campanha já a correr
+                          precisa de a aplicar também às leads antigas. */}
+                      {formConfig.associated_development_id && (
+                        <div className="rounded-md border border-amber-200 bg-amber-50 p-3 space-y-2">
+                          <p className="text-xs text-amber-900">
+                            As leads que já entraram por este formulário <strong>não</strong> ficam
+                            associadas automaticamente. Grave a configuração e aplique-a ao histórico.
+                          </p>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={backfilling}
+                            onClick={() => handleBackfillAssociation(selectedForm.id)}
+                          >
+                            {backfilling ? "A aplicar..." : "Aplicar às leads já existentes"}
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

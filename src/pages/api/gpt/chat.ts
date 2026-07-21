@@ -2062,6 +2062,12 @@ ${JSON.stringify(result, null, 2)}
 
 Estes números vêm da carteira INTEIRA, não do subconjunto no contexto.
 Usa-os como fonte de verdade para totais e distribuições, e cita-os tal como estão.
+
+REGRA CRÍTICA: "count: 0" ou uma lista vazia significam APENAS que nada
+corresponde a ESTES filtros. NÃO significa que o consultor não tem leads.
+O total real da carteira está em "totalLeadsInCrm" — usa esse número sempre que
+falares de quantas leads existem. NUNCA digas "não há leads na plataforma" nem
+"Leads ativas: 0" a partir de um resultado filtrado vazio.
 ${notes.length > 0 ? `Notas: ${notes.join("; ")}` : ""}
 `;
             addDebugNote(debugRequested ? debugNotes : undefined, "lead_query_tool", "Consulta executada.", {

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Building2, CalendarDays, Edit, Euro, MapPin, Search, Trash2 } from "lucide-react";
+import { useRouter } from "next/router";
+import { Building2, CalendarDays, Edit, Euro, MapPin, Search, Trash2, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -12,7 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { deleteDevelopment, getTypologiesByDevelopment } from "@/services/developmentsService";
+import { deleteDevelopment, getTypologiesByDevelopment, getLeadCountsByDevelopment } from "@/services/developmentsService";
 import type { Development, DevelopmentStatus, DevelopmentTypology } from "@/types";
 
 interface DevelopmentsListProps {
@@ -106,15 +107,23 @@ function formatTypologyChip(row: DevelopmentTypology): string {
 
 export function DevelopmentsList({ developments, onEdit, onRefresh }: DevelopmentsListProps) {
   const { toast } = useToast();
+  const router = useRouter();
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [typologiesByDevelopment, setTypologiesByDevelopment] = useState<Record<string, DevelopmentTypology[]>>({});
+  // Quantas leads estão associadas a cada empreendimento — permite saltar
+  // daqui para a lista já filtrada, sem ter de procurar à mão.
+  const [leadCounts, setLeadCounts] = useState<Record<string, number>>({});
 
   // Uma query só para as tipologias de todos os empreendimentos (chips nos cards)
   useEffect(() => {
     getTypologiesByDevelopment()
       .then(setTypologiesByDevelopment)
       .catch((err) => console.error("Erro ao carregar tipologias:", err));
+
+    getLeadCountsByDevelopment()
+      .then(setLeadCounts)
+      .catch((err) => console.error("Erro ao contar leads:", err));
   }, [developments]);
 
   const filteredDevelopments = developments.filter((development) => {
@@ -271,7 +280,19 @@ export function DevelopmentsList({ developments, onEdit, onRefresh }: Developmen
                   <p className="line-clamp-3 text-sm text-muted-foreground">{development.description}</p>
                 ) : null}
 
-                <div className="flex justify-end gap-2 border-t pt-4">
+                <div className="flex flex-wrap items-center justify-end gap-2 border-t pt-4">
+                  {leadCounts[development.id] > 0 && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mr-auto gap-1.5"
+                      onClick={() => router.push(`/leads?developmentId=${development.id}`)}
+                      title="Ver as leads associadas a este empreendimento"
+                    >
+                      <Users className="h-4 w-4" />
+                      {leadCounts[development.id]} lead{leadCounts[development.id] === 1 ? "" : "s"}
+                    </Button>
+                  )}
                   <Button variant="outline" size="sm" onClick={() => onEdit(development)}>
                     <Edit className="mr-1 h-4 w-4" />
                     Editar

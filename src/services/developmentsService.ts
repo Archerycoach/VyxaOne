@@ -122,6 +122,31 @@ export async function getDevelopmentTypologies(developmentId: string): Promise<D
 }
 
 /** Tipologias de vários empreendimentos de uma vez (para a lista/cards). */
+/**
+ * Quantas leads estão associadas a cada empreendimento.
+ *
+ * Uma query só para todos os cartões, em vez de uma por empreendimento.
+ * O RLS garante que cada consultor só conta as leads que pode ver.
+ */
+export async function getLeadCountsByDevelopment(): Promise<Record<string, number>> {
+  const { data, error } = await untypedSupabase
+    .from("leads")
+    .select("development_id")
+    .not("development_id", "is", null)
+    .is("archived_at", null);
+
+  if (error) {
+    console.error("[developmentsService] Erro ao contar leads por empreendimento:", error);
+    return {};
+  }
+
+  const counts: Record<string, number> = {};
+  for (const row of (data ?? []) as Array<{ development_id: string }>) {
+    counts[row.development_id] = (counts[row.development_id] || 0) + 1;
+  }
+  return counts;
+}
+
 export async function getTypologiesByDevelopment(): Promise<Record<string, DevelopmentTypology[]>> {
   const { data, error } = await untypedSupabase
     .from("development_typologies")

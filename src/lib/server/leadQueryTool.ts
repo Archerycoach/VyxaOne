@@ -76,6 +76,14 @@ export interface LeadQueryResult {
   count?: number;
   groups?: Array<{ value: string; count: number }>;
   leads?: Array<Record<string, unknown>>;
+  /**
+   * Total de leads ativas na carteira, INDEPENDENTE dos filtros.
+   *
+   * Vai sempre no resultado porque o modelo confundia "0 resultados para
+   * este filtro" com "0 leads na base" — e chegava a dizer ao consultor que
+   * não tinha leads nenhumas quando tinha mais de mil.
+   */
+  totalLeadsInCrm?: number;
   /** Avisos (ex.: campos pedidos que foram ignorados). */
   notes?: string[];
 }
@@ -228,13 +236,28 @@ export async function executeLeadQuery(
 ): Promise<LeadQueryResult> {
   const description = describe(spec);
 
+  // Total real da carteira, sem filtros. Acompanha SEMPRE o resultado para o
+  // modelo não confundir "nenhum resultado para este filtro" com "não há
+  // leads na base".
+  let totalLeadsInCrm: number | undefined;
+  try {
+    const { count } = await supabase
+      .from("leads")
+      .select("id", { count: "exact", head: true })
+      .or(`assigned_to.eq.${userId},user_id.eq.${userId}`)
+      .is("archived_at", null);
+    totalLeadsInCrm = count ?? undefined;
+  } catch {
+    // Sem total é aceitável; o resultado dos filtros continua válido.
+  }
+
   try {
     if (spec.operation === "count") {
       let query = supabase.from("leads").select("id", { count: "exact", head: true });
       query = applyFilters(query, spec, userId);
       const { count, error } = await query;
       if (error) throw error;
-      return { operation: "count", description, count: count || 0 };
+      return { operation: "count", description, count: count || 0, totalLeadsInCrm };
     }
 
     if (spec.operation === "group") {
@@ -260,7 +283,7 @@ export async function executeLeadQuery(
           ? [`Contagem limitada às primeiras ${GROUP_SCAN_LIMIT} leads.`]
           : undefined;
 
-      return { operation: "group", description, groups, notes };
+      return { operation: "group", description, groups, notes, totalLeadsInCrm };
     }
 
     // list
@@ -273,12 +296,50 @@ export async function executeLeadQuery(
       .limit(spec.limit || 20);
     if (error) throw error;
 
-    return { operation: "list", description, leads: data || [], count: (data || []).length };
+    let rows = data || [];
+    let usedFallback = false;
+
+    // "Começa por" sem resultados: tentar "contém" antes de dizer que não há.
+    //
+    // Quem pede leads que "começam por (Mima)" está a pensar no nome como o vê
+    // — mas o nome pode ser "Mima - João Silva" ou "João (Mima)". Responder
+    // "não existe" quando existe é pior do que devolver resultados aproximados
+    // e dizer que foram encontrados por correspondência parcial.
+    if (rows.length === 0 && spec.nameStartsWith) {
+      const term = sanitizeSearchTerm(spec.nameStartsWith);
+      if (term) {
+        let fallbackQuery = supabase
+          .from("leads")
+          .select("id, name, email, phone, status, temperature, lead_type, budget, location_preference, property_type, typology, last_contact_date, created_at");
+        fallbackQuery = applyFilters(fallbackQuery, { ...spec, nameStartsWith: undefined }, userId);
+        const { data: fallbackData } = await fallbackQuery
+          .ilike("name", `%${term}%`)
+          .order("created_at", { ascending: false })
+          .limit(spec.limit || 20);
+
+        if (fallbackData && fallbackData.length > 0) {
+          rows = fallbackData;
+          usedFallback = true;
+        }
+      }
+    }
+
+    return {
+      operation: "list",
+      description,
+      leads: rows,
+      count: rows.length,
+      totalLeadsInCrm,
+      notes: usedFallback
+        ? [`Nenhum nome COMEÇA por "${spec.nameStartsWith}"; estes CONTÊM esse texto. Diz isso ao consultor.`]
+        : undefined,
+    };
   } catch (error: any) {
     console.error("[leadQueryTool] Falha na consulta:", error);
     return {
       operation: spec.operation,
       description,
+      totalLeadsInCrm,
       notes: ["A consulta à base de dados falhou. Não inventes números: diz que não foi possível consultar."],
     };
   }

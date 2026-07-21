@@ -242,6 +242,8 @@ export interface LeadsPageFilters {
   search?: string;
   /** "all" | "buyer" | "seller" */
   type?: string;
+  /** Só leads associadas a este empreendimento. */
+  developmentId?: string;
   /** Consultor selecionado no seletor de âmbito, ou "all". */
   scopeUserId?: string;
   showArchived?: boolean;
@@ -323,6 +325,10 @@ export const getLeadsPage = async (
 
   if (filters.type && filters.type !== "all") {
     query = query.in("lead_type", [filters.type, "both"]);
+  }
+
+  if (filters.developmentId) {
+    query = query.eq("development_id", filters.developmentId);
   }
 
   // Sem contacto há N dias: inclui quem nunca foi contactado.

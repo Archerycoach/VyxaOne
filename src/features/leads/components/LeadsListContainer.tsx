@@ -19,7 +19,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { LayoutGrid, List, Edit, MoreVertical, Eye, Mail, MessageSquare, MessageCircle, CalendarDays, StickyNote, UserCheck, Phone, Trash2, Users, ArrowDownAZ, ArrowUpZA, Download, Radar, Upload, Loader2 } from "lucide-react";
+import { LayoutGrid, List, Edit, MoreVertical, Eye, Mail, MessageSquare, MessageCircle, CalendarDays, StickyNote, UserCheck, Phone, Trash2, Users, ArrowDownAZ, ArrowUpZA, Download, Radar, Upload, Loader2, Building2 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -196,6 +196,25 @@ export function LeadsListContainer({
   const [qualFilters, setQualFilters] = useState<LeadQualificationFilters>(EMPTY_QUALIFICATION_FILTERS);
   const [importOpen, setImportOpen] = useState(false);
 
+  // Filtro por empreendimento, vindo do URL (?developmentId=...) quando se
+  // salta do cartão do empreendimento para as suas leads.
+  const [developmentFilter, setDevelopmentFilter] = useState<string | null>(null);
+  const [developmentName, setDevelopmentName] = useState<string>("");
+  useEffect(() => {
+    const id = router.query.developmentId;
+    if (typeof id !== "string") {
+      setDevelopmentFilter(null);
+      return;
+    }
+    setDevelopmentFilter(id);
+    supabase
+      .from("developments" as any)
+      .select("name")
+      .eq("id", id)
+      .maybeSingle()
+      .then(({ data }: any) => setDevelopmentName(data?.name || ""));
+  }, [router.query.developmentId]);
+
   const pageFilters = useMemo(() => {
     const days = notContactedDays !== "all" ? parseInt(notContactedDays, 10) : 0;
     const toNumber = (v: string) => {
@@ -207,6 +226,7 @@ export function LeadsListContainer({
       search: searchTerm.trim() || undefined,
       type: filterType,
       scopeUserId: scopeFilter,
+      developmentId: developmentFilter || undefined,
       showArchived,
       notContactedDays: Number.isFinite(days) ? days : 0,
       status: qualFilters.status,
@@ -227,7 +247,7 @@ export function LeadsListContainer({
     };
   }, [
     searchTerm, filterType, scopeFilter, showArchived, notContactedDays,
-    qualFilters, sortField, sortOrder,
+    qualFilters, sortField, sortOrder, developmentFilter,
   ]);
 
   const {
@@ -843,6 +863,28 @@ export function LeadsListContainer({
             <span className="text-xs text-green-600 font-medium uppercase tracking-wider mb-1">Ganhos</span>
             <span className="text-xl font-bold text-green-700">{stats.pipeline.won}</span>
           </div>
+        </div>
+      )}
+
+      {/* Filtro por empreendimento ativo — visível e removível, para não
+          parecer que a lista está incompleta. */}
+      {developmentFilter && (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-blue-300 bg-blue-50 px-4 py-2.5">
+          <span className="flex items-center gap-2 text-sm text-blue-900">
+            <Building2 className="h-4 w-4" />
+            A mostrar apenas leads do empreendimento{" "}
+            <strong>{developmentName || "selecionado"}</strong>
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              const { developmentId: _omit, ...rest } = router.query;
+              router.replace({ pathname: router.pathname, query: rest }, undefined, { shallow: true });
+            }}
+          >
+            Ver todas
+          </Button>
         </div>
       )}
 
