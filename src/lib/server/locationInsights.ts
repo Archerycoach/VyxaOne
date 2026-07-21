@@ -69,8 +69,12 @@ export async function geocodeAddress(address: string): Promise<GeoPoint | null> 
   if (!address || !address.trim()) return null;
 
   try {
+    // `countrycodes=pt` é essencial: sem ele, "Rua Serra do Arquitecto 15"
+    // pode ser resolvida para uma rua com nome parecido noutro país — ou,
+    // pior, noutra cidade do país, produzindo uma página de envolvente com
+    // escolas e transportes de uma localidade que não é a do imóvel.
     const url =
-      "https://nominatim.openstreetmap.org/search?format=json&limit=1&q=" +
+      "https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=pt&q=" +
       encodeURIComponent(address.trim());
 
     const response = await fetchWithTimeout(url, { headers: { "User-Agent": USER_AGENT } });

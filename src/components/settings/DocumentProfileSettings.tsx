@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Loader2, FileText } from "lucide-react";
+import { DocumentAssetUpload } from "./DocumentAssetUpload";
 
 /**
  * Textos das folhas de rosto e de fim dos documentos entregues ao cliente
@@ -42,11 +43,19 @@ interface DocumentProfileSettingsProps {
 export function DocumentProfileSettings({ profile, onProfileChange }: DocumentProfileSettingsProps) {
   const { toast } = useToast();
   const [saving, setSaving] = useState(false);
+  const [assets, setAssets] = useState({
+    document_cover_pdf_path: (profile?.document_cover_pdf_path as string) || null,
+    document_about_pdf_path: (profile?.document_about_pdf_path as string) || null,
+    document_closing_pdf_path: (profile?.document_closing_pdf_path as string) || null,
+    document_footer_image_path: (profile?.document_footer_image_path as string) || null,
+  });
   const [form, setForm] = useState({
     document_cover_title: profile?.document_cover_title || "",
     document_about_me: profile?.document_about_me || "",
     document_closing_text: profile?.document_closing_text || "",
     ami_license: profile?.ami_license || "",
+    document_brand_color: profile?.document_brand_color || "",
+    document_accent_color: profile?.document_accent_color || "",
   });
 
   const handleSave = async () => {
@@ -144,6 +153,110 @@ export function DocumentProfileSettings({ profile, onProfileChange }: DocumentPr
           Se deixares em branco, o documento é gerado sem essas páginas — nada é inventado
           automaticamente.
         </p>
+
+        {/* Cores do documento. Aplicam-se à faixa da capa, aos títulos de
+            secção e ao destaque do preço recomendado. */}
+        <div className="space-y-3 border-t pt-6">
+          <div>
+            <h4 className="font-medium">Cores do documento</h4>
+            <p className="text-xs text-muted-foreground">
+              Usa as cores da tua agência. Em branco, ficam as cores por omissão.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="doc-brand">Cor principal</Label>
+              <div className="flex items-center gap-2">
+                <input
+                  id="doc-brand"
+                  type="color"
+                  className="h-9 w-14 cursor-pointer rounded border"
+                  value={form.document_brand_color || "#1c2b33"}
+                  onChange={(e) => setForm({ ...form, document_brand_color: e.target.value })}
+                />
+                <Input
+                  value={form.document_brand_color || ""}
+                  onChange={(e) => setForm({ ...form, document_brand_color: e.target.value })}
+                  placeholder="#1c2b33"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">Faixa da capa e títulos.</p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="doc-accent">Cor de destaque</Label>
+              <div className="flex items-center gap-2">
+                <input
+                  id="doc-accent"
+                  type="color"
+                  className="h-9 w-14 cursor-pointer rounded border"
+                  value={form.document_accent_color || "#2563eb"}
+                  onChange={(e) => setForm({ ...form, document_accent_color: e.target.value })}
+                />
+                <Input
+                  value={form.document_accent_color || ""}
+                  onChange={(e) => setForm({ ...form, document_accent_color: e.target.value })}
+                  placeholder="#2563eb"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">Filetes e preço recomendado.</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Identidade visual própria. Gravam de imediato (não dependem do
+            botão Guardar), porque o carregamento já é a confirmação. */}
+        <div className="space-y-4 border-t pt-6">
+          <div>
+            <h4 className="font-medium">Ficheiros próprios</h4>
+            <p className="text-xs text-muted-foreground">
+              Se tens material gráfico da agência, usa-o. Substitui o que a aplicação desenha.
+            </p>
+          </div>
+
+          <DocumentAssetUpload
+            label="Capa (PDF)"
+            description="Substitui a capa gerada. Todas as páginas do PDF são usadas, pela ordem em que estão."
+            kind="pdf"
+            column="document_cover_pdf_path"
+            value={assets.document_cover_pdf_path}
+            onChange={(path) =>
+              setAssets((prev) => ({ ...prev, document_cover_pdf_path: path }))
+            }
+          />
+
+          <DocumentAssetUpload
+            label="Apresentação (PDF)"
+            description="Substitui a folha 'Quem eu sou'. Entra logo a seguir à capa."
+            kind="pdf"
+            column="document_about_pdf_path"
+            value={assets.document_about_pdf_path}
+            onChange={(path) =>
+              setAssets((prev) => ({ ...prev, document_about_pdf_path: path }))
+            }
+          />
+
+          <DocumentAssetUpload
+            label="Contracapa (PDF)"
+            description="Acrescentada no fim do documento, depois da mensagem de fecho."
+            kind="pdf"
+            column="document_closing_pdf_path"
+            value={assets.document_closing_pdf_path}
+            onChange={(path) =>
+              setAssets((prev) => ({ ...prev, document_closing_pdf_path: path }))
+            }
+          />
+
+          <DocumentAssetUpload
+            label="Faixa de rodapé (imagem)"
+            description="Repetida no fundo de todas as páginas de conteúdo. Use uma imagem larga e baixa (ex.: 1600×140 px)."
+            kind="image"
+            column="document_footer_image_path"
+            value={assets.document_footer_image_path}
+            onChange={(path) =>
+              setAssets((prev) => ({ ...prev, document_footer_image_path: path }))
+            }
+          />
+        </div>
 
         <Button onClick={handleSave} disabled={saving}>
           {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

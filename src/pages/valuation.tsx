@@ -14,13 +14,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Home, Sparkles, Loader2, Download, Send, TrendingUp, MapPin } from "lucide-react";
+import { Home, Sparkles, Loader2, Download, Send, TrendingUp, MapPin, ExternalLink } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { jsPDF } from "jspdf";
 import {
+  loadFooterImage, addFooterBand, mergeBrandingPages, saveMergedPdf, hasCustomCover, hasCustomAbout,
+  loadProfilePhoto,
+  type DocumentBranding,
+} from "@/lib/documentBranding";
+import {
   addCoverPage, addAboutPage, addClosingPage, addPageHeader, addPageNumbers,
-  addSectionTitle, addKeyValueTable, addValueEstimate, addComparableCard, addBodyText,
+  setDocumentTheme, addSectionTitle, addKeyValueTable, addValueEstimate, addComparableCard, addBodyText,
   addLocationMap, addPointsOfInterest, addNarrative,
   buildConsultantIdentity, type ConsultantIdentity,
 } from "@/lib/pdfDocument";
@@ -32,6 +37,7 @@ interface Comparable {
   area: number | null;
   price: number | null;
   pricePerSqm: number | null;
+  url?: string | null;
 }
 
 interface ValuationResult {
@@ -53,6 +59,9 @@ function formatCurrency(value: number | null): string {
   if (!value) return "—";
   return value.toLocaleString("pt-PT", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
 }
+
+/** Tipos de imóvel em que faz sentido perguntar a área do lote. */
+const LAND_AREA_TYPES = ["house", "land"];
 
 const PROPERTY_TYPE_PT: Record<string, string> = {
   apartment: "Apartamento",
@@ -89,20 +98,53 @@ export default function ValuationPage() {
     hasAirConditioning: false,
     hasPool: false,
     hasSeaView: false,
+    hasGarden: false,
+    hasSolarPanels: false,
+    hasHeatPump: false,
+    landArea: "",
   });
 
   // Perfil do consultor: alimenta a capa, o cabeçalho e a folha de fecho do PDF.
   const [consultant, setConsultant] = useState<ConsultantIdentity | null>(null);
+  // Capa/contracapa em PDF e faixa de rodapé, carregadas pelo consultor.
+  const [branding, setBranding] = useState<DocumentBranding>({});
   useEffect(() => {
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-      const { data: profile } = await supabase
+      // `select("*")` de proposito: listar colunas uma a uma fazia a consulta
+      // INTEIRA falhar quando uma delas ainda nao existia na base, e o
+      // documento saia com o nome e a licenca em branco sem qualquer aviso.
+      const { data: profile, error: profileError } = await supabase
         .from("profiles")
-        .select("full_name, email, phone, company_name, ami_license, document_cover_title, document_about_me, document_closing_text")
+        .select("*")
         .eq("id", user.id)
         .maybeSingle();
-      setConsultant(buildConsultantIdentity(profile, user.email));
+
+      if (profileError) {
+        console.error("[valuation] Perfil nao carregado:", profileError);
+        toast({
+          title: "Perfil nao carregado",
+          description: "O documento sai sem os teus dados. Verifica as Definicoes.",
+          variant: "destructive",
+        });
+      }
+
+      const photoDataUri = await loadProfilePhoto((profile as any)?.avatar_url);
+      setConsultant({
+        ...buildConsultantIdentity(profile, user.email),
+        photoDataUri,
+      });
+      setDocumentTheme({
+        brand: (profile as any)?.document_brand_color || null,
+        accent: (profile as any)?.document_accent_color || null,
+      });
+      setBranding({
+        coverPdfPath: (profile as any)?.document_cover_pdf_path || null,
+        aboutPdfPath: (profile as any)?.document_about_pdf_path || null,
+        closingPdfPath: (profile as any)?.document_closing_pdf_path || null,
+        footerImagePath: (profile as any)?.document_footer_image_path || null,
+      });
     })();
   }, []);
 
@@ -164,6 +206,10 @@ export default function ValuationPage() {
             hasAirConditioning: form.hasAirConditioning,
             hasPool: form.hasPool,
             hasSeaView: form.hasSeaView,
+            hasGarden: form.hasGarden,
+            hasSolarPanels: form.hasSolarPanels,
+            hasHeatPump: form.hasHeatPump,
+            landArea: form.landArea ? Number(form.landArea) : null,
           },
         }),
       });
@@ -177,7 +223,7 @@ export default function ValuationPage() {
     }
   };
 
-  const buildPdf = (): jsPDF | null => {
+  const buildPdf = (footerDataUri: string | null = null): jsPDF | null => {
     if (!result) return null;
     const doc = new jsPDF();
     const pageHeight = doc.internal.pageSize.getHeight();
@@ -185,13 +231,20 @@ export default function ValuationPage() {
     const identity: ConsultantIdentity =
       consultant || { name: "Consultor Imobiliário" };
 
-    // Capa + apresentação do consultor (esta só se ele a tiver escrito).
-    addCoverPage(doc, {
-      documentTitle: "Estudo Comparativo de Mercado",
-      subtitle: form.address,
-      consultant: identity,
-    });
-    addAboutPage(doc, identity);
+    // Capa: a do consultor tem prioridade. Quando existe PDF próprio, a capa
+    // gerada não é desenhada — seriam duas capas seguidas. A folha "Quem eu
+    // sou" mantém-se, porque é conteúdo e não identidade visual.
+    if (!hasCustomCover(branding)) {
+      addCoverPage(doc, {
+        documentTitle: "Estudo Comparativo de Mercado",
+        subtitle: form.address,
+        consultant: identity,
+      });
+    }
+    // A apresentação em PDF é inserida na fusão, não desenhada aqui.
+    if (!hasCustomAbout(branding)) {
+      addAboutPage(doc, identity);
+    }
 
     // --- Informações da propriedade ---
     doc.addPage();
@@ -206,6 +259,7 @@ export default function ValuationPage() {
       ["Quartos", form.bedrooms ? String(form.bedrooms) : null],
       ["Casas de banho", form.bathrooms ? String(form.bathrooms) : null],
       ["Área de construção", form.area ? `${form.area} m2` : null],
+      ["Área do lote", form.landArea ? `${form.landArea} m2` : null],
       ["Piso", form.floor != null && form.floor !== "" ? String(form.floor) : null],
       ["Ano de construção", form.yearBuilt ? String(form.yearBuilt) : null],
       ["Classe energética", form.energyRating],
@@ -223,6 +277,9 @@ export default function ValuationPage() {
       form.hasStorage ? "Arrecadação" : null,
       form.hasAirConditioning ? "Ar condicionado" : null,
       form.hasSeaView ? "Vista de mar" : null,
+      form.hasGarden ? "Jardim" : null,
+      form.hasSolarPanels ? "Painéis solares" : null,
+      form.hasHeatPump ? "Bomba de calor" : null,
     ].filter(Boolean) as string[];
 
     if (characteristics.length > 0) {
@@ -302,17 +359,28 @@ export default function ValuationPage() {
       return 46;
     });
 
-    // Folha de fecho (só se o consultor a tiver escrito) e numeração.
+    // Folha de fecho (só se o consultor a tiver escrito), faixa de rodapé e
+    // numeração. A faixa vai antes dos números para não os tapar.
     addClosingPage(doc, identity);
+    addFooterBand(doc, footerDataUri);
     addPageNumbers(doc);
 
     return doc;
   };
 
-  const handleExportPdf = () => {
-    const doc = buildPdf();
+  const handleExportPdf = async () => {
+    const footer = await loadFooterImage(branding.footerImagePath);
+    const doc = buildPdf(footer);
     if (!doc) return;
-    doc.save(`Avaliacao_${form.address.replace(/\s+/g, "_")}.pdf`);
+
+    // A fusão com a capa/contracapa é feita pelo pdf-lib: o jsPDF desenha
+    // páginas mas não sabe importar páginas de outro PDF.
+    const bytes = await mergeBrandingPages(doc, branding, {
+      title: "Estudo Comparativo de Mercado",
+      subtitle: form.address,
+      date: new Date().toLocaleDateString("pt-PT"),
+    });
+    saveMergedPdf(bytes, `Avaliacao_${form.address.replace(/\s+/g, "_")}.pdf`);
   };
 
   const handleSendByEmail = async () => {
@@ -320,12 +388,19 @@ export default function ValuationPage() {
       toast({ title: "Sem lead ligada com email", variant: "destructive" });
       return;
     }
-    const doc = buildPdf();
-    if (!doc) return;
-
     setSendingEmail(true);
     try {
-      const base64Content = doc.output("datauristring").split(",").pop() || "";
+      const footer = await loadFooterImage(branding.footerImagePath);
+      const doc = buildPdf(footer);
+      if (!doc) return;
+
+      // O email leva exatamente o mesmo documento que a exportação.
+      const merged = await mergeBrandingPages(doc, branding, {
+        title: "Estudo Comparativo de Mercado",
+        subtitle: form.address,
+        date: new Date().toLocaleDateString("pt-PT"),
+      });
+      const base64Content = Buffer.from(merged).toString("base64");
       const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch("/api/smtp/send", {
         method: "POST",
@@ -392,6 +467,22 @@ export default function ValuationPage() {
                 <Label>Área (m²)</Label>
                 <Input type="number" value={form.area} onChange={(e) => setForm({ ...form, area: e.target.value })} placeholder="Ex: 90" />
               </div>
+              {/* O lote só se pergunta onde existe. Num apartamento o campo
+                  seria ruído; numa moradia é dos fatores que mais pesa. */}
+              {LAND_AREA_TYPES.includes(form.propertyType) && (
+                <div className="space-y-2">
+                  <Label>Área do lote (m²)</Label>
+                  <Input
+                    type="number"
+                    value={form.landArea}
+                    onChange={(e) => setForm({ ...form, landArea: e.target.value })}
+                    placeholder="Ex: 450"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Terreno total da propriedade, incluindo a área de implantação.
+                  </p>
+                </div>
+              )}
               <div className="space-y-2">
                 <Label>Tipologia (quartos)</Label>
                 <Input type="number" value={form.bedrooms} onChange={(e) => setForm({ ...form, bedrooms: e.target.value })} placeholder="Ex: 2" />
@@ -433,6 +524,9 @@ export default function ValuationPage() {
                     ["hasAirConditioning", "Ar condicionado"],
                     ["hasPool", "Piscina"],
                     ["hasSeaView", "Vista mar"],
+                    ["hasGarden", "Jardim"],
+                    ["hasSolarPanels", "Painéis solares"],
+                    ["hasHeatPump", "Bomba de calor"],
                   ] as const).map(([key, label]) => (
                     <label key={key} className="flex items-center gap-2 rounded-md border p-2 text-sm cursor-pointer hover:bg-muted/50">
                       <input
@@ -518,9 +612,25 @@ export default function ValuationPage() {
                             <MapPin className="h-3 w-3 shrink-0 text-gray-400" /> {c.address}
                           </p>
                         </div>
-                        <div className="text-right shrink-0">
-                          <p className="font-semibold text-sm">{formatCurrency(c.price)}</p>
-                          <p className="text-xs text-gray-500">{c.area ? `${c.area} m²` : ""}{c.pricePerSqm ? ` · ${Math.round(c.pricePerSqm)}€/m²` : ""}</p>
+                        <div className="flex items-center gap-3 shrink-0">
+                          <div className="text-right">
+                            <p className="font-semibold text-sm">{formatCurrency(c.price)}</p>
+                            <p className="text-xs text-gray-500">{c.area ? `${c.area} m²` : ""}{c.pricePerSqm ? ` · ${Math.round(c.pricePerSqm)}€/m²` : ""}</p>
+                          </div>
+                          {/* Link para abrir o anúncio. Só existe nesta vista de
+                              trabalho do consultor — NÃO é escrito no PDF, que
+                              vai para o cliente. */}
+                          {c.url && (
+                            <a
+                              href={c.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              title="Abrir anúncio no Idealista"
+                              className="text-blue-600 hover:text-blue-800"
+                            >
+                              <ExternalLink className="h-4 w-4" />
+                            </a>
+                          )}
                         </div>
                       </div>
                     ))

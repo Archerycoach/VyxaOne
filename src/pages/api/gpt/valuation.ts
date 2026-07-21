@@ -84,6 +84,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         area: p.size || null,
         price: p.price || null,
         pricePerSqm: p.priceByArea || (p.size && p.price ? p.price / p.size : null),
+        url: p.url || (p.propertyCode ? `https://www.idealista.pt/imovel/${p.propertyCode}/` : null),
       }));
     } catch (idealistaError) {
       console.error("[Valuation] Idealista indisponível (não bloqueante):", idealistaError);
@@ -145,7 +146,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     let locationInsights = null;
     try {
       const geoapifyKey = await getGeoapifyKey();
-      locationInsights = await getLocationInsights(address, geoapifyKey);
+      // A cidade entra na consulta: sem ela, "Rua Serra do Arquitecto 15"
+      // resolveu para o Porto num imóvel em Mafra, e a página da envolvente
+      // saiu com pontos de interesse da cidade errada.
+      const geoQuery = [address, city, "Portugal"].filter(Boolean).join(", ");
+      locationInsights = await getLocationInsights(geoQuery, geoapifyKey);
     } catch (insightsError) {
       console.warn("[Valuation] Envolvente indisponível:", insightsError);
     }

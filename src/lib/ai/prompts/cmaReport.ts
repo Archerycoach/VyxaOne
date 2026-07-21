@@ -10,6 +10,12 @@ interface ComparableSummary {
   energyRating?: string | null;
   yearBuilt?: number | null;
   floor?: number | null;
+  /**
+   * Link do anúncio. Serve para o consultor abrir o comparável na aplicação —
+   * NUNCA vai para o PDF (é um documento entregue ao cliente, e a fonte dos
+   * comparáveis não deve lá constar).
+   */
+  url?: string | null;
 }
 
 /**
@@ -33,6 +39,9 @@ export interface PropertyValueFactors {
   hasStorage?: boolean | null;
   hasAirConditioning?: boolean | null;
   hasSeaView?: boolean | null;
+  /** Equipamento de eficiência energética — cada vez mais valorizado. */
+  hasSolarPanels?: boolean | null;
+  hasHeatPump?: boolean | null;
   floor?: number | null;
   totalFloors?: number | null;
   energyRating?: string | null;
@@ -82,6 +91,8 @@ export function describeValueFactors(factors?: PropertyValueFactors): string {
   yes("arrecadação", factors.hasStorage);
   yes("ar condicionado", factors.hasAirConditioning);
   yes("vista mar", factors.hasSeaView);
+  yes("painéis solares", factors.hasSolarPanels);
+  yes("bomba de calor", factors.hasHeatPump);
 
   if (factors.floor !== null && factors.floor !== undefined) {
     parts.push(
@@ -152,7 +163,7 @@ SECÇÕES:
 1. Um parágrafo de abertura (máximo 3 frases) a contextualizar o mercado na zona.
 2. "Análise de Comparáveis" — EM LISTA. Explica o que os comparáveis mostram, distinguindo o peso de imóveis VENDIDOS (preço real) vs ATIVOS (preço pedido, pode estar inflacionado). Sempre que um comparável tenha características diferentes das do imóvel (elevador, garagem, varanda, andar, classe energética), REFERE essa diferença ao comparar preços — é o que explica desvios de €/m² entre imóveis semelhantes em área.
 3. "Fatores de Valorização" — EM LISTA, separando o que valoriza do que desvaloriza. Como as características influenciam o valor face aos comparáveis:
-   - VALORIZAM: elevador, garagem/estacionamento, varanda/terraço, arrecadação, boa classe energética (A/B), andar alto com vista, construção recente.
+   - VALORIZAM: elevador, garagem/estacionamento, varanda/terraço, jardim, arrecadação, boa classe energética (A/B), painéis solares e bomba de calor (reduzem a fatura energética e são procurados), andar alto com vista, construção recente. Numa MORADIA, a área do lote é dos fatores que mais pesa — se estiver indicada, comenta a relação entre área de construção e terreno.
    - DESVALORIZAM: ausência de elevador em andares altos, rés-do-chão sem exterior, classe energética fraca (E/F), necessidade de obras.
    - Sê concreto e honesto: se o imóvel tem pontos fracos, di-lo — o proprietário vai confrontar-se com eles na negociação, e um relatório que os omite perde credibilidade.
    - Se as características não foram indicadas, diz que a avaliação ganharia precisão com esses dados. NUNCA assumas que existem.

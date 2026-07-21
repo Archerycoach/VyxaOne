@@ -21,11 +21,39 @@ export interface ConsultantIdentity {
   coverTitle?: string | null;
   aboutMe?: string | null;
   closingText?: string | null;
+  /** Foto de perfil em data URI, para a folha de apresentação. */
+  photoDataUri?: string | null;
 }
 
-const BRAND = { r: 28, g: 43, b: 51 };
-const ACCENT = { r: 37, g: 99, b: 235 };
+/**
+ * Cores do documento. São `let` e não `const` porque o consultor pode
+ * escolhê-las nas Definições — `setDocumentTheme` é chamado antes de gerar.
+ * Os valores aqui são o que se usa quando ele não escolheu nada.
+ */
+const DEFAULT_BRAND = { r: 28, g: 43, b: 51 };
+const DEFAULT_ACCENT = { r: 37, g: 99, b: 235 };
+
+let BRAND = { ...DEFAULT_BRAND };
+let ACCENT = { ...DEFAULT_ACCENT };
 const MUTED = { r: 107, g: 114, b: 128 };
+
+/** "#1c2b33" → {r,g,b}. Devolve null se não for um hex válido. */
+function hexToRgb(hex: string | null | undefined): { r: number; g: number; b: number } | null {
+  if (!hex) return null;
+  const match = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!match) return null;
+  const value = parseInt(match[1], 16);
+  return { r: (value >> 16) & 255, g: (value >> 8) & 255, b: value & 255 };
+}
+
+/**
+ * Define as cores do documento. Chamar ANTES de desenhar seja o que for —
+ * as funções de desenho leem estas variáveis no momento em que correm.
+ */
+export function setDocumentTheme(theme: { brand?: string | null; accent?: string | null }): void {
+  BRAND = hexToRgb(theme.brand) || { ...DEFAULT_BRAND };
+  ACCENT = hexToRgb(theme.accent) || { ...DEFAULT_ACCENT };
+}
 
 const MARGIN = 18;
 
@@ -57,18 +85,24 @@ export function addCoverPage(
   doc.setFont("helvetica", "bold");
   doc.setFontSize(26);
 
+  // Título e morada centrados — é o que se espera numa capa, e é a mesma
+  // composição usada quando o consultor carrega uma capa própria.
+  const centerX = pageWidth / 2;
   const titleLines = doc.splitTextToSize(documentTitle.toUpperCase(), pageWidth - MARGIN * 2);
-  doc.text(titleLines, MARGIN, 45);
+  doc.text(titleLines, centerX, 42, { align: "center" });
+
+  let cursor = 42 + titleLines.length * 11 + 4;
 
   if (subtitle) {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(12);
     const subLines = doc.splitTextToSize(subtitle, pageWidth - MARGIN * 2);
-    doc.text(subLines, MARGIN, 45 + titleLines.length * 11 + 4);
+    doc.text(subLines, centerX, cursor, { align: "center" });
+    cursor += subLines.length * 6 + 2;
   }
 
   doc.setFontSize(10);
-  doc.text(formatToday(), MARGIN, 78);
+  doc.text(formatToday(), centerX, Math.min(cursor + 4, 80), { align: "center" });
 
   // Identificação do consultor, em baixo
   let y = pageHeight - 62;
@@ -117,6 +151,27 @@ export function addAboutPage(doc: jsPDF, consultant: ConsultantIdentity): void {
   const pageWidth = doc.internal.pageSize.getWidth();
   let y = 52;
 
+  // Foto de perfil à direita do nome. O texto recua para não lhe passar por
+  // baixo; sem foto, ocupa a largura toda como antes.
+  const photoSize = 32;
+  let textWidth = pageWidth - MARGIN * 2;
+
+  if (consultant.photoDataUri) {
+    try {
+      doc.addImage(
+        consultant.photoDataUri,
+        "JPEG",
+        pageWidth - MARGIN - photoSize,
+        y - 10,
+        photoSize,
+        photoSize
+      );
+      textWidth = pageWidth - MARGIN * 2 - photoSize - 8;
+    } catch {
+      // Foto ilegível: a página sai sem ela.
+    }
+  }
+
   doc.setTextColor(BRAND.r, BRAND.g, BRAND.b);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(16);
@@ -128,6 +183,25 @@ export function addAboutPage(doc: jsPDF, consultant: ConsultantIdentity): void {
     doc.setFontSize(10);
     doc.setTextColor(ACCENT.r, ACCENT.g, ACCENT.b);
     doc.text(consultant.coverTitle, MARGIN, y);
+    y += 6;
+  }
+
+  // Contactos e AMI: informacao que o cliente procura e que nao aparecia em
+  // lado nenhum do documento.
+  const identityLine = [
+    consultant.companyName,
+    consultant.amiLicense ? `AMI ${consultant.amiLicense}` : null,
+    consultant.phone,
+    consultant.email,
+  ]
+    .filter(Boolean)
+    .join("  ·  ");
+
+  if (identityLine) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(MUTED.r, MUTED.g, MUTED.b);
+    doc.text(identityLine, MARGIN, y, { maxWidth: textWidth });
     y += 10;
   } else {
     y += 4;
@@ -139,7 +213,10 @@ export function addAboutPage(doc: jsPDF, consultant: ConsultantIdentity): void {
 
   // Respeita os parágrafos escritos pelo consultor.
   for (const paragraph of consultant.aboutMe.split(/\n\s*\n/)) {
-    const lines = doc.splitTextToSize(paragraph.trim(), pageWidth - MARGIN * 2);
+    // A largura reduzida so vale enquanto o texto corre ao lado da foto;
+    // abaixo dela volta a ocupar a pagina toda.
+    const usableWidth = y < 74 ? textWidth : pageWidth - MARGIN * 2;
+    const lines = doc.splitTextToSize(paragraph.trim(), usableWidth);
     for (const line of lines) {
       if (y > doc.internal.pageSize.getHeight() - 30) {
         doc.addPage();
@@ -263,6 +340,7 @@ export function buildConsultantIdentity(profile: any, fallbackEmail?: string): C
     coverTitle: profile?.document_cover_title || null,
     aboutMe: profile?.document_about_me || null,
     closingText: profile?.document_closing_text || null,
+    photoDataUri: profile?.photoDataUri || null,
   };
 }
 
