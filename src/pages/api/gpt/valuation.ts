@@ -6,6 +6,13 @@ import { searchIdealistaProperties, leadToIdealistaParams } from "@/services/ide
 import { getIdealistaCredentials } from "@/lib/server/idealistaCredentials";
 import { getLocationInsights } from "@/lib/server/locationInsights";
 import { getGeoapifyKey } from "@/lib/server/geoapifyCredentials";
+import {
+  inferCondition,
+  subjectCondition,
+  conditionsAreComparable,
+  conditionLabel,
+  removePriceOutliers,
+} from "@/lib/server/comparableFilters";
 
 interface ComparableSummary {
   source: string;
@@ -64,6 +71,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // 2. Comparáveis do Idealista (só ativos — a API não devolve vendidos).
     let idealistaComparables: ComparableSummary[] = [];
+    let excludedByCondition = 0;
     try {
       const credentials = await getIdealistaCredentials();
       const pseudoLead = {
@@ -77,27 +85,110 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const params = leadToIdealistaParams(pseudoLead);
       const results = await searchIdealistaProperties({ ...params, maxItems: 15 }, credentials, user.id);
 
-      idealistaComparables = results.map((p) => ({
-        source: "Idealista",
-        status: "active",
-        address: p.address || `${p.neighborhood || p.municipality || ""}`,
-        area: p.size || null,
-        price: p.price || null,
-        pricePerSqm: p.priceByArea || (p.size && p.price ? p.price / p.size : null),
-        url: p.url || (p.propertyCode ? `https://www.idealista.pt/imovel/${p.propertyCode}/` : null),
-      }));
+      // O estado de conservação do imóvel a avaliar decide que comparáveis
+      // servem: uma moradia habitável não se compara com ruínas, que é o que
+      // arrastava o valor recomendado para valores irrealistas.
+      const subjectState = subjectCondition(condition);
+
+      idealistaComparables = results
+        .map((p) => {
+          const candidateCondition = inferCondition({
+            status: p.status,
+            description: p.description,
+            newDevelopment: p.newDevelopment,
+          });
+          return {
+            source: "Idealista",
+            status: "active" as const,
+            address: p.address || `${p.neighborhood || p.municipality || ""}`,
+            area: p.size || null,
+            price: p.price || null,
+            pricePerSqm: p.priceByArea || (p.size && p.price ? p.price / p.size : null),
+            url: p.url || (p.propertyCode ? `https://www.idealista.pt/imovel/${p.propertyCode}/` : null),
+            condition: candidateCondition,
+            conditionLabel: conditionLabel(candidateCondition),
+          };
+        })
+        .filter((c) => conditionsAreComparable(subjectState, c.condition));
+
+      excludedByCondition = results.length - idealistaComparables.length;
     } catch (idealistaError) {
       console.error("[Valuation] Idealista indisponível (não bloqueante):", idealistaError);
     }
 
-    const comparables = [...internalComparables, ...idealistaComparables].filter((c) => c.pricePerSqm);
+    // 2b. Referência de €/m² da ZONA.
+    //
+    // Diferente dos comparáveis: não filtra por área nem tipologia, olha para
+    // a oferta da zona em geral. Serve de segunda âncora — um imóvel pode ter
+    // poucos comparáveis diretos e ainda assim inserir-se num mercado com
+    // valor por metro quadrado conhecido.
+    let zonePricePerSqm: number | null = null;
+    let zoneSampleSize = 0;
+    try {
+      const credentials = await getIdealistaCredentials();
+      const zoneParams = leadToIdealistaParams({
+        lead_type: "buyer",
+        property_type: propertyType,
+        location_preference: city || address,
+      });
+      const zoneResults = await searchIdealistaProperties(
+        { ...zoneParams, maxItems: 40 },
+        credentials,
+        user.id
+      );
+
+      const zoneValues = zoneResults
+        .map((p) => p.priceByArea || (p.size && p.price ? p.price / p.size : null))
+        .filter((value): value is number => typeof value === "number" && value > 0);
+
+      if (zoneValues.length >= 5) {
+        // Mediana e não média: a oferta de uma zona inclui sempre ruínas e
+        // imóveis de exceção, e a mediana não se deixa arrastar por eles.
+        const sorted = [...zoneValues].sort((a, b) => a - b);
+        const middle = Math.floor(sorted.length / 2);
+        zonePricePerSqm =
+          sorted.length % 2 === 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle];
+        zoneSampleSize = zoneValues.length;
+      }
+    } catch (zoneError) {
+      console.warn("[Valuation] Referência de zona indisponível:", zoneError);
+    }
+
+    const allComparables = [...internalComparables, ...idealistaComparables].filter((c) => c.pricePerSqm);
+
+    // Segunda defesa: nem toda a ruína se identifica como tal no anúncio. Um
+    // €/m² muito fora da mediana denuncia o que a leitura do estado deixou
+    // passar.
+    const { kept: comparables, removed: outliers } = removePriceOutliers(allComparables);
+
+    if (excludedByCondition > 0 || outliers.length > 0) {
+      console.log(
+        `[Valuation] Comparáveis descartados: ${excludedByCondition} por estado, ${outliers.length} por preço fora do padrão.`
+      );
+    }
 
     const soldAvgPricePerSqm = average(comparables.filter((c) => c.status === "sold").map((c) => c.pricePerSqm!));
     const activeAvgPricePerSqm = average(comparables.filter((c) => c.status === "active").map((c) => c.pricePerSqm!));
 
     // O valor sugerido prioriza vendidos (preço real) sobre ativos (preço
     // pedido, tipicamente otimista); só usa ativos se não houver vendidos.
-    const referencePricePerSqm = soldAvgPricePerSqm || activeAvgPricePerSqm;
+    const comparablesPricePerSqm = soldAvgPricePerSqm || activeAvgPricePerSqm;
+
+    // A referência da zona entra COM os comparáveis, não em vez deles.
+    //
+    // Os comparáveis são mais específicos (mesma área, mesma tipologia) e por
+    // isso pesam mais; a zona é uma âncora mais larga que evita que uma
+    // amostra pequena ou enviesada de comparáveis decida sozinha o valor.
+    const COMPARABLES_WEIGHT = 0.7;
+    let referencePricePerSqm: number | null = null;
+
+    if (comparablesPricePerSqm && zonePricePerSqm) {
+      referencePricePerSqm =
+        comparablesPricePerSqm * COMPARABLES_WEIGHT + zonePricePerSqm * (1 - COMPARABLES_WEIGHT);
+    } else {
+      referencePricePerSqm = comparablesPricePerSqm || zonePricePerSqm;
+    }
+
     let suggestedMin: number | null = null;
     let suggestedMax: number | null = null;
     if (referencePricePerSqm && area) {
@@ -122,6 +213,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         // dados a avaliação atribuía diferenças de preço a "variação de
         // mercado" em vez de as explicar.
         factors: factors || undefined,
+        zonePricePerSqm,
+        zoneSampleSize,
         comparables: comparables.slice(0, 12),
         soldAvgPricePerSqm,
         activeAvgPricePerSqm,
@@ -163,6 +256,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       suggestedMax,
       narrative,
       locationInsights,
+      zonePricePerSqm,
+      zoneSampleSize,
     });
   } catch (error: any) {
     console.error("[Valuation] Erro:", error);

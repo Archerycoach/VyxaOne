@@ -38,6 +38,7 @@ interface Comparable {
   price: number | null;
   pricePerSqm: number | null;
   url?: string | null;
+  conditionLabel?: string | null;
 }
 
 interface ValuationResult {
@@ -45,6 +46,8 @@ interface ValuationResult {
   soldAvgPricePerSqm: number | null;
   activeAvgPricePerSqm: number | null;
   suggestedMin: number | null;
+  zonePricePerSqm?: number | null;
+  zoneSampleSize?: number | null;
   suggestedMax: number | null;
   narrative: string;
 }
@@ -304,6 +307,18 @@ export default function ValuationPage() {
       y
     );
 
+    // Âncora de mercado: mostra ao proprietário contra que referência o valor
+    // foi aferido, além dos comparáveis listados a seguir.
+    if (result.zonePricePerSqm) {
+      y = addBodyText(
+        doc,
+        `Referência de mercado na zona: ${Math.round(result.zonePricePerSqm).toLocaleString("pt-PT")} €/m² ` +
+          `(valor mediano de ${result.zoneSampleSize} imóveis à venda na zona). ` +
+          `A avaliação cruza esta referência com os comparáveis diretos e as características do imóvel.`,
+        y + 2
+      );
+    }
+
     // --- Envolvente (mapa + pontos de interesse) ---
     // Só existe se as fontes externas responderam; caso contrário o documento
     // segue sem esta página, sem qualquer aviso ao cliente.
@@ -341,6 +356,7 @@ export default function ValuationPage() {
         energyRating: c.energyRating,
         yearBuilt: c.yearBuilt,
         daysOnMarket: c.daysOnMarket,
+        conditionLabel: c.conditionLabel,
         distanceKm: c.distanceKm,
         features: c.features,
       }, y);

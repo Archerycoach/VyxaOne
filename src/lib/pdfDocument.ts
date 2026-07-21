@@ -483,6 +483,7 @@ export interface ComparableCard {
   yearBuilt?: number | null;
   daysOnMarket?: number | null;
   distanceKm?: number | null;
+  conditionLabel?: string | null;
   features?: string[];
 }
 
@@ -501,6 +502,9 @@ export function addComparableCard(doc: jsPDF, comparable: ComparableCard, y: num
   if (comparable.daysOnMarket != null) attributes.push(`${comparable.daysOnMarket} dias no mercado`);
   if (comparable.distanceKm != null) attributes.push(`${comparable.distanceKm.toFixed(2)} km`);
   if (comparable.energyRating) attributes.push(`Energia: ${comparable.energyRating}`);
+  // O estado do comparável explica desvios de €/m² que de outra forma pareceriam
+  // arbitrários a quem lê o documento.
+  if (comparable.conditionLabel) attributes.push(comparable.conditionLabel);
 
   const featuresText = (comparable.features || []).filter(Boolean).join(", ");
 

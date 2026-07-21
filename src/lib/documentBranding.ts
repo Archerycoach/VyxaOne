@@ -71,19 +71,60 @@ export function addFooterBand(doc: jsPDF, footerDataUri: string | null): void {
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
 
-  // Faixa colada ao fundo, a toda a largura. A altura é fixa e modesta para
-  // não invadir o conteúdo — quem carrega a imagem controla a proporção.
-  const bandHeight = 14;
+  // A altura deriva das proporções REAIS da imagem. Forçar uma altura fixa
+  // esmagava a faixa: uma imagem quadrada espremida para 14 mm de altura a
+  // toda a largura fica irreconhecível.
+  let bandHeight: number;
+  try {
+    const properties = (doc as any).getImageProperties(footerDataUri);
+    const ratio = properties.height / properties.width;
+    bandHeight = pageWidth * ratio;
+  } catch {
+    // Sem forma de medir, um valor discreto é mais seguro do que deformar.
+    bandHeight = 12;
+  }
+
+  // Um rodapé alto de mais comeria o conteúdo. Acima do limite, a imagem é
+  // centrada e recortada à largura em vez de ser espremida na vertical.
+  const MAX_BAND_HEIGHT = 28;
+  let drawWidth = pageWidth;
+  let drawX = 0;
+
+  if (bandHeight > MAX_BAND_HEIGHT) {
+    drawWidth = pageWidth * (MAX_BAND_HEIGHT / bandHeight);
+    drawX = (pageWidth - drawWidth) / 2;
+    bandHeight = MAX_BAND_HEIGHT;
+  }
+
   const total = doc.getNumberOfPages();
 
   for (let page = 1; page <= total; page++) {
     doc.setPage(page);
     try {
-      doc.addImage(footerDataUri, "PNG", 0, pageHeight - bandHeight, pageWidth, bandHeight);
+      doc.addImage(
+        footerDataUri,
+        "PNG",
+        drawX,
+        pageHeight - bandHeight,
+        drawWidth,
+        bandHeight
+      );
     } catch {
       // Formato não suportado — o documento sai sem faixa, não parte.
       return;
     }
+  }
+}
+
+/** Altura ocupada pela faixa, para o conteúdo não lhe passar por cima. */
+export function footerBandHeight(doc: jsPDF, footerDataUri: string | null): number {
+  if (!footerDataUri) return 0;
+  try {
+    const properties = (doc as any).getImageProperties(footerDataUri);
+    const pageWidth = doc.internal.pageSize.getWidth();
+    return Math.min(pageWidth * (properties.height / properties.width), 28);
+  } catch {
+    return 12;
   }
 }
 

@@ -16,6 +16,8 @@ interface ComparableSummary {
    * comparáveis não deve lá constar).
    */
   url?: string | null;
+  /** Estado de conservação lido do anúncio. */
+  conditionLabel?: string | null;
 }
 
 /**
@@ -61,6 +63,9 @@ interface CmaReportContext {
   condition: string | null;
   factors?: PropertyValueFactors;
   comparables: ComparableSummary[];
+  /** Mediana de €/m² da oferta na zona, independente dos comparáveis. */
+  zonePricePerSqm?: number | null;
+  zoneSampleSize?: number | null;
   soldAvgPricePerSqm: number | null;
   activeAvgPricePerSqm: number | null;
   suggestedMin: number | null;
@@ -128,7 +133,7 @@ export function describeValueFactors(factors?: PropertyValueFactors): string {
  */
 export function getCmaReportPrompt(context: CmaReportContext): string {
   const comparablesList = context.comparables
-    .map((c) => `- [${c.status === "sold" ? "VENDIDO" : "ATIVO"}, ${c.source}] ${c.address} — ${c.area ? `${c.area} m²` : "área desconhecida"}, ${c.price ? `${c.price.toLocaleString("pt-PT")}€` : "preço desconhecido"}${c.pricePerSqm ? ` (${Math.round(c.pricePerSqm)}€/m²)` : ""}`)
+    .map((c) => `- [${c.status === "sold" ? "VENDIDO" : "ATIVO"}, ${c.source}] ${c.address} — ${c.area ? `${c.area} m²` : "área desconhecida"}, ${c.price ? `${c.price.toLocaleString("pt-PT")}€` : "preço desconhecido"}${c.pricePerSqm ? ` (${Math.round(c.pricePerSqm)}€/m²)` : ""}${c.conditionLabel ? ` — ${c.conditionLabel}` : ""}`)
     .join("\n");
 
   return `És ${context.consultantName}, um consultor imobiliário a preparar uma Avaliação Comparativa de Mercado (CMA) para apresentar ao proprietário de um imóvel, como parte da angariação.
@@ -146,6 +151,7 @@ ${comparablesList || "Nenhum comparável direto encontrado na zona."}
 
 DADOS JÁ CALCULADOS (usa estes valores exatamente, não inventes outros):
 - Preço médio/m² de imóveis VENDIDOS na zona: ${context.soldAvgPricePerSqm ? `${Math.round(context.soldAvgPricePerSqm)}€/m²` : "sem dados suficientes"}
+- Valor de referência da ZONA: ${context.zonePricePerSqm ? `${Math.round(context.zonePricePerSqm)}€/m² (mediana de ${context.zoneSampleSize} imóveis à venda na zona, independentemente de área ou tipologia)` : "sem dados suficientes"}
 - Preço médio/m² de imóveis ATIVOS (à venda) na zona: ${context.activeAvgPricePerSqm ? `${Math.round(context.activeAvgPricePerSqm)}€/m²` : "sem dados suficientes"}
 - Intervalo de valor sugerido: ${context.suggestedMin && context.suggestedMax ? `${context.suggestedMin.toLocaleString("pt-PT")}€ — ${context.suggestedMax.toLocaleString("pt-PT")}€` : "sem dados suficientes para sugerir"}
 
@@ -167,7 +173,7 @@ SECÇÕES:
    - DESVALORIZAM: ausência de elevador em andares altos, rés-do-chão sem exterior, classe energética fraca (E/F), necessidade de obras.
    - Sê concreto e honesto: se o imóvel tem pontos fracos, di-lo — o proprietário vai confrontar-se com eles na negociação, e um relatório que os omite perde credibilidade.
    - Se as características não foram indicadas, diz que a avaliação ganharia precisão com esses dados. NUNCA assumas que existem.
-4. "Valor Recomendado" — apresenta o intervalo sugerido (os números já calculados acima, não os alteres) e justifica-o com base na análise dos comparáveis E dos fatores de valorização.
+4. "Valor Recomendado" — apresenta o intervalo sugerido (os números já calculados acima, não os alteres) e justifica-o com base em TRÊS pilares: os comparáveis diretos, o valor de referência da ZONA (€/m² mediano) e os fatores de valorização. Se o €/m² do imóvel se afastar do valor da zona, EXPLICA porquê — é isso que dá credibilidade à avaliação.
 5. Um parágrafo final (máximo 3 frases), profissional e transparente, que reforça a recomendação sem soar a argumento de venda agressivo.
 
 Responde EXCLUSIVAMENTE com o código HTML final do relatório.`;
