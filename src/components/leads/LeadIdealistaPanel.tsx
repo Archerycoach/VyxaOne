@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Bot, ExternalLink, Home, Loader2, MapPin, Bed, Maximize, Euro, StickyNote } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -39,6 +41,11 @@ export function LeadIdealistaPanel({ lead }: LeadIdealistaPanelProps) {
       : null,
   ].filter(Boolean) as Array<{ label: string; value: string }>;
 
+  // Filtro de agência opcional. Aceita nome parcial porque há muitas agências
+  // da mesma rede ("Remax Lisboa", "Remax Oeiras") e a ideia é apanhá-las com
+  // um termo só.
+  const [agencyName, setAgencyName] = useState("");
+
   const handleSearch = async () => {
     setLoading(true);
 
@@ -51,7 +58,12 @@ export function LeadIdealistaPanel({ lead }: LeadIdealistaPanelProps) {
         throw new Error("Não autenticado");
       }
 
-      const response = await fetch(`/api/idealista/search-for-lead?leadId=${encodeURIComponent(lead.id)}`, {
+      const query = new URLSearchParams({ leadId: lead.id });
+      if (agencyName.trim()) {
+        query.set("agencyName", agencyName.trim());
+      }
+
+      const response = await fetch(`/api/idealista/search-for-lead?${query.toString()}`, {
         method: "GET",
         headers: {
           Authorization: `Bearer ${session.access_token}`,
@@ -72,7 +84,9 @@ export function LeadIdealistaPanel({ lead }: LeadIdealistaPanelProps) {
         description:
           nextProperties.length > 0
             ? `Foram encontrados ${nextProperties.length} imóveis adaptados a esta lead.`
-            : "Não foram encontrados imóveis com este perfil no Idealista.",
+            : agencyName.trim()
+              ? `Não foram encontrados imóveis desta agência ("${agencyName.trim()}") com este perfil.`
+              : "Não foram encontrados imóveis com este perfil no Idealista.",
       });
     } catch (error: any) {
       toast({
@@ -161,6 +175,20 @@ export function LeadIdealistaPanel({ lead }: LeadIdealistaPanelProps) {
               Esta lead ainda tem poucos critérios. A pesquisa pode ficar demasiado ampla.
             </p>
           )}
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="idealista-agency" className="text-xs text-muted-foreground">
+            Filtrar por agência (opcional)
+          </Label>
+          <Input
+            id="idealista-agency"
+            value={agencyName}
+            onChange={(event) => setAgencyName(event.target.value)}
+            placeholder="Ex: Remax, Century 21, ERA"
+            disabled={loading}
+            className="max-w-sm"
+          />
         </div>
 
         <div className="flex flex-wrap gap-2">

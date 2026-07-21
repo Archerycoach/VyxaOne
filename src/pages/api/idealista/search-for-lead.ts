@@ -49,6 +49,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // Convert lead to search params
     const searchParams = leadToIdealistaParams(lead);
 
+    // Filtro de agência opcional, escolhido pelo consultor no painel da lead.
+    // Aceita nome parcial ("Remax", "Century") — há muitas agências da mesma
+    // rede e a ideia é apanhá-las todas com um termo.
+    const agencyName = typeof req.query.agencyName === "string" ? req.query.agencyName.trim() : "";
+    if (agencyName) {
+      searchParams.agencyName = agencyName;
+    }
+
     // Perform search
     const properties = await searchIdealistaProperties(searchParams, credentials, user.id);
 
