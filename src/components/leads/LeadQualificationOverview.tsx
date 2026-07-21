@@ -66,6 +66,23 @@ const BUY_PURPOSE_LABELS: Record<string, string> = {
   secondary: "Habitação secundária",
 };
 
+const TYPOLOGY_OPTIONS = [
+  { value: "T0", label: "T0" },
+  { value: "T1", label: "T1" },
+  { value: "T2", label: "T2" },
+  { value: "T3", label: "T3" },
+  { value: "T4", label: "T4" },
+  { value: "T5+", label: "T5 ou mais" },
+];
+
+/** "T1, T2" -> ["T1", "T2"]. O campo é texto; a vírgula separa. */
+export function parseTypologies(value: string | null | undefined): string[] {
+  return String(value || "")
+    .split(/[,;/]+/)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+}
+
 const eur = (v: number) =>
   new Intl.NumberFormat("pt-PT", {
     style: "currency",
@@ -225,7 +242,14 @@ function buildEditValues(lead: LeadLike): EditValues {
     property_type: lead.property_type || "",
     buy_purpose: lead.buy_purpose || "",
     purchase_timeline: lead.purchase_timeline || "",
-    budget: lead.budget != null ? String(lead.budget) : "",
+    // A vista mostra "Até X" a partir de budget_max, e o painel do Idealista
+    // usa o mesmo campo. O editor tem de carregar e gravar ESSE campo, senão
+    // grava num sítio e mostra outro.
+    budget: lead.budget_max != null
+      ? String(lead.budget_max)
+      : lead.budget != null
+        ? String(lead.budget)
+        : "",
     desired_price: lead.desired_price != null ? String(lead.desired_price) : "",
     typology: lead.typology || (lead.bedrooms ? `T${lead.bedrooms}` : ""),
     bedrooms: lead.bedrooms != null ? String(lead.bedrooms) : "",
@@ -256,10 +280,15 @@ function buildUpdatePayload(values: EditValues): Record<string, unknown> {
     property_type: values.property_type || null,
     buy_purpose: values.buy_purpose || null,
     purchase_timeline: values.purchase_timeline.trim() || null,
+    // Grava nos dois campos: `budget_max` é o que a vista e o Idealista leem,
+    // `budget` mantém-se sincronizado para o resto da aplicação (campanhas,
+    // buyer match) que ainda o consulta. `budget_min` fica intacto, para não
+    // destruir um intervalo já definido.
     budget: toNumberOrNull(values.budget),
+    budget_max: toNumberOrNull(values.budget),
     desired_price: toNumberOrNull(values.desired_price),
     typology: values.typology || null,
-    bedrooms: values.typology ? parseInt(values.typology.replace(/\D/g, ""), 10) || null : toNumberOrNull(values.bedrooms),
+    bedrooms: toNumberOrNull(values.bedrooms),
     bathrooms: toNumberOrNull(values.bathrooms),
     min_area: toNumberOrNull(values.min_area),
     max_area: toNumberOrNull(values.max_area),
@@ -317,6 +346,33 @@ export function LeadQualificationOverview({ lead, onSave }: Props) {
 
   const set = <K extends keyof EditValues>(key: K, value: EditValues[K]) =>
     setValues((prev) => ({ ...prev, [key]: value }));
+
+  /**
+   * Liga/desliga uma tipologia. `bedrooms` passa a guardar o MENOR nº de
+   * quartos aceite — é o campo numérico único que o resto da aplicação lê, e
+   * o mínimo é o que não exclui imóveis que a lead aceitaria.
+   */
+  const toggleTypology = (option: string) => {
+    setValues((prev) => {
+      const current = parseTypologies(prev.typology);
+      const next = current.includes(option)
+        ? current.filter((item) => item !== option)
+        : [...current, option];
+
+      // Mantém a ordem natural (T0, T1, T2...) em vez da ordem de clique.
+      next.sort((a, b) => (parseInt(a.replace(/\D/g, ""), 10) || 0) - (parseInt(b.replace(/\D/g, ""), 10) || 0));
+
+      const bedroomsValues = next
+        .map((item) => parseInt(item.replace(/\D/g, ""), 10))
+        .filter((value) => Number.isFinite(value));
+
+      return {
+        ...prev,
+        typology: next.join(", "),
+        bedrooms: bedroomsValues.length > 0 ? String(Math.min(...bedroomsValues)) : "",
+      };
+    });
+  };
 
   const handleStartEdit = () => {
     setValues(buildEditValues(lead));
@@ -489,25 +545,28 @@ export function LeadQualificationOverview({ lead, onSave }: Props) {
 
             <div className="space-y-2">
               <Label>Tipologia / quartos</Label>
-              <Select
-                value={values.typology}
-                onValueChange={(v) => {
-                  set("typology", v);
-                  set("bedrooms", v.replace(/\D/g, ""));
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione (ex: T2)" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="T0">T0</SelectItem>
-                  <SelectItem value="T1">T1</SelectItem>
-                  <SelectItem value="T2">T2</SelectItem>
-                  <SelectItem value="T3">T3</SelectItem>
-                  <SelectItem value="T4">T4</SelectItem>
-                  <SelectItem value="T5+">T5 ou mais</SelectItem>
-                </SelectContent>
-              </Select>
+              {/* Multi-seleção: uma lead pode aceitar mais do que uma
+                  tipologia (ex.: T1 ou T2). Guardadas separadas por vírgula
+                  no mesmo campo de texto. */}
+              <div className="flex flex-wrap gap-1.5">
+                {TYPOLOGY_OPTIONS.map((option) => {
+                  const selected = parseTypologies(values.typology).includes(option.value);
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => toggleTypology(option.value)}
+                      className={`rounded-md border px-3 py-1.5 text-sm transition-colors ${
+                        selected
+                          ? "border-blue-600 bg-blue-600 text-white"
+                          : "border-gray-200 bg-white text-gray-700 hover:border-blue-300"
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             {isBuyer && (
@@ -539,7 +598,7 @@ export function LeadQualificationOverview({ lead, onSave }: Props) {
 
             {isBuyer && (
               <div className="space-y-2">
-                <Label>Orçamento</Label>
+                <Label>Orçamento máximo</Label>
                 <CurrencyInput
                   value={values.budget}
                   onValueChange={(v) => set("budget", v.toString())}

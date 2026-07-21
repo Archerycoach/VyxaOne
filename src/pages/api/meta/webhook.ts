@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { createClient } from "@supabase/supabase-js";
+import { parseBudgetValue } from "@/lib/server/parseBudgetValue";
 import { buffer } from "micro";
 import crypto from "crypto";
 import { logEmailInteractionServer } from "@/lib/emailInteractionLogger";
@@ -523,33 +524,24 @@ export default async function handler(
           for (const field of integerFields) {
             if (mappedData[field] !== undefined && typeof mappedData[field] === 'string') {
               if (['budget', 'budget_min', 'budget_max', 'price'].includes(field)) {
-                console.log(`[Budget Parsing] Field: ${field}, Original value: ${mappedData[field]}`);
-                // Special parsing for currency and budgets (e.g. "150.000€ - 200.000€", "Até 250.000")
-                // Remove spaces and dots (used as thousand separators in PT)
-                let cleanStr = mappedData[field].replace(/\s/g, '').replace(/\./g, '');
-                // Remove comma and anything after it (cents like ",00")
-                cleanStr = cleanStr.split(',')[0];
-                
-                const matches = cleanStr.match(/\d+/g);
-                if (matches && matches.length > 0) {
-                  // Convert all found numbers and take the highest one (for ranges)
-                  const numbers = matches.map(m => parseInt(m, 10));
-                  let finalValue = Math.max(...numbers);
-                  
-                  // INTELLIGENT BUDGET PARSING: Values under 1000 are assumed to be in thousands
-                  // E.g., "300" -> 300000€ (300 mil), "150" -> 150000€
-                  // This handles the common Portuguese real estate convention where people say "300" meaning "300 mil"
-                  if (finalValue < 1000) {
-                    finalValue = finalValue * 1000;
-                  }
-                  
-                  console.log(`[Budget Parsing] Field: ${field}, Parsed value: ${finalValue}`);
-                  mappedData[field] = finalValue;
+                const original = mappedData[field];
+                const parsed = parseBudgetValue(original);
+
+                if (parsed.value != null) {
+                  mappedData[field] = parsed.value;
                 } else {
-                  // If no numbers found, preserve original text in notes
-                  mappedData.notes = mappedData.notes 
-                    ? `${mappedData.notes}\n• ${field} (original): ${mappedData[field]}` 
-                    : `• ${field} (original): ${mappedData[field]}`;
+                  // Valor impossível de interpretar com confiança. Guardar um
+                  // número errado é pior do que não guardar nada: o budget_max
+                  // decide quem recebe campanhas, e um tecto de 4 500 € ou de
+                  // 50 000 000 € exclui ou inclui a lead em tudo, em silêncio.
+                  const reason = parsed.rejected === "implausible"
+                    ? `valor fora do plausível (lido: ${parsed.rawParsed})`
+                    : "sem números reconhecíveis";
+                  console.warn(`[Budget Parsing] ${field} não interpretado: "${original}" — ${reason}`);
+                  mappedData.notes = mappedData.notes
+                    ? `${mappedData.notes}
+• ${field} (original): ${original}`
+                    : `• ${field} (original): ${original}`;
                   delete mappedData[field];
                 }
               } else {

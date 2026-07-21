@@ -20,6 +20,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { jsPDF } from "jspdf";
 import {
   addCoverPage, addAboutPage, addClosingPage, addPageHeader, addPageNumbers,
+  addSectionTitle, addKeyValueTable, addValueEstimate, addComparableCard, addBodyText,
   buildConsultantIdentity, type ConsultantIdentity,
 } from "@/lib/pdfDocument";
 
@@ -51,6 +52,16 @@ function formatCurrency(value: number | null): string {
   if (!value) return "—";
   return value.toLocaleString("pt-PT", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
 }
+
+const PROPERTY_TYPE_PT: Record<string, string> = {
+  apartment: "Apartamento",
+  house: "Moradia",
+  land: "Terreno",
+  commercial: "Comercial",
+  store: "Loja",
+  office: "Escritório",
+  warehouse: "Armazém",
+};
 
 export default function ValuationPage() {
   const router = useRouter();
@@ -168,59 +179,110 @@ export default function ValuationPage() {
   const buildPdf = (): jsPDF | null => {
     if (!result) return null;
     const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.getWidth();
-    let y = 20;
+    const pageHeight = doc.internal.pageSize.getHeight();
 
     const identity: ConsultantIdentity =
       consultant || { name: "Consultor Imobiliário" };
 
     // Capa + apresentação do consultor (esta só se ele a tiver escrito).
     addCoverPage(doc, {
-      documentTitle: "Avaliação Comparativa de Mercado",
+      documentTitle: "Estudo Comparativo de Mercado",
       subtitle: form.address,
       consultant: identity,
     });
     addAboutPage(doc, identity);
 
-    // Página de conteúdo, com o consultor identificado no cabeçalho.
+    // --- Informações da propriedade ---
     doc.addPage();
-    addPageHeader(doc, identity, "Avaliação");
-    y = 46;
+    addPageHeader(doc, identity, "Informações da Propriedade");
+    let y = 46;
 
-    if (result.suggestedMin && result.suggestedMax) {
-      doc.setFillColor(243, 244, 246);
-      doc.rect(10, y, pageWidth - 20, 20, "F");
-      doc.setFontSize(11);
-      doc.setFont("helvetica", "bold");
-      doc.text("Valor Recomendado:", 15, y + 8);
-      doc.setFontSize(14);
-      doc.text(`${formatCurrency(result.suggestedMin)} — ${formatCurrency(result.suggestedMax)}`, 15, y + 16);
-      y += 28;
+    y = addSectionTitle(doc, "Detalhes da propriedade", y);
+    y = addKeyValueTable(doc, [
+      ["Endereço", form.address],
+      ["Cidade", form.city],
+      ["Tipo de propriedade", PROPERTY_TYPE_PT[form.propertyType] || form.propertyType],
+      ["Quartos", form.bedrooms ? String(form.bedrooms) : null],
+      ["Casas de banho", form.bathrooms ? String(form.bathrooms) : null],
+      ["Área de construção", form.area ? `${form.area} m2` : null],
+      ["Piso", form.floor != null && form.floor !== "" ? String(form.floor) : null],
+      ["Ano de construção", form.yearBuilt ? String(form.yearBuilt) : null],
+      ["Classe energética", form.energyRating],
+      ["Estado de conservação", form.condition],
+    ], y);
+
+    // Características: só as que o imóvel tem. Uma lista de "não tem" seria
+    // ruído num documento que vai à frente do proprietário.
+    const characteristics = [
+      form.hasElevator ? "Elevador" : null,
+      form.hasGarage ? "Garagem" : null,
+      form.hasBalcony ? "Varanda" : null,
+      form.hasTerrace ? "Terraço" : null,
+      form.hasPool ? "Piscina" : null,
+      form.hasStorage ? "Arrecadação" : null,
+      form.hasAirConditioning ? "Ar condicionado" : null,
+      form.hasSeaView ? "Vista de mar" : null,
+    ].filter(Boolean) as string[];
+
+    if (characteristics.length > 0) {
+      y = addSectionTitle(doc, "Características", y + 4);
+      y = addBodyText(doc, characteristics.join("   ·   "), y);
     }
 
-    doc.setFontSize(11);
-    doc.setFont("helvetica", "bold");
-    doc.text("Imóveis Comparáveis", 15, y);
-    y += 7;
-    doc.setFontSize(9);
-    doc.setFont("helvetica", "normal");
-    result.comparables.slice(0, 10).forEach((c) => {
-      if (y > 270) { doc.addPage(); y = 20; }
-      const line = `${c.status === "sold" ? "[Vendido]" : "[Ativo]"} ${c.address} — ${c.area ? c.area + " m²" : ""} — ${formatCurrency(c.price)}`;
-      doc.text(line, 15, y, { maxWidth: pageWidth - 30 });
-      y += 6;
+    // --- Valor estimado ---
+    doc.addPage();
+    addPageHeader(doc, identity, "Valor Estimado");
+    y = 46;
+
+    y = addSectionTitle(doc, "Valor estimado", y);
+    y = addBodyText(doc, form.address, y);
+    y = addValueEstimate(
+      doc,
+      {
+        min: result.suggestedMin,
+        max: result.suggestedMax,
+        area: form.area ? Number(form.area) : null,
+      },
+      y
+    );
+
+    // --- Comparáveis ---
+    doc.addPage();
+    addPageHeader(doc, identity, "Comparáveis");
+    y = 46;
+    y = addSectionTitle(doc, "Imóveis comparáveis", y);
+
+    result.comparables.slice(0, 12).forEach((c: any) => {
+      // Cada cartão tem altura variável — verifica-se o espaço antes de o
+      // desenhar, senão parte-se a meio na mudança de página.
+      if (y > pageHeight - 60) {
+        doc.addPage();
+        addPageHeader(doc, identity, "Comparáveis");
+        y = 46;
+      }
+      y = addComparableCard(doc, {
+        status: c.status,
+        address: c.address,
+        price: c.price,
+        area: c.area,
+        pricePerSqm: c.pricePerSqm,
+        propertyType: c.propertyType,
+        energyRating: c.energyRating,
+        yearBuilt: c.yearBuilt,
+        daysOnMarket: c.daysOnMarket,
+        distanceKm: c.distanceKm,
+        features: c.features,
+      }, y);
     });
 
-    y += 6;
-    doc.setFontSize(11);
-    doc.setFont("helvetica", "bold");
-    doc.text("Análise", 15, y);
-    y += 7;
-    doc.setFontSize(9);
-    doc.setFont("helvetica", "normal");
+    // --- Análise ---
+    doc.addPage();
+    addPageHeader(doc, identity, "Análise");
+    y = 46;
+    y = addSectionTitle(doc, "Análise de mercado", y);
+
     const plainNarrative = result.narrative.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-    const splitText = doc.splitTextToSize(plainNarrative, pageWidth - 30);
-    doc.text(splitText, 15, y);
+    y = addBodyText(doc, plainNarrative, y);
 
     // Folha de fecho (só se o consultor a tiver escrito) e numeração.
     addClosingPage(doc, identity);

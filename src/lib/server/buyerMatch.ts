@@ -99,6 +99,28 @@ export function typologyToBedrooms(typology: string | null | undefined): number 
 }
 
 /**
+ * Uma lead pode procurar mais do que uma tipologia ("T1, T2"). O campo é
+ * texto, com as tipologias separadas por vírgula.
+ *
+ * Sem isto, `typologyToBedrooms` devolvia só a PRIMEIRA — uma lead aberta a
+ * T1 ou T2 nunca era cruzada com os T2 disponíveis.
+ */
+export function parseTypologyList(typology: string | null | undefined): string[] {
+  return String(typology || "")
+    .split(/[,;/]+/)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+}
+
+/** Todos os nºs de quartos aceites pela lead, a partir da lista de tipologias. */
+export function typologyBedroomsList(typology: string | null | undefined): number[] {
+  const values = parseTypologyList(typology)
+    .map((part) => typologyToBedrooms(part))
+    .filter((value): value is number => value != null);
+  return Array.from(new Set(values));
+}
+
+/**
  * Nº de quartos "efetivo" da lead: bedrooms se preenchido, senão derivado da
  * tipologia ("T2" → 2).
  */
@@ -176,13 +198,20 @@ export function scoreLeadAgainstDevelopment(
   const leadBedrooms = effectiveBedrooms(lead);
   const leadTypologyNorm = normalizeText(lead.typology);
 
+  // A lead pode aceitar várias tipologias — basta uma bater certo.
+  const leadTypologyNorms = parseTypologyList(lead.typology).map((value) => normalizeText(value));
+  const leadBedroomsList = typologyBedroomsList(lead.typology);
+  if (leadBedrooms != null && !leadBedroomsList.includes(leadBedrooms)) {
+    leadBedroomsList.push(leadBedrooms);
+  }
+
   if (typologyRows.length > 0) {
-    // Linhas candidatas: mesma tipologia (texto) ou mesmo nº de quartos
+    // Linhas candidatas: qualquer tipologia aceite (texto) ou nº de quartos
     const candidates = typologyRows.filter((row) => {
       const rowNorm = normalizeText(row.typology);
       const rowBedrooms = typologyToBedrooms(row.typology);
-      if (leadTypologyNorm && (rowNorm === leadTypologyNorm || rowNorm.startsWith(leadTypologyNorm))) return true;
-      if (leadBedrooms != null && rowBedrooms != null && rowBedrooms === leadBedrooms) return true;
+      if (leadTypologyNorms.some((norm) => rowNorm === norm || rowNorm.startsWith(norm))) return true;
+      if (rowBedrooms != null && leadBedroomsList.includes(rowBedrooms)) return true;
       return false;
     });
 
@@ -223,7 +252,11 @@ export function scoreLeadAgainstDevelopment(
       score += 15;
     } else if (
       globalTypologies.length === 0 ||
-      globalTypologies.some((t) => t === leadTypologyNorm || typologyToBedrooms(t) === leadBedrooms)
+      globalTypologies.some((t) => {
+        if (leadTypologyNorms.includes(t)) return true;
+        const globalBedrooms = typologyToBedrooms(t);
+        return globalBedrooms != null && leadBedroomsList.includes(globalBedrooms);
+      })
     ) {
       score += globalTypologies.length === 0 ? 15 : 30;
       if (globalTypologies.length > 0) reasons.push(`Tipologia ${lead.typology || `T${leadBedrooms}`} disponível`);

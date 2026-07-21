@@ -594,7 +594,12 @@ function getFallbackAudienceLeadIds(
     return structuredMatches;
   }
 
-  return leads.map((lead) => lead.id);
+  // Sem critérios estruturados a audiência é a carteira toda — mas o
+  // orçamento continua a valer. Enviar um imóvel muito acima do que a lead
+  // pode pagar não é um email inútil: é um email que queima credibilidade.
+  return leads
+    .filter((lead) => matchesLeadBudget(lead, criteria.price ?? null))
+    .map((lead) => lead.id);
 }
 
 function buildFallbackDraft(criteria: EmailCampaignCriteria, agentName: string) {
@@ -912,8 +917,16 @@ async function selectEmailCampaignAudience(params: {
         })
       : [];
 
+    // O orçamento é regra de negócio, não sugestão: aplica-se SEMPRE por cima
+    // do que a IA escolheu. Se o modelo incluir uma lead cujo orçamento máximo
+    // fica mais de 10% abaixo do preço do imóvel, é retirada aqui.
+    const budgetRespectingIds = selectedLeadIds.filter((leadId: string) => {
+      const lead = params.leads.find((candidate) => candidate.id === leadId);
+      return lead ? matchesLeadBudget(lead, params.criteria.price ?? null) : false;
+    });
+
     return {
-      selectedLeadIds: selectedLeadIds.length > 0 ? selectedLeadIds : fallbackLeadIds,
+      selectedLeadIds: budgetRespectingIds.length > 0 ? budgetRespectingIds : fallbackLeadIds,
       filterSummary:
         typeof parsed.filterSummary === "string" && parsed.filterSummary.trim()
           ? parsed.filterSummary.trim()
@@ -1585,6 +1598,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           properties: properties.length,
           developments: developments.length,
         });
+
+        // Preço de referência da campanha.
+        //
+        // Sem isto, `criteria.price` ficava sempre a null e o filtro de
+        // orçamento nunca chegava a correr — a razão pela qual leads recebiam
+        // imóveis muito acima do que podiam pagar.
+        //
+        // Usa-se o MAIS BARATO dos imóveis divulgados: uma lead cujo orçamento
+        // cobre a opção mais acessível é destinatária legítima, mesmo que não
+        // alcance as restantes.
+        const campaignPrices = properties
+          .map((property) => property.price)
+          .filter((price): price is number => typeof price === "number" && price > 0);
+
+        if (campaignPrices.length > 0) {
+          criteria.price = Math.min(...campaignPrices);
+        }
 
         const audienceSelection = await selectEmailCampaignAudience({
           message,
