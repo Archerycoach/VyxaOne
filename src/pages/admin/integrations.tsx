@@ -106,6 +106,40 @@ export default function Integrations() {
     }
   };
 
+  const handleSaveGeoapify = async () => {
+    if (!geoapifyKey.trim()) {
+      toast({
+        title: "Chave obrigatória",
+        description: "Insira a chave Geoapify.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setSaving(true);
+      const res = await adminFetch("/api/admin/system-settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ geoapify_api_key: geoapifyKey.trim() }),
+      });
+
+      if (!res.ok) throw new Error("Erro ao guardar");
+
+      toast({ title: "✅ Chave Geoapify guardada" });
+      setGeoapifyKey("");
+      loadIdealistaSettings();
+    } catch (error: any) {
+      toast({
+        title: "Erro",
+        description: error?.message || "Erro ao guardar a chave.",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleSaveIdealista = async () => {
     try {
       if (!idealistaKey && !idealistaConfigured) {
@@ -131,9 +165,6 @@ export default function Integrations() {
         payload.idealista_rapidapi_key = idealistaKey.trim();
       }
 
-      if (geoapifyKey.trim()) {
-        payload.geoapify_api_key = geoapifyKey.trim();
-      }
 
       const res = await adminFetch("/api/admin/system-settings", {
         method: "POST",
@@ -784,29 +815,6 @@ export default function Integrations() {
                   />
                 </div>
 
-                {/* Geoapify: mapas nos documentos. Fica aqui por ser, como o
-                    Idealista, uma chave global que o operador configura uma
-                    vez para toda a equipa. */}
-                <div className="space-y-2 pt-4 border-t">
-                  <Label>Chave Geoapify (mapas nos documentos)</Label>
-                  <Input
-                    type="password"
-                    placeholder={geoapifyConfigured ? "••••••••" : "Insira a chave Geoapify"}
-                    value={geoapifyKey}
-                    onChange={(e) => setGeoapifyKey(e.target.value)}
-                  />
-                  {geoapifyConfigured && geoapifyMaskedKey && (
-                    <p className="text-xs text-muted-foreground">
-                      Chave atual: {geoapifyMaskedKey}
-                    </p>
-                  )}
-                  <p className="text-xs text-muted-foreground">
-                    Usada para o mapa da localização na avaliação de mercado. Os pontos de
-                    interesse vêm do OpenStreetMap e não precisam de chave. Sem chave, o
-                    documento é gerado na mesma, apenas sem o mapa.
-                  </p>
-                </div>
-
                 <div className="space-y-2">
                   <Label>Endpoint de Listagem</Label>
                   <Input
@@ -847,6 +855,70 @@ export default function Integrations() {
               <div className="flex gap-3">
                 <Button onClick={handleSaveIdealista} disabled={saving}>
                   {saving ? "A guardar..." : "Guardar Configurações"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Geoapify — mapas nos documentos entregues ao cliente.
+              Cartão próprio: é uma integração independente e estava a passar
+              despercebida dentro do cartão do Idealista. */}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+              <div className="flex items-center gap-2">
+                <Settings className="h-5 w-5" />
+                <CardTitle>Geoapify (mapas nos documentos)</CardTitle>
+              </div>
+              {geoapifyConfigured && (
+                <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
+                  <CheckCircle2 className="h-4 w-4" /> Configurado
+                </div>
+              )}
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <CardDescription>
+                Chave global usada no mapa da localização da Avaliação de Mercado.
+                Aplica-se a todos os consultores da instância — nenhum consultor
+                configura chaves próprias.
+              </CardDescription>
+
+              <Alert>
+                <AlertDescription>
+                  <p className="text-sm">
+                    Chave gratuita em{" "}
+                    <a
+                      href="https://myprojects.geoapify.com/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:underline inline-flex items-center gap-1"
+                    >
+                      Geoapify <ExternalLink className="h-3 w-3" />
+                    </a>
+                    . Os pontos de interesse (escolas, transportes, comércio) vêm do
+                    OpenStreetMap e não precisam de chave. Sem chave, os documentos são
+                    gerados na mesma, apenas sem o mapa.
+                  </p>
+                </AlertDescription>
+              </Alert>
+
+              <div className="space-y-2">
+                <Label>Chave da API</Label>
+                <Input
+                  type="password"
+                  placeholder={geoapifyConfigured ? "••••••••" : "Insira a chave Geoapify"}
+                  value={geoapifyKey}
+                  onChange={(e) => setGeoapifyKey(e.target.value)}
+                />
+                {geoapifyConfigured && geoapifyMaskedKey && (
+                  <p className="text-xs text-muted-foreground">
+                    Chave atual: {geoapifyMaskedKey}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex gap-3">
+                <Button onClick={handleSaveGeoapify} disabled={saving}>
+                  {saving ? "A guardar..." : "Guardar Chave"}
                 </Button>
               </div>
             </CardContent>

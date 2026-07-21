@@ -550,6 +550,12 @@ export default function Settings() {
               <FileText className="h-4 w-4 mr-2" />
               Assinatura
             </TabsTrigger>
+            {/* Cada consultor escreve as suas folhas de rosto e de fecho —
+                não é exclusivo de admin. */}
+            <TabsTrigger value="documents">
+              <FileText className="h-4 w-4 mr-2" />
+              Documentos
+            </TabsTrigger>
             {isAdminOrBroker && (
               <TabsTrigger value="pipeline">
                 <Kanban className="h-4 w-4 mr-2" />
@@ -914,6 +920,14 @@ export default function Settings() {
             </Card>
           </TabsContent>
 
+          {/* Folhas de rosto e de fecho dos documentos entregues ao cliente
+              (avaliação de mercado, simulação de financiamento). Separador
+              próprio: estava dentro de "Envios Automáticos", onde ninguém o
+              procurava. */}
+          <TabsContent value="documents" className="space-y-6">
+            <DocumentProfileSettings profile={profile} onProfileChange={setProfile} />
+          </TabsContent>
+
           <TabsContent value="pipeline" className="space-y-6">
             <PipelineStagesSettings />
           </TabsContent>
@@ -1247,7 +1261,6 @@ export default function Settings() {
 
             <AiCapabilityLevels profile={profile} onProfileChange={setProfile} />
 
-            <DocumentProfileSettings profile={profile} onProfileChange={setProfile} />
 
             <Card>
               <CardHeader>

@@ -138,16 +138,26 @@ DADOS JÁ CALCULADOS (usa estes valores exatamente, não inventes outros):
 - Preço médio/m² de imóveis ATIVOS (à venda) na zona: ${context.activeAvgPricePerSqm ? `${Math.round(context.activeAvgPricePerSqm)}€/m²` : "sem dados suficientes"}
 - Intervalo de valor sugerido: ${context.suggestedMin && context.suggestedMax ? `${context.suggestedMin.toLocaleString("pt-PT")}€ — ${context.suggestedMax.toLocaleString("pt-PT")}€` : "sem dados suficientes para sugerir"}
 
-O teu objetivo: escreve um relatório em HTML limpo e profissional (usa h3, p, ul, li — nunca h1/h2, nunca markdown) com estas secções:
-1. Um parágrafo de abertura a contextualizar o mercado na zona.
-2. "Análise de Comparáveis" — explica o que os comparáveis mostram, distinguindo o peso de imóveis VENDIDOS (preço real) vs ATIVOS (preço pedido, pode estar inflacionado). Sempre que um comparável tenha características diferentes das do imóvel (elevador, garagem, varanda, andar, classe energética), REFERE essa diferença ao comparar preços — é o que explica desvios de €/m² entre imóveis semelhantes em área.
-3. "Fatores de Valorização" — analisa como as características do imóvel influenciam o valor face aos comparáveis:
+O teu objetivo: escreve um relatório em HTML limpo e profissional (usa h3, p, ul, li — nunca h1/h2, nunca markdown) com estas secções.
+
+REGRAS DE ESCRITA (tão importantes como o conteúdo):
+- SÊ SINTÉTICO. O relatório inteiro não deve passar das 450 palavras. Um proprietário lê um documento curto e bem organizado; não lê três páginas de texto corrido.
+- Parágrafos CURTOS: no máximo 3 frases cada. Nunca um parágrafo com mais de 60 palavras.
+- Nas secções de comparáveis e de fatores, usa LISTAS (ul/li) em vez de texto corrido. Cada item numa linha, direto ao ponto.
+- NÃO repitas números que já aparecem nas tabelas e nos cartões do documento. Interpreta-os, não os recites.
+- Escolhe os 3 ou 4 comparáveis que realmente informam a decisão; não comentes todos um a um.
+- Evita fórmulas vazias ("importa sublinhar que", "neste momento", "de referir que"). Vai direto ao facto.
+
+SECÇÕES:
+1. Um parágrafo de abertura (máximo 3 frases) a contextualizar o mercado na zona.
+2. "Análise de Comparáveis" — EM LISTA. Explica o que os comparáveis mostram, distinguindo o peso de imóveis VENDIDOS (preço real) vs ATIVOS (preço pedido, pode estar inflacionado). Sempre que um comparável tenha características diferentes das do imóvel (elevador, garagem, varanda, andar, classe energética), REFERE essa diferença ao comparar preços — é o que explica desvios de €/m² entre imóveis semelhantes em área.
+3. "Fatores de Valorização" — EM LISTA, separando o que valoriza do que desvaloriza. Como as características influenciam o valor face aos comparáveis:
    - VALORIZAM: elevador, garagem/estacionamento, varanda/terraço, arrecadação, boa classe energética (A/B), andar alto com vista, construção recente.
    - DESVALORIZAM: ausência de elevador em andares altos, rés-do-chão sem exterior, classe energética fraca (E/F), necessidade de obras.
    - Sê concreto e honesto: se o imóvel tem pontos fracos, di-lo — o proprietário vai confrontar-se com eles na negociação, e um relatório que os omite perde credibilidade.
    - Se as características não foram indicadas, diz que a avaliação ganharia precisão com esses dados. NUNCA assumas que existem.
 4. "Valor Recomendado" — apresenta o intervalo sugerido (os números já calculados acima, não os alteres) e justifica-o com base na análise dos comparáveis E dos fatores de valorização.
-5. Um parágrafo final profissional, transparente, que reforça a tua recomendação sem soar como um argumento de venda agressivo.
+5. Um parágrafo final (máximo 3 frases), profissional e transparente, que reforça a recomendação sem soar a argumento de venda agressivo.
 
 Responde EXCLUSIVAMENTE com o código HTML final do relatório.`;
 }

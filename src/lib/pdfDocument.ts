@@ -623,3 +623,121 @@ export function addPointsOfInterest(doc: jsPDF, pois: LocationPoi[], y: number):
 
   return cursor + 8;
 }
+
+/**
+ * Narrativa da IA renderizada com a estrutura que ela própria produziu.
+ *
+ * O relatório vem em HTML com títulos (h3), parágrafos e listas. A versão
+ * anterior fazia `replace(/<[^>]+>/g, " ")` e mandava tudo para o PDF como um
+ * bloco corrido de texto — a estrutura existia e era deitada fora à entrada,
+ * o que tornava a análise um muro de texto impossível de percorrer.
+ */
+
+interface NarrativeBlock {
+  type: "heading" | "paragraph" | "bullet";
+  text: string;
+}
+
+function decodeEntities(value: string): string {
+  return value
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&euro;/g, "€");
+}
+
+function cleanText(value: string): string {
+  return decodeEntities(value.replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim();
+}
+
+/** HTML → blocos. Ignora o que não reconhece em vez de o mostrar cru. */
+export function parseNarrativeBlocks(html: string): NarrativeBlock[] {
+  const blocks: NarrativeBlock[] = [];
+  const pattern = /<(h[1-6]|p|li)[^>]*>([\s\S]*?)<\/\1>/gi;
+
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(html)) !== null) {
+    const tag = match[1].toLowerCase();
+    const text = cleanText(match[2]);
+    if (!text) continue;
+
+    if (tag.startsWith("h")) blocks.push({ type: "heading", text });
+    else if (tag === "li") blocks.push({ type: "bullet", text });
+    else blocks.push({ type: "paragraph", text });
+  }
+
+  // Sem nenhuma etiqueta reconhecida, mostra-se o texto todo em vez de nada.
+  if (blocks.length === 0) {
+    const fallback = cleanText(html);
+    if (fallback) blocks.push({ type: "paragraph", text: fallback });
+  }
+
+  return blocks;
+}
+
+/**
+ * Escreve a narrativa no PDF respeitando títulos, parágrafos e listas, com
+ * quebra de página automática. Devolve o novo y.
+ */
+export function addNarrative(
+  doc: jsPDF,
+  html: string,
+  y: number,
+  onNewPage?: () => number
+): number {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const blocks = parseNarrativeBlocks(html || "");
+
+  const newPage = (): number => {
+    doc.addPage();
+    return onNewPage ? onNewPage() : 25;
+  };
+
+  for (const block of blocks) {
+    if (block.type === "heading") {
+      // Um título isolado no fim da página fica órfão do texto que anuncia.
+      if (y > pageHeight - 40) y = newPage();
+      else y += 3;
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10.5);
+      doc.setTextColor(BRAND.r, BRAND.g, BRAND.b);
+      doc.text(block.text, MARGIN, y);
+      y += 6;
+      continue;
+    }
+
+    const isBullet = block.type === "bullet";
+    const indent = isBullet ? 5 : 0;
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9.5);
+    doc.setTextColor(55, 65, 81);
+
+    const lines: string[] = doc.splitTextToSize(
+      block.text,
+      pageWidth - MARGIN * 2 - indent
+    );
+
+    lines.forEach((line, index) => {
+      if (y > pageHeight - 25) y = newPage();
+
+      if (isBullet && index === 0) {
+        doc.setTextColor(ACCENT.r, ACCENT.g, ACCENT.b);
+        doc.text("•", MARGIN, y);
+        doc.setTextColor(55, 65, 81);
+      }
+
+      doc.text(line, MARGIN + indent, y);
+      y += 4.6;
+    });
+
+    y += isBullet ? 1.5 : 3.5;
+  }
+
+  return y;
+}

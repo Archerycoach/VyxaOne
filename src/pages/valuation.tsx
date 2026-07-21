@@ -21,7 +21,7 @@ import { jsPDF } from "jspdf";
 import {
   addCoverPage, addAboutPage, addClosingPage, addPageHeader, addPageNumbers,
   addSectionTitle, addKeyValueTable, addValueEstimate, addComparableCard, addBodyText,
-  addLocationMap, addPointsOfInterest,
+  addLocationMap, addPointsOfInterest, addNarrative,
   buildConsultantIdentity, type ConsultantIdentity,
 } from "@/lib/pdfDocument";
 
@@ -295,8 +295,12 @@ export default function ValuationPage() {
     y = 46;
     y = addSectionTitle(doc, "Análise de mercado", y);
 
-    const plainNarrative = result.narrative.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-    y = addBodyText(doc, plainNarrative, y);
+    // A narrativa vem em HTML com títulos e listas — renderizada com essa
+    // estrutura, não achatada em texto corrido.
+    y = addNarrative(doc, result.narrative || "", y, () => {
+      addPageHeader(doc, identity, "Análise");
+      return 46;
+    });
 
     // Folha de fecho (só se o consultor a tiver escrito) e numeração.
     addClosingPage(doc, identity);
