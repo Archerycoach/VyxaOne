@@ -30,7 +30,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
     if (authError || !user) return res.status(401).json({ error: "Não autorizado" });
 
-    const { address, propertyType, area, bedrooms, bathrooms, condition, city } = req.body || {};
+    const { address, propertyType, area, bedrooms, bathrooms, condition, city, factors } = req.body || {};
     if (!address || !propertyType) {
       return res.status(400).json({ error: "Morada e tipo de imóvel são obrigatórios" });
     }
@@ -115,6 +115,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         bedrooms: bedrooms || null,
         bathrooms: bathrooms || null,
         condition: condition || null,
+        // Elevador, garagem, varandas, andar, classe energética… — sem estes
+        // dados a avaliação atribuía diferenças de preço a "variação de
+        // mercado" em vez de as explicar.
+        factors: factors || undefined,
         comparables: comparables.slice(0, 12),
         soldAvgPricePerSqm,
         activeAvgPricePerSqm,

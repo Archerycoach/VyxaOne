@@ -25,6 +25,7 @@ import { TwoFactorSettings } from "@/components/settings/TwoFactorSettings";
 import { PersonalLandingSettings } from "@/components/settings/PersonalLandingSettings";
 import { FormQuestionsSettings } from "@/components/settings/FormQuestionsSettings";
 import { AiCapabilityLevels } from "@/components/settings/AiCapabilityLevels";
+import { DocumentProfileSettings } from "@/components/settings/DocumentProfileSettings";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
 
 // Least-privilege scopes (Google OAuth verification): apenas o necessário.
@@ -1245,6 +1246,8 @@ export default function Settings() {
             </Card>
 
             <AiCapabilityLevels profile={profile} onProfileChange={setProfile} />
+
+            <DocumentProfileSettings profile={profile} onProfileChange={setProfile} />
 
             <Card>
               <CardHeader>

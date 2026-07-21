@@ -90,6 +90,8 @@ interface EmailCampaignCriteria {
   bedrooms: number | null;
   buyPurpose: string | null;
   propertyType: string | null;
+  /** Preço do imóvel a divulgar, para cruzar com o orçamento das leads. */
+  price?: number | null;
 }
 
 interface EmailCampaignDraft {
@@ -371,15 +373,63 @@ function matchesRequestedBedrooms(lead: LeadContext, bedrooms: number | null): b
   }
 
   if (bedrooms === 0) {
-    return (
+    if (
       leadTypology.includes("t0") ||
       propertyType.includes("t0") ||
       propertyType.includes("estudio") ||
       propertyType.includes("studio")
-    );
+    ) {
+      return true;
+    }
   }
 
-  return false;
+  // Determinar a tipologia que a lead procura, de qualquer um dos campos.
+  const leadBedrooms =
+    typeof lead.bedrooms === "number"
+      ? lead.bedrooms
+      : leadTypologyMatch
+      ? Number(leadTypologyMatch[1])
+      : propertyTypeMatch
+      ? Number(propertyTypeMatch[1])
+      : null;
+
+  // Lead SEM tipologia definida entra na campanha: não sabemos o que procura,
+  // e excluí-la garante que nunca recebe nada.
+  if (leadBedrooms === null) {
+    return true;
+  }
+
+  // Tipologia adjacente (±1 quarto) também entra.
+  //
+  // Quem procura T2 compra T1 se o preço e a zona compensarem, e compra T3 se
+  // couber no orçamento — é o que acontece no mercado real. Exigir a tipologia
+  // exata reduzia campanhas a uma fração dos interessados.
+  return Math.abs(leadBedrooms - bedrooms) <= 1;
+}
+
+/**
+ * O imóvel cabe (aproximadamente) no orçamento da lead?
+ *
+ * Tolerância de 10%: quem definiu 350 000€ vê um imóvel de 380 000€ e
+ * negoceia, ou estica o financiamento. Um corte rígido no valor exato
+ * excluía compradores que fechariam negócio.
+ */
+function matchesLeadBudget(lead: LeadContext, price: number | null): boolean {
+  if (!price) return true;
+
+  const TOLERANCE = 1.1;
+  const min = (lead as any).budget_min as number | null | undefined;
+  const max = ((lead as any).budget_max ?? (lead as any).budget) as number | null | undefined;
+
+  // Sem orçamento definido, a lead entra: pode estar a começar a procurar.
+  if (!min && !max) return true;
+
+  if (max && price > max * TOLERANCE) return false;
+  // Abaixo do mínimo: só exclui se estiver MUITO abaixo (menos de metade),
+  // porque um imóvel mais barato do que o esperado raramente incomoda.
+  if (min && price < min * 0.5) return false;
+
+  return true;
 }
 
 function matchesRequestedLocation(lead: LeadContext, location: string | null): boolean {
@@ -390,11 +440,32 @@ function matchesRequestedLocation(lead: LeadContext, location: string | null): b
   const requestedLocation = normalizeText(location);
   const leadLocation = normalizeText(lead.location_preference || "");
 
+  // Lead SEM zona definida entra na campanha.
+  //
+  // Antes era excluída — e como a maioria das leads não tem zona preenchida,
+  // uma campanha para "Benfica" reduzia-se a meia dúzia de destinatários. Uma
+  // lead sem zona não é uma lead que rejeitou Benfica: é uma lead sobre a qual
+  // não sabemos, e o custo de a incluir num email é praticamente nulo face ao
+  // custo de perder um cliente por não lhe termos mostrado o imóvel.
   if (!leadLocation) {
-    return false;
+    return true;
   }
 
-  return leadLocation.includes(requestedLocation) || requestedLocation.includes(leadLocation);
+  if (leadLocation.includes(requestedLocation) || requestedLocation.includes(leadLocation)) {
+    return true;
+  }
+
+  // Correspondência por palavras: "Benfica, Lisboa" e "Lisboa" partilham
+  // "lisboa" e devem cruzar. Sem isto, a forma como cada lead escreveu a zona
+  // decidia se recebia ou não o email.
+  const stopWords = new Set(["de", "da", "do", "das", "dos", "e", "em", "no", "na", "zona"]);
+  const words = (text: string) =>
+    text.split(/[\s,\/·-]+/).filter((w) => w.length > 2 && !stopWords.has(w));
+
+  const requestedWords = words(requestedLocation);
+  const leadWords = words(leadLocation);
+
+  return requestedWords.some((rw) => leadWords.some((lw) => lw.includes(rw) || rw.includes(lw)));
 }
 
 function matchesRequestedBuyPurpose(lead: LeadContext, buyPurpose: string | null): boolean {
@@ -402,7 +473,15 @@ function matchesRequestedBuyPurpose(lead: LeadContext, buyPurpose: string | null
     return true;
   }
 
-  return normalizeText(lead.buy_purpose || "") === normalizeText(buyPurpose);
+  const leadPurpose = normalizeText(lead.buy_purpose || "");
+
+  // Sem finalidade definida, a lead entra: a maioria das leads de portais
+  // nunca chega a ter este campo preenchido.
+  if (!leadPurpose) {
+    return true;
+  }
+
+  return leadPurpose === normalizeText(buyPurpose);
 }
 
 function matchesRequestedPropertyType(lead: LeadContext, propertyType: string | null): boolean {
@@ -411,6 +490,11 @@ function matchesRequestedPropertyType(lead: LeadContext, propertyType: string | 
   }
 
   const leadPropertyType = normalizeText(lead.property_type || "");
+
+  // Sem tipo de imóvel definido, a lead entra.
+  if (!leadPropertyType) {
+    return true;
+  }
   const tokensByType: Record<string, string[]> = {
     apartment: ["apartment", "apartamento"],
     house: ["house", "moradia", "casa"],
@@ -500,7 +584,8 @@ function getFallbackAudienceLeadIds(
         matchesRequestedBedrooms(lead, criteria.bedrooms) &&
         matchesRequestedLocation(lead, criteria.location) &&
         matchesRequestedBuyPurpose(lead, criteria.buyPurpose) &&
-        matchesRequestedPropertyType(lead, criteria.propertyType)
+        matchesRequestedPropertyType(lead, criteria.propertyType) &&
+        matchesLeadBudget(lead, criteria.price ?? null)
       );
     })
     .map((lead) => lead.id);

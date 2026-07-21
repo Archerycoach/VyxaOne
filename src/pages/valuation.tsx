@@ -18,6 +18,10 @@ import { Home, Sparkles, Loader2, Download, Send, TrendingUp, MapPin } from "luc
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { jsPDF } from "jspdf";
+import {
+  addCoverPage, addAboutPage, addClosingPage, addPageHeader, addPageNumbers,
+  buildConsultantIdentity, type ConsultantIdentity,
+} from "@/lib/pdfDocument";
 
 interface Comparable {
   source: string;
@@ -60,7 +64,35 @@ export default function ValuationPage() {
     bedrooms: "",
     bathrooms: "",
     condition: "",
+    // Características com impacto no valor. Dois T2 iguais em área podem
+    // diferir 15-20% consoante tenham elevador, garagem ou varanda.
+    floor: "",
+    energyRating: "",
+    yearBuilt: "",
+    hasElevator: false,
+    hasGarage: false,
+    hasBalcony: false,
+    hasTerrace: false,
+    hasStorage: false,
+    hasAirConditioning: false,
+    hasPool: false,
+    hasSeaView: false,
   });
+
+  // Perfil do consultor: alimenta a capa, o cabeçalho e a folha de fecho do PDF.
+  const [consultant, setConsultant] = useState<ConsultantIdentity | null>(null);
+  useEffect(() => {
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("full_name, email, phone, company_name, ami_license, document_cover_title, document_about_me, document_closing_text")
+        .eq("id", user.id)
+        .maybeSingle();
+      setConsultant(buildConsultantIdentity(profile, user.email));
+    })();
+  }, []);
 
   const [linkedLead, setLinkedLead] = useState<LinkedLead | null>(null);
   const [loading, setLoading] = useState(false);
@@ -108,6 +140,19 @@ export default function ValuationPage() {
           bedrooms: form.bedrooms ? Number(form.bedrooms) : undefined,
           bathrooms: form.bathrooms ? Number(form.bathrooms) : undefined,
           condition: form.condition || undefined,
+          factors: {
+            floor: form.floor ? Number(form.floor) : null,
+            energyRating: form.energyRating || null,
+            yearBuilt: form.yearBuilt ? Number(form.yearBuilt) : null,
+            hasElevator: form.hasElevator,
+            hasGarage: form.hasGarage,
+            hasBalcony: form.hasBalcony,
+            hasTerrace: form.hasTerrace,
+            hasStorage: form.hasStorage,
+            hasAirConditioning: form.hasAirConditioning,
+            hasPool: form.hasPool,
+            hasSeaView: form.hasSeaView,
+          },
         }),
       });
       const data = await res.json();
@@ -126,18 +171,21 @@ export default function ValuationPage() {
     const pageWidth = doc.internal.pageSize.getWidth();
     let y = 20;
 
-    doc.setFillColor(28, 43, 51);
-    doc.rect(0, 0, pageWidth, 32, "F");
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(18);
-    doc.setFont("helvetica", "bold");
-    doc.text("AVALIAÇÃO COMPARATIVA DE MERCADO", pageWidth / 2, 14, { align: "center" });
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    doc.text(form.address, pageWidth / 2, 22, { align: "center" });
+    const identity: ConsultantIdentity =
+      consultant || { name: "Consultor Imobiliário" };
 
-    doc.setTextColor(0, 0, 0);
-    y = 42;
+    // Capa + apresentação do consultor (esta só se ele a tiver escrito).
+    addCoverPage(doc, {
+      documentTitle: "Avaliação Comparativa de Mercado",
+      subtitle: form.address,
+      consultant: identity,
+    });
+    addAboutPage(doc, identity);
+
+    // Página de conteúdo, com o consultor identificado no cabeçalho.
+    doc.addPage();
+    addPageHeader(doc, identity, "Avaliação");
+    y = 46;
 
     if (result.suggestedMin && result.suggestedMax) {
       doc.setFillColor(243, 244, 246);
@@ -173,6 +221,10 @@ export default function ValuationPage() {
     const plainNarrative = result.narrative.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
     const splitText = doc.splitTextToSize(plainNarrative, pageWidth - 30);
     doc.text(splitText, 15, y);
+
+    // Folha de fecho (só se o consultor a tiver escrito) e numeração.
+    addClosingPage(doc, identity);
+    addPageNumbers(doc);
 
     return doc;
   };
@@ -272,6 +324,49 @@ export default function ValuationPage() {
                 <Label>Estado de Conservação</Label>
                 <Input value={form.condition} onChange={(e) => setForm({ ...form, condition: e.target.value })} placeholder="Ex: Renovado em 2022" />
               </div>
+              <div className="space-y-2">
+                <Label>Andar</Label>
+                <Input type="number" value={form.floor} onChange={(e) => setForm({ ...form, floor: e.target.value })} placeholder="Ex: 3 (0 = r/c)" />
+              </div>
+              <div className="space-y-2">
+                <Label>Classe Energética</Label>
+                <Input value={form.energyRating} onChange={(e) => setForm({ ...form, energyRating: e.target.value })} placeholder="Ex: B-" />
+              </div>
+              <div className="space-y-2">
+                <Label>Ano de Construção</Label>
+                <Input type="number" value={form.yearBuilt} onChange={(e) => setForm({ ...form, yearBuilt: e.target.value })} placeholder="Ex: 2008" />
+              </div>
+
+              <div className="md:col-span-2 space-y-2">
+                <Label>Características</Label>
+                <p className="text-xs text-muted-foreground">
+                  Marca o que o imóvel tem. Estas características são consideradas na avaliação —
+                  a ausência de elevador num andar alto, por exemplo, pesa no valor.
+                </p>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {([
+                    ["hasElevator", "Elevador"],
+                    ["hasGarage", "Garagem"],
+                    ["hasBalcony", "Varanda"],
+                    ["hasTerrace", "Terraço"],
+                    ["hasStorage", "Arrecadação"],
+                    ["hasAirConditioning", "Ar condicionado"],
+                    ["hasPool", "Piscina"],
+                    ["hasSeaView", "Vista mar"],
+                  ] as const).map(([key, label]) => (
+                    <label key={key} className="flex items-center gap-2 rounded-md border p-2 text-sm cursor-pointer hover:bg-muted/50">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4"
+                        checked={form[key] as boolean}
+                        onChange={(e) => setForm({ ...form, [key]: e.target.checked })}
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
               <div className="md:col-span-2">
                 <Button onClick={handleGenerate} disabled={loading} className="w-full md:w-auto">
                   {loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}

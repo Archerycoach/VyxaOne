@@ -14,6 +14,10 @@ import {
 } from "@/services/financingService";
 import { jsPDF } from "jspdf";
 import "jspdf-autotable";
+import {
+  addCoverPage, addAboutPage, addClosingPage, addPageHeader, addPageNumbers,
+  buildConsultantIdentity, type ConsultantIdentity,
+} from "@/lib/pdfDocument";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
@@ -49,6 +53,21 @@ export default function FinancingPage() {
   const [deedValue, setDeedValue] = useState<number>(1500);
   const [registryValue, setRegistryValue] = useState<number>(300);
   const [showAdvancedCosts, setShowAdvancedCosts] = useState(false);
+
+  // Perfil do consultor: alimenta capa, cabeçalho e folha de fecho do PDF.
+  const [consultant, setConsultant] = useState<ConsultantIdentity | null>(null);
+  useEffect(() => {
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("full_name, email, phone, company_name, ami_license, document_cover_title, document_about_me, document_closing_text")
+        .eq("id", user.id)
+        .maybeSingle();
+      setConsultant(buildConsultantIdentity(profile, user.email));
+    })();
+  }, []);
 
   const [result, setResult] = useState<ReturnType<typeof calculateMortgage> | null>(null);
   const [extraCosts, setExtraCosts] = useState<ExtraCosts | null>(null);
@@ -107,20 +126,21 @@ export default function FinancingPage() {
     const pageWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
     
-    // Header with title
-    doc.setFillColor(59, 130, 246); // Blue
-    doc.rect(0, 0, pageWidth, 35, "F");
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(22);
-    doc.setFont("helvetica", "bold");
-    doc.text("SIMULAÇÃO DE FINANCIAMENTO HABITAÇÃO", pageWidth / 2, 15, { align: "center" });
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    doc.text(`Gerado em: ${new Date().toLocaleDateString("pt-PT")}`, pageWidth / 2, 25, { align: "center" });
+    const identity: ConsultantIdentity = consultant || { name: "Consultor Imobiliário" };
 
-    // Reset text color for body
+    // Capa + apresentação do consultor (a apresentação só se ele a escreveu).
+    addCoverPage(doc, {
+      documentTitle: "Simulação de Financiamento",
+      subtitle: "Crédito habitação",
+      consultant: identity,
+    });
+    addAboutPage(doc, identity);
+
+    // Página de conteúdo, com o consultor identificado no cabeçalho.
+    doc.addPage();
+    addPageHeader(doc, identity, "Simulação");
     doc.setTextColor(0, 0, 0);
-    let yPos = 45;
+    let yPos = 46;
 
     // Section 1: Dados do Imóvel
     doc.setFillColor(243, 244, 246); // Gray background
@@ -339,6 +359,10 @@ export default function FinancingPage() {
     );
 
     // Save PDF
+    // Folha de fecho (só se o consultor a tiver escrito) e numeração.
+    addClosingPage(doc, identity);
+    addPageNumbers(doc);
+
     return doc;
   };
 

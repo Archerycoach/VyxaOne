@@ -1,3 +1,5 @@
+import { runAI } from "@/lib/ai/provider";
+import { getReactivationEmailPrompt, pickAngle } from "@/lib/ai/prompts/reactivationEmail";
 import crypto from "crypto";
 
 /**
@@ -49,6 +51,8 @@ export interface ReactivationEmailLead {
   email_unsub_token?: string | null;
   location_preference?: string | null;
   buy_purpose?: string | null;
+  /** Última atualização, para calcular há quanto tempo não há contacto. */
+  updated_at?: string | null;
 }
 
 export interface BuiltReactivationEmail {
@@ -60,6 +64,107 @@ export interface BuiltReactivationEmail {
 }
 
 /**
+ * Gera o email com IA e monta o HTML final com os links obrigatórios.
+ *
+ * Devolve null se a IA falhar — quem chama recorre aos templates fixos.
+ */
+async function buildAiReactivationEmail(params: {
+  lead: ReactivationEmailLead;
+  attemptNumber: number;
+  consultor: string;
+  procuraStr: string;
+  optInUrl: string;
+  optOutUrl: string;
+  bookingUrl: string | null;
+  anglesUsed: string[];
+  isLastEmail: boolean;
+}): Promise<{ subject: string; html: string; templateName: string } | null> {
+  const {
+    lead, attemptNumber, consultor, procuraStr,
+    optOutUrl, bookingUrl, anglesUsed, isLastEmail,
+  } = params;
+
+  const angle = pickAngle(anglesUsed, isLastEmail);
+
+  const daysSinceContact = lead.updated_at
+    ? Math.max(0, Math.round((Date.now() - new Date(lead.updated_at).getTime()) / 86400000))
+    : 30;
+
+  const prompt = getReactivationEmailPrompt({
+    leadName: (lead.name || "").split(" ")[0] || "Olá",
+    consultantName: consultor,
+    searchSummary: procuraStr || "imóvel",
+    daysSinceContact,
+    anglesUsed,
+    angle,
+    attemptNumber,
+    isLastEmail,
+  });
+
+  const aiResponse = await runAI({
+    userId: lead.user_id,
+    task: "reactivation_email",
+    messages: [{ role: "user", content: prompt }],
+    jsonMode: true,
+    temperature: 0.8, // variedade entre emails da mesma sequência
+    maxTokens: 800,
+  });
+
+  let parsed: any;
+  try {
+    const match = aiResponse.text.match(/\{[\s\S]*\}/);
+    parsed = JSON.parse(match ? match[0] : aiResponse.text);
+  } catch {
+    console.error("[reactivationEmail] JSON inválido da IA:", aiResponse.text.slice(0, 200));
+    return null;
+  }
+
+  const subject = String(parsed.subject || "").trim();
+  const bodyHtml = String(parsed.bodyHtml || "").trim();
+  if (!subject || !bodyHtml) return null;
+
+  const ctaLabel = String(parsed.ctaLabel || "Marcar uma conversa").trim();
+  const preheader = String(parsed.preheader || "").trim();
+
+  // Os links são acrescentados AQUI, nunca pela IA: o de marcação e o de
+  // opt-out têm de estar sempre presentes e corretos, e um modelo pode
+  // esquecê-los ou inventar URLs.
+  const ctaBlock = bookingUrl
+    ? `<p style="margin:24px 0;">
+         <a href="${bookingUrl}" style="${OPT_IN_BUTTON_STYLE}">${escapeHtml(ctaLabel)}</a>
+       </p>`
+    : "";
+
+  const html = `<!DOCTYPE html>
+<html lang="pt">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f6f7f9;">
+  ${preheader ? `<div style="display:none;max-height:0;overflow:hidden;opacity:0;">${escapeHtml(preheader)}</div>` : ""}
+  <div style="max-width:560px;margin:0 auto;padding:32px 24px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;color:#1f2937;line-height:1.6;">
+    ${bodyHtml}
+    ${ctaBlock}
+    <p style="margin:24px 0 0;">Com os melhores cumprimentos,<br><strong>${escapeHtml(consultor)}</strong></p>
+    <hr style="border:none;border-top:1px solid #e5e7eb;margin:32px 0 16px;">
+    <p style="font-size:12px;color:#6b7280;margin:0;">
+      Recebe este email porque manifestou interesse em imóveis.
+      <a href="${optOutUrl}" style="color:#6b7280;">Deixar de receber</a>.
+    </p>
+  </div>
+</body>
+</html>`;
+
+  return { subject, html, templateName: angle };
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/**
  * Constrói (mas NÃO envia) o email de reativação para uma lead.
  * Devolve `null` se o template correspondente não existir.
  */
@@ -68,6 +173,14 @@ export async function buildReactivationEmail(params: {
   lead: ReactivationEmailLead;
   attemptNumber: number;
   appUrl?: string;
+  /** Falso força os templates fixos (usado pelo teste de envio). */
+  useAi?: boolean;
+  /** Link de marcação do consultor, para o CTA. */
+  bookingUrl?: string | null;
+  /** Ângulos já usados nesta sequência, para a IA não repetir. */
+  anglesUsed?: string[];
+  /** Último email da sequência: muda o tom para encerramento. */
+  isLastEmail?: boolean;
 }): Promise<BuiltReactivationEmail | null> {
   const { supabaseAdmin, lead, attemptNumber } = params;
   const appUrl = params.appUrl || process.env.NEXT_PUBLIC_APP_URL || "https://www.vyxa.pt";
@@ -101,6 +214,37 @@ export async function buildReactivationEmail(params: {
   const procuraType = lead.buy_purpose || "imóvel";
   const procuraLoc = lead.location_preference ? ` em ${lead.location_preference}` : "";
   const procuraStr = `${procuraType}${procuraLoc}`.trim();
+
+  // ── Email escrito pela IA ────────────────────────────────────────────────
+  //
+  // Preferimos a IA aos templates fixos: cada email da sequência ganha um
+  // ângulo diferente (novidade de mercado, pergunta aberta, utilidade
+  // prática...), o que evita a repetição que faz uma sequência ser ignorada.
+  //
+  // Os templates continuam a existir como alternativa: se a IA falhar (sem
+  // chave, quota, JSON inválido), o email sai à mesma pelo caminho antigo. Um
+  // seguimento não pode deixar de ser enviado por causa da IA.
+  if (params.useAi !== false) {
+    try {
+      const aiEmail = await buildAiReactivationEmail({
+        lead,
+        attemptNumber,
+        consultor,
+        procuraStr,
+        optInUrl,
+        optOutUrl,
+        bookingUrl: params.bookingUrl || null,
+        anglesUsed: params.anglesUsed || [],
+        isLastEmail: Boolean(params.isLastEmail),
+      });
+
+      if (aiEmail) {
+        return { ...aiEmail, optInUrl, optOutUrl, templateName: `ia:${aiEmail.templateName}` };
+      }
+    } catch (aiError) {
+      console.error("[reactivationEmail] IA falhou; a usar template fixo.", aiError);
+    }
+  }
 
   const templateName = REACTIVATION_TEMPLATE_BY_ATTEMPT[attemptNumber] || REACTIVATION_TEMPLATE_BY_ATTEMPT[1];
 

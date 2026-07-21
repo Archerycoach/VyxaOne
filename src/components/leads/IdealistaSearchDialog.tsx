@@ -83,8 +83,11 @@ export function IdealistaSearchDialog({
     
     setSavingNote(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Não autenticado");
+      // getSession (local) em vez de getUser (pedido de rede): evita o falso
+      // "Não autenticado" quando a rede oscila ou o token está a ser refrescado.
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
+      if (!user) throw new Error("A tua sessão expirou. Atualiza a página e tenta de novo.");
 
       const linksNote = formatPropertyLinksNote(properties);
       

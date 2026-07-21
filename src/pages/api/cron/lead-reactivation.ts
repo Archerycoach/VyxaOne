@@ -39,6 +39,9 @@ interface LeadToProcess {
   email_opt_out?: boolean;
   email_unsub_token?: string;
   last_reactivation_sent_at?: string;
+  reactivation_emails_sent?: number;
+  reactivation_angles_used?: string[];
+  reactivation_started_at?: string | null;
 }
 
 interface ProcessingResults {
@@ -110,7 +113,8 @@ export default async function handler(
       .select(`
         id, user_id, name, email, phone, follow_up_state, updated_at, 
         reactivation_attempts, location_preference, buy_purpose, 
-        consent_token, email_opt_out, email_unsub_token, last_reactivation_sent_at
+        consent_token, email_opt_out, email_unsub_token, last_reactivation_sent_at,
+        reactivation_emails_sent, reactivation_angles_used, reactivation_started_at
       `)
       .not("follow_up_state", "in", '("archived","opt_out","in_conversation")');
 
@@ -174,6 +178,18 @@ export default async function handler(
 /**
  * Process a single lead for reactivation
  */
+/**
+ * Cadência da sequência de reativação, em dias desde o início.
+ *
+ * 6 emails ao longo de ~6 meses. Substitui os 3 emails em 7 dias, que era
+ * pouco tempo para quem está a decidir comprar casa — um processo de meses.
+ *
+ * Espaçar em vez de insistir também protege a reputação do domínio: a partir
+ * de ~7 emails sem abertura, o Gmail e o Outlook penalizam TODO o correio do
+ * remetente, incluindo o dirigido a clientes ativos.
+ */
+const REACTIVATION_CADENCE_DAYS = [0, 7, 21, 45, 90, 180];
+
 async function processLead(
   lead: LeadToProcess,
   supabaseAdmin: any,
@@ -199,33 +215,60 @@ async function processLead(
   let nextAttempt = attempts;
   let shouldArchive = false;
 
-  // Determine if we should send based on state and cadence
+  // Nº de emails de reativação JÁ enviados — contador próprio da sequência,
+  // não partilhado com o WhatsApp nem dependente de outra tabela.
+  const emailsSent = (lead as any).reactivation_emails_sent || 0;
+
+  // Dias desde o INÍCIO da sequência (não desde a última atualização): é o
+  // que define em que ponto da cadência a lead está.
+  const startedAt = (lead as any).reactivation_started_at;
+  const daysSinceStart = startedAt
+    ? (now - new Date(startedAt).getTime()) / (1000 * 3600 * 24)
+    : 0;
+
   if (lead.follow_up_state === "reengagement") {
-    // In reengagement flow: +3 days for 2nd attempt, +4 more days for 3rd (total +7 from start)
-    if (attempts === 1 && daysSinceUpdate >= 3) {
-      shouldSend = true;
-      nextAttempt = 2;
-    } else if (attempts === 2 && daysSinceUpdate >= 4) {
-      shouldSend = true;
-      nextAttempt = 3;
-    } else if (attempts >= 3 && daysSinceUpdate >= 7) {
+    if (emailsSent >= REACTIVATION_CADENCE_DAYS.length) {
+      // Sequência esgotada: a lead volta ao consultor em vez de desaparecer.
       shouldArchive = true;
+    } else {
+      // Próximo email quando o intervalo previsto já passou.
+      const dueAfterDays = REACTIVATION_CADENCE_DAYS[emailsSent];
+      if (daysSinceStart >= dueAfterDays) {
+        shouldSend = true;
+        nextAttempt = emailsSent + 1;
+      }
     }
   } else {
-    // Cold lead: 30+ days without updates/interaction
+    // Lead fria: 30+ dias sem atividade inicia a sequência.
     if (daysSinceUpdate >= 30) {
       shouldSend = true;
       nextAttempt = 1;
     }
   }
 
-  // Archive after 3 failed attempts
+  // Fim da sequência: NÃO arquivar em silêncio — devolver ao consultor.
+  //
+  // Arquivar automaticamente escondia leads que investiram meses de
+  // acompanhamento. Passam ao Radar, onde o consultor decide se insiste por
+  // outro canal, se liga, ou se arquiva mesmo.
   if (shouldArchive) {
     await supabaseAdmin.from("leads").update({
-      follow_up_state: "archived",
-      archive_reason: "Sem resposta após 3 tentativas de reativação"
+      follow_up_state: "no_reply",
+      reactivation_next_at: null,
     }).eq("id", lead.id);
-    
+
+    await supabaseAdmin.from("notifications").insert({
+      user_id: lead.user_id,
+      title: `📭 Sequência de reativação terminada — ${lead.name || "lead"}`,
+      message:
+        `Enviámos ${emailsSent} emails ao longo de ~6 meses sem resposta. ` +
+        `A lead NÃO foi arquivada: decide se queres tentar por outro canal, ligar, ou arquivar.`,
+      notification_type: "info",
+      is_read: false,
+      related_entity_id: lead.id,
+      related_entity_type: "lead",
+    } as any);
+
     results.archived++;
     return;
   }
@@ -312,27 +355,35 @@ async function sendEmailReactivation(
   results: ProcessingResults,
   appUrl: string
 ): Promise<void> {
-  // O template é escolhido pelo nº de emails de reativação JÁ enviados a esta
-  // lead — e não pelo contador global `reactivation_attempts`, que é
-  // partilhado com o WhatsApp. Sem isto, uma lead que mude de canal a meio da
-  // cadência (ex.: 2 tentativas por WhatsApp e depois perde o opt-in), ou cujo
-  // contador tenha ficado "à frente" por estado antigo na BD, receberia o
-  // lembrete final como PRIMEIRO email. Contamos no automated_email_log
-  // (fonte única dos envios automáticos), excluindo envios de teste.
-  let emailAttempt = attemptNumber;
-  const { count, error: countError } = await supabaseAdmin
-    .from("automated_email_log")
-    .select("id", { count: "exact", head: true })
-    .eq("lead_id", lead.id)
-    .eq("source", "lead_reactivation")
-    .eq("status", "sent")
-    .not("subject", "ilike", "[TESTE]%");
+  // O email a enviar é decidido pelo contador PRÓPRIO da sequência
+  // (leads.reactivation_emails_sent), não por contagens noutras tabelas nem
+  // pelo reactivation_attempts, que é partilhado com o WhatsApp. Era daí que
+  // vinha o "última mensagem" a chegar como primeiro email.
+  const emailsAlreadySent = lead.reactivation_emails_sent || 0;
+  const emailAttempt = emailsAlreadySent + 1;
+  const isLastEmail = emailAttempt >= REACTIVATION_CADENCE_DAYS.length;
+  const anglesUsed = lead.reactivation_angles_used || [];
 
-  if (!countError && typeof count === "number") {
-    emailAttempt = Math.min(count + 1, 3);
+  // Link de marcação do consultor, para o CTA do email.
+  let bookingUrl: string | null = null;
+  const { data: bookingProfile } = await supabaseAdmin
+    .from("profiles")
+    .select("booking_token")
+    .eq("id", lead.user_id)
+    .maybeSingle();
+  if (bookingProfile?.booking_token) {
+    bookingUrl = `${appUrl}/agendar/${bookingProfile.booking_token}`;
   }
 
-  const built = await buildReactivationEmail({ supabaseAdmin, lead, attemptNumber: emailAttempt, appUrl });
+  const built = await buildReactivationEmail({
+    supabaseAdmin,
+    lead,
+    attemptNumber: emailAttempt,
+    appUrl,
+    bookingUrl,
+    anglesUsed,
+    isLastEmail,
+  });
 
   if (!built) {
     console.error(`[Lead Reactivation] Email template para tentativa ${emailAttempt} não encontrado`);
@@ -361,12 +412,31 @@ async function sendEmailReactivation(
   // Update lead state. Grava emailAttempt (e não attemptNumber) para que,
   // quando a cadência recomeça no email 1, os runs seguintes continuem 2 → 3
   // → arquivo, em vez de arquivarem logo a seguir ao primeiro email.
+  const sentAt = new Date();
+  const usedAngle = built.templateName.replace(/^ia:/, "");
+
+  // Próxima data prevista, segundo a cadência longa.
+  const startedAt = lead.reactivation_started_at
+    ? new Date(lead.reactivation_started_at)
+    : sentAt;
+  const nextIndex = emailAttempt; // o índice seguinte da cadência
+  const nextAt =
+    nextIndex < REACTIVATION_CADENCE_DAYS.length
+      ? new Date(startedAt.getTime() + REACTIVATION_CADENCE_DAYS[nextIndex] * 86400000)
+      : null;
+
   await supabaseAdmin.from("leads").update({
     follow_up_state: "reengagement",
     reactivation_attempts: emailAttempt,
-    last_reactivation_sent_at: new Date().toISOString(),
+    // Contador próprio da sequência: a fonte de verdade de qual email vem a seguir.
+    reactivation_emails_sent: emailAttempt,
+    // Ângulo usado, para a IA não repetir a abordagem no próximo.
+    reactivation_angles_used: [...anglesUsed, usedAngle],
+    reactivation_started_at: lead.reactivation_started_at || sentAt.toISOString(),
+    reactivation_next_at: nextAt ? nextAt.toISOString() : null,
+    last_reactivation_sent_at: sentAt.toISOString(),
     archive_reason: "A aguardar opt-in via email",
-    updated_at: new Date().toISOString()
+    updated_at: sentAt.toISOString()
   }).eq("id", lead.id);
 
   // Log interaction — regista o assunto e o texto reais que foram enviados

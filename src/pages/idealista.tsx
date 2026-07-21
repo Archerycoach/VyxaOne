@@ -60,8 +60,13 @@ export default function IdealistaPage() {
     setSearched(true);
     
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Não autenticado");
+      // getSession lê a sessão local (só vai à rede se precisar de refrescar o
+      // token). getUser faz sempre um pedido ao servidor de auth e devolve
+      // null em falhas de rede momentâneas ou com o token a expirar — dava
+      // "Não autenticado" a quem estava perfeitamente autenticado.
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
+      if (!user) throw new Error("A tua sessão expirou. Atualiza a página e tenta de novo.");
 
       const locationStr = [searchParams.freguesia, searchParams.distrito].filter(Boolean).join(", ");
       const isHome = ['flat', 'chalet'].includes(searchParams.formPropertyType);
