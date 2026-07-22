@@ -35,6 +35,58 @@ interface ComparableSummary {
   price: number | null;
 }
 
+/** Distância em km entre dois pontos (Haversine). */
+function distanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371;
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+/**
+ * Candidatos de localização para o auto-complete do Idealista, do mais
+ * específico ao mais largo: "freguesia, concelho" → freguesia → concelho →
+ * distrito.
+ *
+ * A pesquisa do Idealista NÃO é geográfica — resolve texto num locationId.
+ * Passar coordenadas cruas como texto (o que se fazia) não encontrava nada,
+ * e a avaliação saía sem comparável nenhum.
+ */
+function buildLocationCandidates(coordinates: any, city: string | null, address: string): string[] {
+  const freguesia = coordinates?.freguesia || null;
+  const concelho = coordinates?.county || city || null;
+  const distrito = coordinates?.distrito || null;
+
+  const candidates: string[] = [];
+  if (freguesia && concelho) candidates.push(`${freguesia}, ${concelho}`);
+  if (freguesia) candidates.push(freguesia);
+  if (concelho) candidates.push(concelho);
+  if (distrito) candidates.push(distrito);
+  if (candidates.length === 0) candidates.push(city || address);
+  return Array.from(new Set(candidates.filter(Boolean)));
+}
+
+/**
+ * O raio aplica-se DEPOIS, sobre os resultados: os anúncios trazem
+ * latitude/longitude. Um anúncio sem coordenadas passa — excluí-lo
+ * penalizaria anúncios incompletos, não anúncios longe.
+ */
+function withinRadius<T extends { latitude?: number | null; longitude?: number | null }>(
+  results: T[],
+  coordinates: any,
+  radiusKm: number
+): T[] {
+  if (!coordinates?.lat || !coordinates?.lon) return results;
+  return results.filter((item) => {
+    if (typeof item.latitude !== "number" || typeof item.longitude !== "number") return true;
+    return distanceKm(coordinates.lat, coordinates.lon, item.latitude, item.longitude) <= radiusKm;
+  });
+}
+
 /** Tipos de imóvel em que o terreno tem valor próprio. */
 function needsLandValue(propertyType: string | null | undefined): boolean {
   return propertyType === "house" || propertyType === "land";
@@ -137,15 +189,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // localidade. Procurar "MAFRA" trazia comparáveis de Santo Isidoro,
       // Cheleiros e Milharado — freguesias rurais a vários quilómetros, com
       // um mercado que não é o do imóvel a avaliar.
-      if (coordinates?.lat && coordinates?.lon) {
-        params.center = `${coordinates.lat},${coordinates.lon}`;
-        params.searchCenters = [`${coordinates.lat},${coordinates.lon}`];
-        // Raio escolhido pelo consultor. Menor dá comparáveis mais fiéis
-        // mas em menor número; maior alarga em zonas com pouca oferta.
-        params.distance = (coordinates.radiusKm || 4) * 1000;
-      }
+      // Localização por TEXTO (freguesia → concelho → distrito), porque é
+      // assim que o Idealista resolve; o raio filtra os resultados a seguir.
+      const locationCandidates = buildLocationCandidates(coordinates, city, address);
+      params.center = locationCandidates[0];
+      params.searchCenters = locationCandidates;
 
-      const results = await searchIdealistaProperties({ ...params, maxItems: 15 }, credentials, user.id);
+      const rawResults = await searchIdealistaProperties({ ...params, maxItems: 25 }, credentials, user.id);
+      const results = withinRadius(rawResults, coordinates, coordinates?.radiusKm || 4);
 
       // O estado de conservação do imóvel a avaliar decide que comparáveis
       // servem: uma moradia habitável não se compara com ruínas, que é o que
@@ -196,22 +247,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         property_type: propertyType,
         location_preference: city || address,
       });
-      if (coordinates?.lat && coordinates?.lon) {
-        zoneParams.center = `${coordinates.lat},${coordinates.lon}`;
-        zoneParams.searchCenters = [`${coordinates.lat},${coordinates.lon}`];
-        // Raio maior do que o dos comparáveis: aqui quer-se a envolvente do
-        // mercado, não imóveis diretamente comparáveis.
-        // A referência de zona usa o dobro do raio dos comparáveis: aqui
-        // quer-se a envolvente do mercado, não imóveis diretamente
-        // comparáveis.
-        zoneParams.distance = (coordinates.radiusKm || 4) * 2000;
-      }
+      const zoneCandidates = buildLocationCandidates(coordinates, city, address);
+      zoneParams.center = zoneCandidates[0];
+      zoneParams.searchCenters = zoneCandidates;
 
-      const zoneResults = await searchIdealistaProperties(
+      const zoneRaw = await searchIdealistaProperties(
         { ...zoneParams, maxItems: 40 },
         credentials,
         user.id
       );
+      // Zona = dobro do raio dos comparáveis: envolvente, não vizinhança.
+      const zoneResults = withinRadius(zoneRaw, coordinates, (coordinates?.radiusKm || 4) * 2);
 
       const zoneValues = zoneResults
         .map((p) => p.priceByArea || (p.size && p.price ? p.price / p.size : null))
@@ -245,17 +291,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           location_preference: city || address,
         });
 
-        if (coordinates?.lat && coordinates?.lon) {
-          landParams.center = `${coordinates.lat},${coordinates.lon}`;
-          landParams.searchCenters = [`${coordinates.lat},${coordinates.lon}`];
-          // Terrenos são oferta escassa: um raio apertado devolveria zero.
-          landParams.distance = Math.max((coordinates.radiusKm || 4) * 2000, 10000);
-        }
+        const landCandidates = buildLocationCandidates(coordinates, city, address);
+        landParams.center = landCandidates[0];
+        landParams.searchCenters = landCandidates;
 
-        const landResults = await searchIdealistaProperties(
+        const landRaw = await searchIdealistaProperties(
           { ...landParams, maxItems: 30 },
           credentials,
           user.id
+        );
+        // Terrenos são oferta escassa: raio largo (mínimo 10 km).
+        const landResults = withinRadius(
+          landRaw,
+          coordinates,
+          Math.max((coordinates?.radiusKm || 4) * 2, 10)
         );
 
         const landValues = landResults

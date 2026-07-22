@@ -7,6 +7,11 @@ export interface AddressSelection {
   label: string;
   lat: number;
   lon: number;
+  /** Concelho (ex.: "Lisboa", "Mafra"). */
+  concelho: string | null;
+  /** Freguesia (ex.: "Benfica"). */
+  freguesia: string | null;
+  distrito: string | null;
   city: string | null;
   county: string | null;
   district: string | null;

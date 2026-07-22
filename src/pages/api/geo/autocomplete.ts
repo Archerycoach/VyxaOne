@@ -61,11 +61,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           label: p.formatted as string,
           lat: p.lat as number,
           lon: p.lon as number,
-          // `county` é o concelho em Portugal — é o que interessa para a
-          // pesquisa de comparáveis, não a freguesia nem o distrito.
-          city: (p.city || p.county || p.state) ?? null,
-          county: p.county ?? null,
-          district: p.state ?? null,
+          // Mapeamento verificado contra respostas reais para Portugal:
+          // `city` é o CONCELHO, `suburb`/`district` é a FREGUESIA e
+          // `county` é o DISTRITO ("Lisboa" tanto para Lisboa como para
+          // Mafra). Confundi-los fazia o INE resolver o município errado.
+          concelho: p.city ?? null,
+          freguesia: (p.suburb || p.district) ?? null,
+          distrito: (p.county || p.state) ?? null,
+          // Compatibilidade com quem já lia estes nomes:
+          city: p.city ?? null,
+          county: p.city ?? null,
+          district: (p.county || p.state) ?? null,
           postcode: p.postcode ?? null,
           street: p.street ?? null,
         };

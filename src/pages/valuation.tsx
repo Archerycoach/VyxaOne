@@ -120,6 +120,8 @@ export default function ValuationPage() {
     lat: "",
     lon: "",
     county: "",
+    freguesia: "",
+    distrito: "",
     searchRadiusKm: "4",
     // Critérios de análise. Preço/ano/classe excluem; características pontuam.
     criteriaMinPrice: "",
@@ -248,6 +250,8 @@ export default function ValuationPage() {
                   lat: Number(form.lat),
                   lon: Number(form.lon),
                   county: form.county || form.city || null,
+                  freguesia: form.freguesia || null,
+                  distrito: form.distrito || null,
                   radiusKm: Number(form.searchRadiusKm) || 4,
                 }
               : null,
@@ -655,10 +659,12 @@ export default function ValuationPage() {
                       address: selection.label,
                       // A cidade só é preenchida se estiver vazia: uma escolha
                       // anterior do consultor não deve ser substituída.
-                      city: prev.city || selection.county || selection.city || "",
+                      city: prev.city || selection.concelho || selection.city || "",
                       lat: String(selection.lat),
                       lon: String(selection.lon),
-                      county: selection.county || selection.city || "",
+                      county: selection.concelho || selection.city || "",
+                      freguesia: selection.freguesia || "",
+                      distrito: selection.distrito || "",
                     }))
                   }
                   placeholder="Ex: Longo da Vila, Mafra"
