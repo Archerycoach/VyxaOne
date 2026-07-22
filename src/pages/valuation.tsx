@@ -21,13 +21,13 @@ import { supabase } from "@/integrations/supabase/client";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import { jsPDF } from "jspdf";
 import {
-  loadFooterImage, addFooterBand, mergeBrandingPages, saveMergedPdf, hasCustomCover, hasCustomAbout,
+  loadFooterImage, addFooterBand, footerBandHeight, mergeBrandingPages, saveMergedPdf, hasCustomCover, hasCustomAbout,
   loadProfilePhoto,
   type DocumentBranding,
 } from "@/lib/documentBranding";
 import {
   addCoverPage, addAboutPage, addClosingPage, addPageHeader, addPageNumbers,
-  setDocumentTheme, addSectionTitle, addKeyValueTable, addValueEstimate, addComparableCard, addBodyText,
+  setDocumentTheme, setFooterReserve, getFooterReserve, addSectionTitle, addKeyValueTable, addValueEstimate, addComparableCard, addBodyText,
   addLocationMap, addPointsOfInterest, addNarrative, addAskingVsSoldBlock,
   buildConsultantIdentity, type ConsultantIdentity,
 } from "@/lib/pdfDocument";
@@ -280,6 +280,10 @@ export default function ValuationPage() {
   const buildPdf = (footerDataUri: string | null = null): jsPDF | null => {
     if (!result) return null;
     const doc = new jsPDF();
+
+    // A reserva tem de ser conhecida ANTES de escrever o conteúdo — é ela
+    // que impede o texto de chegar ao fundo onde a faixa vai ser desenhada.
+    setFooterReserve(footerBandHeight(doc, footerDataUri));
     const pageHeight = doc.internal.pageSize.getHeight();
 
     const identity: ConsultantIdentity =
@@ -430,7 +434,7 @@ export default function ValuationPage() {
     result.comparables.slice(0, 12).forEach((c: any) => {
       // Cada cartão tem altura variável — verifica-se o espaço antes de o
       // desenhar, senão parte-se a meio na mudança de página.
-      if (y > pageHeight - 60) {
+      if (y > pageHeight - 60 - getFooterReserve()) {
         doc.addPage();
         addPageHeader(doc, identity, "Comparáveis");
         y = 46;
@@ -463,6 +467,13 @@ export default function ValuationPage() {
       addPageHeader(doc, identity, "Análise");
       return 46;
     });
+
+    // Com capa própria, a página 1 do documento gerado nunca foi desenhada
+    // (o jsPDF cria-a sempre) — sem isto, aparecia uma página em branco a
+    // seguir à apresentação.
+    if (hasCustomCover(branding) && doc.getNumberOfPages() > 1) {
+      doc.deletePage(1);
+    }
 
     // Folha de fecho (só se o consultor a tiver escrito), faixa de rodapé e
     // numeração. A faixa vai antes dos números para não os tapar.

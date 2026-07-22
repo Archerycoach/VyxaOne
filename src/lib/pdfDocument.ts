@@ -50,6 +50,22 @@ function hexToRgb(hex: string | null | undefined): { r: number; g: number; b: nu
  * Define as cores do documento. Chamar ANTES de desenhar seja o que for —
  * as funções de desenho leem estas variáveis no momento em que correm.
  */
+/**
+ * Espaço reservado no fundo de cada página para a faixa de rodapé.
+ *
+ * Sem isto, o conteúdo era escrito até ao fundo e a faixa — desenhada depois
+ * — ficava por cima do texto. Definido antes de gerar, como o tema.
+ */
+let FOOTER_RESERVE_MM = 0;
+
+export function setFooterReserve(mm: number): void {
+  FOOTER_RESERVE_MM = Math.max(0, mm);
+}
+
+export function getFooterReserve(): number {
+  return FOOTER_RESERVE_MM;
+}
+
 export function setDocumentTheme(theme: { brand?: string | null; accent?: string | null }): void {
   BRAND = hexToRgb(theme.brand) || { ...DEFAULT_BRAND };
   ACCENT = hexToRgb(theme.accent) || { ...DEFAULT_ACCENT };
@@ -218,7 +234,7 @@ export function addAboutPage(doc: jsPDF, consultant: ConsultantIdentity): void {
     const usableWidth = y < 74 ? textWidth : pageWidth - MARGIN * 2;
     const lines = doc.splitTextToSize(paragraph.trim(), usableWidth);
     for (const line of lines) {
-      if (y > doc.internal.pageSize.getHeight() - 30) {
+      if (y > doc.internal.pageSize.getHeight() - 30 - FOOTER_RESERVE_MM) {
         doc.addPage();
         addPageHeader(doc, consultant);
         y = 52;
@@ -578,7 +594,7 @@ export function addBodyText(doc: jsPDF, text: string, y: number): number {
 
   const lines: string[] = doc.splitTextToSize(text, pageWidth - MARGIN * 2);
   for (const line of lines) {
-    if (y > pageHeight - 25) {
+    if (y > pageHeight - 25 - FOOTER_RESERVE_MM) {
       doc.addPage();
       y = 25;
     }
@@ -647,14 +663,18 @@ export function addPointsOfInterest(doc: jsPDF, pois: LocationPoi[], y: number):
   let column = 0;
   let columnTop = y;
   let cursor = y;
+  // O fundo mais baixo das DUAS colunas — a nota de atribuição tem de ficar
+  // abaixo de ambas, não à altura da coluna onde o cursor calhou a acabar
+  // (era isso que a punha em cima do título "Transportes").
+  let maxBottom = y;
 
   for (const category of categories) {
     const items = pois.filter((poi) => poi.category === category);
-    const blockHeight = 7 + items.length * 5 + 4;
+    const blockHeight = 8 + items.length * 5.5 + 6;
 
     // Muda de coluna, e só depois de página — duas colunas aproveitam melhor
     // o espaço numa lista de nomes curtos.
-    if (cursor + blockHeight > pageHeight - 25) {
+    if (cursor + blockHeight > pageHeight - 25 - FOOTER_RESERVE_MM) {
       if (column === 0) {
         column = 1;
         cursor = columnTop;
@@ -672,7 +692,7 @@ export function addPointsOfInterest(doc: jsPDF, pois: LocationPoi[], y: number):
     doc.setFontSize(9.5);
     doc.setTextColor(BRAND.r, BRAND.g, BRAND.b);
     doc.text(POI_SECTION_LABELS[category] || category, x, cursor);
-    cursor += 6;
+    cursor += 7;
 
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8.5);
@@ -689,10 +709,11 @@ export function addPointsOfInterest(doc: jsPDF, pois: LocationPoi[], y: number):
       doc.setTextColor(MUTED.r, MUTED.g, MUTED.b);
       doc.text(minutes, x + columnWidth - minutesWidth, cursor);
 
-      cursor += 5;
+      cursor += 5.5;
     }
 
-    cursor += 4;
+    cursor += 6;
+    maxBottom = Math.max(maxBottom, cursor);
   }
 
   doc.setFontSize(7);
@@ -700,10 +721,10 @@ export function addPointsOfInterest(doc: jsPDF, pois: LocationPoi[], y: number):
   doc.text(
     "Tempos a pé estimados a partir da distância. Dados: © OpenStreetMap contributors.",
     MARGIN,
-    Math.min(cursor + 2, pageHeight - 12)
+    Math.min(maxBottom + 3, pageHeight - 12 - FOOTER_RESERVE_MM)
   );
 
-  return cursor + 8;
+  return maxBottom + 10;
 }
 
 /**
@@ -806,7 +827,7 @@ export function addNarrative(
     );
 
     lines.forEach((line, index) => {
-      if (y > pageHeight - 25) y = newPage();
+      if (y > pageHeight - 25 - FOOTER_RESERVE_MM) y = newPage();
 
       if (isBullet && index === 0) {
         doc.setTextColor(ACCENT.r, ACCENT.g, ACCENT.b);

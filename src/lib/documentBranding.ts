@@ -84,19 +84,18 @@ export function addFooterBand(doc: jsPDF, footerDataUri: string | null): void {
     bandHeight = 12;
   }
 
-  // A faixa ocupa SEMPRE a largura total da página, como a capa carregada.
-  // Reduzi-la e centrá-la — o que se fazia antes — dava um rodapé pequeno e
-  // deslocado, visivelmente diferente da capa que usa a mesma imagem.
-  //
-  // Se a imagem for alta de mais para rodapé, o limite aplica-se à altura e a
-  // proporção cede: é preferível uma faixa ligeiramente comprimida a uma
-  // miniatura ao centro da página. O aviso no carregamento pede uma imagem
-  // com as proporções certas.
-  const MAX_BAND_HEIGHT = 30;
-  const drawWidth = pageWidth;
-  const drawX = 0;
+  // A proporção da imagem é SEMPRE respeitada — esticar ou espremer é o que
+  // produzia o rodapé deformado. A faixa ocupa a largura total; se a imagem
+  // for alta de mais (não é uma faixa, é um cartaz), reduz-se mantendo a
+  // forma e centra-se. O aviso no carregamento já pede proporções de faixa.
+  const MAX_BAND_HEIGHT = 40;
+  let drawWidth = pageWidth;
+  let drawX = 0;
 
   if (bandHeight > MAX_BAND_HEIGHT) {
+    const scale = MAX_BAND_HEIGHT / bandHeight;
+    drawWidth = pageWidth * scale;
+    drawX = (pageWidth - drawWidth) / 2;
     bandHeight = MAX_BAND_HEIGHT;
   }
 
@@ -120,13 +119,15 @@ export function addFooterBand(doc: jsPDF, footerDataUri: string | null): void {
   }
 }
 
-/** Altura ocupada pela faixa, para o conteúdo não lhe passar por cima. */
+/** Altura ocupada pela faixa, para reservar espaço ANTES de desenhar. */
 export function footerBandHeight(doc: jsPDF, footerDataUri: string | null): number {
   if (!footerDataUri) return 0;
   try {
     const properties = (doc as any).getImageProperties(footerDataUri);
     const pageWidth = doc.internal.pageSize.getWidth();
-    return Math.min(pageWidth * (properties.height / properties.width), 28);
+    // O mesmo limite do addFooterBand — os dois têm de concordar, senão a
+    // reserva não bate certo com o que é desenhado.
+    return Math.min(pageWidth * (properties.height / properties.width), 40);
   } catch {
     return 12;
   }
