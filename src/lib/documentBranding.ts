@@ -153,10 +153,6 @@ export async function mergeBrandingPages(
     downloadAsset(branding.closingPdfPath),
   ]);
 
-  if (!coverBytes && !aboutBytes && !closingBytes) {
-    return new Uint8Array(generated);
-  }
-
   try {
     const output = await PDFDocument.create();
 
@@ -183,6 +179,24 @@ export async function mergeBrandingPages(
     await appendAll(generated);
     if (closingBytes) await appendAll(closingBytes);
 
+    // Numeração DEPOIS da fusão, com o total real. Numerar antes dava
+    // "2 / 9" num documento de 12 páginas — o total ignorava a capa e a
+    // apresentação carregadas. A capa não é numerada, por convenção.
+    const font = await output.embedFont(StandardFonts.Helvetica);
+    const total = output.getPageCount();
+    for (let index = 1; index < total; index++) {
+      const page = output.getPage(index);
+      const label = `${index + 1} / ${total}`;
+      const size = 8;
+      page.drawText(label, {
+        x: page.getSize().width - font.widthOfTextAtSize(label, size) - 24,
+        y: 14,
+        size,
+        font,
+        color: rgb(0.45, 0.47, 0.5),
+      });
+    }
+
     return await output.save();
   } catch (error) {
     console.warn("[documentBranding] Fusão falhou; entregue o documento original:", error);
@@ -208,15 +222,38 @@ async function drawCoverOverlay(
   const bold = await output.embedFont(StandardFonts.HelveticaBold);
   const regular = await output.embedFont(StandardFonts.Helvetica);
 
-  const titleSize = 22;
-  const subtitleSize = 13;
+  const titleSize = 16;
+  const subtitleSize = 12;
   const dateSize = 10;
 
-  const title = overlay.title.toUpperCase();
-  const lines: Array<{ text: string; font: typeof bold; size: number }> = [
-    { text: title, font: bold, size: titleSize },
-  ];
-  if (overlay.subtitle) lines.push({ text: overlay.subtitle, font: regular, size: subtitleSize });
+  // Uma morada longa não cabe numa linha — quebra por palavras à medida.
+  const wrap = (text: string, font: typeof bold, size: number): string[] => {
+    const maxWidth = width - 90;
+    const words = text.split(/\s+/);
+    const lines: string[] = [];
+    let current = "";
+    for (const word of words) {
+      const candidate = current ? `${current} ${word}` : word;
+      if (font.widthOfTextAtSize(candidate, size) > maxWidth && current) {
+        lines.push(current);
+        current = word;
+      } else {
+        current = candidate;
+      }
+    }
+    if (current) lines.push(current);
+    return lines;
+  };
+
+  const lines: Array<{ text: string; font: typeof bold; size: number }> = [];
+  for (const line of wrap(overlay.title, bold, titleSize)) {
+    lines.push({ text: line, font: bold, size: titleSize });
+  }
+  if (overlay.subtitle) {
+    for (const line of wrap(overlay.subtitle, regular, subtitleSize)) {
+      lines.push({ text: line, font: regular, size: subtitleSize });
+    }
+  }
   if (overlay.date) lines.push({ text: overlay.date, font: regular, size: dateSize });
 
   const lineGap = 10;

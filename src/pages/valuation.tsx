@@ -320,7 +320,7 @@ export default function ValuationPage() {
       ["Área do lote", form.landArea ? `${form.landArea} m2` : null],
       ["Piso", form.floor != null && form.floor !== "" ? String(form.floor) : null],
       ["Ano de construção", form.yearBuilt ? String(form.yearBuilt) : null],
-      ["Classe energética", form.energyRating],
+      ["Classe energética", form.energyRating ? form.energyRating.toUpperCase() : null],
       ["Estado de conservação", form.condition],
     ], y);
 
@@ -479,7 +479,8 @@ export default function ValuationPage() {
     // numeração. A faixa vai antes dos números para não os tapar.
     addClosingPage(doc, identity);
     addFooterBand(doc, footerDataUri);
-    addPageNumbers(doc);
+    // A numeração é feita na fusão (mergeBrandingPages), onde o total de
+    // páginas — com capa e apresentação carregadas — é conhecido.
 
     return doc;
   };
@@ -553,9 +554,10 @@ export default function ValuationPage() {
 
     // A fusão com a capa/contracapa é feita pelo pdf-lib: o jsPDF desenha
     // páginas mas não sabe importar páginas de outro PDF.
+    // A capa carregada já traz o título do consultor; a sobreposição
+    // acrescenta só o que o modelo não sabe — a morada e a data.
     const bytes = await mergeBrandingPages(doc, branding, {
-      title: "Estudo Comparativo de Mercado",
-      subtitle: form.address,
+      title: form.address,
       date: new Date().toLocaleDateString("pt-PT"),
     });
     saveMergedPdf(bytes, `Avaliacao_${form.address.replace(/\s+/g, "_")}.pdf`);
@@ -574,8 +576,7 @@ export default function ValuationPage() {
 
       // O email leva exatamente o mesmo documento que a exportação.
       const merged = await mergeBrandingPages(doc, branding, {
-        title: "Estudo Comparativo de Mercado",
-        subtitle: form.address,
+        title: form.address,
         date: new Date().toLocaleDateString("pt-PT"),
       });
       const base64Content = Buffer.from(merged).toString("base64");
