@@ -1,9 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/router";
 import { Layout } from "@/components/Layout";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -14,9 +15,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Home, Sparkles, Loader2, Download, Send, TrendingUp, MapPin, ExternalLink } from "lucide-react";
+import { Home, Sparkles, Loader2, Download, Send, TrendingUp, MapPin, ExternalLink, FileText } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import { jsPDF } from "jspdf";
 import {
   loadFooterImage, addFooterBand, mergeBrandingPages, saveMergedPdf, hasCustomCover, hasCustomAbout,
@@ -47,6 +49,14 @@ interface ValuationResult {
   activeAvgPricePerSqm: number | null;
   suggestedMin: number | null;
   zonePricePerSqm?: number | null;
+  sanityCheck?: {
+    expectedMinPerSqm: number | null;
+    expectedMaxPerSqm: number | null;
+    verdict: "plausivel" | "provavelmente_baixa" | "provavelmente_alta" | null;
+    confidence: "alta" | "media" | "baixa" | null;
+    reasoning: string | null;
+    divergencePct: number | null;
+  } | null;
   zoneSampleSize?: number | null;
   suggestedMax: number | null;
   narrative: string;
@@ -104,22 +114,27 @@ export default function ValuationPage() {
     hasGarden: false,
     hasSolarPanels: false,
     hasHeatPump: false,
+    hasOpenViews: false,
+    isSingleStorey: false,
     landArea: "",
-    referenceLandArea: "",
-    landPricePerSqm: "",
-    ineGeoCode: "",
+    lat: "",
+    lon: "",
+    county: "",
+    searchRadiusKm: "4",
+    // Critérios de análise. Preço/ano/classe excluem; características pontuam.
+    criteriaMinPrice: "",
+    criteriaMaxPrice: "",
+    criteriaMinYear: "",
+    criteriaMaxYear: "",
+    criteriaEnergyRatings: [] as string[],
+    preferredFeatures: [] as string[],
+    consultantDescription: "",
   });
 
   // Perfil do consultor: alimenta a capa, o cabeçalho e a folha de fecho do PDF.
   const [consultant, setConsultant] = useState<ConsultantIdentity | null>(null);
   // Capa/contracapa em PDF e faixa de rodapé, carregadas pelo consultor.
   const [branding, setBranding] = useState<DocumentBranding>({});
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const saved = localStorage.getItem("vyxa_ine_geo_code");
-    if (saved) setForm((prev) => ({ ...prev, ineGeoCode: saved }));
-  }, []);
-
   useEffect(() => {
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -164,6 +179,7 @@ export default function ValuationPage() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ValuationResult | null>(null);
   const [sendingEmail, setSendingEmail] = useState(false);
+  const [showCriteria, setShowCriteria] = useState(false);
 
   useEffect(() => {
     const leadId = router.query.leadId;
@@ -221,15 +237,29 @@ export default function ValuationPage() {
             hasGarden: form.hasGarden,
             hasSolarPanels: form.hasSolarPanels,
             hasHeatPump: form.hasHeatPump,
+            hasOpenViews: form.hasOpenViews,
+            isSingleStorey: form.isSingleStorey,
             landArea: form.landArea ? Number(form.landArea) : null,
           },
-          // Código INE do município. Guardado localmente entre avaliações —
-          // quem trabalha sempre a mesma zona escreve-o uma vez.
-          ineGeoCode: form.ineGeoCode || null,
-          land: {
-            landArea: form.landArea ? Number(form.landArea) : null,
-            referenceLandArea: form.referenceLandArea ? Number(form.referenceLandArea) : null,
-            landPricePerSqm: form.landPricePerSqm ? Number(form.landPricePerSqm) : null,
+          // Coordenadas exatas quando o consultor escolheu da lista.
+          coordinates:
+            form.lat && form.lon
+              ? {
+                  lat: Number(form.lat),
+                  lon: Number(form.lon),
+                  county: form.county || form.city || null,
+                  radiusKm: Number(form.searchRadiusKm) || 4,
+                }
+              : null,
+          land: { landArea: form.landArea ? Number(form.landArea) : null },
+          consultantDescription: form.consultantDescription.trim() || null,
+          criteria: {
+            minPrice: form.criteriaMinPrice ? Number(form.criteriaMinPrice) : null,
+            maxPrice: form.criteriaMaxPrice ? Number(form.criteriaMaxPrice) : null,
+            minYearBuilt: form.criteriaMinYear ? Number(form.criteriaMinYear) : null,
+            maxYearBuilt: form.criteriaMaxYear ? Number(form.criteriaMaxYear) : null,
+            energyRatings: form.criteriaEnergyRatings,
+            preferredFeatures: form.preferredFeatures,
           },
         }),
       });
@@ -326,6 +356,10 @@ export default function ValuationPage() {
 
     // O ajuste do terreno é explicado: um valor acima do que os comparáveis
     // sugerem tem de ser justificado, senão parece arbitrário.
+    if ((result as any).factorNote) {
+      y = addBodyText(doc, (result as any).factorNote, y + 2);
+    }
+
     if ((result as any).landAdjustmentNote) {
       y = addBodyText(doc, (result as any).landAdjustmentNote, y + 2);
     }
@@ -435,6 +469,68 @@ export default function ValuationPage() {
     return doc;
   };
 
+  // Caderneta predial: lê o PDF e pré-preenche os campos. Reutiliza o
+  // extrator dos documentos do imóvel — mesma IA, mesmo formato de resposta.
+  const [extractingDoc, setExtractingDoc] = useState(false);
+  const cadernetaInputRef = useRef<HTMLInputElement>(null);
+
+  const handleCadernetaFile = async (file: File) => {
+    setExtractingDoc(true);
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(new Error("Não foi possível ler o ficheiro."));
+        reader.readAsDataURL(file);
+      });
+
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch("/api/gpt/properties/extract-from-document", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({ imageBase64: base64, kind: "caderneta" }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Erro ao ler o documento");
+
+      const fields = data.fields || {};
+
+      // Só preenche o que veio com valor E ainda está vazio no formulário —
+      // a caderneta completa, não substitui o que o consultor escreveu.
+      setForm((prev) => ({
+        ...prev,
+        area: prev.area || (fields.area ? String(fields.area) : ""),
+        landArea: prev.landArea || (fields.land_area ? String(fields.land_area) : ""),
+        bedrooms: prev.bedrooms || (fields.bedrooms ? String(fields.bedrooms) : ""),
+        yearBuilt: prev.yearBuilt || (fields.year_built ? String(fields.year_built) : ""),
+        energyRating: prev.energyRating || fields.energy_rating || "",
+        propertyType: fields.property_type || prev.propertyType,
+        city: prev.city || fields.city || "",
+        address: prev.address || fields.address || "",
+      }));
+
+      const filled = ["area", "land_area", "bedrooms", "year_built", "energy_rating"]
+        .filter((key) => fields[key] != null).length;
+
+      toast({
+        title: filled > 0 ? "✅ Caderneta lida" : "Caderneta sem dados legíveis",
+        description:
+          filled > 0
+            ? `${filled} campo${filled === 1 ? "" : "s"} preenchido${filled === 1 ? "" : "s"}. Confirma antes de gerar.`
+            : "Não foi possível extrair campos com confiança. Preenche à mão.",
+      });
+    } catch (error: any) {
+      toast({ title: "Erro ao ler a caderneta", description: error.message, variant: "destructive" });
+    } finally {
+      setExtractingDoc(false);
+      if (cadernetaInputRef.current) cadernetaInputRef.current.value = "";
+    }
+  };
+
   const handleExportPdf = async () => {
     const footer = await loadFooterImage(branding.footerImagePath);
     const doc = buildPdf(footer);
@@ -509,9 +605,70 @@ export default function ValuationPage() {
           <Card>
             <CardHeader><CardTitle className="text-base">Dados do Imóvel</CardTitle></CardHeader>
             <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="md:col-span-2">
+                <input
+                  ref={cadernetaInputRef}
+                  type="file"
+                  accept="application/pdf,image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleCadernetaFile(file);
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={extractingDoc}
+                  onClick={() => cadernetaInputRef.current?.click()}
+                >
+                  {extractingDoc ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      A ler a caderneta...
+                    </>
+                  ) : (
+                    <>
+                      <FileText className="mr-2 h-4 w-4" />
+                      Ler caderneta predial (PDF)
+                    </>
+                  )}
+                </Button>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Preenche áreas, ano e tipologia a partir do documento oficial. Nada é gravado
+                  sem confirmares.
+                </p>
+              </div>
+
               <div className="md:col-span-2 space-y-2">
                 <Label>Morada *</Label>
-                <Input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="Ex: Rua das Flores, 123, Lisboa" />
+                {/* Escolher da lista fixa as coordenadas exatas. Sem isso, a
+                    morada era geocodificada depois a partir de texto ambíguo —
+                    foi assim que uma avaliação em Mafra saiu com pontos de
+                    interesse do Porto. */}
+                <AddressAutocomplete
+                  value={form.address}
+                  onChange={(value) => setForm((prev) => ({ ...prev, address: value }))}
+                  onSelect={(selection) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      address: selection.label,
+                      // A cidade só é preenchida se estiver vazia: uma escolha
+                      // anterior do consultor não deve ser substituída.
+                      city: prev.city || selection.county || selection.city || "",
+                      lat: String(selection.lat),
+                      lon: String(selection.lon),
+                      county: selection.county || selection.city || "",
+                    }))
+                  }
+                  placeholder="Ex: Longo da Vila, Mafra"
+                />
+                {form.lat && form.lon && (
+                  <p className="flex items-center gap-1 text-xs text-green-700">
+                    <MapPin className="h-3 w-3" />
+                    Localização fixada — comparáveis e envolvente vão usar estas coordenadas.
+                  </p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label>Cidade / Zona</Label>
@@ -536,6 +693,22 @@ export default function ValuationPage() {
               </div>
               {/* O lote só se pergunta onde existe. Num apartamento o campo
                   seria ruído; numa moradia é dos fatores que mais pesa. */}
+              {form.propertyType === "house" && (
+                <div className="space-y-2 md:col-span-2">
+                  <label className="flex cursor-pointer items-center gap-2 rounded-md border p-2 text-sm hover:bg-muted/50 max-w-xs">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4"
+                      checked={form.isSingleStorey}
+                      onChange={(e) => setForm({ ...form, isSingleStorey: e.target.checked })}
+                    />
+                    Moradia térrea
+                  </label>
+                  <p className="text-xs text-muted-foreground">
+                    Térreas têm oferta escassa e procura própria — valoriza na análise.
+                  </p>
+                </div>
+              )}
               {LAND_AREA_TYPES.includes(form.propertyType) && (
                 <div className="space-y-2">
                   <Label>Área do lote (m²)</Label>
@@ -549,37 +722,6 @@ export default function ValuationPage() {
                     Terreno total da propriedade, incluindo a área de implantação.
                   </p>
                 </div>
-              )}
-              {/* Valorização do terreno. Opcional: sem estes dois campos o
-                  lote é referido na análise mas não altera o valor. */}
-              {LAND_AREA_TYPES.includes(form.propertyType) && (
-                <>
-                  <div className="space-y-2">
-                    <Label>Lote típico da zona (m²)</Label>
-                    <Input
-                      type="number"
-                      value={form.referenceLandArea}
-                      onChange={(e) => setForm({ ...form, referenceLandArea: e.target.value })}
-                      placeholder="Ex: 500"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Valor do terreno na zona (€/m²)</Label>
-                    <Input
-                      type="number"
-                      value={form.landPricePerSqm}
-                      onChange={(e) => setForm({ ...form, landPricePerSqm: e.target.value })}
-                      placeholder="Ex: 120"
-                    />
-                  </div>
-                  <div className="md:col-span-2 -mt-2">
-                    <p className="text-xs text-muted-foreground">
-                      Só o terreno <strong>acima ou abaixo</strong> do lote típico altera o valor —
-                      o lote normal da zona já está no preço dos comparáveis. Deixa em branco para
-                      não ajustar.
-                    </p>
-                  </div>
-                </>
               )}
               <div className="space-y-2">
                 <Label>Tipologia (quartos)</Label>
@@ -625,6 +767,7 @@ export default function ValuationPage() {
                     ["hasGarden", "Jardim"],
                     ["hasSolarPanels", "Painéis solares"],
                     ["hasHeatPump", "Bomba de calor"],
+                    ["hasOpenViews", "Vistas desafogadas"],
                   ] as const).map(([key, label]) => (
                     <label key={key} className="flex items-center gap-2 rounded-md border p-2 text-sm cursor-pointer hover:bg-muted/50">
                       <input
@@ -640,25 +783,175 @@ export default function ValuationPage() {
               </div>
 
               <div className="space-y-2 md:col-span-2">
-                <Label>Código INE do município (opcional)</Label>
-                <Input
-                  value={form.ineGeoCode}
-                  onChange={(e) => {
-                    setForm({ ...form, ineGeoCode: e.target.value });
-                    if (typeof window !== "undefined") {
-                      localStorage.setItem("vyxa_ine_geo_code", e.target.value);
-                    }
-                  }}
-                  placeholder="Ex: 1113"
-                  className="max-w-xs"
+                <Label>Descrição do imóvel (opcional)</Label>
+                <Textarea
+                  rows={3}
+                  value={form.consultantDescription}
+                  onChange={(e) => setForm({ ...form, consultantDescription: e.target.value })}
+                  placeholder="Ex: Lote todo ajardinado, pintada por fora recentemente, cozinha remodelada em 2023..."
                 />
                 <p className="text-xs text-muted-foreground">
-                  Traz o valor mediano de escrituras do INE para a avaliação — a referência mais
-                  fiável, porque reflete preços pagos e não pedidos. Descobre o código com{" "}
-                  <code className="rounded bg-muted px-1 text-xs">node scripts/ine-descobrir-indicador.js</code>.
-                  Fica guardado para as próximas avaliações.
+                  O que viste no imóvel e os números não mostram. Entra na análise escrita do
+                  estudo.
                 </p>
               </div>
+
+              <div className="md:col-span-2 border-t pt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowCriteria((prev) => !prev)}
+                  className="flex w-full items-center justify-between text-left font-medium"
+                >
+                  <span>Critérios de análise dos comparáveis</span>
+                  <span className="text-xs text-muted-foreground">
+                    {showCriteria ? "Ocultar" : "Mostrar"}
+                  </span>
+                </button>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Opcional. Afina que imóveis entram na comparação.
+                </p>
+              </div>
+
+              {showCriteria && (
+                <>
+                  <div className="space-y-2">
+                    <Label>Preço mín. (€)</Label>
+                    <Input
+                      type="number"
+                      value={form.criteriaMinPrice}
+                      onChange={(e) => setForm({ ...form, criteriaMinPrice: e.target.value })}
+                      placeholder="Qualquer"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Preço máx. (€)</Label>
+                    <Input
+                      type="number"
+                      value={form.criteriaMaxPrice}
+                      onChange={(e) => setForm({ ...form, criteriaMaxPrice: e.target.value })}
+                      placeholder="Qualquer"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Ano de construção — desde</Label>
+                    <Input
+                      type="number"
+                      value={form.criteriaMinYear}
+                      onChange={(e) => setForm({ ...form, criteriaMinYear: e.target.value })}
+                      placeholder="Qualquer"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Ano de construção — até</Label>
+                    <Input
+                      type="number"
+                      value={form.criteriaMaxYear}
+                      onChange={(e) => setForm({ ...form, criteriaMaxYear: e.target.value })}
+                      placeholder="Qualquer"
+                    />
+                  </div>
+
+                  <div className="space-y-2 md:col-span-2">
+                    <Label>Classificação energética</Label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {["A+", "A", "B", "B-", "C", "D", "E", "F"].map((rating) => {
+                        const selected = form.criteriaEnergyRatings.includes(rating);
+                        return (
+                          <button
+                            key={rating}
+                            type="button"
+                            onClick={() =>
+                              setForm((prev) => ({
+                                ...prev,
+                                criteriaEnergyRatings: selected
+                                  ? prev.criteriaEnergyRatings.filter((r) => r !== rating)
+                                  : [...prev.criteriaEnergyRatings, rating],
+                              }))
+                            }
+                            className={`rounded-md border px-3 py-1.5 text-sm ${
+                              selected
+                                ? "border-blue-600 bg-blue-600 text-white"
+                                : "border-gray-200 bg-white text-gray-700 hover:border-blue-300"
+                            }`}
+                          >
+                            {rating}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Comparáveis com classe fora da seleção são excluídos. Os que não a
+                      declaram continuam a entrar.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2 md:col-span-2">
+                    <Label>Características desejadas</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Não excluem: os comparáveis que as têm aparecem primeiro, os restantes
+                      continuam a contar para o valor.
+                    </p>
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                      {[
+                        "Varanda", "Elevador", "Garagem", "Jardim",
+                        "Estacionamento", "Arrecadação", "Piscina", "Terraço",
+                        "Mobilado", "Vista",
+                      ].map((feature) => {
+                        const selected = form.preferredFeatures.includes(feature);
+                        return (
+                          <label
+                            key={feature}
+                            className="flex cursor-pointer items-center gap-2 rounded-md border p-2 text-sm hover:bg-muted/50"
+                          >
+                            <input
+                              type="checkbox"
+                              className="h-4 w-4"
+                              checked={selected}
+                              onChange={() =>
+                                setForm((prev) => ({
+                                  ...prev,
+                                  preferredFeatures: selected
+                                    ? prev.preferredFeatures.filter((f) => f !== feature)
+                                    : [...prev.preferredFeatures, feature],
+                                }))
+                              }
+                            />
+                            {feature}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* Raio da procura. Só faz sentido com coordenadas fixadas —
+                  sem elas a pesquisa é por nome de localidade e o raio não se
+                  aplica. */}
+              {form.lat && form.lon && (
+                <div className="space-y-2">
+                  <Label>Raio da procura de comparáveis</Label>
+                  <Select
+                    value={form.searchRadiusKm}
+                    onValueChange={(value) => setForm({ ...form, searchRadiusKm: value })}
+                  >
+                    <SelectTrigger className="max-w-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1">1 km — mesma rua/bairro</SelectItem>
+                      <SelectItem value="2">2 km — envolvente próxima</SelectItem>
+                      <SelectItem value="4">4 km — freguesia (recomendado)</SelectItem>
+                      <SelectItem value="8">8 km — concelho</SelectItem>
+                      <SelectItem value="15">15 km — alargado</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Raio menor dá comparáveis mais fiéis mas em menor número. Alarga se a
+                    zona tiver pouca oferta.
+                  </p>
+                </div>
+              )}
 
               <div className="md:col-span-2">
                 <Button onClick={handleGenerate} disabled={loading} className="w-full md:w-auto">

@@ -341,6 +341,21 @@ export async function getLocationInsights(
     return { point: null, pois: [], mapDataUri: null };
   }
 
+  return getLocationInsightsForPoint(point, geoapifyKey);
+}
+
+/**
+ * Igual, mas a partir de coordenadas já conhecidas.
+ *
+ * Quando o consultor escolhe a morada da lista de sugestões, as coordenadas
+ * vêm exatas e não há nada a geocodificar — logo, nada que possa ser
+ * resolvido para a localidade errada.
+ */
+export async function getLocationInsightsForPoint(
+  point: GeoPoint,
+  geoapifyKey: string | null
+): Promise<LocationInsights> {
+
   const cached = await getCachedPois(point);
 
   const [pois, mapDataUri] = await Promise.all([

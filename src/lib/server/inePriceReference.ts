@@ -9,16 +9,12 @@ import { createClient } from "@supabase/supabase-js";
  * moradia que vale cerca de 800 000 €. O INE publica valores de ESCRITURAS
  * reais, por município, trimestralmente.
  *
- * ESTADO: a API do INE esteve inacessível durante o desenvolvimento (o host
- * recusava ligações a partir de várias redes), pelo que o formato da resposta
- * segue o manual da API e NÃO foi confirmado contra uma resposta real. Por
- * isso tudo aqui degrada em silêncio: sem resposta, sem formato reconhecido
- * ou sem configuração, a avaliação segue apenas com o Idealista, como antes.
+ * Confirmado contra a API real: indicador 0012234, Mafra 2769 €/m²,
+ * Cascais 4468 €/m², Porto 3120 €/m² (4.º trimestre de 2025).
  *
- * Configuração (Admin → Integrações), para não exigir alterações de código
- * quando o indicador mudar de metodologia — o INE já o fez em 2018 e 2022:
- *   ine_indicator_code  — código do indicador
- *   ine_period_code     — período (ex.: "S3T2025"); vazio = mais recente
+ * O código do município é resolvido a partir da morada — o consultor nunca
+ * vê códigos do INE. O indicador tem valor por omissão e só precisa de ser
+ * configurado se o INE mudar de metodologia, como já fez em 2018 e 2022.
  */
 
 const CACHE_TTL_DAYS = 45; // Publicação trimestral: meio trimestre chega.
@@ -151,8 +147,9 @@ export async function getInePriceReference(
 ): Promise<InePriceReference | null> {
   if (!geoCode) return null;
 
-  const indicator = await readSetting("ine_indicator_code");
-  if (!indicator) return null;
+  // A configuração só é precisa se o INE mudar de metodologia; até lá, o
+  // indicador confirmado serve, e o consultor não configura nada.
+  const indicator = (await readSetting("ine_indicator_code")) || DEFAULT_INE_INDICATOR;
 
   const period = (await readSetting("ine_period_code")) || "";
 
@@ -189,4 +186,111 @@ export async function getInePriceReference(
     console.warn("[INE] Consulta falhou:", error);
     return null;
   }
+}
+
+
+// ============================================================
+// Resolução automática do código geográfico
+//
+// O consultor não deve ter de saber códigos do INE. A morada escolhida no
+// autocompletar traz o concelho; daqui sai o código correspondente.
+// ============================================================
+
+/** Indicador confirmado: valor mediano de venda por m² (Metodologia 2022). */
+export const DEFAULT_INE_INDICATOR = "0012234";
+
+interface IneGeoEntry {
+  code: string;
+  name: string;
+  /** 5 = município, 6 = freguesia. */
+  level: number;
+}
+
+let geoCatalogueCache: { entries: IneGeoEntry[]; loadedAt: number } | null = null;
+/** O catálogo de municípios não muda; uma vez por dia é folgado. */
+const CATALOGUE_TTL_MS = 24 * 60 * 60 * 1000;
+
+function normalizeName(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+/**
+ * Lista de localidades do indicador, com código e nível.
+ *
+ * A estrutura do INE é peculiar: `Categoria_Dim` é um array com UM objeto
+ * cujas chaves são "Dim_Num2_<codigo>" e cujos valores são arrays de um
+ * elemento. Daí o percurso ser mais trabalhoso do que seria de esperar.
+ */
+async function loadGeoCatalogue(indicator: string): Promise<IneGeoEntry[]> {
+  if (geoCatalogueCache && Date.now() - geoCatalogueCache.loadedAt < CATALOGUE_TTL_MS) {
+    return geoCatalogueCache.entries;
+  }
+
+  try {
+    const response = await fetch(
+      `https://www.ine.pt/ine/json_indicador/pindicaMeta.jsp?varcd=${encodeURIComponent(indicator)}&lang=PT`,
+      { headers: { "User-Agent": USER_AGENT }, signal: AbortSignal.timeout(25000) }
+    );
+    if (!response.ok) return [];
+
+    const payload = await response.json();
+    const dimension = payload?.[0]?.Dimensoes?.Categoria_Dim?.[0];
+    if (!dimension) return [];
+
+    const entries: IneGeoEntry[] = [];
+    for (const [key, raw] of Object.entries(dimension)) {
+      if (!key.startsWith("Dim_Num2_")) continue;
+      const item: any = Array.isArray(raw) ? raw[0] : raw;
+      if (!item?.categ_cod || !item?.categ_dsg) continue;
+      entries.push({
+        code: String(item.categ_cod),
+        name: String(item.categ_dsg),
+        level: Number(item.categ_nivel) || 0,
+      });
+    }
+
+    geoCatalogueCache = { entries, loadedAt: Date.now() };
+    return entries;
+  } catch (error) {
+    console.warn("[INE] Catálogo geográfico indisponível:", error);
+    return [];
+  }
+}
+
+/**
+ * Concelho (e freguesia, quando dada) → código do INE.
+ *
+ * Prefere-se o MUNICÍPIO (nível 5) à freguesia (nível 6): a amostra é maior e
+ * mais estável. Muitas freguesias têm poucas transações por trimestre, e uma
+ * mediana sobre meia dúzia de escrituras oscila de forma pouco útil.
+ */
+export async function resolveIneGeoCode(
+  municipality: string | null | undefined,
+  indicator: string = DEFAULT_INE_INDICATOR
+): Promise<{ code: string; name: string } | null> {
+  if (!municipality || !municipality.trim()) return null;
+
+  const entries = await loadGeoCatalogue(indicator);
+  if (entries.length === 0) return null;
+
+  const target = normalizeName(municipality);
+
+  const municipalities = entries.filter((entry) => entry.level === 5);
+
+  const exact = municipalities.find((entry) => normalizeName(entry.name) === target);
+  if (exact) return { code: exact.code, name: exact.name };
+
+  // "Lisboa" numa morada pode vir como "Lisbon" ou com sufixos; tentativa
+  // por prefixo antes de desistir.
+  const partial = municipalities.find(
+    (entry) => normalizeName(entry.name).startsWith(target) || target.startsWith(normalizeName(entry.name))
+  );
+  if (partial) return { code: partial.code, name: partial.name };
+
+  return null;
 }

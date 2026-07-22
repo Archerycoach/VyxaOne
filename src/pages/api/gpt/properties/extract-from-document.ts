@@ -25,7 +25,7 @@ type DocumentKind = "caderneta" | "energia" | "cpcv" | "auto";
 
 const KIND_HINTS: Record<Exclude<DocumentKind, "auto">, string> = {
   caderneta:
-    "É uma CADERNETA PREDIAL (Autoridade Tributária). Procura: artigo matricial, freguesia, concelho, distrito, tipologia, área bruta privativa e dependente, ano de construção, valor patrimonial tributário, morada.",
+    "É uma CADERNETA PREDIAL (Autoridade Tributária). Procura: artigo matricial, freguesia, concelho, distrito, tipologia, área bruta privativa e dependente, área total do terreno, ano de construção, valor patrimonial tributário, morada.",
   energia:
     "É um CERTIFICADO ENERGÉTICO (ADENE). Procura: classe energética (A+, A, B, B-, C, D, E, F), número do certificado, validade, área útil, morada.",
   cpcv:
@@ -108,6 +108,7 @@ Devolve EXATAMENTE esta estrutura:
     "property_type": "apartment | house | commercial | land | office | warehouse | other, ou null",
     "typology": "T0/T1/T2/T3... ou null",
     "area": número da área bruta privativa em m2, ou null,
+    "land_area": número da área total do terreno em m2 (moradias/terrenos), ou null,
     "bedrooms": número de quartos ou null,
     "bathrooms": número de casas de banho ou null,
     "floor": número do andar (ex.: 3 para "3º dto"), ou null,

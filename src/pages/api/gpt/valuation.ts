@@ -4,10 +4,16 @@ import { runAI } from "@/lib/ai/provider";
 import { getCmaReportPrompt } from "@/lib/ai/prompts/cmaReport";
 import { searchIdealistaProperties, leadToIdealistaParams } from "@/services/idealistaService";
 import { getIdealistaCredentials } from "@/lib/server/idealistaCredentials";
-import { getLocationInsights } from "@/lib/server/locationInsights";
+import { getLocationInsights, getLocationInsightsForPoint } from "@/lib/server/locationInsights";
 import { getGeoapifyKey } from "@/lib/server/geoapifyCredentials";
 import { calculateLandAdjustment } from "@/lib/server/landValueAdjustment";
-import { getInePriceReference } from "@/lib/server/inePriceReference";
+import { calculateValueFactors, describeFactorBreakdown } from "@/lib/server/valueFactorAdjustment";
+import { getInePriceReference, resolveIneGeoCode } from "@/lib/server/inePriceReference";
+import {
+  getMarketSanityCheckPrompt,
+  parseSanityCheck,
+  type SanityCheckResult,
+} from "@/lib/ai/prompts/marketSanityCheck";
 import {
   inferCondition,
   subjectCondition,
@@ -16,6 +22,8 @@ import {
   removePriceOutliers,
   matchesPropertyType,
   removeBelowZoneFloor,
+  applyHardCriteria,
+  scoreByPreferences,
 } from "@/lib/server/comparableFilters";
 
 interface ComparableSummary {
@@ -27,10 +35,47 @@ interface ComparableSummary {
   price: number | null;
 }
 
+/** Tipos de imóvel em que o terreno tem valor próprio. */
+function needsLandValue(propertyType: string | null | undefined): boolean {
+  return propertyType === "house" || propertyType === "land";
+}
+
 function average(values: number[]): number | null {
   const valid = values.filter((v) => Number.isFinite(v) && v > 0);
   if (valid.length === 0) return null;
   return valid.reduce((sum, v) => sum + v, 0) / valid.length;
+}
+
+
+/** Nomes legíveis, para a verificação de sanidade descrever o imóvel. */
+const PROPERTY_TYPE_NAMES: Record<string, string> = {
+  apartment: "Apartamento",
+  house: "Moradia",
+  land: "Terreno",
+  commercial: "Comercial",
+  store: "Loja",
+  office: "Escritório",
+  warehouse: "Armazém",
+};
+
+/** Características em texto, para o modelo poder pesá-las. */
+function describeFeaturesForSanity(factors: any): string[] {
+  if (!factors) return [];
+  return [
+    factors.hasElevator ? "elevador" : null,
+    factors.hasGarage ? "garagem" : null,
+    factors.hasBalcony ? "varanda" : null,
+    factors.hasTerrace ? "terraço" : null,
+    factors.hasGarden ? "jardim" : null,
+    factors.hasPool ? "piscina" : null,
+    factors.hasStorage ? "arrecadação" : null,
+    factors.hasAirConditioning ? "ar condicionado" : null,
+    factors.hasSolarPanels ? "painéis solares" : null,
+    factors.hasHeatPump ? "bomba de calor" : null,
+    factors.hasSeaView ? "vista de mar" : null,
+    factors.viewQuality ? `vista ${factors.viewQuality}` : null,
+    factors.energyRating ? `classe energética ${factors.energyRating}` : null,
+  ].filter(Boolean) as string[];
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -43,7 +88,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
     if (authError || !user) return res.status(401).json({ error: "Não autorizado" });
 
-    const { address, propertyType, area, bedrooms, bathrooms, condition, city, factors, land, ineGeoCode } = req.body || {};
+    const { address, propertyType, area, bedrooms, bathrooms, condition, city, factors, land, ineGeoCode, coordinates, criteria, consultantDescription } = req.body || {};
     if (!address || !propertyType) {
       return res.status(400).json({ error: "Morada e tipo de imóvel são obrigatórios" });
     }
@@ -87,6 +132,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         bedrooms: bedrooms || undefined,
       };
       const params = leadToIdealistaParams(pseudoLead);
+
+      // Com coordenadas exatas, procura-se por RAIO em vez de por nome de
+      // localidade. Procurar "MAFRA" trazia comparáveis de Santo Isidoro,
+      // Cheleiros e Milharado — freguesias rurais a vários quilómetros, com
+      // um mercado que não é o do imóvel a avaliar.
+      if (coordinates?.lat && coordinates?.lon) {
+        params.center = `${coordinates.lat},${coordinates.lon}`;
+        params.searchCenters = [`${coordinates.lat},${coordinates.lon}`];
+        // Raio escolhido pelo consultor. Menor dá comparáveis mais fiéis
+        // mas em menor número; maior alarga em zonas com pouca oferta.
+        params.distance = (coordinates.radiusKm || 4) * 1000;
+      }
+
       const results = await searchIdealistaProperties({ ...params, maxItems: 15 }, credentials, user.id);
 
       // O estado de conservação do imóvel a avaliar decide que comparáveis
@@ -138,6 +196,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         property_type: propertyType,
         location_preference: city || address,
       });
+      if (coordinates?.lat && coordinates?.lon) {
+        zoneParams.center = `${coordinates.lat},${coordinates.lon}`;
+        zoneParams.searchCenters = [`${coordinates.lat},${coordinates.lon}`];
+        // Raio maior do que o dos comparáveis: aqui quer-se a envolvente do
+        // mercado, não imóveis diretamente comparáveis.
+        // A referência de zona usa o dobro do raio dos comparáveis: aqui
+        // quer-se a envolvente do mercado, não imóveis diretamente
+        // comparáveis.
+        zoneParams.distance = (coordinates.radiusKm || 4) * 2000;
+      }
+
       const zoneResults = await searchIdealistaProperties(
         { ...zoneParams, maxItems: 40 },
         credentials,
@@ -161,6 +230,49 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       console.warn("[Valuation] Referência de zona indisponível:", zoneError);
     }
 
+    // 2c. Valor do terreno na zona.
+    //
+    // Procurado automaticamente — o consultor não tem de o saber. Sem isto, o
+    // lote não influenciava o valor: uma moradia num lote de 400 m² e outra
+    // igual num de 1250 m² recebiam a mesma avaliação.
+    let landPricePerSqm: number | null = null;
+    if (needsLandValue(propertyType) && (land?.landArea || factors?.landArea)) {
+      try {
+        const credentials = await getIdealistaCredentials();
+        const landParams = leadToIdealistaParams({
+          lead_type: "buyer",
+          property_type: "land",
+          location_preference: city || address,
+        });
+
+        if (coordinates?.lat && coordinates?.lon) {
+          landParams.center = `${coordinates.lat},${coordinates.lon}`;
+          landParams.searchCenters = [`${coordinates.lat},${coordinates.lon}`];
+          // Terrenos são oferta escassa: um raio apertado devolveria zero.
+          landParams.distance = Math.max((coordinates.radiusKm || 4) * 2000, 10000);
+        }
+
+        const landResults = await searchIdealistaProperties(
+          { ...landParams, maxItems: 30 },
+          credentials,
+          user.id
+        );
+
+        const landValues = landResults
+          .map((p) => (p.size && p.price ? p.price / p.size : null))
+          .filter((v): v is number => typeof v === "number" && v > 5 && v < 2000);
+
+        if (landValues.length >= 3) {
+          const sorted = [...landValues].sort((a, b) => a - b);
+          const middle = Math.floor(sorted.length / 2);
+          landPricePerSqm =
+            sorted.length % 2 === 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle];
+        }
+      } catch (landError) {
+        console.warn("[Valuation] Valor de terreno indisponível:", landError);
+      }
+    }
+
     const allComparables = [...internalComparables, ...idealistaComparables].filter((c) => c.pricePerSqm);
 
     // Segunda defesa: nem toda a ruína se identifica como tal no anúncio. Um
@@ -170,15 +282,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // Terceira defesa: um imóvel muito abaixo do €/m² da zona é ruína ainda
     // que o anúncio não o diga e que a dispersão da amostra o deixe passar.
-    const { kept: comparables, removed: belowFloor } = removeBelowZoneFloor(
+    const { kept: afterFloor, removed: belowFloor } = removeBelowZoneFloor(
       afterOutliers,
       zonePricePerSqm
     );
 
+    // Critérios do consultor: preço, ano e classe energética EXCLUEM.
+    const { kept: afterCriteria, removed: byCriteria } = applyHardCriteria(afterFloor, criteria || {});
+
+    // As características são PREFERÊNCIA: reordenam, não removem. Excluir por
+    // elas esvaziaria a amostra onde os comparáveis mais fazem falta.
+    const scored = scoreByPreferences(afterCriteria, criteria?.preferredFeatures || []);
+    const comparables = scored.map((entry) => ({
+      ...entry.item,
+      preferenceScore: entry.preferenceScore,
+    }));
+
     if (excludedByCondition > 0 || outliers.length > 0 || belowFloor.length > 0) {
       console.log(
         `[Valuation] Comparáveis descartados: ${excludedByCondition} por estado/tipo, ` +
-          `${outliers.length} por preço fora do padrão, ${belowFloor.length} abaixo do valor da zona.`
+          `${outliers.length} por preço fora do padrão, ${belowFloor.length} abaixo do valor da zona, ` +
+          `${byCriteria.length} pelos critérios do consultor.`
       );
     }
 
@@ -189,8 +313,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // pedido, tipicamente otimista); só usa ativos se não houver vendidos.
     const comparablesPricePerSqm = soldAvgPricePerSqm || activeAvgPricePerSqm;
 
-    // Referência oficial do INE (valor de escrituras, por município).
-    const ineReference = await getInePriceReference(ineGeoCode || null);
+    // Referência oficial do INE (escrituras, por município).
+    //
+    // O código é resolvido a partir do concelho da morada — nada disto é
+    // visível para o consultor.
+    let resolvedIneGeo: string | null = ineGeoCode || null;
+    if (!resolvedIneGeo) {
+      const resolved = await resolveIneGeoCode(coordinates?.county || city || null);
+      resolvedIneGeo = resolved?.code ?? null;
+    }
+    const ineReference = await getInePriceReference(resolvedIneGeo);
 
     // A referência da zona entra COM os comparáveis, não em vez deles.
     //
@@ -230,18 +362,41 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     let suggestedMin: number | null = null;
     let suggestedMax: number | null = null;
 
+    // A referência da zona é uma MÉDIA — mistura imóveis modestos e bons.
+    // Este passo ajusta-a ao imóvel concreto (estado, equipamentos, vistas),
+    // com o desdobramento à vista. Era o que uma avaliação humana fazia e a
+    // fórmula não.
+    const valueFactors = calculateValueFactors({
+      condition,
+      hasHeatPump: factors?.hasHeatPump,
+      hasSolarPanels: factors?.hasSolarPanels,
+      hasAirConditioning: factors?.hasAirConditioning,
+      hasOpenViews: factors?.hasOpenViews,
+      hasSeaView: factors?.hasSeaView,
+      hasPool: factors?.hasPool,
+      hasGarage: factors?.hasGarage,
+      energyRating: factors?.energyRating,
+      isSingleStorey: factors?.isSingleStorey,
+    });
+
+    const adjustedPricePerSqm = referencePricePerSqm
+      ? referencePricePerSqm * valueFactors.multiplier
+      : null;
+
     // O terreno entra como AJUSTE ao valor base, não como parcela somada por
     // inteiro: o lote típico da zona já está no preço dos comparáveis, e só o
     // excedente (ou a falta) altera o valor.
     const landAdjustment = calculateLandAdjustment({
       landArea: land?.landArea ?? factors?.landArea ?? null,
-      referenceLandArea: land?.referenceLandArea ?? null,
-      landPricePerSqm: land?.landPricePerSqm ?? null,
+      landPricePerSqm,
+      builtArea: area,
     });
 
-    if (referencePricePerSqm && area) {
-      suggestedMin = Math.round((referencePricePerSqm * 0.93 * area) / 1000) * 1000 + landAdjustment.adjustment;
-      suggestedMax = Math.round((referencePricePerSqm * 1.07 * area) / 1000) * 1000 + landAdjustment.adjustment;
+    let suggestedCentral: number | null = null;
+    if (adjustedPricePerSqm && area) {
+      suggestedMin = Math.round((adjustedPricePerSqm * 0.93 * area) / 1000) * 1000 + landAdjustment.adjustment;
+      suggestedMax = Math.round((adjustedPricePerSqm * 1.07 * area) / 1000) * 1000 + landAdjustment.adjustment;
+      suggestedCentral = Math.round((suggestedMin + suggestedMax) / 2 / 1000) * 1000;
     }
 
     const { data: profile } = await db.from("profiles").select("full_name").eq("id", user.id).maybeSingle();
@@ -267,6 +422,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         askingPricePerSqm: askingPricePerSqm ?? null,
         askingVsSoldGapPct,
         landAdjustmentNote: landAdjustment.explanation,
+        factorNote: describeFactorBreakdown(valueFactors),
+        consultantDescription: consultantDescription || null,
         comparables: comparables.slice(0, 12),
         soldAvgPricePerSqm,
         activeAvgPricePerSqm,
@@ -281,6 +438,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         temperature: 0.5,
       });
       narrative = aiResponse.text.trim();
+
     } catch (aiError) {
       console.error("[Valuation] Falha ao gerar narrativa IA:", aiError);
     }
@@ -294,13 +452,58 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // A cidade entra na consulta: sem ela, "Rua Serra do Arquitecto 15"
       // resolveu para o Porto num imóvel em Mafra, e a página da envolvente
       // saiu com pontos de interesse da cidade errada.
-      const geoQuery = [address, city, "Portugal"].filter(Boolean).join(", ");
-      locationInsights = await getLocationInsights(geoQuery, geoapifyKey);
+      if (coordinates?.lat && coordinates?.lon) {
+        // Coordenadas conhecidas: não há nada a geocodificar, e portanto nada
+        // que possa ser resolvido para a localidade errada.
+        locationInsights = await getLocationInsightsForPoint(
+          { lat: coordinates.lat, lon: coordinates.lon, label: address },
+          geoapifyKey
+        );
+      } else {
+        const geoQuery = [address, city, "Portugal"].filter(Boolean).join(", ");
+        locationInsights = await getLocationInsights(geoQuery, geoapifyKey);
+      }
     } catch (insightsError) {
       console.warn("[Valuation] Envolvente indisponível:", insightsError);
     }
 
+    // Verificação de sanidade — SÓ para o consultor, nunca para o documento.
+    //
+    // O relatório está preso aos dados de propósito; esta verificação deixa a
+    // IA usar o que sabe do mercado e avisar quando o cálculo se afasta
+    // muito. Não altera o valor: quem decide é o consultor.
+    let sanityCheck: SanityCheckResult | null = null;
+    try {
+      const sanityPrompt = getMarketSanityCheckPrompt({
+        address,
+        city,
+        propertyType: PROPERTY_TYPE_NAMES[propertyType] || propertyType,
+        propertySubtype: factors?.propertySubtype || null,
+        area,
+        landArea: land?.landArea ?? factors?.landArea ?? null,
+        bedrooms,
+        condition,
+        features: describeFeaturesForSanity(factors),
+        computedMin: suggestedMin,
+        computedMax: suggestedMax,
+        computedPricePerSqm: referencePricePerSqm,
+      });
+
+      const sanityResponse = await runAI({
+        userId: user.id,
+        task: "cma_sanity_check",
+        messages: [{ role: "user", content: sanityPrompt }],
+        temperature: 0.3,
+        jsonMode: true,
+      });
+
+      sanityCheck = parseSanityCheck(sanityResponse.text, referencePricePerSqm);
+    } catch (sanityError) {
+      console.warn("[Valuation] Verificação de sanidade indisponível:", sanityError);
+    }
+
     return res.status(200).json({
+      sanityCheck,
       comparables,
       soldAvgPricePerSqm,
       activeAvgPricePerSqm,
@@ -314,6 +517,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       ineGeoName: ineReference?.geoName ?? null,
       askingPricePerSqm: askingPricePerSqm ?? null,
       askingVsSoldGapPct,
+      landPricePerSqm,
+      suggestedCentral,
+      adjustedPricePerSqm,
+      factorBreakdown: valueFactors.breakdown,
+      factorTotalPct: valueFactors.totalPct,
+      factorNote: describeFactorBreakdown(valueFactors),
       landAdjustment: landAdjustment.applied ? landAdjustment.adjustment : 0,
       landAdjustmentNote: landAdjustment.explanation,
     });

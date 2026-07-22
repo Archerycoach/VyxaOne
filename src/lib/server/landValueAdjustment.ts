@@ -14,11 +14,23 @@
 export interface LandAdjustmentInput {
   /** Lote do imóvel a avaliar. */
   landArea?: number | null;
-  /** Lote típico da zona, indicado pelo consultor. */
+  /** Lote de referência. Derivado da área de construção quando não é dado. */
   referenceLandArea?: number | null;
-  /** €/m² de terreno na zona, indicado pelo consultar. */
+  /** €/m² de terreno na zona. Obtido do Idealista, não escrito à mão. */
   landPricePerSqm?: number | null;
+  /** Área de construção, para derivar o lote de referência. */
+  builtArea?: number | null;
 }
+
+/**
+ * Lote considerado "normal" para uma moradia, em múltiplos da área de
+ * construção.
+ *
+ * Serve para não exigir ao consultor que saiba o lote típico da zona. Não é
+ * uma medida exata — é o ponto a partir do qual o terreno deixa de estar
+ * implícito no preço dos comparáveis e passa a ser um extra.
+ */
+const DEFAULT_LOT_RATIO = 3;
 
 export interface LandAdjustmentResult {
   /** Valor a somar (ou subtrair) ao valor base. Zero quando não aplicável. */
@@ -41,7 +53,11 @@ const SURPLUS_RATE = 0.6;
 const DEFICIT_RATE = 0.8;
 
 export function calculateLandAdjustment(input: LandAdjustmentInput): LandAdjustmentResult {
-  const { landArea, referenceLandArea, landPricePerSqm } = input;
+  const { landArea, landPricePerSqm, builtArea } = input;
+
+  // Sem lote de referência explícito, deriva-se da área de construção.
+  const referenceLandArea =
+    input.referenceLandArea ?? (builtArea && builtArea > 0 ? builtArea * DEFAULT_LOT_RATIO : null);
 
   const notApplied: LandAdjustmentResult = {
     adjustment: 0,

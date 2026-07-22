@@ -68,6 +68,10 @@ interface CmaReportContext {
   zoneSampleSize?: number | null;
   /** Frase sobre o ajuste do terreno, quando aplicado. */
   landAdjustmentNote?: string | null;
+  /** Desdobramento dos ajustes por características, já calculado. */
+  factorNote?: string | null;
+  /** Texto livre do consultor sobre o imóvel (viu-o; a IA não). */
+  consultantDescription?: string | null;
   /** Valor mediano de escrituras do INE, quando disponível. */
   inePricePerSqm?: number | null;
   /** €/m² pedido nos anúncios, para contrastar com o que se paga. */
@@ -163,6 +167,8 @@ ${context.inePricePerSqm ? `- Valor MEDIANO DE ESCRITURAS (INE, dados oficiais):
 ` : ""}- Valor de referência da ZONA: ${context.zonePricePerSqm ? `${Math.round(context.zonePricePerSqm)}€/m² (mediana de ${context.zoneSampleSize} imóveis à venda na zona, independentemente de área ou tipologia)` : "sem dados suficientes"}
 - Preço médio/m² de imóveis ATIVOS (à venda) na zona: ${context.activeAvgPricePerSqm ? `${Math.round(context.activeAvgPricePerSqm)}€/m²` : "sem dados suficientes"}
 ${context.landAdjustmentNote ? `- Terreno: ${context.landAdjustmentNote}
+` : ""}${context.factorNote ? `- Ajustes por características (já refletidos no intervalo): ${context.factorNote}
+` : ""}${context.consultantDescription ? `- DESCRIÇÃO DO CONSULTOR (esteve no imóvel; usa-a na análise): ${context.consultantDescription}
 ` : ""}${
   context.askingVsSoldGapPct !== null && context.askingVsSoldGapPct !== undefined && context.askingPricePerSqm
     ? `- DIFERENÇA PEDIDO vs PAGO: os anúncios da zona pedem ${Math.round(context.askingPricePerSqm)}€/m², mas as escrituras fecham a ${Math.round(context.inePricePerSqm || 0)}€/m² — uma diferença de ${context.askingVsSoldGapPct > 0 ? "+" : ""}${context.askingVsSoldGapPct}%

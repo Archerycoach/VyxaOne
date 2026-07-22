@@ -226,3 +226,93 @@ export function removeBelowZoneFloor<T extends { pricePerSqm?: number | null }>(
 
   return { kept, removed };
 }
+
+
+/**
+ * Critérios de análise escolhidos pelo consultor.
+ *
+ * Distinção deliberada entre dois tipos:
+ *  - FILTROS (ano, piso, classe energética, preço): excluem. São atributos
+ *    objetivos em que um desvio torna o imóvel genuinamente incomparável.
+ *  - PREFERÊNCIAS (características): pontuam, não excluem. Um comparável sem
+ *    piscina continua a informar o valor — só informa menos do que um com.
+ *    Excluir por características esvaziaria a amostra em zonas com pouca
+ *    oferta, que é exatamente onde os comparáveis mais fazem falta.
+ */
+export interface ComparableCriteria {
+  minPrice?: number | null;
+  maxPrice?: number | null;
+  minYearBuilt?: number | null;
+  maxYearBuilt?: number | null;
+  energyRatings?: string[];
+  floors?: string[];
+  /** Características desejadas. Pontuam; nunca excluem. */
+  preferredFeatures?: string[];
+}
+
+export interface ScoredComparable<T> {
+  item: T;
+  /** 0-100. Quantas preferências o comparável satisfaz. */
+  preferenceScore: number;
+  matchedFeatures: string[];
+}
+
+/** Aplica os filtros que EXCLUEM. */
+export function applyHardCriteria<
+  T extends { price?: number | null; yearBuilt?: number | null; energyRating?: string | null; floor?: number | string | null }
+>(comparables: T[], criteria: ComparableCriteria): { kept: T[]; removed: T[] } {
+  const kept: T[] = [];
+  const removed: T[] = [];
+
+  for (const item of comparables) {
+    let ok = true;
+
+    if (criteria.minPrice && item.price && item.price < criteria.minPrice) ok = false;
+    if (criteria.maxPrice && item.price && item.price > criteria.maxPrice) ok = false;
+
+    // Um ano em falta não exclui: a maioria dos anúncios não o declara, e
+    // excluir por ausência de dado deitaria fora metade da amostra.
+    if (ok && criteria.minYearBuilt && item.yearBuilt && item.yearBuilt < criteria.minYearBuilt) ok = false;
+    if (ok && criteria.maxYearBuilt && item.yearBuilt && item.yearBuilt > criteria.maxYearBuilt) ok = false;
+
+    if (ok && criteria.energyRatings?.length && item.energyRating) {
+      const rating = normalize(item.energyRating);
+      if (!criteria.energyRatings.some((r) => normalize(r) === rating)) ok = false;
+    }
+
+    if (ok) kept.push(item);
+    else removed.push(item);
+  }
+
+  return { kept, removed };
+}
+
+/**
+ * Pontua os comparáveis pelas características desejadas e ordena-os.
+ *
+ * Nenhum é removido: os mais parecidos ficam à cabeça, e a amostra mantém-se
+ * inteira para o cálculo do €/m².
+ */
+export function scoreByPreferences<T extends { features?: string[]; address?: string | null }>(
+  comparables: T[],
+  preferredFeatures: string[] = []
+): ScoredComparable<T>[] {
+  if (preferredFeatures.length === 0) {
+    return comparables.map((item) => ({ item, preferenceScore: 0, matchedFeatures: [] }));
+  }
+
+  const wanted = preferredFeatures.map(normalize).filter(Boolean);
+
+  const scored = comparables.map((item) => {
+    const haystack = normalize([...(item.features || []), item.address || ""].join(" "));
+    const matched = wanted.filter((feature) => haystack.includes(feature));
+
+    return {
+      item,
+      preferenceScore: Math.round((matched.length / wanted.length) * 100),
+      matchedFeatures: matched,
+    };
+  });
+
+  return scored.sort((a, b) => b.preferenceScore - a.preferenceScore);
+}
