@@ -84,15 +84,19 @@ export function addFooterBand(doc: jsPDF, footerDataUri: string | null): void {
     bandHeight = 12;
   }
 
-  // Um rodapé alto de mais comeria o conteúdo. Acima do limite, a imagem é
-  // centrada e recortada à largura em vez de ser espremida na vertical.
-  const MAX_BAND_HEIGHT = 28;
-  let drawWidth = pageWidth;
-  let drawX = 0;
+  // A faixa ocupa SEMPRE a largura total da página, como a capa carregada.
+  // Reduzi-la e centrá-la — o que se fazia antes — dava um rodapé pequeno e
+  // deslocado, visivelmente diferente da capa que usa a mesma imagem.
+  //
+  // Se a imagem for alta de mais para rodapé, o limite aplica-se à altura e a
+  // proporção cede: é preferível uma faixa ligeiramente comprimida a uma
+  // miniatura ao centro da página. O aviso no carregamento pede uma imagem
+  // com as proporções certas.
+  const MAX_BAND_HEIGHT = 30;
+  const drawWidth = pageWidth;
+  const drawX = 0;
 
   if (bandHeight > MAX_BAND_HEIGHT) {
-    drawWidth = pageWidth * (MAX_BAND_HEIGHT / bandHeight);
-    drawX = (pageWidth - drawWidth) / 2;
     bandHeight = MAX_BAND_HEIGHT;
   }
 

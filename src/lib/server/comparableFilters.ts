@@ -161,3 +161,68 @@ const CONDITION_LABELS: Record<PropertyCondition, string> = {
 export function conditionLabel(condition: PropertyCondition): string {
   return CONDITION_LABELS[condition];
 }
+
+
+/**
+ * O comparável é do mesmo tipo de imóvel?
+ *
+ * Um apartamento T4 apareceu numa avaliação de moradia porque a única
+ * filtragem era por área e tipologia. Área semelhante não faz de um
+ * apartamento um comparável de uma moradia — são produtos diferentes, com
+ * mercados e €/m² diferentes.
+ */
+export function matchesPropertyType(
+  subjectType: string | null | undefined,
+  listing: { propertyType?: string | null; address?: string | null; description?: string | null }
+): boolean {
+  const subject = normalize(subjectType);
+  if (!subject) return true;
+
+  const haystack = normalize(
+    [listing.propertyType, listing.address, listing.description].filter(Boolean).join(" ")
+  );
+
+  const isHouseWord = /moradia|vivenda|casa|chale|quinta|herdade|solar/.test(haystack);
+  const isFlatWord = /apartamento|t[0-9]|duplex|studio|estudio|kitchenette/.test(haystack);
+
+  if (subject === "house" || subject === "villa") {
+    // Uma moradia compara-se com moradias. Se o anúncio se identifica como
+    // apartamento, está fora, mesmo que a área bata certo.
+    if (isFlatWord && !isHouseWord) return false;
+    return true;
+  }
+
+  if (subject === "apartment") {
+    if (isHouseWord && !isFlatWord) return false;
+    return true;
+  }
+
+  return true;
+}
+
+/**
+ * Descarta comparáveis muito abaixo da referência da zona.
+ *
+ * Rede de segurança para as ruínas que nem o campo `status` nem a descrição
+ * denunciam: um imóvel a 40% do €/m² mediano da zona não é um comparável de
+ * um imóvel habitável, seja qual for o texto do anúncio.
+ */
+export function removeBelowZoneFloor<T extends { pricePerSqm?: number | null }>(
+  comparables: T[],
+  zonePricePerSqm: number | null,
+  floorRatio = 0.55
+): { kept: T[]; removed: T[] } {
+  if (!zonePricePerSqm || zonePricePerSqm <= 0) return { kept: comparables, removed: [] };
+
+  const floor = zonePricePerSqm * floorRatio;
+  const kept: T[] = [];
+  const removed: T[] = [];
+
+  for (const item of comparables) {
+    const value = item.pricePerSqm;
+    if (typeof value === "number" && value > 0 && value < floor) removed.push(item);
+    else kept.push(item);
+  }
+
+  return { kept, removed };
+}

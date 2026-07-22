@@ -26,7 +26,7 @@ import {
 import {
   addCoverPage, addAboutPage, addClosingPage, addPageHeader, addPageNumbers,
   setDocumentTheme, addSectionTitle, addKeyValueTable, addValueEstimate, addComparableCard, addBodyText,
-  addLocationMap, addPointsOfInterest, addNarrative,
+  addLocationMap, addPointsOfInterest, addNarrative, addAskingVsSoldBlock,
   buildConsultantIdentity, type ConsultantIdentity,
 } from "@/lib/pdfDocument";
 
@@ -105,12 +105,21 @@ export default function ValuationPage() {
     hasSolarPanels: false,
     hasHeatPump: false,
     landArea: "",
+    referenceLandArea: "",
+    landPricePerSqm: "",
+    ineGeoCode: "",
   });
 
   // Perfil do consultor: alimenta a capa, o cabeçalho e a folha de fecho do PDF.
   const [consultant, setConsultant] = useState<ConsultantIdentity | null>(null);
   // Capa/contracapa em PDF e faixa de rodapé, carregadas pelo consultor.
   const [branding, setBranding] = useState<DocumentBranding>({});
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const saved = localStorage.getItem("vyxa_ine_geo_code");
+    if (saved) setForm((prev) => ({ ...prev, ineGeoCode: saved }));
+  }, []);
+
   useEffect(() => {
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -214,6 +223,14 @@ export default function ValuationPage() {
             hasHeatPump: form.hasHeatPump,
             landArea: form.landArea ? Number(form.landArea) : null,
           },
+          // Código INE do município. Guardado localmente entre avaliações —
+          // quem trabalha sempre a mesma zona escreve-o uma vez.
+          ineGeoCode: form.ineGeoCode || null,
+          land: {
+            landArea: form.landArea ? Number(form.landArea) : null,
+            referenceLandArea: form.referenceLandArea ? Number(form.referenceLandArea) : null,
+            landPricePerSqm: form.landPricePerSqm ? Number(form.landPricePerSqm) : null,
+          },
         }),
       });
       const data = await res.json();
@@ -307,8 +324,42 @@ export default function ValuationPage() {
       y
     );
 
+    // O ajuste do terreno é explicado: um valor acima do que os comparáveis
+    // sugerem tem de ser justificado, senão parece arbitrário.
+    if ((result as any).landAdjustmentNote) {
+      y = addBodyText(doc, (result as any).landAdjustmentNote, y + 2);
+    }
+
     // Âncora de mercado: mostra ao proprietário contra que referência o valor
     // foi aferido, além dos comparáveis listados a seguir.
+    // Contraste pedido vs pago, em destaque. Vai antes das notas de texto
+    // porque é o que o proprietário precisa de ver primeiro.
+    const gapPct = (result as any).askingVsSoldGapPct;
+    const asking = (result as any).askingPricePerSqm;
+    const sold = (result as any).inePricePerSqm;
+    if (typeof gapPct === "number" && asking && sold) {
+      y = addAskingVsSoldBlock(
+        doc,
+        {
+          askingPricePerSqm: asking,
+          soldPricePerSqm: sold,
+          gapPct,
+          zoneName: (result as any).ineGeoName || form.city || null,
+        },
+        y + 2
+      );
+    }
+
+    if ((result as any).inePricePerSqm) {
+      y = addBodyText(
+        doc,
+        `Valor mediano de escrituras (INE${(result as any).ineGeoName ? `, ${(result as any).ineGeoName}` : ""}): ` +
+          `${Math.round((result as any).inePricePerSqm).toLocaleString("pt-PT")} €/m². ` +
+          `Reflete preços efetivamente pagos, e não valores pedidos.`,
+        y + 2
+      );
+    }
+
     if (result.zonePricePerSqm) {
       y = addBodyText(
         doc,
@@ -499,6 +550,37 @@ export default function ValuationPage() {
                   </p>
                 </div>
               )}
+              {/* Valorização do terreno. Opcional: sem estes dois campos o
+                  lote é referido na análise mas não altera o valor. */}
+              {LAND_AREA_TYPES.includes(form.propertyType) && (
+                <>
+                  <div className="space-y-2">
+                    <Label>Lote típico da zona (m²)</Label>
+                    <Input
+                      type="number"
+                      value={form.referenceLandArea}
+                      onChange={(e) => setForm({ ...form, referenceLandArea: e.target.value })}
+                      placeholder="Ex: 500"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Valor do terreno na zona (€/m²)</Label>
+                    <Input
+                      type="number"
+                      value={form.landPricePerSqm}
+                      onChange={(e) => setForm({ ...form, landPricePerSqm: e.target.value })}
+                      placeholder="Ex: 120"
+                    />
+                  </div>
+                  <div className="md:col-span-2 -mt-2">
+                    <p className="text-xs text-muted-foreground">
+                      Só o terreno <strong>acima ou abaixo</strong> do lote típico altera o valor —
+                      o lote normal da zona já está no preço dos comparáveis. Deixa em branco para
+                      não ajustar.
+                    </p>
+                  </div>
+                </>
+              )}
               <div className="space-y-2">
                 <Label>Tipologia (quartos)</Label>
                 <Input type="number" value={form.bedrooms} onChange={(e) => setForm({ ...form, bedrooms: e.target.value })} placeholder="Ex: 2" />
@@ -555,6 +637,27 @@ export default function ValuationPage() {
                     </label>
                   ))}
                 </div>
+              </div>
+
+              <div className="space-y-2 md:col-span-2">
+                <Label>Código INE do município (opcional)</Label>
+                <Input
+                  value={form.ineGeoCode}
+                  onChange={(e) => {
+                    setForm({ ...form, ineGeoCode: e.target.value });
+                    if (typeof window !== "undefined") {
+                      localStorage.setItem("vyxa_ine_geo_code", e.target.value);
+                    }
+                  }}
+                  placeholder="Ex: 1113"
+                  className="max-w-xs"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Traz o valor mediano de escrituras do INE para a avaliação — a referência mais
+                  fiável, porque reflete preços pagos e não pedidos. Descobre o código com{" "}
+                  <code className="rounded bg-muted px-1 text-xs">node scripts/ine-descobrir-indicador.js</code>.
+                  Fica guardado para as próximas avaliações.
+                </p>
               </div>
 
               <div className="md:col-span-2">

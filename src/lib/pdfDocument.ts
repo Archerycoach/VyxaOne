@@ -823,3 +823,78 @@ export function addNarrative(
 
   return y;
 }
+
+/**
+ * Contraste entre o que o mercado PEDE e o que efetivamente PAGA.
+ *
+ * É a informação mais útil de todo o documento para um proprietário a decidir
+ * o preço: os anúncios que ele vê no portal não são vendas, são pedidos. Sem
+ * este contraste, ele compara o seu imóvel com preços que ninguém pagou.
+ */
+export function addAskingVsSoldBlock(
+  doc: jsPDF,
+  params: {
+    askingPricePerSqm: number;
+    soldPricePerSqm: number;
+    gapPct: number;
+    zoneName?: string | null;
+  },
+  y: number
+): number {
+  const { askingPricePerSqm, soldPricePerSqm, gapPct, zoneName } = params;
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const boxWidth = pageWidth - MARGIN * 2;
+  const boxHeight = 34;
+
+  doc.setFillColor(248, 250, 252);
+  doc.setDrawColor(203, 213, 225);
+  doc.setLineWidth(0.3);
+  doc.roundedRect(MARGIN, y, boxWidth, boxHeight, 2, 2, "FD");
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.setTextColor(BRAND.r, BRAND.g, BRAND.b);
+  doc.text(
+    `PEDIDO vs PAGO${zoneName ? ` — ${zoneName}` : ""}`,
+    MARGIN + 5,
+    y + 7
+  );
+
+  const columnWidth = (boxWidth - 10) / 3;
+
+  const columns: Array<{ label: string; value: string; accent: boolean }> = [
+    {
+      label: "Pedido nos anúncios",
+      value: `${Math.round(askingPricePerSqm).toLocaleString("pt-PT")} €/m²`,
+      accent: false,
+    },
+    {
+      label: "Pago em escritura (INE)",
+      value: `${Math.round(soldPricePerSqm).toLocaleString("pt-PT")} €/m²`,
+      accent: true,
+    },
+    {
+      label: gapPct >= 0 ? "Pede-se acima do que se paga" : "Pede-se abaixo do que se paga",
+      value: `${gapPct > 0 ? "+" : ""}${gapPct}%`,
+      accent: false,
+    },
+  ];
+
+  columns.forEach((column, index) => {
+    const x = MARGIN + 5 + index * columnWidth;
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.5);
+    doc.setTextColor(MUTED.r, MUTED.g, MUTED.b);
+    doc.text(column.label, x, y + 16, { maxWidth: columnWidth - 4 });
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    // O valor de escritura vai destacado: é o que ancora a decisão.
+    if (column.accent) doc.setTextColor(ACCENT.r, ACCENT.g, ACCENT.b);
+    else doc.setTextColor(BRAND.r, BRAND.g, BRAND.b);
+    doc.text(column.value, x, y + 27);
+  });
+
+  return y + boxHeight + 6;
+}

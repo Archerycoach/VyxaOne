@@ -70,6 +70,27 @@ export function DocumentAssetUpload({
       return;
     }
 
+    // A faixa de rodapé ocupa a largura da página. Uma imagem quase quadrada
+    // fica desproporcionada — vale a pena dizê-lo ANTES de o consultor gerar
+    // um documento e ver o resultado.
+    if (kind === "image") {
+      const ratio = await new Promise<number | null>((resolve) => {
+        const image = new Image();
+        image.onload = () => resolve(image.width / image.height);
+        image.onerror = () => resolve(null);
+        image.src = URL.createObjectURL(file);
+      });
+
+      if (ratio !== null && ratio < 6) {
+        toast({
+          title: "Proporções pouco adequadas",
+          description:
+            "Para o rodapé, use uma imagem larga e baixa (ex.: 1600×140 px). " +
+            "Esta é demasiado alta e vai aparecer comprimida.",
+        });
+      }
+    }
+
     setBusy(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();

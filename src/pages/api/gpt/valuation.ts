@@ -6,12 +6,16 @@ import { searchIdealistaProperties, leadToIdealistaParams } from "@/services/ide
 import { getIdealistaCredentials } from "@/lib/server/idealistaCredentials";
 import { getLocationInsights } from "@/lib/server/locationInsights";
 import { getGeoapifyKey } from "@/lib/server/geoapifyCredentials";
+import { calculateLandAdjustment } from "@/lib/server/landValueAdjustment";
+import { getInePriceReference } from "@/lib/server/inePriceReference";
 import {
   inferCondition,
   subjectCondition,
   conditionsAreComparable,
   conditionLabel,
   removePriceOutliers,
+  matchesPropertyType,
+  removeBelowZoneFloor,
 } from "@/lib/server/comparableFilters";
 
 interface ComparableSummary {
@@ -39,7 +43,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
     if (authError || !user) return res.status(401).json({ error: "Não autorizado" });
 
-    const { address, propertyType, area, bedrooms, bathrooms, condition, city, factors } = req.body || {};
+    const { address, propertyType, area, bedrooms, bathrooms, condition, city, factors, land, ineGeoCode } = req.body || {};
     if (!address || !propertyType) {
       return res.status(400).json({ error: "Morada e tipo de imóvel são obrigatórios" });
     }
@@ -109,7 +113,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             conditionLabel: conditionLabel(candidateCondition),
           };
         })
-        .filter((c) => conditionsAreComparable(subjectState, c.condition));
+        .filter((c) => conditionsAreComparable(subjectState, c.condition))
+        // Tipo de imóvel: um apartamento não é comparável de uma moradia,
+        // por muito que a área bata certo.
+        .filter((c) => matchesPropertyType(propertyType, { address: c.address }));
 
       excludedByCondition = results.length - idealistaComparables.length;
     } catch (idealistaError) {
@@ -159,11 +166,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // Segunda defesa: nem toda a ruína se identifica como tal no anúncio. Um
     // €/m² muito fora da mediana denuncia o que a leitura do estado deixou
     // passar.
-    const { kept: comparables, removed: outliers } = removePriceOutliers(allComparables);
+    const { kept: afterOutliers, removed: outliers } = removePriceOutliers(allComparables);
 
-    if (excludedByCondition > 0 || outliers.length > 0) {
+    // Terceira defesa: um imóvel muito abaixo do €/m² da zona é ruína ainda
+    // que o anúncio não o diga e que a dispersão da amostra o deixe passar.
+    const { kept: comparables, removed: belowFloor } = removeBelowZoneFloor(
+      afterOutliers,
+      zonePricePerSqm
+    );
+
+    if (excludedByCondition > 0 || outliers.length > 0 || belowFloor.length > 0) {
       console.log(
-        `[Valuation] Comparáveis descartados: ${excludedByCondition} por estado, ${outliers.length} por preço fora do padrão.`
+        `[Valuation] Comparáveis descartados: ${excludedByCondition} por estado/tipo, ` +
+          `${outliers.length} por preço fora do padrão, ${belowFloor.length} abaixo do valor da zona.`
       );
     }
 
@@ -174,26 +189,59 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // pedido, tipicamente otimista); só usa ativos se não houver vendidos.
     const comparablesPricePerSqm = soldAvgPricePerSqm || activeAvgPricePerSqm;
 
+    // Referência oficial do INE (valor de escrituras, por município).
+    const ineReference = await getInePriceReference(ineGeoCode || null);
+
     // A referência da zona entra COM os comparáveis, não em vez deles.
     //
     // Os comparáveis são mais específicos (mesma área, mesma tipologia) e por
     // isso pesam mais; a zona é uma âncora mais larga que evita que uma
     // amostra pequena ou enviesada de comparáveis decida sozinha o valor.
-    const COMPARABLES_WEIGHT = 0.7;
-    let referencePricePerSqm: number | null = null;
+    //
+    // Pesos: o INE vale mais do que tudo o resto porque são ESCRITURAS — o
+    // que o mercado pagou de facto. O Idealista, em qualquer das duas
+    // leituras, são preços pedidos, que incluem margem de negociação e
+    // otimismo do vendedor.
+    const sources: Array<{ value: number; weight: number }> = [];
+    if (ineReference) sources.push({ value: ineReference.pricePerSqm, weight: 0.5 });
+    if (comparablesPricePerSqm) sources.push({ value: comparablesPricePerSqm, weight: 0.35 });
+    if (zonePricePerSqm) sources.push({ value: zonePricePerSqm, weight: 0.15 });
 
-    if (comparablesPricePerSqm && zonePricePerSqm) {
-      referencePricePerSqm =
-        comparablesPricePerSqm * COMPARABLES_WEIGHT + zonePricePerSqm * (1 - COMPARABLES_WEIGHT);
-    } else {
-      referencePricePerSqm = comparablesPricePerSqm || zonePricePerSqm;
+    // Os pesos são normalizados pelas fontes que existirem: com só uma, vale
+    // 100%; sem INE, os comparáveis e a zona repartem-se na mesma proporção
+    // relativa de antes.
+    // Diferença entre o que o mercado PEDE e o que efetivamente PAGA.
+    //
+    // É o argumento mais forte contra um preço irrealista: mostra ao
+    // proprietário, com números oficiais, a margem que existe entre anúncio e
+    // escritura. Só faz sentido com as duas fontes presentes.
+    const askingPricePerSqm = zonePricePerSqm || comparablesPricePerSqm;
+    let askingVsSoldGapPct: number | null = null;
+    if (ineReference && askingPricePerSqm) {
+      askingVsSoldGapPct = Math.round(((askingPricePerSqm / ineReference.pricePerSqm) - 1) * 100);
     }
+
+    const totalWeight = sources.reduce((sum, entry) => sum + entry.weight, 0);
+    const referencePricePerSqm: number | null =
+      totalWeight > 0
+        ? sources.reduce((sum, entry) => sum + entry.value * entry.weight, 0) / totalWeight
+        : null;
 
     let suggestedMin: number | null = null;
     let suggestedMax: number | null = null;
+
+    // O terreno entra como AJUSTE ao valor base, não como parcela somada por
+    // inteiro: o lote típico da zona já está no preço dos comparáveis, e só o
+    // excedente (ou a falta) altera o valor.
+    const landAdjustment = calculateLandAdjustment({
+      landArea: land?.landArea ?? factors?.landArea ?? null,
+      referenceLandArea: land?.referenceLandArea ?? null,
+      landPricePerSqm: land?.landPricePerSqm ?? null,
+    });
+
     if (referencePricePerSqm && area) {
-      suggestedMin = Math.round((referencePricePerSqm * 0.93 * area) / 1000) * 1000;
-      suggestedMax = Math.round((referencePricePerSqm * 1.07 * area) / 1000) * 1000;
+      suggestedMin = Math.round((referencePricePerSqm * 0.93 * area) / 1000) * 1000 + landAdjustment.adjustment;
+      suggestedMax = Math.round((referencePricePerSqm * 1.07 * area) / 1000) * 1000 + landAdjustment.adjustment;
     }
 
     const { data: profile } = await db.from("profiles").select("full_name").eq("id", user.id).maybeSingle();
@@ -215,6 +263,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         factors: factors || undefined,
         zonePricePerSqm,
         zoneSampleSize,
+        inePricePerSqm: ineReference?.pricePerSqm ?? null,
+        askingPricePerSqm: askingPricePerSqm ?? null,
+        askingVsSoldGapPct,
+        landAdjustmentNote: landAdjustment.explanation,
         comparables: comparables.slice(0, 12),
         soldAvgPricePerSqm,
         activeAvgPricePerSqm,
@@ -258,6 +310,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       locationInsights,
       zonePricePerSqm,
       zoneSampleSize,
+      inePricePerSqm: ineReference?.pricePerSqm ?? null,
+      ineGeoName: ineReference?.geoName ?? null,
+      askingPricePerSqm: askingPricePerSqm ?? null,
+      askingVsSoldGapPct,
+      landAdjustment: landAdjustment.applied ? landAdjustment.adjustment : 0,
+      landAdjustmentNote: landAdjustment.explanation,
     });
   } catch (error: any) {
     console.error("[Valuation] Erro:", error);

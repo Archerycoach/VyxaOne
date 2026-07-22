@@ -50,6 +50,11 @@ export default function Integrations() {
 
   // Geoapify — mapas estáticos nos documentos entregues ao cliente.
   // Chave global: o operador configura uma vez, todos os consultores usam.
+  // INE: código do indicador e período. Configuráveis porque o INE mudou de
+  // metodologia em 2018 e 2022, cada uma com código próprio.
+  const [ineIndicator, setIneIndicator] = useState("");
+  const [inePeriod, setInePeriod] = useState("");
+
   const [geoapifyKey, setGeoapifyKey] = useState("");
   const [geoapifyConfigured, setGeoapifyConfigured] = useState(false);
   const [geoapifyMaskedKey, setGeoapifyMaskedKey] = useState("");
@@ -101,8 +106,35 @@ export default function Integrations() {
         setGeoapifyConfigured(geoData.geoapify_api_key_configured || false);
         setGeoapifyMaskedKey(geoData.geoapify_api_key || "");
       }
+
+      const ineRes = await adminFetch("/api/admin/system-settings?keys=ine_indicator_code,ine_period_code");
+      if (ineRes.ok) {
+        const ineData = await ineRes.json();
+        setIneIndicator(ineData.ine_indicator_code || "");
+        setInePeriod(ineData.ine_period_code || "");
+      }
     } catch (error) {
       console.error("Error loading Idealista settings:", error);
+    }
+  };
+
+  const handleSaveIne = async () => {
+    try {
+      setSaving(true);
+      const res = await adminFetch("/api/admin/system-settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ine_indicator_code: ineIndicator.trim(),
+          ine_period_code: inePeriod.trim(),
+        }),
+      });
+      if (!res.ok) throw new Error("Erro ao guardar");
+      toast({ title: "✅ Configuração do INE guardada" });
+    } catch (error: any) {
+      toast({ title: "Erro", description: error?.message || "Erro ao guardar.", variant: "destructive" });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -919,6 +951,65 @@ export default function Integrations() {
               <div className="flex gap-3">
                 <Button onClick={handleSaveGeoapify} disabled={saving}>
                   {saving ? "A guardar..." : "Guardar Chave"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* INE — valores de escritura para as avaliações. */}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+              <div className="flex items-center gap-2">
+                <Settings className="h-5 w-5" />
+                <CardTitle>INE (valores de referência)</CardTitle>
+              </div>
+              {ineIndicator && (
+                <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
+                  <CheckCircle2 className="h-4 w-4" /> Configurado
+                </div>
+              )}
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <CardDescription>
+                O INE publica trimestralmente o valor mediano de venda por m², a partir de
+                escrituras reais. Nas avaliações é a referência com mais peso, por refletir
+                preços pagos e não pedidos. API pública e gratuita, sem chave.
+              </CardDescription>
+
+              <Alert>
+                <AlertDescription>
+                  <p className="text-sm">
+                    Para descobrir o código do indicador e o do teu município, corre{" "}
+                    <code className="rounded bg-muted px-1 py-0.5 text-xs">
+                      node scripts/ine-descobrir-indicador.js
+                    </code>
+                    . Sem estes valores, as avaliações usam apenas os dados do Idealista.
+                  </p>
+                </AlertDescription>
+              </Alert>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Código do indicador</Label>
+                  <Input
+                    value={ineIndicator}
+                    onChange={(e) => setIneIndicator(e.target.value)}
+                    placeholder="Ex: 0012234"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Período (opcional)</Label>
+                  <Input
+                    value={inePeriod}
+                    onChange={(e) => setInePeriod(e.target.value)}
+                    placeholder="Ex: S3T2025 — vazio usa o mais recente"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <Button onClick={handleSaveIne} disabled={saving}>
+                  {saving ? "A guardar..." : "Guardar"}
                 </Button>
               </div>
             </CardContent>
