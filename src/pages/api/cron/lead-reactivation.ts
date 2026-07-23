@@ -111,7 +111,7 @@ export default async function handler(
     const { data: leadsToProcessRaw, error } = await supabaseAdmin
       .from("leads")
       .select(`
-        id, user_id, name, email, phone, follow_up_state, updated_at, 
+        id, user_id, name, email, phone, follow_up_state, updated_at, last_contact_date, created_at,
         reactivation_attempts, location_preference, buy_purpose, 
         consent_token, email_opt_out, email_unsub_token, last_reactivation_sent_at,
         reactivation_emails_sent, reactivation_angles_used, reactivation_started_at
@@ -137,8 +137,21 @@ export default async function handler(
 
     console.log(`[Lead Reactivation] Found ${leadsToProcess.length} leads to evaluate (de ${leadsToProcessRaw?.length || 0} candidatas, filtradas por autorização)`);
 
+    // Teto de envios por execução.
+    //
+    // A correção do relógio (last_contact_date em vez de updated_at) tornou
+    // elegíveis, de uma vez, centenas de leads acumuladas. Sem teto, a
+    // primeira execução despejava-as todas num dia — mau para a reputação do
+    // SMTP e para o remetente. Com 60/dia, um atraso de ~760 leads escoa em
+    // duas semanas, e o ritmo diário fica sempre dentro do razoável.
+    const MAX_SENDS_PER_RUN = 60;
+
     // Process each lead individually with error tolerance
     for (const lead of leadsToProcess) {
+      if (results.email_sent + results.whatsapp_sent >= MAX_SENDS_PER_RUN) {
+        results.skipped++;
+        continue;
+      }
       try {
         await processLead(lead as LeadToProcess, supabaseAdmin, results, appUrl);
       } catch (leadError: any) {
@@ -198,7 +211,15 @@ async function processLead(
 ): Promise<void> {
   const attempts = lead.reactivation_attempts || 0;
   const now = new Date().getTime();
-  const updatedAt = new Date(lead.updated_at).getTime();
+
+  // "Lead fria" mede-se pelo último CONTACTO, não pelo updated_at: qualquer
+  // correção administrativa (associar empreendimento, acertar um orçamento,
+  // um retro-preenchimento) toca no updated_at e reiniciava o relógio dos
+  // 30 dias da base inteira — foi assim que a reativação ficou semanas sem
+  // enviar um único email.
+  const referenceDate =
+    (lead as any).last_contact_date || (lead as any).created_at || lead.updated_at;
+  const updatedAt = new Date(referenceDate).getTime();
   const daysSinceUpdate = (now - updatedAt) / (1000 * 3600 * 24);
 
   // Idempotency check: Don't send again if already sent today
