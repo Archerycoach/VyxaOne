@@ -1,5 +1,19 @@
 const SEVEN_DAYS_IN_MS = 7 * 24 * 60 * 60 * 1000;
 
+// Envios AUTOMÁTICOS não são contacto do consultor: uma lead que só recebeu
+// a resposta automática de entrada aparecia com "Interação recente", como se
+// alguém já tivesse falado com ela — o oposto do que o destaque quer dizer.
+const AUTOMATED_OUTCOME_MARKERS = [
+  "resposta automática",
+  "resposta automatica",
+  "property matcher",
+  "automático",
+  "automatico",
+  "auto-reply",
+  "reativação",
+  "reativacao",
+];
+
 // Outcomes que NÃO devem contar como contacto efetivo
 const NEGATIVE_OUTCOMES = [
   "não atendeu",
@@ -34,6 +48,12 @@ export function getLeadRecentInteractionState(
   // Se o último contacto teve um outcome negativo, não destacar
   if (lastContactOutcome) {
     const normalizedOutcome = lastContactOutcome.toLowerCase().trim();
+    if (AUTOMATED_OUTCOME_MARKERS.some(marker => normalizedOutcome.includes(marker))) {
+      return {
+        isHighlighted: false,
+        badgeLabel: null,
+      };
+    }
     if (NEGATIVE_OUTCOMES.some(negativeOutcome => normalizedOutcome.includes(negativeOutcome))) {
       return {
         isHighlighted: false,

@@ -78,25 +78,25 @@ export function LeadTimeline({ interactions, notes, tasks }: LeadTimelineProps) 
 
     // Adicionar interações
     interactions.forEach(interaction => {
-      let type: TimelineItemType = "email";
-      let content = interaction.content || "";
+      const rawType = (interaction.interaction_type || "").toLowerCase();
+      const content = interaction.content || "";
 
-      // Determinar tipo baseado no interaction type
-      if (interaction.interaction_type === "email") {
-        type = "email";
-        content = interaction.content || "";
-      } else if (interaction.interaction_type === "whatsapp_outbound" || interaction.interaction_type === "whatsapp_inbound") {
+      // O tipo em bruto manda. O default anterior era "email", e qualquer
+      // tipo fora da lista — incluindo o "whatsapp" simples que as respostas
+      // rápidas gravam — aparecia como email na cronologia.
+      let type: TimelineItemType;
+      if (rawType.includes("whatsapp") || rawType === "sms") {
         type = "whatsapp";
-        content = interaction.content || "";
-      } else if (interaction.interaction_type === "voice_note") {
+      } else if (rawType === "voice_note") {
         type = "voice_note";
-        content = interaction.content || "";
-      } else if (interaction.interaction_type === "call") {
+      } else if (rawType === "call") {
         type = "call";
-        content = interaction.content || "";
-      } else if (interaction.interaction_type === "visit") {
+      } else if (rawType === "visit" || rawType === "meeting") {
         type = "visit";
-        content = interaction.content || "";
+      } else if (rawType === "note") {
+        type = "note";
+      } else {
+        type = "email";
       }
 
       const direction = interaction.interaction_type?.includes("inbound") ? "inbound" : "outbound";

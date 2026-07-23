@@ -6,6 +6,8 @@ export interface MessageSnippet {
   title: string;
   content: string;
   channel: "email" | "whatsapp" | "both";
+  /** Imagem opcional (assinatura, logotipo). Só segue em emails HTML. */
+  image_url?: string | null;
   sort_order: number;
   created_at: string;
   updated_at: string;
@@ -15,6 +17,7 @@ export interface MessageSnippetInput {
   title: string;
   content: string;
   channel: "email" | "whatsapp" | "both";
+  image_url?: string | null;
 }
 
 export interface SnippetPersonalizationContext {

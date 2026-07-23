@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/select";
 import { Plus, Pencil, Trash2, MessageCircle, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 import {
   type MessageSnippet,
   getMessageSnippets,
@@ -44,6 +45,8 @@ export function MessageSnippetsManagement() {
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [channel, setChannel] = useState<"email" | "whatsapp" | "both">("both");
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const loadSnippets = async () => {
@@ -67,6 +70,7 @@ export function MessageSnippetsManagement() {
     setTitle("");
     setContent("");
     setChannel("both");
+    setImageUrl(null);
     setDialogOpen(true);
   };
 
@@ -75,7 +79,29 @@ export function MessageSnippetsManagement() {
     setTitle(snippet.title);
     setContent(snippet.content);
     setChannel(snippet.channel);
+    setImageUrl(snippet.image_url || null);
     setDialogOpen(true);
+  };
+
+  // Imagem para o bucket publico ja usado pelos templates de email.
+  const handleImageUpload = async (file: File) => {
+    if (file.size > 2 * 1024 * 1024) {
+      toast({ title: "Imagem demasiado grande", description: "Máximo 2 MB — para assinaturas chega bem.", variant: "destructive" });
+      return;
+    }
+    setUploadingImage(true);
+    try {
+      const fileName = `snippets/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, "_")}`;
+      const { error } = await supabase.storage.from("email_attachments").upload(fileName, file, { upsert: true });
+      if (error) throw error;
+      const { data } = supabase.storage.from("email_attachments").getPublicUrl(fileName);
+      setImageUrl(data.publicUrl);
+      toast({ title: "Imagem carregada" });
+    } catch (error: any) {
+      toast({ title: "Erro ao carregar imagem", description: error.message, variant: "destructive" });
+    } finally {
+      setUploadingImage(false);
+    }
   };
 
   const handleSave = async () => {
@@ -86,10 +112,10 @@ export function MessageSnippetsManagement() {
     setSaving(true);
     try {
       if (editingSnippet) {
-        await updateMessageSnippet(editingSnippet.id, { title: title.trim(), content: content.trim(), channel });
+        await updateMessageSnippet(editingSnippet.id, { title: title.trim(), content: content.trim(), channel, image_url: imageUrl });
         toast({ title: "Resposta rápida atualizada" });
       } else {
-        await createMessageSnippet({ title: title.trim(), content: content.trim(), channel });
+        await createMessageSnippet({ title: title.trim(), content: content.trim(), channel, image_url: imageUrl });
         toast({ title: "Resposta rápida criada" });
       }
       setDialogOpen(false);
@@ -188,6 +214,36 @@ export function MessageSnippetsManagement() {
                 placeholder="Ex.: Olá {nome}, a nossa comissão é de..."
                 rows={5}
               />
+            </div>
+
+            {/* Imagem opcional (assinatura/logotipo). So segue nos emails
+                compostos na aplicacao - o mailto e o WhatsApp pessoal nao
+                transportam imagens. */}
+            <div className="space-y-2">
+              <Label>Imagem (opcional — ex.: assinatura)</Label>
+              {imageUrl ? (
+                <div className="flex items-center gap-3">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={imageUrl} alt="" className="h-16 rounded border object-contain" />
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setImageUrl(null)}>
+                    Remover
+                  </Button>
+                </div>
+              ) : (
+                <Input
+                  type="file"
+                  accept="image/png,image/jpeg"
+                  disabled={uploadingImage}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleImageUpload(file);
+                  }}
+                />
+              )}
+              <p className="text-xs text-muted-foreground">
+                Segue apenas nos emails compostos na aplicação. O WhatsApp e o mailto não
+                transportam imagens.
+              </p>
             </div>
             <div className="space-y-2">
               <Label>Onde aparece</Label>

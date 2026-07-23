@@ -116,6 +116,34 @@ export function QuickContactDialog({
       localStorage.setItem("vyxa_quick_contact_wa_followup", sendFollowUp ? "1" : "0");
     }
   }, [sendFollowUp]);
+
+  // Respostas rápidas de WhatsApp do consultor, para escolher qual segue
+  // como seguimento. "default" = a mensagem padrão embutida. A escolha fica
+  // lembrada entre registos.
+  const [waSnippets, setWaSnippets] = useState<Array<{ id: string; title: string; content: string }>>([]);
+  const [followUpSnippetId, setFollowUpSnippetId] = useState<string>(() => {
+    if (typeof window === "undefined") return "default";
+    return localStorage.getItem("vyxa_quick_contact_wa_snippet") || "default";
+  });
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("vyxa_quick_contact_wa_snippet", followUpSnippetId);
+    }
+  }, [followUpSnippetId]);
+
+  useEffect(() => {
+    if (!open) return;
+    import("@/services/messageSnippetsService")
+      .then(({ getMessageSnippets }) => getMessageSnippets())
+      .then((all) =>
+        setWaSnippets(
+          all
+            .filter((snippet) => snippet.channel === "whatsapp" || snippet.channel === "both")
+            .map(({ id, title, content }) => ({ id, title, content }))
+        )
+      )
+      .catch(() => setWaSnippets([]));
+  }, [open]);
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
   const [waMessage, setWaMessage] = useState("");
@@ -165,12 +193,21 @@ export function QuickContactDialog({
             "@/services/messageSnippetsService"
           );
           const sender = await getSnippetSenderContext();
-          const followUpText = personalizeSnippet(
+
+          // A resposta escolhida pelo consultor; a padrão é o recurso.
+          const chosenSnippet = waSnippets.find((snippet) => snippet.id === followUpSnippetId);
+          const template =
+            chosenSnippet?.content ||
             "Olá {primeiro_nome}, tentei ligar-lhe agora mas não consegui falar consigo. " +
               "Quando tiver disponibilidade, pode responder-me por aqui — fica mais fácil para ambos." +
-              (sender.booking_url ? " Se preferir, reserve diretamente uma conversa: {link_agenda}" : ""),
-            { name: leadName, consultant_name: sender.consultant_name, booking_url: sender.booking_url }
-          );
+              (sender.booking_url ? " Se preferir, reserve diretamente uma conversa: {link_agenda}" : "");
+
+          const followUpText = personalizeSnippet(template, {
+            name: leadName,
+            phone: leadPhone,
+            consultant_name: sender.consultant_name,
+            booking_url: sender.booking_url,
+          });
 
           openWhatsAppWithMessage(leadPhone, followUpText);
 
@@ -290,9 +327,24 @@ export function QuickContactDialog({
                     Abrir WhatsApp com mensagem de seguimento
                   </span>
                   <span className="block text-xs text-green-800">
-                    "Tentei ligar-lhe agora..." com o teu link de agenda, do teu número. Fica
-                    registado na cronologia; só falta enviares.
+                    Abre o teu WhatsApp com a mensagem pronta; só falta enviares. Fica registado
+                    na cronologia.
                   </span>
+                  {sendFollowUp && (
+                    <select
+                      value={followUpSnippetId}
+                      onChange={(e) => setFollowUpSnippetId(e.target.value)}
+                      onClick={(e) => e.preventDefault()}
+                      className="mt-2 block w-full rounded-md border border-green-300 bg-white px-2 py-1.5 text-sm"
+                    >
+                      <option value="default">Mensagem padrão — "Tentei ligar-lhe agora..."</option>
+                      {waSnippets.map((snippet) => (
+                        <option key={snippet.id} value={snippet.id}>
+                          {snippet.title}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </span>
               </label>
             )}

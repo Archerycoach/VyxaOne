@@ -446,8 +446,14 @@ export function LeadDetailsDialog({
     });
     setGeneratedDraft((prev) => {
       if (!prev) return prev;
+      // A imagem do snippet (assinatura, logotipo) só segue em email HTML —
+      // o WhatsApp pessoal não transporta imagens por link.
+      const imageHtml =
+        prev.channel === "email" && (snippet as any).image_url
+          ? `<img src="${(snippet as any).image_url}" alt="" style="max-width:320px;height:auto;margin-top:8px" />`
+          : "";
       const appended = prev.channel === "email"
-        ? prev.text + plainTextToHtml(personalized)
+        ? prev.text + plainTextToHtml(personalized) + imageHtml
         : (prev.text ? `${prev.text}\n\n${personalized}` : personalized);
       return { ...prev, text: appended };
     });
