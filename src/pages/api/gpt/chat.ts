@@ -568,6 +568,8 @@ function getFallbackAudienceLeadIds(
   leads: LeadContext[],
   criteria: EmailCampaignCriteria,
   previousRecipientLeadIds: string[] = [],
+  /** Distâncias em km entre a zona pedida e as zonas das leads (geocache). */
+  zoneDistances?: Map<string, number>,
 ): string[] {
   const previousLeadIdSet = new Set(previousRecipientLeadIds);
   const previousMatches = leads
@@ -576,6 +578,98 @@ function getFallbackAudienceLeadIds(
 
   if (previousMatches.length > 0) {
     return previousMatches;
+  }
+
+  // Pontuação de correspondência, critério a critério.
+  //
+  // Nem o tudo-ou-nada estrito (excluía meias-correspondências legítimas)
+  // nem o antigo deixa-passar-tudo (enchia a lista de leads sem dados).
+  // Cada critério pedido vale 1 ponto: correspondência plena = 1, próxima =
+  // 0.7, dado em falta = 0.35 (desconhecido não é recusa, mas também não é
+  // match).
+  //
+  // O piso é BRANDO de propósito (abaixo dos ~50% de referência): este passo
+  // só corta o que claramente não faz sentido. A decisão fina é da IA, que
+  // vê as notas de cada candidato e usa julgamento — o limiar é orientação,
+  // não regra.
+  const MATCH_THRESHOLD = 0.4;
+
+  const matchScore = (lead: LeadContext): number => {
+    let points = 0;
+    let possible = 0;
+
+    if (criteria.location) {
+      possible += 1;
+      const leadLocation = normalizeText(lead.location_preference || "");
+      if (!leadLocation) {
+        points += 0.35;
+      } else {
+        const requested = normalizeText(criteria.location);
+        const words = requested.split(/\s+/).filter((w) => w.length > 3);
+        if (leadLocation.includes(requested) || requested.includes(leadLocation)) points += 1;
+        else if (words.some((w) => leadLocation.includes(w))) points += 0.7;
+        else {
+          // Sem correspondência textual, vale a GEOGRAFIA: "Arroios" a 1 km
+          // de "Penha de França" é um match próximo, mesmo sem partilhar uma
+          // palavra. Sem distância conhecida, mantém-se o zero — a lead
+          // disse onde procura, e não é aqui perto.
+          const distance = zoneDistances?.get(leadLocation.replace(/[^a-z0-9]+/g, " ").trim());
+          if (distance !== undefined) {
+            if (distance <= 3) points += 1;
+            else if (distance <= 7) points += 0.7;
+            else if (distance <= 15) points += 0.45;
+          }
+        }
+      }
+    }
+
+    if (criteria.bedrooms !== null && criteria.bedrooms !== undefined) {
+      possible += 1;
+      const leadTypology = resolveLeadTypology(lead);
+      const leadBedrooms =
+        typeof lead.bedrooms === "number"
+          ? lead.bedrooms
+          : leadTypology
+            ? parseInt(leadTypology.replace(/\D/g, ""), 10)
+            : null;
+      if (leadBedrooms === null || Number.isNaN(leadBedrooms)) points += 0.35;
+      else if (leadBedrooms === criteria.bedrooms) points += 1;
+      else if (Math.abs(leadBedrooms - criteria.bedrooms) === 1) points += 0.7;
+    }
+
+    if (criteria.price) {
+      possible += 1;
+      const max = ((lead as any).budget_max ?? (lead as any).budget) as number | null | undefined;
+      if (!max) points += 0.35;
+      else if (criteria.price <= max * 1.1) points += 1;
+      else if (criteria.price <= max * 1.3) points += 0.5;
+    }
+
+    if (criteria.buyPurpose) {
+      possible += 1;
+      if (!lead.buy_purpose) points += 0.35;
+      else if (matchesRequestedBuyPurpose(lead, criteria.buyPurpose)) points += 1;
+    }
+
+    if (criteria.propertyType) {
+      possible += 1;
+      if (!lead.property_type) points += 0.35;
+      else if (matchesRequestedPropertyType(lead, criteria.propertyType)) points += 1;
+    }
+
+    return possible > 0 ? points / possible : 0;
+  };
+
+  if (hasStructuredCampaignCriteria(criteria)) {
+    const scored = leads
+      .map((lead) => ({ id: lead.id, score: matchScore(lead) }))
+      .filter((entry) => entry.score >= MATCH_THRESHOLD)
+      .sort((a, b) => b.score - a.score)
+      .map((entry) => entry.id);
+
+    if (scored.length > 0) {
+      return scored;
+    }
   }
 
   const structuredMatches = leads
@@ -800,6 +894,8 @@ async function selectEmailCampaignAudience(params: {
   criteria: EmailCampaignCriteria;
   leads: LeadContext[];
   userId: string;
+  /** Cliente com a sessão do utilizador, para ler as notas dos candidatos. */
+  supabase: any;
   history?: ChatMessage[];
   previousRecipientLeadIds?: string[];
   properties?: PropertyContext[];
@@ -810,10 +906,31 @@ async function selectEmailCampaignAudience(params: {
   // partir das características deste imóvel (preço, tipologia, zona, tipo).
   listingContent?: string | null;
 }): Promise<EmailCampaignAudienceResult> {
+  // Geolocalização das zonas: pedida vs. as das leads, via geocache. É o
+  // que permite ao agente saber "o que está perto do quê" em vez de comparar
+  // nomes de freguesias como strings.
+  let zoneDistances: Map<string, number> | undefined;
+  if (params.criteria.location) {
+    try {
+      const { getZoneDistancesKm } = await import("@/lib/server/geoZones");
+      const leadZones = Array.from(
+        new Set(
+          params.leads
+            .map((lead) => lead.location_preference || "")
+            .filter((zone) => zone.trim().length > 2)
+        )
+      );
+      zoneDistances = await getZoneDistancesKm(params.criteria.location, leadZones);
+    } catch (geoError) {
+      console.warn("[audience] Geolocalização de zonas indisponível:", geoError);
+    }
+  }
+
   const fallbackLeadIds = getFallbackAudienceLeadIds(
     params.leads,
     params.criteria,
     params.previousRecipientLeadIds || [],
+    zoneDistances,
   );
 
   const fallbackSummary =
@@ -827,7 +944,24 @@ async function selectEmailCampaignAudience(params: {
   // a seleção fica-se pelo filtro determinístico: é preferível uma campanha
   // que chega a TODAS as leads elegíveis do que uma seleção "inteligente"
   // que silenciosamente deixa metade de fora.
-  const candidateIdSet = new Set(fallbackLeadIds);
+  // Leads NOMEADAS no pedido ("inclui a Maria Soares") são ordens, não
+  // sugestões: chegam sempre à seleção, entram na lista final e ficam
+  // isentas dos filtros automáticos. Foi um filtro pós-seleção (orçamento)
+  // que andou a remover leads pedidas explicitamente.
+  const normalizedMessage = normalizeText(params.message);
+  const explicitLeadIds = params.leads
+    .filter((lead) => {
+      const name = normalizeText(lead.name || "");
+      // Nome completo, ou nome com 2+ palavras todas presentes — evita que
+      // um primeiro nome comum ("João") apanhe meia base.
+      if (name.length < 5) return false;
+      if (normalizedMessage.includes(name)) return true;
+      const parts = name.split(/\s+/).filter((part) => part.length > 2);
+      return parts.length >= 2 && parts.every((part) => normalizedMessage.includes(part));
+    })
+    .map((lead) => lead.id);
+
+  const candidateIdSet = new Set([...explicitLeadIds, ...fallbackLeadIds]);
   const candidates = params.leads.filter((lead) => candidateIdSet.has(lead.id));
   const leadsForAi = candidates.length > 0 ? candidates : params.leads;
 
@@ -839,12 +973,38 @@ async function selectEmailCampaignAudience(params: {
       { candidates: leadsForAi.length, limit: MAX_LEADS_FOR_AUDIENCE_AI },
     );
     return {
-      selectedLeadIds: leadsForAi.map((lead) => lead.id),
+      selectedLeadIds: Array.from(new Set([...explicitLeadIds, ...leadsForAi.map((lead) => lead.id)])),
       filterSummary: fallbackSummary,
     };
   }
 
   const hasListingContent = Boolean(params.listingContent?.trim());
+
+  // Notas recentes dos candidatos: é aí que vive o contexto que os campos
+  // estruturados não têm ("quer mudar-se para perto da filha em Arroios",
+  // "detestou o último T2 por ser escuro"). Custa uma consulta e alguns
+  // tokens a mais — o pedido explícito foi analisar com cuidado, mesmo que
+  // demore um pouco mais.
+  const notesByLead = new Map<string, string[]>();
+  try {
+    const { data: candidateNotes } = await params.supabase
+      .from("lead_notes")
+      .select("lead_id, note, created_at")
+      .in("lead_id", leadsForAi.map((lead) => lead.id))
+      .order("created_at", { ascending: false })
+      .limit(leadsForAi.length * 2);
+
+    for (const row of (candidateNotes || []) as Array<{ lead_id: string; note: string }>) {
+      const list = notesByLead.get(row.lead_id) || [];
+      // Duas notas por lead, truncadas: contexto suficiente sem rebentar o prompt.
+      if (list.length < 2 && row.note) {
+        list.push(row.note.slice(0, 200));
+        notesByLead.set(row.lead_id, list);
+      }
+    }
+  } catch {
+    // Sem notas, a seleção continua com os campos estruturados.
+  }
 
   try {
     const aiResponse = await runAI({
@@ -855,7 +1015,7 @@ async function selectEmailCampaignAudience(params: {
           role: "system",
           content: hasListingContent
             ? "És um assistente imobiliário em português de Portugal. Seleciona as leads certas para uma campanha de email. Há um ou mais imóveis a divulgar em 'imovel_a_divulgar' (blocos separados por '---') — extrai de cada um o preço, tipologia, zona e tipo, e usa isso como critério principal de seleção quando não houver 'criterios_inferidos' explícitos (ou combina os dois se ambos existirem). Seleciona uma lead se for compatível com PELO MENOS UM dos imóveis (orçamento máximo cobre o preço e tipologia/zona/objetivo compatíveis) — não incluas leads claramente incompatíveis com todos eles. Se o pedido apenas afinar o tom ou o texto e não introduzir novos critérios de audiência, reutiliza exatamente os IDs anteriores. Responde APENAS em JSON com as chaves filterSummary e selectedLeadIds."
-            : "És um assistente imobiliário em português de Portugal. Seleciona as leads certas para uma campanha de email com base num pedido livre. Se o pedido apenas afinar o tom ou o texto e não introduzir novos critérios de audiência, reutiliza exatamente os IDs anteriores. Responde APENAS em JSON com as chaves filterSummary e selectedLeadIds.",
+            : "És um assistente imobiliário em português de Portugal. Seleciona as leads certas para uma campanha de email com base num pedido livre. Analisa CADA lead com atenção, incluindo as notas_recentes — é aí que está o contexto real (mudanças de planos, preferências ditas em conversa, motivos de recusa). Se o pedido MENCIONAR leads pelo nome para incluir ou excluir, OBEDECE — a instrução do consultor prevalece sobre os critérios. Usa distancia_km_da_zona_pedida para julgar proximidade geográfica (até ~3 km é praticamente a mesma zona; até ~7 km é vizinho). Correspondência parcial (na ordem de metade dos critérios) é uma REFERÊNCIA, não uma regra: usa julgamento. Inclui uma lead abaixo dessa referência se as notas mostrarem que faz sentido; exclui uma lead cujas notas contradigam claramente o pedido, mesmo que os campos batam certo. Se o pedido apenas afinar o tom ou o texto e não introduzir novos critérios de audiência, reutiliza exatamente os IDs anteriores. Responde APENAS em JSON com as chaves filterSummary e selectedLeadIds.",
         },
         {
           role: "user",
@@ -921,12 +1081,20 @@ async function selectEmailCampaignAudience(params: {
     // do que a IA escolheu. Se o modelo incluir uma lead cujo orçamento máximo
     // fica mais de 10% abaixo do preço do imóvel, é retirada aqui.
     const budgetRespectingIds = selectedLeadIds.filter((leadId: string) => {
+      // Uma lead pedida por nome não é filtrada por nada.
+      if (explicitLeadIds.includes(leadId)) return true;
       const lead = params.leads.find((candidate) => candidate.id === leadId);
       return lead ? matchesLeadBudget(lead, params.criteria.price ?? null) : false;
     });
 
+    // União final: mesmo que a IA se tenha esquecido da lead nomeada, ela
+    // entra — a instrução do consultor prevalece sobre a seleção automática.
+    const withExplicit = Array.from(
+      new Set([...explicitLeadIds, ...(budgetRespectingIds.length > 0 ? budgetRespectingIds : fallbackLeadIds)])
+    );
+
     return {
-      selectedLeadIds: budgetRespectingIds.length > 0 ? budgetRespectingIds : fallbackLeadIds,
+      selectedLeadIds: withExplicit,
       filterSummary:
         typeof parsed.filterSummary === "string" && parsed.filterSummary.trim()
           ? parsed.filterSummary.trim()
@@ -938,7 +1106,7 @@ async function selectEmailCampaignAudience(params: {
     });
     console.error("Erro ao selecionar audiência da campanha por IA:", error);
     return {
-      selectedLeadIds: fallbackLeadIds,
+      selectedLeadIds: Array.from(new Set([...explicitLeadIds, ...fallbackLeadIds])),
       filterSummary: fallbackSummary,
     };
   }
@@ -1618,6 +1786,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
         const audienceSelection = await selectEmailCampaignAudience({
           message,
+          supabase: userScopedSupabase,
           criteria,
           leads: campaignEligibleLeads,
           userId: user.id,

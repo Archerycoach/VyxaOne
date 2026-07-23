@@ -600,6 +600,7 @@ export function LeadCard({
         <QuickContactDialog
           leadId={lead.id}
           leadName={lead.name}
+          leadPhone={lead.phone}
           open={quickContactOpen}
           onOpenChange={setQuickContactOpen}
           onSuccess={() => {

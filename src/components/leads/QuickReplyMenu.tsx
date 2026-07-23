@@ -12,9 +12,11 @@ import { Zap, Mail, MessageCircle } from "lucide-react";
 import {
   getMessageSnippets,
   personalizeSnippet,
+  getSnippetSenderContext,
   type MessageSnippet,
 } from "@/services/messageSnippetsService";
 import { createInteraction } from "@/services/interactionsService";
+import { openWhatsAppWithMessage } from "@/lib/openWhatsApp";
 import { useToast } from "@/hooks/use-toast";
 
 interface QuickReplyLead {
@@ -42,6 +44,10 @@ export function QuickReplyMenu({
   const { toast } = useToast();
   const [snippets, setSnippets] = useState<MessageSnippet[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [sender, setSender] = useState<{ consultant_name: string | null; booking_url: string | null }>({
+    consultant_name: null,
+    booking_url: null,
+  });
 
   useEffect(() => {
     // Carrega só quando o menu existe no ecrã — a maioria das aberturas da
@@ -50,6 +56,7 @@ export function QuickReplyMenu({
       .then(setSnippets)
       .catch(() => setSnippets([]))
       .finally(() => setLoaded(true));
+    getSnippetSenderContext().then(setSender);
   }, []);
 
   const send = async (snippet: MessageSnippet, channel: "whatsapp" | "email") => {
@@ -57,6 +64,8 @@ export function QuickReplyMenu({
       name: lead.name,
       email: lead.email || undefined,
       phone: lead.phone || undefined,
+      consultant_name: sender.consultant_name,
+      booking_url: sender.booking_url,
     });
 
     if (channel === "whatsapp") {
@@ -64,8 +73,7 @@ export function QuickReplyMenu({
         toast({ title: "A lead não tem telefone registado", variant: "destructive" });
         return;
       }
-      const phone = lead.phone.replace(/[^\d+]/g, "").replace(/^\+/, "");
-      window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, "_blank");
+      openWhatsAppWithMessage(lead.phone, text);
     } else {
       if (!lead.email) {
         toast({ title: "A lead não tem email registado", variant: "destructive" });

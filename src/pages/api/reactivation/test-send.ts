@@ -44,7 +44,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     attemptNumber?: number;
   };
 
-  const attempt = [1, 2, 3].includes(Number(attemptNumber)) ? Number(attemptNumber) : 1;
+  // A sequência tem 6 emails (cadência 0/7/21/45/90/180 dias), cada um com
+  // um ângulo diferente escrito pela IA.
+  const attempt = [1, 2, 3, 4, 5, 6].includes(Number(attemptNumber)) ? Number(attemptNumber) : 1;
 
   if (!leadId && !email) {
     return res.status(400).json({ error: "Indique o email ou o id da lead de teste." });

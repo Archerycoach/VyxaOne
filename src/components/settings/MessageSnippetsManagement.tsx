@@ -119,7 +119,8 @@ export function MessageSnippetsManagement() {
           <CardTitle>Respostas Rápidas</CardTitle>
           <CardDescription>
             Modelos fixos para perguntas repetitivas (ex.: "Qual a comissão?"), inseridos com um clique no
-            WhatsApp e no email — sem passar pela IA. Suporta {"{nome}"}, {"{email}"}, {"{telefone}"} e{" "}
+            WhatsApp e no email — sem passar pela IA. Suporta {"{nome}"}, {"{primeiro_nome}"}, {"{email}"}, {"{telefone}"},{" "}
+            {"{empreendimento}"}, {"{consultor}"} e {"{link_agenda}"} (o teu link de reserva de conversa).{" "}
             {"{empreendimento}"}.
           </CardDescription>
         </div>

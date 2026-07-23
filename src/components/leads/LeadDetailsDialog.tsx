@@ -83,6 +83,7 @@ import { ShieldOff } from "lucide-react";
 import { VoiceNoteRecorder } from "./VoiceNoteRecorder";
 import { LeadTimeline } from "@/components/LeadTimeline";
 import { QuickReplyMenu } from "@/components/leads/QuickReplyMenu";
+import { LeadSearchEmailCard } from "@/components/leads/LeadSearchEmailCard";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { updateLead } from "@/services/leadsService";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -90,7 +91,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
 import { collapseEmptyBlocks } from "@/lib/emailSignatureFormat";
-import { getMessageSnippets, personalizeSnippet, type MessageSnippet } from "@/services/messageSnippetsService";
+import { getMessageSnippets, personalizeSnippet, getSnippetSenderContext, type MessageSnippet } from "@/services/messageSnippetsService";
 import { getOrCreatePortalLink } from "@/services/portalService";
 import { LeadConversionProbabilityPanel } from "@/components/leads/LeadConversionProbabilityPanel";
 import { formatPhoneForWhatsApp } from "@/lib/phoneFormat";
@@ -171,6 +172,16 @@ export function LeadDetailsDialog({
   const fetchingRef = useRef(false);
   const currentLeadIdRef = useRef<string | null>(null);
   const dialogContentRef = useRef<HTMLDivElement>(null);
+
+  // {consultor} e {link_agenda} nas respostas rápidas vêm do perfil de quem
+  // envia — carregado uma vez por abertura da ficha.
+  const [snippetSender, setSnippetSender] = useState<{ consultant_name: string | null; booking_url: string | null }>({
+    consultant_name: null,
+    booking_url: null,
+  });
+  useEffect(() => {
+    getSnippetSenderContext().then(setSnippetSender);
+  }, []);
 
   // Respostas rápidas: carrega uma vez quando o diálogo abre (independente
   // do fluxo de fetch principal, que já está bastante complexo).
@@ -431,6 +442,7 @@ export function LeadDetailsDialog({
       email: lead.email,
       phone: lead.phone,
       development_name: lead.development_name,
+      ...snippetSender,
     });
     setGeneratedDraft((prev) => {
       if (!prev) return prev;
@@ -1207,6 +1219,8 @@ export function LeadDetailsDialog({
             </TabsContent>
 
             <TabsContent value="ai-assistant" className="mt-0 space-y-4">
+              <LeadSearchEmailCard lead={lead} onSent={refreshInteractions} />
+
               <LeadConversionProbabilityPanel leadId={lead.id} />
 
               {/* Cruzamento semântico com a carteira (lê as notas, não só os filtros) */}
@@ -1532,6 +1546,7 @@ export function LeadDetailsDialog({
         <QuickContactDialog
           leadId={lead.id}
           leadName={lead.name}
+          leadPhone={lead.phone}
           open={quickContactOpen}
           onOpenChange={setQuickContactOpen}
           onSuccess={() => {

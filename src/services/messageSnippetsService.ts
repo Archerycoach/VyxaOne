@@ -22,6 +22,10 @@ export interface SnippetPersonalizationContext {
   email?: string | null;
   phone?: string | null;
   development_name?: string | null;
+  /** Link de reserva de conversa do consultor (/agendar/<token>). */
+  booking_url?: string | null;
+  /** Nome do consultor, para assinaturas. */
+  consultant_name?: string | null;
 }
 
 /**
@@ -31,11 +35,20 @@ export interface SnippetPersonalizationContext {
  * uma sintaxe diferente consoante o sítio onde escreve o texto.
  */
 export function personalizeSnippet(content: string, lead: SnippetPersonalizationContext): string {
+  // {primeiro_nome} deriva do nome completo — era a variável mais natural de
+  // escrever num texto informal, e ficava por substituir por não existir.
+  const firstName = (lead.name || "").trim().split(/\s+/)[0] || "";
+
   return content
     .replace(/\{nome\}/g, lead.name || "")
+    .replace(/\{primeiro_nome\}/g, firstName)
     .replace(/\{email\}/g, lead.email || "")
     .replace(/\{telefone\}/g, lead.phone || "")
-    .replace(/\{empreendimento\}/g, lead.development_name || "");
+    .replace(/\{empreendimento\}/g, lead.development_name || "")
+    .replace(/\{consultor\}/g, lead.consultant_name || "")
+    // Sem link configurado, a variável desaparece em vez de deixar "{link_agenda}"
+    // no meio da mensagem enviada a um cliente.
+    .replace(/\{link_agenda\}/g, lead.booking_url || "");
 }
 
 // NOTA: "message_snippets" só existe depois de correr a migração
@@ -93,4 +106,37 @@ export async function updateMessageSnippet(id: string, input: Partial<MessageSni
 export async function deleteMessageSnippet(id: string): Promise<void> {
   const { error } = await (supabase.from("message_snippets" as any).delete().eq("id", id) as any);
   if (error) throw error;
+}
+
+
+/**
+ * Contexto do REMETENTE para as variáveis {consultor} e {link_agenda}.
+ *
+ * Vai buscar o perfil do utilizador atual uma vez; os chamadores juntam-no ao
+ * contexto da lead antes de personalizar. O link de agenda usa o token de
+ * reservas do consultor — o mesmo das landing pages e dos emails de
+ * reativação.
+ */
+export async function getSnippetSenderContext(): Promise<{
+  consultant_name: string | null;
+  booking_url: string | null;
+}> {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { consultant_name: null, booking_url: null };
+
+    const { data: profile } = await (supabase as any)
+      .from("profiles")
+      .select("full_name, booking_token")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    return {
+      consultant_name: profile?.full_name || null,
+      booking_url: profile?.booking_token && origin ? `${origin}/agendar/${profile.booking_token}` : null,
+    };
+  } catch {
+    return { consultant_name: null, booking_url: null };
+  }
 }

@@ -24,10 +24,13 @@ import { updateLead } from "@/services/leadsService";
 import { useToast } from "@/hooks/use-toast";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
 import { supabase } from "@/integrations/supabase/client";
+import { openWhatsAppWithMessage } from "@/lib/openWhatsApp";
 
 interface QuickContactDialogProps {
   leadId: string;
   leadName: string;
+  /** Telefone da lead — necessário para o seguimento por WhatsApp. */
+  leadPhone?: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess: () => void;
@@ -47,6 +50,13 @@ const OUTCOME_OPTIONS = [
     icon: <PhoneOff className="h-4 w-4 mr-2" />,
     color: "bg-red-100 text-red-800 hover:bg-red-200 border-red-200",
     value: "Não Atendeu",
+  },
+  {
+    id: "hung_up",
+    label: "Desligou",
+    icon: <PhoneOff className="h-4 w-4 mr-2" />,
+    color: "bg-red-100 text-red-800 hover:bg-red-200 border-red-200",
+    value: "Desligou",
   },
   {
     id: "call_later",
@@ -88,12 +98,24 @@ const OUTCOME_OPTIONS = [
 export function QuickContactDialog({
   leadId,
   leadName,
+  leadPhone,
   open,
   onOpenChange,
   onSuccess,
 }: QuickContactDialogProps) {
   const [selectedOutcome, setSelectedOutcome] = useState<string | null>(null);
   const [notes, setNotes] = useState("");
+  // Envio automático de WhatsApp nos desfechos falhados — opt-in por
+  // registo, lembrado entre utilizações.
+  const [sendFollowUp, setSendFollowUp] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("vyxa_quick_contact_wa_followup") === "1";
+  });
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("vyxa_quick_contact_wa_followup", sendFollowUp ? "1" : "0");
+    }
+  }, [sendFollowUp]);
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
   const [waMessage, setWaMessage] = useState("");
@@ -132,6 +154,41 @@ export function QuickContactDialog({
         property_id: null,
         subject: `Tentativa de Contacto: ${outcomeValue}`
       });
+
+      // 2b. Seguimento por WhatsApp nos desfechos falhados — do NÚMERO DO
+      // CONSULTOR: abre a aplicação do WhatsApp diretamente (sem separador
+      // do browser) com a mensagem pronta; falta só carregar em enviar. A
+      // interação fica registada já, com o texto proposto.
+      if (sendFollowUp && ["no_answer", "hung_up", "left_message"].includes(selectedOutcome) && leadPhone) {
+        try {
+          const { getSnippetSenderContext, personalizeSnippet } = await import(
+            "@/services/messageSnippetsService"
+          );
+          const sender = await getSnippetSenderContext();
+          const followUpText = personalizeSnippet(
+            "Olá {primeiro_nome}, tentei ligar-lhe agora mas não consegui falar consigo. " +
+              "Quando tiver disponibilidade, pode responder-me por aqui — fica mais fácil para ambos." +
+              (sender.booking_url ? " Se preferir, reserve diretamente uma conversa: {link_agenda}" : ""),
+            { name: leadName, consultant_name: sender.consultant_name, booking_url: sender.booking_url }
+          );
+
+          openWhatsAppWithMessage(leadPhone, followUpText);
+
+          await createInteraction({
+            lead_id: leadId,
+            interaction_type: "whatsapp",
+            content: `Seguimento pós-chamada (${outcomeValue}): ${followUpText}`,
+            interaction_date: new Date().toISOString(),
+          });
+          toast({ title: "📱 WhatsApp aberto com o seguimento", description: "Só falta enviar. Registado na cronologia." });
+        } catch {
+          toast({
+            title: "Não foi possível preparar o WhatsApp",
+            description: "O registo da chamada ficou feito na mesma.",
+            variant: "destructive",
+          });
+        }
+      }
 
       // 2. Update the lead with last contact info
       // O cast é necessário: os tipos gerados do Supabase ainda não conhecem
@@ -193,6 +250,52 @@ export function QuickContactDialog({
               </Button>
             ))}
           </div>
+
+          {/* Só aparece quando o desfecho é falhado — é aí que o seguimento
+              faz sentido. O envio vai pela API oficial: exige consentimento
+              da lead e respeita a janela de 24h da Meta. */}
+          {selectedOutcome && ["no_answer", "hung_up", "left_message"].includes(selectedOutcome) && (
+            <label className="flex items-start gap-2 rounded-md border border-green-200 bg-green-50 p-3 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                className="mt-0.5 h-4 w-4"
+                checked={sendFollowUp}
+                onChange={(e) => setSendFollowUp(e.target.checked)}
+              />
+              <span>
+                <span className="font-medium text-green-900">Enviar WhatsApp de seguimento automaticamente</span>
+                <span className="block text-xs text-green-800">
+                  "Tentei ligar-lhe agora..." com o teu link de agenda. Só sai se a lead tiver
+                  consentimento WhatsApp; fica registado na cronologia.
+                </span>
+              </span>
+            </label>
+          )}
+
+          {/* Só nos desfechos falhados, e só com telefone: abre o TEU
+              WhatsApp com a mensagem pronta — sem separador do browser, sem
+              API. Falta só carregar em enviar. */}
+          {selectedOutcome &&
+            ["no_answer", "hung_up", "left_message"].includes(selectedOutcome) &&
+            leadPhone && (
+              <label className="flex items-start gap-2 rounded-md border border-green-200 bg-green-50 p-3 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4"
+                  checked={sendFollowUp}
+                  onChange={(e) => setSendFollowUp(e.target.checked)}
+                />
+                <span>
+                  <span className="font-medium text-green-900">
+                    Abrir WhatsApp com mensagem de seguimento
+                  </span>
+                  <span className="block text-xs text-green-800">
+                    "Tentei ligar-lhe agora..." com o teu link de agenda, do teu número. Fica
+                    registado na cronologia; só falta enviares.
+                  </span>
+                </span>
+              </label>
+            )}
 
           <div className="space-y-2 pt-2">
             <label className="text-sm font-medium">Notas adicionais (Opcional)</label>

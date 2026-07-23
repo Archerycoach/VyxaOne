@@ -16,7 +16,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { getInteractionsByLead, type InteractionWithDetails } from "@/services/interactionsService";
-import { getMessageSnippets, personalizeSnippet, type MessageSnippet } from "@/services/messageSnippetsService";
+import { getMessageSnippets, personalizeSnippet, getSnippetSenderContext, type MessageSnippet } from "@/services/messageSnippetsService";
 import { htmlToPlainText } from "@/lib/htmlToPlainText";
 
 interface ConversationLead {
@@ -78,6 +78,8 @@ export default function InboxPage() {
   const [thread, setThread] = useState<InteractionWithDetails[]>([]);
   const [loadingThread, setLoadingThread] = useState(false);
   const [replyText, setReplyText] = useState("");
+  const [snippetSender, setSnippetSender] = useState<{ consultant_name: string | null; booking_url: string | null }>({ consultant_name: null, booking_url: null });
+  useEffect(() => { getSnippetSenderContext().then(setSnippetSender); }, []);
   const [isSending, setIsSending] = useState(false);
   const [snippets, setSnippets] = useState<MessageSnippet[]>([]);
 
@@ -225,6 +227,7 @@ export default function InboxPage() {
       name: selectedLead.name,
       email: selectedLead.email,
       phone: selectedLead.phone,
+      ...snippetSender,
     });
     setReplyText((prev) => (prev.trim() ? `${prev} ${personalized}` : personalized));
   };

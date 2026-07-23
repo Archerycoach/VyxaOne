@@ -201,7 +201,16 @@ export default async function handler(
  * de ~7 emails sem abertura, o Gmail e o Outlook penalizam TODO o correio do
  * remetente, incluindo o dirigido a clientes ativos.
  */
-const REACTIVATION_CADENCE_DAYS = [0, 7, 21, 45, 90, 180];
+// Cadência da sequência: densa no início, e nunca mais de 30 dias entre
+// emails — entre os 45 e os 180 havia intervalos de 45-90 dias em que a lead
+// simplesmente não ouvia falar de nós.
+const REACTIVATION_CADENCE_DAYS = [0, 7, 21, 45, 75, 105, 135, 165];
+
+// Concluída a sequência sem resposta, recomeça do início após esta pausa —
+// até a lead responder ou pedir para parar (opt-out). O consultor é avisado
+// em cada ciclo concluído (via Radar/notificação), mas a máquina não desiste
+// sozinha.
+const RESTART_PAUSE_DAYS = 30;
 
 async function processLead(
   lead: LeadToProcess,
@@ -234,7 +243,6 @@ async function processLead(
 
   let shouldSend = false;
   let nextAttempt = attempts;
-  let shouldArchive = false;
 
   // Nº de emails de reativação JÁ enviados — contador próprio da sequência,
   // não partilhado com o WhatsApp nem dependente de outra tabela.
@@ -247,10 +255,24 @@ async function processLead(
     ? (now - new Date(startedAt).getTime()) / (1000 * 3600 * 24)
     : 0;
 
+  let shouldRestartCycle = false;
+
   if (lead.follow_up_state === "reengagement") {
     if (emailsSent >= REACTIVATION_CADENCE_DAYS.length) {
-      // Sequência esgotada: a lead volta ao consultor em vez de desaparecer.
-      shouldArchive = true;
+      // Sequência concluída sem resposta: recomeça após a pausa, com os
+      // ângulos limpos para os textos não repetirem os do ciclo anterior.
+      // Só o opt-out (ou uma resposta) trava o ciclo — decisão explícita:
+      // "recomeça até responder ou pedir para parar".
+      const lastSentAt = lead.last_reactivation_sent_at
+        ? new Date(lead.last_reactivation_sent_at).getTime()
+        : 0;
+      const daysSinceLastEmail = lastSentAt ? (now - lastSentAt) / (1000 * 3600 * 24) : Infinity;
+
+      if (daysSinceLastEmail >= RESTART_PAUSE_DAYS) {
+        shouldRestartCycle = true;
+        shouldSend = true;
+        nextAttempt = 1;
+      }
     } else {
       // Próximo email quando o intervalo previsto já passou.
       const dueAfterDays = REACTIVATION_CADENCE_DAYS[emailsSent];
@@ -267,31 +289,26 @@ async function processLead(
     }
   }
 
-  // Fim da sequência: NÃO arquivar em silêncio — devolver ao consultor.
-  //
-  // Arquivar automaticamente escondia leads que investiram meses de
-  // acompanhamento. Passam ao Radar, onde o consultor decide se insiste por
-  // outro canal, se liga, ou se arquiva mesmo.
-  if (shouldArchive) {
+  // Reinício de ciclo: limpa os contadores ANTES do envio, para o email que
+  // segue já ser o 1.º do novo ciclo (ângulos e contagem a zero).
+  if (shouldRestartCycle) {
     await supabaseAdmin.from("leads").update({
-      follow_up_state: "no_reply",
-      reactivation_next_at: null,
+      reactivation_emails_sent: 0,
+      reactivation_angles_used: [],
+      reactivation_started_at: new Date().toISOString(),
     }).eq("id", lead.id);
+    (lead as any).reactivation_emails_sent = 0;
+    (lead as any).reactivation_angles_used = [];
 
+    // O consultor fica a saber que um ciclo inteiro terminou sem resposta —
+    // é o momento certo para tentar outro canal (chamada, WhatsApp) em vez
+    // de confiar só no próximo ciclo de emails.
     await supabaseAdmin.from("notifications").insert({
       user_id: lead.user_id,
-      title: `📭 Sequência de reativação terminada — ${lead.name || "lead"}`,
-      message:
-        `Enviámos ${emailsSent} emails ao longo de ~6 meses sem resposta. ` +
-        `A lead NÃO foi arquivada: decide se queres tentar por outro canal, ligar, ou arquivar.`,
-      notification_type: "info",
-      is_read: false,
-      related_entity_id: lead.id,
-      related_entity_type: "lead",
-    } as any);
-
-    results.archived++;
-    return;
+      title: "🔁 Ciclo de reativação concluído sem resposta",
+      message: `${lead.name}: ${REACTIVATION_CADENCE_DAYS.length} emails enviados sem resposta. A sequência recomeça hoje — considera tentar por outro canal.`,
+      data: { kind: "reactivation_cycle", lead_id: lead.id, action_url: "/leads" },
+    });
   }
 
   if (!shouldSend) {

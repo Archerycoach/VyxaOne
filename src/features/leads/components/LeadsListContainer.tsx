@@ -1408,6 +1408,7 @@ export function LeadsListContainer({
         <QuickContactDialog
           leadId={selectedLead.id}
           leadName={selectedLead.name}
+          leadPhone={selectedLead.phone}
           open={quickContactOpen}
           onOpenChange={setQuickContactOpen}
           onSuccess={() => {}}

@@ -35,10 +35,13 @@ interface TestResult {
   note?: string;
 }
 
-const ATTEMPT_OPTIONS: { value: 1 | 2 | 3; label: string }[] = [
-  { value: 1, label: "1ª — Inicial" },
-  { value: 2, label: "2ª — Lembrete" },
-  { value: 3, label: "3ª — Final" },
+const ATTEMPT_OPTIONS: { value: number; label: string }[] = [
+  { value: 1, label: "1º — dia 0" },
+  { value: 2, label: "2º — dia 7" },
+  { value: 3, label: "3º — dia 21" },
+  { value: 4, label: "4º — dia 45" },
+  { value: 5, label: "5º — dia 90" },
+  { value: 6, label: "6º — dia 180 (final)" },
 ];
 
 export function ReactivationTemplatesManagement() {
@@ -52,7 +55,7 @@ export function ReactivationTemplatesManagement() {
 
   // Painel de teste de envios
   const [testEmail, setTestEmail] = useState("");
-  const [testAttempt, setTestAttempt] = useState<1 | 2 | 3>(1);
+  const [testAttempt, setTestAttempt] = useState<number>(1);
   const [testSending, setTestSending] = useState(false);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
 
@@ -185,11 +188,12 @@ export function ReactivationTemplatesManagement() {
     <div className="space-y-6">
     <Card>
       <CardHeader>
-        <CardTitle>Personalizar Textos de Reativação</CardTitle>
+        <CardTitle>Textos de Recurso da Reativação</CardTitle>
         <CardDescription>
-          Estes textos são partilhados por todos os consultores por defeito. Pode criar aqui a sua própria versão —
-          só afeta os emails enviados a partir da sua conta. Variáveis disponíveis: {"{{nome}}"}, {"{{procura}}"},{" "}
-          {"{{consultor}}"}, {"{{empresa}}"}, {"{{link_optin}}"}, {"{{link_unsubscribe}}"}.
+          Os emails da sequência (6 envios ao longo de ~6 meses) são <strong>escritos pela IA</strong>, cada um com
+          um ângulo diferente. Estes textos fixos servem apenas de <strong>recurso</strong>: são usados se a IA
+          estiver indisponível (sem chave, quota esgotada), para nenhum seguimento ficar por enviar. Variáveis:
+          {" "}{"{{nome}}"}, {"{{procura}}"}, {"{{consultor}}"}, {"{{empresa}}"}, {"{{link_optin}}"}, {"{{link_unsubscribe}}"}.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -256,9 +260,9 @@ export function ReactivationTemplatesManagement() {
           <Send className="h-4 w-4" /> Testar Envio
         </CardTitle>
         <CardDescription>
-          Envia o email de reativação real (mesmo template e mesmos links) para uma lead sua de teste,
-          <strong> sem alterar o estado da lead</strong>. Dica: crie uma lead com o seu próprio email e teste aqui —
-          depois pode clicar nos links recebidos para validar o opt-in e o unsubscribe.
+          Envia o email real — <strong>escrito pela IA</strong>, com os mesmos links funcionais — para uma lead sua
+          de teste, <strong>sem alterar o estado da lead</strong>. Escolha qual dos 6 emails da sequência quer ver.
+          Dica: crie uma lead com o seu próprio email e valide o opt-in e o unsubscribe nos links recebidos.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">

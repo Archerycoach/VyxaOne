@@ -173,7 +173,7 @@ export async function buildReactivationEmail(params: {
   lead: ReactivationEmailLead;
   attemptNumber: number;
   appUrl?: string;
-  /** Falso força os templates fixos (usado pelo teste de envio). */
+  /** Falso força os templates fixos (por omissão, IA). */
   useAi?: boolean;
   /** Link de marcação do consultor, para o CTA. */
   bookingUrl?: string | null;
