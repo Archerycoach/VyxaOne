@@ -387,6 +387,7 @@ async function createWhatsAppInteraction(
     .from("leads")
     .update({ 
       last_contact_date: new Date().toISOString(),
+      last_contact_type: "whatsapp",
       last_contact_outcome: "sent"
     })
     .eq("id", leadId);

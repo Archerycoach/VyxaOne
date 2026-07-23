@@ -46,6 +46,7 @@ import { ScopeSelector } from "@/components/ScopeSelector";
 import { getStagesForUsers, type PipelineStage } from "@/services/pipelineSettingsService";
 import { LeadAdvancedFilters, EMPTY_QUALIFICATION_FILTERS, type LeadQualificationFilters } from "./LeadAdvancedFilters";
 import { ImportLeadsDialog } from "@/components/leads/ImportLeadsDialog";
+import { LastInteractionBadge } from "@/components/leads/LastInteractionBadge";
 
 // Default columns configuration for fallback
 const DEFAULT_COLUMNS: LeadColumnConfig[] = [
@@ -1148,13 +1149,23 @@ export function LeadsListContainer({
                         const qualification = getLeadQualification(lead);
                         const showHighlightBadge = recentInteractionState.isHighlighted && recentInteractionState.badgeLabel;
                         const showQualificationBadge = qualification.missing.length > 0;
+                        const showLastInteraction = Boolean((lead as any).last_contact_type);
 
                         return (
                           <td key={column.column_key} className="px-4 py-3 text-sm text-gray-700">
-                            {showHighlightBadge || showQualificationBadge ? (
+                            {showHighlightBadge || showQualificationBadge || showLastInteraction ? (
                               <div className="space-y-1">
                                 <div>{getCellValue(lead, column.column_key)}</div>
                                 <div className="flex flex-wrap gap-1">
+                                  {showLastInteraction && (
+                                    <LastInteractionBadge
+                                      interaction={{
+                                        interaction_type: (lead as any).last_contact_type,
+                                        interaction_date: lead.last_contact_date,
+                                        outcome: (lead as any).last_contact_outcome ?? null,
+                                      }}
+                                    />
+                                  )}
                                   {showHighlightBadge && (
                                     <Badge variant="default" className="w-fit bg-blue-600 text-white">
                                       {recentInteractionState.badgeLabel}

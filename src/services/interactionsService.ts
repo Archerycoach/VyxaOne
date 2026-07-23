@@ -197,10 +197,14 @@ export async function createInteraction(
     const interactionTimestamp = data.interaction_date || new Date().toISOString();
     const leadUpdate: {
       last_contact_date: string;
+      last_contact_type?: string | null;
       last_contact_outcome?: string | null;
       first_contact_at?: string;
     } = {
       last_contact_date: interactionTimestamp,
+      // O tipo acompanha sempre a data — é o que permite à lista mostrar a
+      // última interação sem consultar o histórico.
+      last_contact_type: interaction.interaction_type || null,
     };
 
     if (interaction.outcome !== undefined) {

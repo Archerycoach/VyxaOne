@@ -48,6 +48,7 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { clearAuthCache } from "./ProtectedRoute";
 import { clearSubscriptionCache } from "./SubscriptionGuard";
+import { usePendingMenuCounts } from "@/hooks/usePendingMenuCounts";
 
 interface NavItem {
   icon: any;
@@ -108,6 +109,18 @@ export function Navigation() {
   // "Equipa" — em modo leitura, para saber quem são os colegas (a página usa
   // get_team_roster, que nunca expõe leads/contactos de terceiros).
   const belongsToTeam = isConsultant && Boolean(profile?.team_lead_id);
+
+  // Pendências por página: eventos por validar, propostas da IA, tarefas
+  // vencidas. O distintivo no menu diz ONDE há trabalho à espera — o sino
+  // continua a dizer O QUE aconteceu.
+  const pendingCounts = usePendingMenuCounts();
+
+  const pendingForPath = (path: string): number => {
+    if (path === "/calendar") return pendingCounts.agenda;
+    if (path === "/ai-inbox") return pendingCounts.aiInbox;
+    if (path === "/tasks") return pendingCounts.tasks;
+    return 0;
+  };
 
   const toggleGroup = (label: string) => {
     setExpandedGroups(prev => prev.includes(label) ? prev.filter(g => g !== label) : [...prev, label]);
@@ -229,6 +242,19 @@ export function Navigation() {
                     <div className="flex items-center">
                       <item.icon className="h-4 w-4 mr-3" />
                       {item.label}
+                      {/* Grupo fechado: soma das pendências dos subitens,
+                          para nada ficar escondido atrás do acordeão. */}
+                      {(() => {
+                        const total = item.subItems!.reduce(
+                          (sum, sub) => sum + pendingForPath(sub.path),
+                          0
+                        );
+                        return total > 0 ? (
+                          <span className="ml-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[11px] font-semibold text-white">
+                            {total}
+                          </span>
+                        ) : null;
+                      })()}
                     </div>
                     {isExpanded ? <ChevronDown className="h-4 w-4 text-gray-400" /> : <ChevronRight className="h-4 w-4 text-gray-400" />}
                   </Button>
@@ -253,6 +279,11 @@ export function Navigation() {
                           >
                             <sub.icon className="h-3.5 w-3.5 mr-2" />
                             {sub.label}
+                            {pendingForPath(sub.path) > 0 && (
+                              <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[11px] font-semibold text-white">
+                                {pendingForPath(sub.path)}
+                              </span>
+                            )}
                           </Button>
                         );
                       })}
@@ -277,6 +308,11 @@ export function Navigation() {
               >
                 <Icon className="h-4 w-4 mr-3" />
                 {item.label}
+                {item.path && pendingForPath(item.path) > 0 && (
+                  <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[11px] font-semibold text-white">
+                    {pendingForPath(item.path)}
+                  </span>
+                )}
               </Button>
             );
           })}

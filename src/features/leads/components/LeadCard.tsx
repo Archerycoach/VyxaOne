@@ -31,6 +31,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { QuickContactDialog } from "@/components/leads/QuickContactDialog";
 import { getLeadRecentInteractionState } from "@/lib/leadInteractionHighlight";
 import { getBuyerStages, getSellerStages, type PipelineStage } from "@/services/pipelineSettingsService";
+import { LastInteractionBadge } from "@/components/leads/LastInteractionBadge";
 
 interface Lead {
   id: string;
@@ -313,9 +314,15 @@ export function LeadCard({
                 {recentInteractionState.badgeLabel}
               </Badge>
             )}
-            {!recentInteractionState.isHighlighted && lead.last_contact_date && lead.last_contact_outcome && (
-              <div className="bg-orange-50 border border-orange-200 rounded px-2 py-1 mb-1 text-[10px] text-orange-800 flex items-center gap-1 w-fit">
-                <span className="font-medium">📞 {lead.last_contact_outcome}</span>
+            {(lead as any).last_contact_type && (
+              <div className="mb-1">
+                <LastInteractionBadge
+                  interaction={{
+                    interaction_type: (lead as any).last_contact_type,
+                    interaction_date: lead.last_contact_date,
+                    outcome: (lead as any).last_contact_outcome ?? null,
+                  }}
+                />
               </div>
             )}
             {lead.email && (

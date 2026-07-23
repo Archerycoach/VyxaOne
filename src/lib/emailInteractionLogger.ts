@@ -62,6 +62,7 @@ export async function logEmailInteraction(data: EmailInteractionData): Promise<v
         .from("leads")
         .update({
           last_contact_date: now,
+          last_contact_type: "email",
           last_contact_outcome: outcome,
         })
         .eq("id", data.leadId);

@@ -134,9 +134,13 @@ export function QuickContactDialog({
       });
 
       // 2. Update the lead with last contact info
+      // O cast é necessário: os tipos gerados do Supabase ainda não conhecem
+      // a coluna last_contact_type (criada por migração manual).
       await updateLead(leadId, {
         last_contact_date: new Date().toISOString(),
-      });
+        last_contact_type: "call",
+        last_contact_outcome: outcomeValue,
+      } as any);
 
       toast({
         title: "Contacto registado",

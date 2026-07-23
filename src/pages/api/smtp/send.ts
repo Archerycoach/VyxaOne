@@ -245,6 +245,7 @@ async function createEmailInteraction(
     .from("leads")
     .update({ 
       last_contact_date: new Date().toISOString(),
+      last_contact_type: "email",
       last_contact_outcome: "sent"
     })
     .eq("id", leadId);
