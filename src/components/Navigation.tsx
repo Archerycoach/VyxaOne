@@ -57,7 +57,7 @@ interface NavItem {
   subItems?: { icon: any; label: string; path: string }[];
 }
 
-export function Navigation() {
+export function Navigation({ onClose }: { onClose?: () => void } = {}) {
   const router = useRouter();
   const [profile, setProfile] = useState<any>(null);
   const [expandedGroups, setExpandedGroups] = useState<string[]>([]);
@@ -205,7 +205,19 @@ export function Navigation() {
   ];
 
   return (
-    <div className="w-64 bg-card border-r border-border flex flex-col h-screen">
+    <div className="relative w-64 bg-card border-r border-border flex flex-col h-screen">
+      {/* Fechar — só faz sentido (e só aparece) no modo móvel, onde o menu
+          é uma gaveta por cima do conteúdo. */}
+      {onClose && (
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute right-3 top-3 z-10 rounded-md p-2 text-gray-500 hover:bg-gray-100 lg:hidden"
+          aria-label="Fechar menu"
+        >
+          <X className="h-5 w-5" />
+        </button>
+      )}
       {/* Logo */}
       <div className="p-4 border-b border-border">
         <div className="flex items-center justify-center">
@@ -275,7 +287,7 @@ export function Navigation() {
                                   ? "text-red-500 hover:text-red-700 hover:bg-red-50"
                                   : "text-gray-500 hover:text-gray-900"
                             }`}
-                            onClick={() => router.push(sub.path)}
+                            onClick={() => { router.push(sub.path); onClose?.(); }}
                           >
                             <sub.icon className="h-3.5 w-3.5 mr-2" />
                             {sub.label}
@@ -304,7 +316,7 @@ export function Navigation() {
                 className={`w-full justify-start ${
                   isAdminItem ? "text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950" : ""
                 }`}
-                onClick={() => item.path && router.push(item.path)}
+                onClick={() => { if (item.path) { router.push(item.path); onClose?.(); } }}
               >
                 <Icon className="h-4 w-4 mr-3" />
                 {item.label}

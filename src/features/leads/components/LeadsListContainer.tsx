@@ -1393,7 +1393,15 @@ export function LeadsListContainer({
       <LeadDetailsDialog
         leadId={selectedLeadId}
         open={detailsDialogOpen}
-        onOpenChange={setDetailsDialogOpen}
+        onOpenChange={(open) => {
+          setDetailsDialogOpen(open);
+          // A ficha grava alterações (qualificação, dados básicos) sem passar
+          // pela lista — ao fechar, a lista recarrega para as mostrar já, em
+          // vez de esperar pelo próximo ciclo ou por um refresh manual.
+          if (!open) {
+            void refetchPage();
+          }
+        }}
       />
 
       {selectedLead && (

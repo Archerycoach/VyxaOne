@@ -472,7 +472,19 @@ export default function AiEmailCampaignsPage() {
         body: JSON.stringify(payload),
       });
 
-      const data = await response.json();
+      // Quando o servidor recusa o pedido (ex.: ficheiro grande de mais),
+      // devolve HTML e não JSON — ler como texto primeiro evita o
+      // "JSON.parse: unexpected character" e permite uma mensagem útil.
+      const raw = await response.text();
+      let data: any = {};
+      try {
+        data = JSON.parse(raw);
+      } catch {
+        if (response.status === 413) {
+          throw new Error("A brochura é demasiado grande. Exporta uma versão mais leve ou usa o link da publicação.");
+        }
+        throw new Error(`O servidor respondeu de forma inesperada (${response.status}). Tenta novamente.`);
+      }
       if (!response.ok) throw new Error(data.error || "Não foi possível ler o conteúdo do imóvel.");
 
       toast({ title: "Imóvel identificado", description: "O conteúdo foi lido — foi adicionado à campanha." });

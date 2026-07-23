@@ -4,7 +4,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 export const config = {
   api: {
     bodyParser: {
-      sizeLimit: "10mb",
+      sizeLimit: "25mb",
     },
   },
 };
@@ -77,11 +77,25 @@ async function extractFromDocument(documentBase64: string, documentName: string)
 }
 
 async function extractFromUrl(sourceUrl: string): Promise<{ text: string; title?: string; image?: string; price?: number }> {
+  // Links do Idealista: o site bloqueia pedidos de servidores (403 anti-bot),
+  // mas o anúncio está acessível pela API que já usamos nas pesquisas. O
+  // código do imóvel vem no próprio URL.
+  const idealistaMatch = sourceUrl.match(/idealista\.pt\/imovel\/(\d+)/i);
+  if (idealistaMatch) {
+    return extractFromIdealistaApi(idealistaMatch[1]);
+  }
+
   const response = await fetch(sourceUrl, {
     headers: {
       "User-Agent": "Mozilla/5.0 (compatible; VyxaOneBot/1.0; +https://vyxa.pt)",
     },
   });
+
+  if (response.status === 403) {
+    throw new Error(
+      "Este site bloqueia a leitura automática do link. Descarrega a brochura/PDF do anúncio e carrega-a com o botão Brochura."
+    );
+  }
 
   if (!response.ok) {
     throw new Error(`Não foi possível aceder ao link (HTTP ${response.status}).`);
@@ -127,4 +141,92 @@ function extractPrice($: any, description?: string): number | undefined {
     if (!isNaN(n) && n >= 1000 && n <= 100000000) return n;
   }
   return undefined;
+}
+
+
+/**
+ * Anúncio do Idealista via RapidAPI, a partir do código no URL.
+ *
+ * O caminho do endpoint de detalhe varia entre fornecedores da RapidAPI, por
+ * isso tentam-se os dois formatos conhecidos. A leitura é tolerante: procura
+ * os campos onde quer que o fornecedor os tenha posto.
+ */
+async function extractFromIdealistaApi(
+  propertyCode: string
+): Promise<{ text: string; title?: string; image?: string; price?: number }> {
+  const { getIdealistaCredentials } = await import("@/lib/server/idealistaCredentials");
+  const credentials = await getIdealistaCredentials();
+
+  const paths = [
+    `/properties/detail?propertyCode=${propertyCode}&country=pt&locale=pt`,
+    `/property/detail?propertyCode=${propertyCode}&country=pt&locale=pt`,
+  ];
+
+  let payload: any = null;
+  let lastStatus = 0;
+
+  for (const path of paths) {
+    try {
+      const response = await fetch(`https://${credentials.host}${path}`, {
+        headers: {
+          "X-RapidAPI-Key": credentials.apiKey,
+          "X-RapidAPI-Host": credentials.host,
+        },
+        signal: AbortSignal.timeout(15000),
+      });
+      lastStatus = response.status;
+      if (!response.ok) continue;
+      payload = await response.json();
+      break;
+    } catch {
+      continue;
+    }
+  }
+
+  if (!payload) {
+    throw new Error(
+      `Não foi possível ler o anúncio do Idealista (HTTP ${lastStatus || "sem resposta"}). ` +
+        "Descarrega a brochura/PDF do anúncio e carrega-a com o botão Brochura."
+    );
+  }
+
+  // O objeto do imóvel pode vir na raiz ou aninhado — procura-se por assinatura.
+  const findProperty = (node: any, depth = 0): any => {
+    if (!node || typeof node !== "object" || depth > 4) return null;
+    if (node.propertyCode || (node.price && (node.size || node.description))) return node;
+    for (const value of Object.values(node)) {
+      const found = findProperty(value, depth + 1);
+      if (found) return found;
+    }
+    return null;
+  };
+
+  const property = findProperty(payload) || {};
+
+  const parts = [
+    property.suggestedTexts?.title || property.title,
+    property.propertyType ? `Tipo: ${property.propertyType}` : null,
+    property.price ? `Preço: ${Number(property.price).toLocaleString("pt-PT")} €` : null,
+    property.size ? `Área: ${property.size} m²` : null,
+    property.rooms != null ? `Quartos: ${property.rooms}` : null,
+    property.bathrooms != null ? `Casas de banho: ${property.bathrooms}` : null,
+    property.address || property.neighborhood || property.municipality
+      ? `Localização: ${[property.address, property.neighborhood, property.municipality].filter(Boolean).join(", ")}`
+      : null,
+    property.status ? `Estado: ${property.status}` : null,
+    property.description,
+  ].filter(Boolean);
+
+  if (parts.length === 0) {
+    throw new Error(
+      "O anúncio do Idealista não devolveu dados legíveis. Descarrega a brochura/PDF e carrega-a com o botão Brochura."
+    );
+  }
+
+  return {
+    text: parts.join("\n"),
+    title: property.suggestedTexts?.title || property.title || `Imóvel ${propertyCode}`,
+    image: property.thumbnail || undefined,
+    price: typeof property.price === "number" ? property.price : undefined,
+  };
 }

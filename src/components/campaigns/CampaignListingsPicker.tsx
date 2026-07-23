@@ -104,6 +104,18 @@ export function CampaignListingsPicker({ selected, onChange, onExtractExternal, 
   const remove = (key: string) => onChange(selected.filter((s) => s.key !== key));
 
   const handleDocument = (file: File) => {
+    // O ficheiro segue em base64 (incha ~33%) e o servidor aceita até 25 MB.
+    // Recusar aqui, com uma mensagem clara, evita o erro críptico
+    // "JSON.parse: unexpected character" que o limite do servidor produzia.
+    const MAX_MB = 18;
+    if (file.size > MAX_MB * 1024 * 1024) {
+      alert(
+        `A brochura tem ${(file.size / 1024 / 1024).toFixed(1)} MB — o máximo são ${MAX_MB} MB. ` +
+          `Exporta uma versão mais leve (menos fotografias) ou usa o link da publicação.`
+      );
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = async () => {
       const ext = await onExtractExternal({ documentBase64: reader.result as string, documentName: file.name });
