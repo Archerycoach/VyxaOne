@@ -41,6 +41,8 @@ interface Comparable {
   pricePerSqm: number | null;
   url?: string | null;
   conditionLabel?: string | null;
+  thumbnail?: string | null;
+  thumbnailDataUri?: string | null;
 }
 
 interface ValuationResult {
@@ -450,6 +452,7 @@ export default function ValuationPage() {
         yearBuilt: c.yearBuilt,
         daysOnMarket: c.daysOnMarket,
         conditionLabel: c.conditionLabel,
+        thumbnailDataUri: c.thumbnailDataUri,
         distanceKm: c.distanceKm,
         features: c.features,
       }, y);
@@ -1031,6 +1034,14 @@ export default function ValuationPage() {
                   ) : (
                     result.comparables.map((c, i) => (
                       <div key={i} className="flex items-center justify-between gap-3 border rounded-lg p-3">
+                        {(c.thumbnailDataUri || c.thumbnail) && (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={c.thumbnailDataUri || c.thumbnail || ""}
+                            alt=""
+                            className="h-14 w-20 shrink-0 rounded object-cover"
+                          />
+                        )}
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
                             <Badge className={c.status === "sold" ? "bg-emerald-600" : "bg-blue-500"}>

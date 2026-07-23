@@ -147,21 +147,62 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const db = supabaseAdmin as any;
 
-    // 1. Comparáveis internos (vendidos e ativos), na mesma cidade e tipo de
-    // imóvel, com área semelhante (±40%) quando indicada.
+    // 1. Comparáveis internos (vendidos e ativos), do mesmo tipo E tipologia,
+    // com área semelhante (±40%) quando indicada.
+    //
+    // A tipologia é obrigatória quando o estudo a indica: um T1 da carteira
+    // entrava num estudo de T2 só por ter área parecida — e como a carteira
+    // é pequena, um único imóvel errado pesa muito na média.
     let internalQuery = db
       .from("properties")
-      .select("id, title, address, city, price, area, property_type, status, bedrooms")
+      .select("id, title, address, city, price, area, property_type, status, bedrooms, latitude, longitude")
       .eq("user_id", user.id)
       .eq("property_type", propertyType)
       .in("status", ["sold", "available"]);
 
+    if (bedrooms) internalQuery = internalQuery.eq("bedrooms", Number(bedrooms));
     if (city) internalQuery = internalQuery.ilike("city", `%${city}%`);
     if (area) internalQuery = internalQuery.gte("area", area * 0.6).lte("area", area * 1.4);
 
     const { data: internalProperties } = await internalQuery.limit(20);
 
-    const internalComparables: ComparableSummary[] = ((internalProperties || []) as any[]).map((p) => ({
+    // Localização: os imóveis da carteira obedecem às MESMAS regras dos do
+    // Idealista. Com coordenadas no imóvel, vale o raio; sem elas, vale a
+    // freguesia no texto — "cidade Lisboa" não chega, porque o concelho tem
+    // duas dezenas de freguesias com mercados muito diferentes.
+    const freguesiaNorm = String(coordinates?.freguesia || "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "");
+
+    const internalFiltered = ((internalProperties || []) as any[]).filter((p) => {
+      if (coordinates?.lat && coordinates?.lon && typeof p.latitude === "number" && typeof p.longitude === "number") {
+        return (
+          distanceKm(coordinates.lat, coordinates.lon, p.latitude, p.longitude) <=
+          (coordinates.radiusKm || 4)
+        );
+      }
+
+      if (freguesiaNorm) {
+        const haystack = `${p.address || ""} ${p.city || ""}`
+          .toLowerCase()
+          .normalize("NFD")
+          .replace(/[̀-ͯ]/g, "");
+        return haystack.includes(freguesiaNorm);
+      }
+
+      // Sem morada fixada no estudo, mantém-se o filtro por cidade que já
+      // foi aplicado na consulta.
+      return true;
+    });
+
+    if (internalFiltered.length < ((internalProperties || []) as any[]).length) {
+      console.log(
+        `[Valuation] Carteira: ${((internalProperties || []) as any[]).length - internalFiltered.length} imóveis fora da zona/raio excluídos.`
+      );
+    }
+
+    const internalComparables: ComparableSummary[] = internalFiltered.map((p) => ({
       source: "Base Interna",
       status: p.status === "sold" ? "sold" : "active",
       address: p.address || p.title || "—",
@@ -218,6 +259,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             price: p.price || null,
             pricePerSqm: p.priceByArea || (p.size && p.price ? p.price / p.size : null),
             url: p.url || (p.propertyCode ? `https://www.idealista.pt/imovel/${p.propertyCode}/` : null),
+            thumbnail: p.thumbnail || null,
             condition: candidateCondition,
             conditionLabel: conditionLabel(candidateCondition),
           };
@@ -354,6 +396,29 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           `${byCriteria.length} pelos critérios do consultor.`
       );
     }
+
+    // Imagens de destaque, embebidas AQUI: o browser não consegue ler as
+    // imagens do CDN do Idealista para dentro do PDF (CORS); o servidor
+    // consegue. Só os 12 que vão para o documento, em paralelo e best-effort.
+    await Promise.all(
+      comparables.slice(0, 12).map(async (comparable: any) => {
+        if (!comparable.thumbnail) return;
+        try {
+          const response = await fetch(comparable.thumbnail, {
+            signal: AbortSignal.timeout(6000),
+          });
+          if (!response.ok) return;
+          const contentType = response.headers.get("content-type") || "image/jpeg";
+          if (!contentType.startsWith("image/")) return;
+          const buffer = Buffer.from(await response.arrayBuffer());
+          // Uma imagem anormalmente grande não vale a viagem — o cartão é pequeno.
+          if (buffer.length > 400 * 1024) return;
+          comparable.thumbnailDataUri = `data:${contentType};base64,${buffer.toString("base64")}`;
+        } catch {
+          // Sem imagem o cartão sai na mesma.
+        }
+      })
+    );
 
     const soldAvgPricePerSqm = average(comparables.filter((c) => c.status === "sold").map((c) => c.pricePerSqm!));
     const activeAvgPricePerSqm = average(comparables.filter((c) => c.status === "active").map((c) => c.pricePerSqm!));

@@ -81,12 +81,14 @@ export function DocumentAssetUpload({
         image.src = URL.createObjectURL(file);
       });
 
-      if (ratio !== null && ratio < 6) {
+      // A faixa é desenhada com as proporções reais e a página adapta-se.
+      // Só se avisa quando a imagem é quase quadrada — aí ocupa um terço de
+      // cada página, o que raramente é intencional.
+      if (ratio !== null && ratio < 2.5) {
         toast({
-          title: "Proporções pouco adequadas",
+          title: "Imagem alta para rodapé",
           description:
-            "Para o rodapé, use uma imagem larga e baixa (ex.: 1600×140 px). " +
-            "Esta é demasiado alta e vai aparecer comprimida.",
+            "Vai ocupar bastante de cada página. Se não for essa a intenção, usa uma faixa mais baixa (ex.: 1600×300 px).",
         });
       }
     }

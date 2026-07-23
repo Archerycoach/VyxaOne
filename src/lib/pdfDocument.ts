@@ -500,6 +500,8 @@ export interface ComparableCard {
   daysOnMarket?: number | null;
   distanceKm?: number | null;
   conditionLabel?: string | null;
+  /** Fotografia do anúncio, em data URI (embebida no servidor). */
+  thumbnailDataUri?: string | null;
   features?: string[];
 }
 
@@ -530,28 +532,47 @@ export function addComparableCard(doc: jsPDF, comparable: ComparableCard, y: num
     : [];
   const cardHeight = 22 + (attributes.length ? 5 : 0) + featureLines.length * 4;
 
+  // Com fotografia, o conteúdo recua para lhe dar lugar à esquerda.
+  const photoWidth = comparable.thumbnailDataUri ? 26 : 0;
+  const contentX = MARGIN + photoWidth + (photoWidth ? 3 : 0);
+
   doc.setDrawColor(229, 231, 235);
   doc.setLineWidth(0.3);
   doc.setFillColor(255, 255, 255);
   doc.roundedRect(MARGIN, y, cardWidth, cardHeight, 2, 2, "FD");
+
+  if (comparable.thumbnailDataUri) {
+    try {
+      doc.addImage(
+        comparable.thumbnailDataUri,
+        "JPEG",
+        MARGIN + 2,
+        y + 2,
+        photoWidth - 2,
+        cardHeight - 4
+      );
+    } catch {
+      // Imagem ilegível: o cartão sai sem ela.
+    }
+  }
 
   // Vendido ancora valor real; ativo é apenas preço pedido. A distinção é
   // material para quem lê o documento, por isso vai destacada.
   const isSold = comparable.status === "sold";
   if (isSold) doc.setFillColor(22, 163, 74);
   else doc.setFillColor(156, 163, 175);
-  doc.roundedRect(MARGIN + 4, y + 4, 18, 5, 1, 1, "F");
+  doc.roundedRect(contentX + 4, y + 4, 18, 5, 1, 1, "F");
   doc.setTextColor(255, 255, 255);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(6.5);
-  doc.text(isSold ? "VENDIDO" : "ATIVO", MARGIN + 6, y + 7.6);
+  doc.text(isSold ? "VENDIDO" : "ATIVO", contentX + 6, y + 7.6);
 
   doc.setTextColor(BRAND.r, BRAND.g, BRAND.b);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(11);
   doc.text(
     comparable.price ? eurPdf(comparable.price) : "Preço não disponível",
-    MARGIN + 26,
+    contentX + 26,
     y + 8.5
   );
 
@@ -560,21 +581,21 @@ export function addComparableCard(doc: jsPDF, comparable: ComparableCard, y: num
   doc.setTextColor(MUTED.r, MUTED.g, MUTED.b);
   doc.text(
     `${comparable.propertyType ? comparable.propertyType + " · " : ""}${comparable.address}`,
-    MARGIN + 4,
+    contentX + 4,
     y + 15,
-    { maxWidth: cardWidth - 10 }
+    { maxWidth: cardWidth - photoWidth - 10 }
   );
 
   let cursor = y + 20;
   if (attributes.length) {
     doc.setFontSize(8);
-    doc.text(attributes.join("  ·  "), MARGIN + 4, cursor, { maxWidth: cardWidth - 10 });
+    doc.text(attributes.join("  ·  "), contentX + 4, cursor, { maxWidth: cardWidth - photoWidth - 10 });
     cursor += 5;
   }
 
   if (featureLines.length) {
     doc.setFontSize(8);
-    doc.text(featureLines, MARGIN + 4, cursor);
+    doc.text(featureLines, contentX + 4, cursor);
   }
 
   return y + cardHeight + 5;
@@ -683,6 +704,10 @@ export function addPointsOfInterest(doc: jsPDF, pois: LocationPoi[], y: number):
         column = 0;
         columnTop = 25;
         cursor = 25;
+        // Página nova, contador novo: sem isto, o maxBottom da página
+        // anterior arrastava a nota de atribuição para o fundo da página
+        // seguinte, longe da lista.
+        maxBottom = 25;
       }
     }
 

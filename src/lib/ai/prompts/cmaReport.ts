@@ -18,6 +18,9 @@ interface ComparableSummary {
   url?: string | null;
   /** Estado de conservação lido do anúncio. */
   conditionLabel?: string | null;
+  /** Imagem de destaque do anúncio (URL) e a mesma em data URI para o PDF. */
+  thumbnail?: string | null;
+  thumbnailDataUri?: string | null;
 }
 
 /**

@@ -82,6 +82,7 @@ import { Switch } from "@/components/ui/switch";
 import { ShieldOff } from "lucide-react";
 import { VoiceNoteRecorder } from "./VoiceNoteRecorder";
 import { LeadTimeline } from "@/components/LeadTimeline";
+import { QuickReplyMenu } from "@/components/leads/QuickReplyMenu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { updateLead } from "@/services/leadsService";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -528,6 +529,33 @@ export function LeadDetailsDialog({
     }
   };
 
+  // "Nota interna" no registo rápido das Interações: usa o mesmo campo de
+  // texto das interações, mas grava como nota.
+  const handleAddNoteFromInteractions = async () => {
+    if (!newInteractionText.trim() || !leadId) return;
+    setIsSubmittingNote(true);
+    try {
+      await createNote({ lead_id: leadId, note: newInteractionText.trim() });
+      toast({ title: "Nota adicionada" });
+      setNewInteractionText("");
+      setNotes(await getNotesByLead(leadId));
+    } catch (e: any) {
+      toast({ title: "Erro ao adicionar nota", description: e.message, variant: "destructive" });
+    } finally {
+      setIsSubmittingNote(false);
+    }
+  };
+
+  // As respostas rápidas registam a interação por fora — recarregar a lista.
+  const refreshInteractions = async () => {
+    if (!leadId) return;
+    try {
+      setInteractions(await getInteractionsByLead(leadId));
+    } catch {
+      // A cronologia atualiza-se na próxima abertura.
+    }
+  };
+
   const handleAddNote = async () => {
     if (!newNoteText.trim() || !leadId) return;
     setIsSubmittingNote(true);
@@ -933,7 +961,7 @@ export function LeadDetailsDialog({
               }
             }}
           >
-            <TabsList className="grid w-full grid-cols-6 h-auto">
+            <TabsList className="flex w-full flex-wrap justify-start gap-1 h-auto">
               <TabsTrigger value="info">Informações</TabsTrigger>
               <TabsTrigger value="ai-assistant" className="text-indigo-700 bg-indigo-50/50 data-[state=active]:bg-indigo-100 data-[state=active]:text-indigo-900 border border-indigo-100/50">
                 <Sparkles className="h-3.5 w-3.5 mr-1.5" />
@@ -949,11 +977,9 @@ export function LeadDetailsDialog({
               <TabsTrigger value="interactions">
                 Interações ({interactions.length})
               </TabsTrigger>
-              <TabsTrigger value="notes">Notas ({notes.length})</TabsTrigger>
               <TabsTrigger value="events">Eventos ({events.length})</TabsTrigger>
               <TabsTrigger value="tasks">Tarefas ({tasks.length})</TabsTrigger>
               <TabsTrigger value="portal">Portal Cliente</TabsTrigger>
-              <TabsTrigger value="timeline">Cronologia</TabsTrigger>
 
               <button
                 onClick={() => sendEmail(lead)}
@@ -1202,7 +1228,11 @@ export function LeadDetailsDialog({
               <LeadAIInsightsPanel leadId={lead.id} />
             </TabsContent>
 
-            <TabsContent value="whatsapp" className="mt-4 flex flex-col h-[500px]">
+            {/* As classes de layout vivem num div interior: `flex` no próprio
+                TabsContent vencia o atributo hidden do Radix e a aba inativa
+                ocupava 500 px em branco em todas as outras abas. */}
+            <TabsContent value="whatsapp" className="mt-4">
+              <div className="flex flex-col h-[500px]">
               <Card className="flex flex-col h-full border-green-100">
                 <CardHeader className="py-3 px-4 bg-green-50/50 border-b border-green-100">
                   <CardTitle className="text-sm font-medium flex items-center text-green-800">
@@ -1264,6 +1294,7 @@ export function LeadDetailsDialog({
                   </div>
                 </div>
               </Card>
+              </div>
             </TabsContent>
 
             {(lead.lead_type === "seller" || lead.lead_type === "both") && (
@@ -1313,6 +1344,7 @@ export function LeadDetailsDialog({
             )}
 
             <TabsContent value="interactions" className="space-y-4 mt-4">
+              {/* Registo rápido: interação (com tipo) ou nota interna. */}
               <Card className="bg-slate-50 border-dashed">
                 <CardContent className="p-4 space-y-3">
                   <div className="flex gap-3">
@@ -1326,107 +1358,38 @@ export function LeadDetailsDialog({
                         <SelectItem value="whatsapp">WhatsApp</SelectItem>
                         <SelectItem value="meeting">Reunião</SelectItem>
                         <SelectItem value="sms">SMS</SelectItem>
+                        <SelectItem value="note">Nota interna</SelectItem>
                       </SelectContent>
                     </Select>
+                    <Textarea
+                      placeholder={newInteractionType === "note" ? "Escreva uma nota interna..." : "Descreva a interação..."}
+                      value={newInteractionText}
+                      onChange={(e) => setNewInteractionText(e.target.value)}
+                      className="min-h-[60px] bg-white flex-1"
+                    />
                   </div>
-                  <Textarea 
-                    placeholder="Detalhes da interação..." 
-                    value={newInteractionText}
-                    onChange={(e) => setNewInteractionText(e.target.value)}
-                    className="min-h-[80px] bg-white"
-                  />
-                  <div className="flex justify-end">
-                    <Button onClick={handleAddInteraction} disabled={isSubmittingInteraction || !newInteractionText.trim()}>
-                      {isSubmittingInteraction && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                      Registar Interação
+                  <div className="flex items-center justify-between gap-3">
+                    <QuickReplyMenu lead={lead} onLogged={refreshInteractions} />
+                    <Button
+                      onClick={newInteractionType === "note" ? handleAddNoteFromInteractions : handleAddInteraction}
+                      disabled={isSubmittingInteraction || isSubmittingNote || !newInteractionText.trim()}
+                    >
+                      {(isSubmittingInteraction || isSubmittingNote) && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                      Registar
                     </Button>
                   </div>
                 </CardContent>
               </Card>
-              {interactions.length === 0 ? (
-                <div className="text-center py-6 text-gray-500">
-                  <MessageSquare className="h-8 w-8 mx-auto mb-2 text-gray-300" />
-                  <p className="text-sm">Sem interações registadas</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {interactions.map((interaction) => (
-                    <Card key={interaction.id}>
-                      <CardContent className="pt-4">
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-2 flex-wrap">
-                              <Badge>{interaction.interaction_type}</Badge>
-                              <span className="text-sm text-gray-500">
-                                {formatDate(interaction.interaction_date)}
-                              </span>
-                              {(interaction as any).user && (
-                                <span className="text-sm text-gray-500">
-                                  · por {(interaction as any).user.full_name || (interaction as any).user.email}
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-sm text-gray-700">{interaction.content || "-"}</p>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              )}
+
+              {/* Cronologia completa: interações, notas e tarefas, por ordem,
+                  cada uma com o tipo à vista. */}
+              <LeadTimeline
+                interactions={interactions}
+                notes={notes}
+                tasks={tasks}
+              />
             </TabsContent>
 
-            <TabsContent value="notes" className="space-y-4 mt-4">
-              <Card className="bg-slate-50 border-dashed">
-                <CardContent className="p-4 space-y-3">
-                  <Textarea 
-                    placeholder="Escreva uma nota interna..." 
-                    value={newNoteText}
-                    onChange={(e) => setNewNoteText(e.target.value)}
-                    className="min-h-[80px] bg-white"
-                  />
-                  <div className="flex justify-end">
-                    <Button onClick={handleAddNote} disabled={isSubmittingNote || !newNoteText.trim()}>
-                      {isSubmittingNote && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                      Adicionar Nota
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-              {notes.length === 0 ? (
-                <div className="text-center py-6 text-gray-500">
-                  <FileText className="h-8 w-8 mx-auto mb-2 text-gray-300" />
-                  <p className="text-sm">Sem notas registadas</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {notes.map((note) => (
-                    <Card key={note.id}>
-                      <CardContent className="pt-4">
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-2 flex-wrap">
-                              <span className="text-sm font-medium">Nota</span>
-                              <span className="text-sm text-gray-500">
-                                {formatDate(note.created_at)}
-                              </span>
-                              {(note as any).author && (
-                                <span className="text-sm text-gray-500">
-                                  · por {(note as any).author.full_name || (note as any).author.email}
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-sm text-gray-700 whitespace-pre-wrap">
-                              {note.note}
-                            </p>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              )}
-            </TabsContent>
 
             <TabsContent value="events" className="space-y-4 mt-4">
               <div className="flex justify-end">
@@ -1553,13 +1516,7 @@ export function LeadDetailsDialog({
               <ClientPortalProperties leadId={lead.id} />
             </TabsContent>
 
-            <TabsContent value="timeline" className="space-y-4 mt-4">
-              <LeadTimeline 
-                interactions={interactions}
-                notes={notes}
-                tasks={tasks}
-              />
-            </TabsContent>
+
           </Tabs>
         ) : (
           <div className="text-center py-12 text-gray-500">

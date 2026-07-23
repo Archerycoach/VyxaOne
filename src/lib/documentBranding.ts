@@ -84,11 +84,14 @@ export function addFooterBand(doc: jsPDF, footerDataUri: string | null): void {
     bandHeight = 12;
   }
 
-  // A proporção da imagem é SEMPRE respeitada — esticar ou espremer é o que
-  // produzia o rodapé deformado. A faixa ocupa a largura total; se a imagem
-  // for alta de mais (não é uma faixa, é um cartaz), reduz-se mantendo a
-  // forma e centra-se. O aviso no carregamento já pede proporções de faixa.
-  const MAX_BAND_HEIGHT = 40;
+  // As dimensões da IMAGEM mandam: largura total da página, altura pela
+  // proporção real, e é a página que reserva o espaço correspondente
+  // (setFooterReserve). Encolher ou centrar a faixa — as tentativas
+  // anteriores — deixava-a sempre diferente da capa que usa o mesmo design.
+  //
+  // Único limite: um terço da página. Acima disso a "faixa" é um cartaz e
+  // comeria o documento; reduz-se mantendo a forma, centrada.
+  const MAX_BAND_HEIGHT = doc.internal.pageSize.getHeight() / 3;
   let drawWidth = pageWidth;
   let drawX = 0;
 
@@ -125,9 +128,10 @@ export function footerBandHeight(doc: jsPDF, footerDataUri: string | null): numb
   try {
     const properties = (doc as any).getImageProperties(footerDataUri);
     const pageWidth = doc.internal.pageSize.getWidth();
-    // O mesmo limite do addFooterBand — os dois têm de concordar, senão a
+    const pageHeight = doc.internal.pageSize.getHeight();
+    // A mesma fórmula do addFooterBand — os dois têm de concordar, senão a
     // reserva não bate certo com o que é desenhado.
-    return Math.min(pageWidth * (properties.height / properties.width), 40);
+    return Math.min(pageWidth * (properties.height / properties.width), pageHeight / 3);
   } catch {
     return 12;
   }
