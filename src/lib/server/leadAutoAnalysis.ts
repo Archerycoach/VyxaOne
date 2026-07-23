@@ -401,6 +401,25 @@ export async function runLeadAutoAnalysis(
       // descrição, junto com o excerto que originou o bloco.
       const eventTitle = buildLeadEventTitle(eventType, lead.name);
 
+      // Já existe um evento desta lead à mesma hora e do mesmo tipo?
+      // Acontece quando a análise corre duas vezes sobre a mesma nota (dois
+      // gatilhos, um reenvio) — e criava a MESMA chamada em duplicado, que o
+      // consultor depois tinha de limpar à mão.
+      const { data: duplicates } = await supabaseAdmin
+        .from("calendar_events")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("lead_id", leadId)
+        .eq("event_type", eventType)
+        .gte("start_time", new Date(start.getTime() - 30 * 60 * 1000).toISOString())
+        .lte("start_time", new Date(start.getTime() + 30 * 60 * 1000).toISOString())
+        .limit(1);
+
+      if (duplicates && duplicates.length > 0) {
+        applied.agenda_skipped.push(`${block.title} (já existe um evento igual nessa hora)`);
+        continue;
+      }
+
       // O horário já está ocupado? O bloco é criado na mesma — o consultor
       // pode ter boas razões para sobrepor — mas fica avisado para resolver.
       // Blocos de disponibilidade (is_bookable) não contam como ocupação.

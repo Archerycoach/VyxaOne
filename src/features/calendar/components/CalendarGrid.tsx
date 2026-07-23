@@ -16,6 +16,7 @@ interface CalendarGridProps {
   onDeleteEvent?: (eventId: string) => void;
   /** Confirmar um bloco de agenda criado pela IA (ai_pending). */
   onConfirmAiEvent?: (eventId: string) => void;
+  onRejectAiEvent?: (eventId: string) => void;
   // Drag and Drop handlers
   onDragStart: (e: React.DragEvent, item: { id: string; type: "event" | "task"; startTime: string }) => void;
   onDragEnd: (e: React.DragEvent) => void;
@@ -32,6 +33,7 @@ export function CalendarGrid({
   onTaskClick,
   onDeleteEvent,
   onConfirmAiEvent,
+  onRejectAiEvent,
   onDragStart,
   onDragEnd,
   onDragOver,
@@ -187,6 +189,7 @@ export function CalendarGrid({
                       }
                     }}
                     onConfirmAi={onConfirmAiEvent}
+                    onRejectAi={onRejectAiEvent}
                     showSyncStatus={true}
                   />
                 </div>
@@ -273,6 +276,7 @@ export function CalendarGrid({
                           })}
                           onDragEnd={onDragEnd}
                           onConfirmAi={onConfirmAiEvent}
+                    onRejectAi={onRejectAiEvent}
                           compact
                           showSyncStatus={true}
                         />
@@ -322,6 +326,7 @@ export function CalendarGrid({
           onTaskClick={onTaskClick}
           onDeleteEvent={onDeleteEvent}
           onConfirmAiEvent={onConfirmAiEvent}
+          onRejectAiEvent={onRejectAiEvent}
         />
       </>
     );
@@ -393,6 +398,7 @@ export function CalendarGrid({
                         })}
                         onDragEnd={onDragEnd}
                         onConfirmAi={onConfirmAiEvent}
+                    onRejectAi={onRejectAiEvent}
                         compact
                         showSyncStatus={true}
                       />
@@ -442,6 +448,7 @@ export function CalendarGrid({
         onTaskClick={onTaskClick}
         onDeleteEvent={onDeleteEvent}
         onConfirmAiEvent={onConfirmAiEvent}
+          onRejectAiEvent={onRejectAiEvent}
       />
     </>
   );

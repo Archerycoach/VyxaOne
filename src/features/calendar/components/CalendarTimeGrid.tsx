@@ -38,6 +38,7 @@ interface CalendarTimeGridProps {
   onDeleteEvent?: (eventId: string) => void;
   /** Confirmar um bloco sugerido pela IA (aiPending). */
   onConfirmAiEvent?: (eventId: string) => void;
+  onRejectAiEvent?: (eventId: string) => void;
 }
 
 const WEEKDAY_LABELS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
@@ -139,6 +140,7 @@ export function CalendarTimeGrid({
   onSlotClick,
   onDeleteEvent,
   onConfirmAiEvent,
+  onRejectAiEvent,
 }: CalendarTimeGridProps) {
   const dragRef = useRef<{ kind: "event" | "task"; id: string; durationMin: number } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<CalendarEvent | null>(null);

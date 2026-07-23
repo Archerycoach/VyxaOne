@@ -20,6 +20,7 @@ interface DayEventsDialogProps {
   onDeleteEvent?: (eventId: string) => void;
   /** Confirmar um bloco de agenda criado pela IA (ai_pending). */
   onConfirmAiEvent?: (eventId: string) => void;
+  onRejectAiEvent?: (eventId: string) => void;
 }
 
 export function DayEventsDialog({
@@ -32,6 +33,7 @@ export function DayEventsDialog({
   onTaskClick,
   onDeleteEvent,
   onConfirmAiEvent,
+  onRejectAiEvent,
 }: DayEventsDialogProps) {
   const formattedDate = date.toLocaleDateString("pt-PT", {
     weekday: "long",
@@ -84,6 +86,7 @@ export function DayEventsDialog({
                         }
                       }}
                       onConfirmAi={onConfirmAiEvent}
+                    onRejectAi={onRejectAiEvent}
                     />
                   ))}
                 </div>

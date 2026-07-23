@@ -87,6 +87,31 @@ export const getCalendarEvents = async (): Promise<CalendarEvent[]> => {
  * com o Google Calendar pelos fluxos habituais). Rejeitar = eliminar o evento
  * com o deleteCalendarEvent existente.
  */
+/**
+ * Rejeita um evento pendente da IA.
+ *
+ * Só apaga se o evento AINDA estiver ai_pending: com dois cartões idênticos
+ * no ecrã, um clique com estado desatualizado chegou a apagar um evento que
+ * o consultor já tinha confirmado. Um evento confirmado só se apaga pelo
+ * fluxo normal de eliminação, nunca pelo ✗ da proposta.
+ */
+export const rejectAiCalendarEvent = async (id: string): Promise<boolean> => {
+  const { data, error } = await (supabase as any)
+    .from("calendar_events")
+    .delete()
+    .eq("id", id)
+    .eq("ai_pending", true)
+    .select("id");
+
+  if (error) {
+    console.error("[calendarService] ❌ Error rejecting AI event:", error);
+    throw new Error("Não foi possível rejeitar o evento");
+  }
+
+  // false = já não estava pendente (confirmado entretanto); nada foi apagado.
+  return (data || []).length > 0;
+};
+
 export const confirmAiCalendarEvent = async (id: string): Promise<void> => {
   const { data, error } = await (supabase
     .from("calendar_events")

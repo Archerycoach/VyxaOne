@@ -86,7 +86,7 @@ export function CalendarContainer() {
   const router = useRouter();
   
   // Hooks for data fetching
-  const { events, isLoading: eventsLoading, refetch: refetchEvents, deleteEvent, confirmAiEvent } = useCalendarEvents();
+  const { events, isLoading: eventsLoading, refetch: refetchEvents, deleteEvent, confirmAiEvent, rejectAiEvent } = useCalendarEvents();
   const { tasks, isLoading: tasksLoading, refetch: refetchTasks } = useCalendarTasks();
   const {
     isConnected,
@@ -969,6 +969,7 @@ export function CalendarContainer() {
           onTaskClick={handleEditTask}
           onDeleteEvent={deleteEvent}
           onConfirmAiEvent={confirmAiEvent}
+          onRejectAiEvent={rejectAiEvent}
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
           onDragOver={handleDragOver}
@@ -987,6 +988,7 @@ export function CalendarContainer() {
           onSlotClick={handleCreateEventAt}
           onDeleteEvent={deleteEvent}
           onConfirmAiEvent={confirmAiEvent}
+          onRejectAiEvent={rejectAiEvent}
         />
       )}
 

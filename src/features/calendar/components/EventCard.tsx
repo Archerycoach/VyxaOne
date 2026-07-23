@@ -24,6 +24,8 @@ interface EventCardProps {
   event: CalendarEvent;
   onClick: () => void;
   onDelete?: (eventId: string) => void;
+  /** Rejeitar proposta da IA — só apaga se ainda estiver pendente. */
+  onRejectAi?: (eventId: string) => void;
   /** Confirmar um bloco criado pela IA (event.aiPending). Rejeitar usa o onDelete. */
   onConfirmAi?: (eventId: string) => void;
   onDragStart?: (e: React.DragEvent) => void;
@@ -36,6 +38,7 @@ export function EventCard({
   event,
   onClick,
   onDelete,
+  onRejectAi,
   onConfirmAi,
   onDragStart,
   onDragEnd,
@@ -64,7 +67,11 @@ export function EventCard({
   };
 
   const handleDeleteConfirm = async () => {
-    if (onDelete) {
+    // Uma proposta da IA rejeita-se pelo caminho guardado: se entretanto foi
+    // confirmada, nada é apagado. O apagar genérico fica para eventos normais.
+    if (event.aiPending && onRejectAi) {
+      await onRejectAi(event.id);
+    } else if (onDelete) {
       await onDelete(event.id);
     }
     setShowDeleteDialog(false);

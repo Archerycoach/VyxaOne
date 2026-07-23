@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { getCalendarEvents, deleteCalendarEvent, confirmAiCalendarEvent } from "@/services/calendarService";
+import { getCalendarEvents, deleteCalendarEvent, confirmAiCalendarEvent, rejectAiCalendarEvent } from "@/services/calendarService";
 import type { CalendarEvent } from "@/types";
 import { useToast } from "@/hooks/use-toast";
 
@@ -58,6 +58,31 @@ export function useCalendarEvents() {
     }
   }, [fetchEvents, toast]);
 
+  const rejectAiEvent = useCallback(async (eventId: string) => {
+    try {
+      const deleted = await rejectAiCalendarEvent(eventId);
+
+      if (!deleted) {
+        // O evento já tinha sido confirmado entretanto — nada foi apagado.
+        // É a guarda contra o clique com estado desatualizado que chegou a
+        // eliminar um evento confirmado.
+        toast({
+          title: "Este evento já estava confirmado",
+          description: "Não foi apagado. Para o eliminar, usa a eliminação normal do evento.",
+        });
+        await fetchEvents(true);
+        return;
+      }
+
+      setEvents(prev => prev.filter(e => e.id !== eventId));
+      toast({ title: "Proposta rejeitada", description: "O bloco sugerido pela IA foi removido." });
+      await fetchEvents(true);
+    } catch (err) {
+      console.error("[useCalendarEvents] ❌ Error rejecting AI event:", err);
+      toast({ title: "Erro ao rejeitar", variant: "destructive" });
+    }
+  }, [fetchEvents, toast]);
+
   const confirmAiEvent = useCallback(async (eventId: string) => {
     try {
       await confirmAiCalendarEvent(eventId);
@@ -91,6 +116,7 @@ export function useCalendarEvents() {
     error,
     refetch: () => fetchEvents(true),
     deleteEvent,
+    rejectAiEvent,
     confirmAiEvent,
   };
 }
