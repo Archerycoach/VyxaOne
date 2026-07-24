@@ -436,7 +436,7 @@ export default function BulkMailMerge() {
           </div>
 
           <div className="mb-6">
-            <BulkCampaignsReport />
+            <BulkCampaignsReport title="Histórico de envios" defaultOpen sourceFilter="sheet_merge" />
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

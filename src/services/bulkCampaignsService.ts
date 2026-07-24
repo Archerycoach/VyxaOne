@@ -79,12 +79,18 @@ export async function finishCampaign(
   if (error) console.error("[bulkCampaigns] Erro ao fechar a campanha:", error);
 }
 
-export async function getCampaigns(limit = 50): Promise<BulkEmailCampaign[]> {
-  const { data, error } = await untyped
+export async function getCampaigns(limit = 50, audienceSource?: string): Promise<BulkEmailCampaign[]> {
+  let query = untyped
     .from("bulk_email_campaigns")
     .select("*")
     .order("created_at", { ascending: false })
     .limit(limit);
+
+  if (audienceSource) {
+    query = query.eq("audience_source", audienceSource);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     console.error("[bulkCampaigns] Erro ao carregar campanhas:", error);

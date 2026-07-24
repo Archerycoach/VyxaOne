@@ -29,18 +29,33 @@ function formatDate(value: string): string {
  * havia forma de saber se uma campanha de centenas de emails tinha chegado ao
  * fim ou parado a meio.
  */
-export function BulkCampaignsReport() {
+export function BulkCampaignsReport({
+  title = "Histórico de envios",
+  defaultOpen = false,
+  sourceFilter,
+}: {
+  title?: string;
+  /** Abre o histórico logo ao carregar a página (em vez de ficar recolhido). */
+  defaultOpen?: boolean;
+  /** Mostra só as campanhas desta origem (ex.: "sheet_merge" na mala-direta). */
+  sourceFilter?: string;
+} = {}) {
   const [campaigns, setCampaigns] = useState<BulkEmailCampaign[]>([]);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    if (!open || campaigns.length > 0) return;
+  const load = () => {
     setLoading(true);
-    getCampaigns()
+    getCampaigns(50, sourceFilter)
       .then(setCampaigns)
       .finally(() => setLoading(false));
-  }, [open]);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, sourceFilter]);
 
   return (
     <Card className="p-4">
@@ -51,7 +66,7 @@ export function BulkCampaignsReport() {
       >
         <span className="flex items-center gap-2 font-semibold text-gray-900">
           <BarChart3 className="h-5 w-5 text-indigo-600" />
-          Histórico de envios
+          {title}
         </span>
         {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
       </button>
@@ -87,6 +102,9 @@ export function BulkCampaignsReport() {
                   <div className="flex flex-wrap items-center gap-2">
                     {campaign.audience_source === "ai_search" && (
                       <Badge variant="secondary">Emails por procura</Badge>
+                    )}
+                    {campaign.audience_source === "sheet_merge" && (
+                      <Badge variant="secondary">Mala-direta</Badge>
                     )}
                     <Badge className="bg-green-100 text-green-800 hover:bg-green-100">
                       <Mail className="mr-1 h-3 w-3" />
@@ -128,7 +146,7 @@ export function BulkCampaignsReport() {
           })}
 
           {campaigns.length > 0 && (
-            <Button variant="ghost" size="sm" onClick={() => { setCampaigns([]); setOpen(true); }}>
+            <Button variant="ghost" size="sm" onClick={load}>
               Atualizar
             </Button>
           )}
