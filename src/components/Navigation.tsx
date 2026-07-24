@@ -43,6 +43,7 @@ import {
   Palette,
   Banknote,
   Search,
+  FileSpreadsheet,
 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
@@ -175,6 +176,7 @@ export function Navigation({ onClose }: { onClose?: () => void } = {}) {
         { icon: Home, label: "Particulares", path: "/fsbo" },
         { icon: Search, label: "Idealista", path: "/idealista" },
         { icon: Send, label: "Mensagens", path: "/bulk-messages" },
+        { icon: FileSpreadsheet, label: "Mensagens em massa", path: "/bulk-mail-merge" },
         { icon: Mail, label: "Registo de Envios Automáticos", path: "/automated-emails" },
         { icon: Calculator, label: "Financiamento", path: "/financing" },
         { icon: Home, label: "Avaliação de Imóvel", path: "/valuation" },

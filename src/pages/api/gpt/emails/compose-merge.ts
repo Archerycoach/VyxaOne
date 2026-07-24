@@ -19,12 +19,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
     if (authError || !user) return res.status(401).json({ error: "Não autorizado" });
 
-    const { brief, variables, sample, sourceContent } = req.body as {
+    const { brief, variables, sample, sourceContent, audience } = req.body as {
       brief?: string;
       variables?: string[];
       sample?: Record<string, string> | null;
       /** Texto extraído de um link ou brochura PDF, como base factual. */
       sourceContent?: string | null;
+      /** Público-alvo, tom e idioma (ex.: "investidores estrangeiros, em inglês"). */
+      audience?: string | null;
     };
 
     if ((!brief || !brief.trim()) && (!sourceContent || !sourceContent.trim())) {
@@ -58,6 +60,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             .join("\n")
         : "";
 
+    // Público-alvo / tom / idioma. É a "vertente" que o consultor escolhe:
+    // investidores, clientes estrangeiros (email em inglês), primeira habitação,
+    // tom formal, etc. Determina inclusive o IDIOMA do email.
+    const audienceBlock =
+      audience && audience.trim()
+        ? `\n\nPÚBLICO-ALVO, TOM E IDIOMA (segue à risca):\n"${audience.trim()}"`
+        : "";
+
     // Base factual opcional (link ou brochura). Limita-se para não estourar o
     // contexto; a extração já vem truncada, mas cortamos por segurança.
     const sourceBlock =
@@ -68,13 +78,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const prompt = `És ${consultantName}, um consultor imobiliário português. Escreve UM email para um envio de mala-direta (mail-merge): o mesmo texto vai para vários destinatários de uma lista, mas cada um recebe as suas variáveis substituídas (como no Word > Excel > Outlook).
 
 PEDIDO DO CONSULTOR (o que o email deve dizer):
-"${(brief || "Divulgar o imóvel/assunto do material de origem abaixo.").trim()}"${sourceBlock}
+"${(brief || "Divulgar o imóvel/assunto do material de origem abaixo.").trim()}"${audienceBlock}${sourceBlock}
 
 VARIÁVEIS DISPONÍVEIS (usa-as escrevendo exatamente {assim}, e serão substituídas por destinatário):
 ${variablesBlock}${sampleBlock}
 
 REGRAS:
-- Português de Portugal, tom profissional mas próximo.
+- IDIOMA: se o público-alvo acima pedir outro idioma (ex.: inglês para clientes estrangeiros), escreve TODO o email — assunto e corpo — nesse idioma. Caso contrário, português de Portugal.
+- Adapta o tom e os argumentos ao público-alvo indicado (ex.: investidores → rentabilidade, retorno, localização; primeira habitação → conforto, família; estrangeiros → contexto que quem não conhece Portugal precisa). Sem público indicado, tom profissional mas próximo.
 - Usa {nome} logo na saudação se essa variável existir. Encaixa outras variáveis onde fizerem sentido natural — nunca as ponhas todas à força.
 - Usa APENAS variáveis da lista acima. NUNCA inventes variáveis que não estejam listadas nem deixes chavetas por preencher com nomes que não existem.
 - Não incluas assinatura nem despedida com o teu nome (a assinatura é acrescentada automaticamente no envio).

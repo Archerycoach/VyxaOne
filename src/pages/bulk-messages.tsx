@@ -21,9 +21,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Send, Mail, MessageSquare, Loader2, Users, Filter, Paperclip, X, Trash2, FileSpreadsheet, Sparkles } from "lucide-react";
-import { parseExcelFile } from "@/services/importService";
-import { normalizeVarToken, personalizeMailMerge } from "@/lib/mailMergeVars";
+import { Send, Mail, MessageSquare, Loader2, Users, Filter, Paperclip, X, Trash2 } from "lucide-react";
 import { getAllLeads, type LeadWithContacts } from "@/services/leadsService";
 import { getAllContacts, type Contact } from "@/services/contactsService";
 import { getCurrentUser } from "@/services/authService";
@@ -275,23 +273,7 @@ export default function BulkMessages() {
   const [selectedTemplate, setSelectedTemplate] = useState<string>("");
   
   // Filters
-  const [filterSource, setFilterSource] = useState<"all" | "leads" | "contacts" | "sheet">("all");
-
-  // Mala-direta por lista (Excel/CSV): as linhas do ficheiro são destinatários
-  // efémeros (não entram no CRM) e cada coluna vira uma variável {token}.
-  const [sheetRows, setSheetRows] = useState<Array<Record<string, any>>>([]);
-  const [sheetColumns, setSheetColumns] = useState<string[]>([]);
-  const [sheetEmailCol, setSheetEmailCol] = useState<string>("");
-  const [sheetNameCol, setSheetNameCol] = useState<string>("");
-  const [sheetFileName, setSheetFileName] = useState<string>("");
-  const [parsingSheet, setParsingSheet] = useState(false);
-  // Escrita do email pela IA, ciente das colunas da lista como variáveis.
-  const [aiComposeOpen, setAiComposeOpen] = useState(false);
-  const [aiBrief, setAiBrief] = useState("");
-  const [aiComposing, setAiComposing] = useState(false);
-  // Fonte opcional para a IA se basear: um link ou uma brochura em PDF.
-  const [aiSourceUrl, setAiSourceUrl] = useState("");
-  const [aiSourceFile, setAiSourceFile] = useState<{ name: string; base64: string } | null>(null);
+  const [filterSource, setFilterSource] = useState<"all" | "leads" | "contacts">("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [filterLocation, setFilterLocation] = useState("");
@@ -453,7 +435,7 @@ export default function BulkMessages() {
   }, [router.isReady, router.query, loading, aiDraftApplied, leads]);
 
   const leadAudienceSummary = useMemo(() => {
-    if (filterSource === "contacts" || filterSource === "sheet" || messageType !== "email") {
+    if (filterSource === "contacts" || messageType !== "email") {
       return null;
     }
 
@@ -639,164 +621,7 @@ export default function BulkMessages() {
     }
   };
 
-  // ── Mala-direta por lista (Excel/CSV) ──────────────────────────────────────
-  // Tokens de variável derivados dos cabeçalhos ("Primeiro Nome" → primeiro_nome).
-  const sheetVarTokens = useMemo(
-    () => Array.from(new Set(sheetColumns.map((c) => normalizeVarToken(c)).filter(Boolean))),
-    [sheetColumns],
-  );
-
-  const buildSheetRecipients = () => {
-    if (!sheetEmailCol) return [];
-    const seen = new Set<string>();
-    const out: Array<{ id: string; name: string; email: string; vars: Record<string, string> }> = [];
-    sheetRows.forEach((row, idx) => {
-      const email = String(row[sheetEmailCol] ?? "").trim();
-      if (!email || seen.has(email.toLowerCase())) return;
-      seen.add(email.toLowerCase());
-      const name = (sheetNameCol ? String(row[sheetNameCol] ?? "").trim() : "") || email.split("@")[0];
-      // Cada coluna → variável {token} com o valor desta linha.
-      const vars: Record<string, string> = {};
-      for (const col of sheetColumns) {
-        vars[normalizeVarToken(col)] = row[col] == null ? "" : String(row[col]);
-      }
-      vars.nome = name;
-      vars.email = email;
-      out.push({ id: `sheet-${idx}`, name, email, vars });
-    });
-    return out;
-  };
-
-  const handleSheetUpload = async (file: File) => {
-    setParsingSheet(true);
-    try {
-      const rows = await parseExcelFile(file);
-      const cleaned = (rows || []).filter((r) => r && typeof r === "object");
-      if (cleaned.length === 0) {
-        toast({ title: "Ficheiro vazio", description: "Não encontrei linhas com dados.", variant: "destructive" });
-        return;
-      }
-      const cols = Array.from(new Set(cleaned.flatMap((r) => Object.keys(r))));
-      setSheetRows(cleaned);
-      setSheetColumns(cols);
-      setSheetFileName(file.name);
-      const emailCol = cols.find((c) => /e-?mail/i.test(c)) || "";
-      const nameCol = cols.find((c) => /(nome|name)/i.test(c)) || "";
-      setSheetEmailCol(emailCol);
-      setSheetNameCol(nameCol);
-      if (!emailCol) {
-        toast({ title: "Indique a coluna do email", description: "Não detetei a coluna de email — escolha-a abaixo." });
-      }
-    } catch (error: any) {
-      toast({ title: "Erro ao ler o ficheiro", description: error?.message || "Formato não suportado.", variant: "destructive" });
-    } finally {
-      setParsingSheet(false);
-    }
-  };
-
-  const clearSheet = () => {
-    setSheetRows([]);
-    setSheetColumns([]);
-    setSheetEmailCol("");
-    setSheetNameCol("");
-    setSheetFileName("");
-  };
-
-  const handleAiSourceFile = (file: File) => {
-    if (file.size > 20 * 1024 * 1024) {
-      toast({ title: "Ficheiro demasiado grande", description: "A brochura deve ter até 20 MB.", variant: "destructive" });
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      const base64 = result.split(",")[1];
-      setAiSourceFile({ name: file.name, base64 });
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const handleAiCompose = async () => {
-    if (!aiBrief.trim() && !aiSourceFile && !aiSourceUrl.trim()) {
-      toast({ title: "Falta o conteúdo", description: "Descreva o email ou forneça um link/brochura.", variant: "destructive" });
-      return;
-    }
-    setAiComposing(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error("Sessão expirada. Faça login novamente.");
-
-      // Base factual opcional: lê o link ou a brochura ANTES de escrever, para
-      // a IA se cingir aos factos reais do imóvel/assunto.
-      let sourceContent: string | null = null;
-      if (aiSourceFile || aiSourceUrl.trim()) {
-        const extractRes = await fetch("/api/gpt/properties/extract-listing-content", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
-          body: JSON.stringify(
-            aiSourceFile
-              ? { documentBase64: aiSourceFile.base64, documentName: aiSourceFile.name }
-              : { sourceUrl: aiSourceUrl.trim() },
-          ),
-        });
-        const extractData = await extractRes.json();
-        if (!extractRes.ok || !extractData.text) {
-          throw new Error(extractData.error || "Não consegui ler o link/brochura. Verifique e tente de novo.");
-        }
-        sourceContent = extractData.text;
-      }
-
-      const variables = Array.from(new Set([...sheetVarTokens, "nome", "email"]));
-      const sample: Record<string, string> = {};
-      if (sheetRows[0]) {
-        for (const col of sheetColumns) sample[normalizeVarToken(col)] = String(sheetRows[0][col] ?? "");
-      }
-      const res = await fetch("/api/gpt/emails/compose-merge", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
-        body: JSON.stringify({ brief: aiBrief, variables, sample, sourceContent }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.subject) throw new Error(data.error || "Falha ao escrever o email.");
-      setSubject(data.subject);
-      setMessage(data.html || "");
-      setAiComposeOpen(false);
-      setAiBrief("");
-      setAiSourceUrl("");
-      setAiSourceFile(null);
-      toast({ title: "Email escrito pela IA", description: "Revê e ajusta antes de enviar." });
-    } catch (error: any) {
-      toast({ title: "Erro", description: error?.message || "Não foi possível escrever o email.", variant: "destructive" });
-    } finally {
-      setAiComposing(false);
-    }
-  };
-
-  // Ao carregar/mapear a lista, seleciona automaticamente todos os
-  // destinatários com email (como o rascunho da IA já faz para leads).
-  useEffect(() => {
-    if (filterSource !== "sheet") return;
-    setSelectedRecipients(new Set(buildSheetRecipients().map((r) => r.id)));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sheetRows, sheetEmailCol, sheetNameCol, sheetColumns, filterSource]);
-
   const getFilteredRecipients = () => {
-    if (messageType === "email" && filterSource === "sheet") {
-      const q = searchQuery.toLowerCase();
-      return buildSheetRecipients()
-        .filter((r) => !q || r.name.toLowerCase().includes(q) || r.email.toLowerCase().includes(q))
-        .map((r) => ({
-          id: r.id,
-          name: r.name,
-          email: r.email,
-          phone: undefined,
-          type: "sheet" as const,
-          status: undefined,
-          development_name: undefined,
-          vars: r.vars,
-        }));
-    }
-
     if (messageType === "email" && filterSource === "leads" && aiDraftApplied && aiDraftRecipients.length > 0) {
       return aiDraftRecipients
         .filter((recipient) => {
@@ -821,15 +646,14 @@ export default function BulkMessages() {
         }));
     }
 
-    const recipients: Array<{
-      id: string;
-      name: string;
-      email?: string;
-      phone?: string;
-      type: "lead" | "contact" | "manual" | "sheet";
+    const recipients: Array<{ 
+      id: string; 
+      name: string; 
+      email?: string; 
+      phone?: string; 
+      type: "lead" | "contact" | "manual"; 
       status?: string;
       development_name?: string;
-      vars?: Record<string, string>;
     }> = [];
 
     // Track emails and phones already added to prevent duplicates
@@ -1140,25 +964,18 @@ export default function BulkMessages() {
           }
 
           try {
-            // Destinatários de lista (Excel/CSV) trazem as variáveis das
-            // colunas em `vars` — substituição genérica de {qualquer_coluna}.
-            // Os restantes usam as variáveis fixas do CRM.
-            const recipientVars = (recipient as { vars?: Record<string, string> }).vars;
-            const personalizedMessage = recipientVars
-              ? personalizeMailMerge(message, recipientVars)
-              : message
-                  .replace(/\{nome\}/g, recipient.name)
-                  .replace(/\{email\}/g, recipient.email || "")
-                  .replace(/\{telefone\}/g, recipient.phone || "")
-                  .replace(/\{empreendimento\}/g, recipient.development_name || "");
+            // Replace variables in message
+            const personalizedMessage = message
+              .replace(/\{nome\}/g, recipient.name)
+              .replace(/\{email\}/g, recipient.email || "")
+              .replace(/\{telefone\}/g, recipient.phone || "")
+              .replace(/\{empreendimento\}/g, recipient.development_name || "");
 
-            const personalizedSubject = recipientVars
-              ? personalizeMailMerge(subject, recipientVars)
-              : subject
-                  .replace(/\{nome\}/g, recipient.name)
-                  .replace(/\{email\}/g, recipient.email || "")
-                  .replace(/\{telefone\}/g, recipient.phone || "")
-                  .replace(/\{empreendimento\}/g, recipient.development_name || "");
+            const personalizedSubject = subject
+              .replace(/\{nome\}/g, recipient.name)
+              .replace(/\{email\}/g, recipient.email || "")
+              .replace(/\{telefone\}/g, recipient.phone || "")
+              .replace(/\{empreendimento\}/g, recipient.development_name || "");
 
             // RichTextEditor already outputs HTML
             const htmlContent = personalizedMessage;
@@ -1404,78 +1221,8 @@ export default function BulkMessages() {
                         <SelectItem value="all">Todos</SelectItem>
                         <SelectItem value="leads">Apenas Leads</SelectItem>
                         <SelectItem value="contacts">Apenas Contactos</SelectItem>
-                        <SelectItem value="sheet">Lista (Excel/CSV)</SelectItem>
                       </SelectContent>
                     </Select>
-
-                    {filterSource === "sheet" && (
-                      <div className="space-y-3 rounded-lg border border-dashed border-slate-300 p-3">
-                        {sheetRows.length === 0 ? (
-                          <div className="space-y-2">
-                            <Label className="text-sm font-medium flex items-center gap-2">
-                              <FileSpreadsheet className="h-4 w-4" /> Carregar lista
-                            </Label>
-                            <Input
-                              type="file"
-                              accept=".xlsx,.xls,.csv"
-                              disabled={parsingSheet}
-                              onChange={(e) => {
-                                const f = e.target.files?.[0];
-                                if (f) handleSheetUpload(f);
-                                e.target.value = "";
-                              }}
-                            />
-                            <p className="text-xs text-muted-foreground">
-                              Cada coluna fica disponível como variável (ex.: {"{primeiro_nome}"}). Os contactos são usados só
-                              neste envio e não entram no CRM. Garanta que tem consentimento para contactar esta lista.
-                            </p>
-                          </div>
-                        ) : (
-                          <div className="space-y-3">
-                            <div className="flex items-center justify-between gap-2">
-                              <p className="text-sm font-medium truncate flex items-center gap-2">
-                                <FileSpreadsheet className="h-4 w-4 text-emerald-600 shrink-0" />
-                                <span className="truncate">{sheetFileName}</span>
-                              </p>
-                              <Button variant="ghost" size="icon" onClick={clearSheet} title="Remover lista">
-                                <X className="h-4 w-4" />
-                              </Button>
-                            </div>
-                            <p className="text-xs text-muted-foreground">{sheetRows.length} linha(s) no ficheiro.</p>
-                            <div className="space-y-1">
-                              <Label className="text-xs">Coluna do email *</Label>
-                              <Select value={sheetEmailCol} onValueChange={setSheetEmailCol}>
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Escolher coluna..." />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {sheetColumns.map((c) => (
-                                    <SelectItem key={c} value={c}>{c}</SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                            <div className="space-y-1">
-                              <Label className="text-xs">Coluna do nome</Label>
-                              <Select
-                                value={sheetNameCol || "__none"}
-                                onValueChange={(v) => setSheetNameCol(v === "__none" ? "" : v)}
-                              >
-                                <SelectTrigger>
-                                  <SelectValue placeholder="(opcional)" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="__none">(nenhuma)</SelectItem>
-                                  {sheetColumns.map((c) => (
-                                    <SelectItem key={c} value={c}>{c}</SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
 
                     {(filterSource === "all" || filterSource === "leads") && (
                       <Select value={filterStatus} onValueChange={setFilterStatus}>
@@ -1658,7 +1405,7 @@ export default function BulkMessages() {
                               </p>
                               <div className="flex gap-1 mt-1">
                                 <Badge variant="outline" className="text-xs">
-                                  {recipient.type === "lead" ? "Lead" : recipient.type === "manual" ? "Avulso" : recipient.type === "sheet" ? "Lista" : "Contacto"}
+                                  {recipient.type === "lead" ? "Lead" : recipient.type === "manual" ? "Avulso" : "Contacto"}
                                 </Badge>
                                 {recipient.status && (
                                   <Badge variant="secondary" className="text-xs">
@@ -1766,46 +1513,6 @@ export default function BulkMessages() {
                           >
                             Guardar como Template
                           </Button>
-                        </div>
-                      )}
-
-                      {filterSource === "sheet" && (
-                        <div className="rounded-lg border bg-slate-50 p-3 space-y-2">
-                          <div className="flex items-center justify-between gap-2">
-                            <Label className="text-sm">Mala-direta por lista</Label>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={() => setAiComposeOpen(true)}
-                              disabled={sheetVarTokens.length === 0}
-                            >
-                              <Sparkles className="h-4 w-4 mr-2 text-amber-500" /> Escrever com IA
-                            </Button>
-                          </div>
-                          {sheetVarTokens.length > 0 ? (
-                            <div className="flex flex-wrap gap-1">
-                              {["nome", ...sheetVarTokens.filter((t) => t !== "nome" && t !== "email")].map((t) => (
-                                <button
-                                  key={t}
-                                  type="button"
-                                  className="text-xs rounded border bg-white px-2 py-0.5 hover:bg-slate-100"
-                                  onClick={() => setMessage((m) => `${m || ""}{${t}}`)}
-                                  title="Inserir variável no fim da mensagem"
-                                >
-                                  {`{${t}}`}
-                                </button>
-                              ))}
-                            </div>
-                          ) : (
-                            <p className="text-xs text-muted-foreground">
-                              Carregue uma lista à esquerda para ver as variáveis disponíveis.
-                            </p>
-                          )}
-                          <p className="text-xs text-muted-foreground">
-                            Clique numa variável para a inserir, ou escreva {"{coluna}"} no texto. Cada destinatário recebe os
-                            seus valores.
-                          </p>
                         </div>
                       )}
 
@@ -2082,87 +1789,6 @@ export default function BulkMessages() {
           </div>
         </div>
       </div>
-
-      {/* Escrever email com IA (mala-direta por lista) */}
-      <Dialog open={aiComposeOpen} onOpenChange={setAiComposeOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Escrever email com IA</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label htmlFor="ai-brief">O que quer comunicar?</Label>
-              <Textarea
-                id="ai-brief"
-                value={aiBrief}
-                onChange={(e) => setAiBrief(e.target.value)}
-                placeholder="Ex.: Convidar para a angariação de um T3 em Alvalade, com visita no próximo sábado."
-                rows={4}
-              />
-            </div>
-
-            {/* Fonte opcional: a IA lê um link ou uma brochura e baseia-se nos
-                factos reais (sem inventar preços ou características). */}
-            <div className="space-y-2 rounded-lg border border-dashed border-slate-300 p-3">
-              <Label className="text-sm">Base para a IA (opcional)</Label>
-              <Input
-                type="url"
-                value={aiSourceUrl}
-                onChange={(e) => setAiSourceUrl(e.target.value)}
-                placeholder="Colar um link (ex.: anúncio do imóvel)"
-                disabled={!!aiSourceFile}
-              />
-              <div className="text-xs text-muted-foreground text-center">ou</div>
-              {aiSourceFile ? (
-                <div className="flex items-center justify-between gap-2 rounded border bg-white px-2 py-1">
-                  <span className="text-sm truncate flex items-center gap-2">
-                    <Paperclip className="h-4 w-4 shrink-0" /> {aiSourceFile.name}
-                  </span>
-                  <Button variant="ghost" size="icon" onClick={() => setAiSourceFile(null)}>
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-              ) : (
-                <Input
-                  type="file"
-                  accept=".pdf,.docx"
-                  disabled={!!aiSourceUrl.trim()}
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) handleAiSourceFile(f);
-                    e.target.value = "";
-                  }}
-                />
-              )}
-              <p className="text-xs text-muted-foreground">
-                A IA lê o link ou a brochura (PDF/Word) e escreve com base nesses factos.
-              </p>
-            </div>
-
-            {sheetVarTokens.length > 0 && (
-              <p className="text-xs text-muted-foreground">
-                A IA vai usar as variáveis da lista onde fizerem sentido:{" "}
-                {["nome", ...sheetVarTokens.filter((t) => t !== "nome" && t !== "email")]
-                  .map((t) => `{${t}}`)
-                  .join(", ")}
-                .
-              </p>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setAiComposeOpen(false)} disabled={aiComposing}>
-              Cancelar
-            </Button>
-            <Button
-              onClick={handleAiCompose}
-              disabled={aiComposing || (!aiBrief.trim() && !aiSourceFile && !aiSourceUrl.trim())}
-            >
-              {aiComposing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
-              Escrever
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Save Template Dialog */}
       <Dialog open={isSaveTemplateOpen} onOpenChange={setIsSaveTemplateOpen}>
