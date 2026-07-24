@@ -144,13 +144,19 @@ export default function BulkMailMerge() {
     return out;
   };
 
+  // Lista completa (só recalcula quando a lista/mapeamento muda). A pesquisa
+  // filtra por cima, sem reconstruir tudo a cada tecla.
+  const allRecipients = useMemo(
+    () => buildSheetRecipients(),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sheetRows, sheetColumns, sheetEmailCol, sheetNameCol],
+  );
+
   const recipients = useMemo(() => {
     const q = searchQuery.toLowerCase();
-    return buildSheetRecipients().filter(
-      (r) => !q || r.name.toLowerCase().includes(q) || r.email.toLowerCase().includes(q),
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sheetRows, sheetColumns, sheetEmailCol, sheetNameCol, searchQuery]);
+    if (!q) return allRecipients;
+    return allRecipients.filter((r) => r.name.toLowerCase().includes(q) || r.email.toLowerCase().includes(q));
+  }, [allRecipients, searchQuery]);
 
   const handleSheetUpload = async (file: File) => {
     setParsingSheet(true);
@@ -190,9 +196,8 @@ export default function BulkMailMerge() {
 
   // Seleciona automaticamente todos os destinatários com email.
   useEffect(() => {
-    setSelectedRecipients(new Set(buildSheetRecipients().map((r) => r.id)));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sheetRows, sheetColumns, sheetEmailCol, sheetNameCol]);
+    setSelectedRecipients(new Set(allRecipients.map((r) => r.id)));
+  }, [allRecipients]);
 
   const toggleRecipient = (id: string) => {
     setSelectedRecipients((prev) => {
@@ -333,7 +338,8 @@ export default function BulkMailMerge() {
 
   // ── Envio ───────────────────────────────────────────────────────────────────
   const handleSend = async () => {
-    const selectedData = recipients.filter((r) => selectedRecipients.has(r.id));
+    // Envia a TODOS os selecionados, mesmo os que a pesquisa esteja a esconder.
+    const selectedData = allRecipients.filter((r) => selectedRecipients.has(r.id));
     if (selectedData.length === 0) {
       toast({ title: "Aviso", description: "Selecione pelo menos um destinatário.", variant: "destructive" });
       return;

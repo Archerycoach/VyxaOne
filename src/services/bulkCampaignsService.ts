@@ -14,6 +14,8 @@ export interface BulkEmailCampaign {
   started_at: string;
   finished_at: string | null;
   created_at: string;
+  /** queued | processing | completed — estado do envio em segundo plano. */
+  status?: string | null;
 }
 
 type UntypedClient = { from: (relation: string) => any };

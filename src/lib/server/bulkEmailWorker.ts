@@ -1,5 +1,5 @@
 import nodemailer from "nodemailer";
-import { appendSignature } from "@/lib/server/emailSignature";
+import { getSignatureHtml } from "@/lib/server/emailSignature";
 import { logEmailInteractionServer } from "@/lib/emailInteractionLogger";
 import { personalizeMailMerge } from "@/lib/mailMergeVars";
 
@@ -77,20 +77,22 @@ export async function processBulkEmailBatch(
 
   // Recuperar linhas presas em "processing" há demasiado tempo (um envio que
   // morreu a meio): voltam a "pending", ou vão a "failed" se já esgotaram as
-  // tentativas.
+  // tentativas. Usa claimed_at (hora em que foi reivindicada) e NÃO created_at
+  // — assim nunca se repõe uma linha que está a ser enviada neste momento,
+  // evitando envios duplicados em campanhas longas.
   const staleCutoff = new Date(Date.now() - STALE_PROCESSING_MINUTES * 60000).toISOString();
   await admin
     .from("bulk_email_queue")
-    .update({ status: "pending" })
+    .update({ status: "pending", claimed_at: null })
     .eq("status", "processing")
     .lt("attempts", MAX_ATTEMPTS)
-    .lt("created_at", staleCutoff);
+    .lt("claimed_at", staleCutoff);
   await admin
     .from("bulk_email_queue")
     .update({ status: "failed", error: "Excedeu as tentativas de envio." })
     .eq("status", "processing")
     .gte("attempts", MAX_ATTEMPTS)
-    .lt("created_at", staleCutoff);
+    .lt("claimed_at", staleCutoff);
 
   // Lote de pendentes.
   let query = admin
@@ -110,6 +112,7 @@ export async function processBulkEmailBatch(
   const campaignCache = new Map<string, any>();
   const smtpCache = new Map<string, SmtpSettingsRow | null>();
   const transporterCache = new Map<string, nodemailer.Transporter>();
+  const signatureCache = new Map<string, string>();
   const touchedCampaigns = new Set<string>();
   let processed = 0;
 
@@ -119,7 +122,7 @@ export async function processBulkEmailBatch(
     // Reivindicar a linha (evita duplo envio se dois workers coincidirem).
     const { data: claimed } = await admin
       .from("bulk_email_queue")
-      .update({ status: "processing", attempts: (row.attempts || 0) + 1 })
+      .update({ status: "processing", claimed_at: new Date().toISOString(), attempts: (row.attempts || 0) + 1 })
       .eq("id", row.id)
       .eq("status", "pending")
       .select("id")
@@ -165,10 +168,17 @@ export async function processBulkEmailBatch(
         transporterCache.set(row.user_id, transporter);
       }
 
+      // Assinatura do consultor em cache (uma leitura por consultor, não por email).
+      let signature = signatureCache.get(row.user_id);
+      if (signature === undefined) {
+        signature = await getSignatureHtml(admin, row.user_id);
+        signatureCache.set(row.user_id, signature);
+      }
+
       const vars = (row.vars || {}) as Record<string, string>;
       const subject = personalizeMailMerge(String(campaign.subject || ""), vars);
       const bodyHtml = personalizeMailMerge(String(campaign.body_html || ""), vars);
-      const finalHtml = await appendSignature(bodyHtml, admin, row.user_id);
+      const finalHtml = signature ? `${bodyHtml}${signature}` : bodyHtml;
 
       const attachments = Array.isArray(campaign.attachments) ? campaign.attachments : [];
 

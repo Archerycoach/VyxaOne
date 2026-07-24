@@ -120,9 +120,6 @@ export async function searchIdealistaProperties(
 
     const { apiKey: rapidApiKey, host: rapidApiHost, listEndpoint } = credentials;
 
-    // 1. Resolver locationId a partir de texto (center) usando o endpoint auto-complete
-    let resolvedLocationId = params.locationId;
-    let autoTextErrorSnippet = "";
     const centerCandidates = Array.from(
       new Set(
         (params.searchCenters && params.searchCenters.length > 0 ? params.searchCenters : [params.center])
@@ -131,319 +128,286 @@ export async function searchIdealistaProperties(
       ),
     );
 
-    if (!resolvedLocationId && centerCandidates.length > 0) {
-      const extractLocations = (obj: any): any[] => {
-        let locs: any[] = [];
-        if (!obj || typeof obj !== "object") return locs;
+    const extractLocations = (obj: any): any[] => {
+      let locs: any[] = [];
+      if (!obj || typeof obj !== "object") return locs;
 
-        const locId = obj.locationId || obj.placeId || (obj.id && obj.name ? obj.id : undefined);
+      const locId = obj.locationId || obj.placeId || (obj.id && obj.name ? obj.id : undefined);
+      if (locId) {
+        obj.locationId = locId;
+        locs.push(obj);
+      }
 
-        if (locId) {
-          obj.locationId = locId;
-          locs.push(obj);
+      if (Array.isArray(obj)) {
+        for (const item of obj) locs = locs.concat(extractLocations(item));
+      } else {
+        for (const key in obj) {
+          if (typeof obj[key] === "object") locs = locs.concat(extractLocations(obj[key]));
         }
+      }
+      return locs;
+    };
 
-        if (Array.isArray(obj)) {
-          for (const item of obj) {
-            locs = locs.concat(extractLocations(item));
-          }
-        } else {
-          for (const key in obj) {
-            if (typeof obj[key] === "object") {
-              locs = locs.concat(extractLocations(obj[key]));
-            }
-          }
-        }
+    let autoTextErrorSnippet = "";
 
-        return locs;
-      };
+    // Resolve o locationId de UMA zona pelo auto-complete. Devolve null se não
+    // encontrar (não deita fora — deixa continuar para as outras zonas).
+    const resolveLocationId = async (centerCandidate: string): Promise<string | null> => {
+      try {
+        const encodedCenter = encodeURIComponent(centerCandidate);
+        let autoResponse = await fetch(
+          `https://${rapidApiHost}/auto-complete?prefix=${encodedCenter}&country=pt`,
+          { method: "GET", headers: { "X-RapidAPI-Key": rapidApiKey, "X-RapidAPI-Host": rapidApiHost } },
+        );
 
-      for (const centerCandidate of centerCandidates) {
-        try {
-          const encodedCenter = encodeURIComponent(centerCandidate);
-          let autoResponse = await fetch(
-            `https://${rapidApiHost}/auto-complete?prefix=${encodedCenter}&country=pt`,
-            {
-              method: "GET",
-              headers: {
-                "X-RapidAPI-Key": rapidApiKey,
-                "X-RapidAPI-Host": rapidApiHost,
-              },
-            }
+        if (!autoResponse.ok) {
+          const altResponse = await fetch(
+            `https://${rapidApiHost}/locations/auto-complete?prefix=${encodedCenter}&country=pt`,
+            { method: "GET", headers: { "X-RapidAPI-Key": rapidApiKey, "X-RapidAPI-Host": rapidApiHost } },
           );
+          if (altResponse.ok) autoResponse = altResponse;
+        }
 
-          if (!autoResponse.ok) {
-            const altResponse = await fetch(
-              `https://${rapidApiHost}/locations/auto-complete?prefix=${encodedCenter}&country=pt`,
-              {
-                method: "GET",
-                headers: {
-                  "X-RapidAPI-Key": rapidApiKey,
-                  "X-RapidAPI-Host": rapidApiHost,
-                },
-              }
-            );
-            if (altResponse.ok) {
-              autoResponse = altResponse;
-            }
-          }
+        if (autoResponse.status === 404 || autoResponse.status === 403) {
+          const safeFallbackResponse = await fetch(
+            `https://idealista2.p.rapidapi.com/auto-complete?prefix=${encodedCenter}&country=pt`,
+            { method: "GET", headers: { "X-RapidAPI-Key": rapidApiKey, "X-RapidAPI-Host": "idealista2.p.rapidapi.com" } },
+          );
+          if (safeFallbackResponse.ok) autoResponse = safeFallbackResponse;
+        }
 
-          if (autoResponse.status === 404 || autoResponse.status === 403) {
-            const safeFallbackResponse = await fetch(
-              `https://idealista2.p.rapidapi.com/auto-complete?prefix=${encodedCenter}&country=pt`,
-              {
-                method: "GET",
-                headers: {
-                  "X-RapidAPI-Key": rapidApiKey,
-                  "X-RapidAPI-Host": "idealista2.p.rapidapi.com",
-                },
-              }
-            );
-            if (safeFallbackResponse.ok) {
-              autoResponse = safeFallbackResponse;
-              console.log("Auto-complete fallback para idealista2 bem sucedido!");
-            }
-          }
+        if (!autoResponse.ok) {
+          autoTextErrorSnippet = `Status HTTP: ${autoResponse.status}`;
+          return null;
+        }
 
-          if (!autoResponse.ok) {
-            autoTextErrorSnippet = `Status HTTP: ${autoResponse.status}`;
-            continue;
-          }
+        const autoText = await autoResponse.text();
+        autoTextErrorSnippet = autoText.substring(0, 150);
+        const locations = extractLocations(JSON.parse(autoText));
+        if (locations && locations.length > 0) {
+          const best =
+            locations.find((l: any) =>
+              ["parish", "municipality", "neighborhood", "district"].includes(
+                l.locationType?.toLowerCase() || l.type?.toLowerCase(),
+              ),
+            ) || locations[0];
+          return best.locationId || null;
+        }
+        console.warn("Auto-complete não encontrou ID para:", centerCandidate, "Resposta:", autoTextErrorSnippet);
+        return null;
+      } catch (autoErr: any) {
+        console.error("Erro no auto-complete:", autoErr);
+        autoTextErrorSnippet = autoErr.message;
+        return null;
+      }
+    };
 
-          const autoText = await autoResponse.text();
-          autoTextErrorSnippet = autoText.substring(0, 150);
-          const autoData = JSON.parse(autoText);
-          const locations = extractLocations(autoData);
-
-          if (locations && locations.length > 0) {
-            const bestLocation =
-              locations.find((l: any) =>
-                ["parish", "municipality", "neighborhood", "district"].includes(
-                  l.locationType?.toLowerCase() || l.type?.toLowerCase(),
-                ),
-              ) || locations[0];
-
-            resolvedLocationId = bestLocation.locationId;
-            params.center = centerCandidate;
-            break;
-          }
-
-          console.warn("Auto-complete não encontrou ID para:", centerCandidate, "Resposta:", autoTextErrorSnippet);
-        } catch (autoErr: any) {
-          console.error("Erro no auto-complete:", autoErr);
-          autoTextErrorSnippet = autoErr.message;
+    // 1. Resolver o locationId de CADA zona (não parar na primeira!). Era este
+    //    o bug: uma lead com "Benfica, Loures, Odivelas, Lumiar" só pesquisava
+    //    Benfica porque o ciclo parava na 1.ª zona resolvida.
+    const resolvedLocations: Array<{ center: string; locationId: string }> = [];
+    if (params.locationId) {
+      resolvedLocations.push({ center: params.center || "", locationId: params.locationId });
+    } else {
+      for (const candidate of centerCandidates) {
+        const locId = await resolveLocationId(candidate);
+        if (locId && !resolvedLocations.some((r) => r.locationId === locId)) {
+          resolvedLocations.push({ center: candidate, locationId: locId });
         }
       }
     }
 
-    // Construir a query string consoante o fornecedor da API
-    const queryParams = new URLSearchParams();
-    
-    // Formato Padrão (Idealista2 e similares)
-    queryParams.append("country", "pt");
-    queryParams.append("locale", "pt");
-    
-    if (params.operation) {
-      queryParams.append("operation", params.operation);
+    if (resolvedLocations.length === 0) {
+      throw new Error(
+        `Não foi possível encontrar a localização no Idealista para "${centerCandidates.join(", ") || "Localização vazia"}". Resposta da API: ${autoTextErrorSnippet}`,
+      );
     }
-    
-    if (resolvedLocationId) {
-      queryParams.append("locationId", resolvedLocationId);
-    } else {
-      throw new Error(`Não foi possível encontrar a localização no Idealista para "${params.center || 'Localização vazia'}". Resposta da API: ${autoTextErrorSnippet}`);
-    }
+    // Para retrocompatibilidade de quem lê params.center depois da pesquisa.
+    params.center = resolvedLocations[0].center;
 
-    if (params.propertyType) {
-      queryParams.append("propertyType", params.propertyType);
-    }
-    if (params.subType === 'chalet') queryParams.append("chalet", "true");
-    
-    if (params.minPrice) queryParams.append("minPrice", params.minPrice.toString());
-    if (params.maxPrice) queryParams.append("maxPrice", params.maxPrice.toString());
-    if (params.minSize) queryParams.append("minSize", params.minSize.toString());
-    if (params.maxSize) queryParams.append("maxSize", params.maxSize.toString());
-    
-    // Com várias tipologias aceites (ou um mínimo aberto), o `bedrooms` da API
-    // — que só aceita um valor — deixaria de fora tudo o resto. Nesse caso não
-    // se filtra na API e passa-se a filtrar sobre os resultados.
+    // 2. Query base (comum a todas as zonas) — o locationId é definido por zona.
+    const baseParams = new URLSearchParams();
+    baseParams.append("country", "pt");
+    baseParams.append("locale", "pt");
+    if (params.operation) baseParams.append("operation", params.operation);
+    if (params.propertyType) baseParams.append("propertyType", params.propertyType);
+    if (params.subType === "chalet") baseParams.append("chalet", "true");
+    if (params.minPrice) baseParams.append("minPrice", params.minPrice.toString());
+    if (params.maxPrice) baseParams.append("maxPrice", params.maxPrice.toString());
+    if (params.minSize) baseParams.append("minSize", params.minSize.toString());
+    if (params.maxSize) baseParams.append("maxSize", params.maxSize.toString());
+
     const acceptedBedrooms = typologyBedroomsList(params.typology);
     const openEndedTypology = isOpenEndedTypology(params.typology);
     const filterRoomsLocally = acceptedBedrooms.length > 1 || openEndedTypology;
-
     if (!filterRoomsLocally && params.bedrooms && params.bedrooms !== "any") {
-      queryParams.append("bedrooms", params.bedrooms.toString());
-    }
-    
-    // Paginação e Pesquisa Profunda
-    const targetCount = params.maxItems || 20;
-    
-    // Se tiver filtro de agência, injeta as palavras-chave
-    const hasAgencyFilter = params.agencyName && params.agencyName.trim() !== "";
-    if (hasAgencyFilter) {
-      const agencyKw = params.agencyName!.trim();
-      queryParams.append("keyword", agencyKw);
+      baseParams.append("bedrooms", params.bedrooms.toString());
     }
 
-    let allResults: IdealistaProperty[] = [];
-    
-    // Pesquisa em Lotes (Batches) para evitar Rate Limits da API e Timeouts do servidor
-    const maxPagesToFetch = hasAgencyFilter ? 6 : filterRoomsLocally ? 3 : 1; 
+    const hasAgencyFilter = params.agencyName && params.agencyName.trim() !== "";
+    if (hasAgencyFilter) baseParams.append("keyword", params.agencyName!.trim());
+
+    const targetCount = params.maxItems || 20;
     const startPage = params.numPage || 1;
     const batchSize = 2;
-    
-    for (let batchStart = 0; batchStart < maxPagesToFetch; batchStart += batchSize) {
-      const fetchPromises = [];
-      const currentBatchSize = Math.min(batchSize, maxPagesToFetch - batchStart);
 
-      for (let i = 0; i < currentBatchSize; i++) {
-        const pageNum = startPage + batchStart + i;
-        const pageQueryParams = new URLSearchParams(queryParams.toString());
-        
-        pageQueryParams.set("numPage", pageNum.toString());
-        pageQueryParams.append("maxItems", "50");
+    // Páginas por zona: menos quando há várias zonas, para não disparar
+    // centenas de chamadas — cada zona contribui na mesma com os seus imóveis.
+    const multiZone = resolvedLocations.length > 1;
+    const pagesPerLocation = hasAgencyFilter
+      ? (multiZone ? 3 : 6)
+      : filterRoomsLocally
+        ? (multiZone ? 2 : 3)
+        : 1;
 
-        // Função que tenta vários endpoints diferentes para os imóveis
-        const fetchPropertiesResilient = async () => {
-          const targetEndpoint = listEndpoint;
-          
-          const response = await fetch(
-            `https://${rapidApiHost}${targetEndpoint}?${pageQueryParams.toString()}`,
-            {
-              method: "GET",
-              headers: {
-                "X-RapidAPI-Key": rapidApiKey,
-                "X-RapidAPI-Host": rapidApiHost,
-              },
-            }
-          );
+    // Faz o fetch de uma página (com os endpoints alternativos resilientes).
+    const fetchPageData = async (
+      pageQueryParams: URLSearchParams,
+      throwOnError: boolean,
+      pageNum: number,
+    ): Promise<any> => {
+      const fetchPropertiesResilient = async () => {
+        const response = await fetch(`https://${rapidApiHost}${listEndpoint}?${pageQueryParams.toString()}`, {
+          method: "GET",
+          headers: { "X-RapidAPI-Key": rapidApiKey, "X-RapidAPI-Host": rapidApiHost },
+        });
+        if (response.status === 404) {
+          let altResponse = await fetch(`https://${rapidApiHost}/properties?${pageQueryParams.toString()}`, {
+            method: "GET",
+            headers: { "X-RapidAPI-Key": rapidApiKey, "X-RapidAPI-Host": rapidApiHost },
+          });
+          if (altResponse.status !== 404) return altResponse;
+          altResponse = await fetch(`https://${rapidApiHost}/properties/search?${pageQueryParams.toString()}`, {
+            method: "GET",
+            headers: { "X-RapidAPI-Key": rapidApiKey, "X-RapidAPI-Host": rapidApiHost },
+          });
+          if (altResponse.status !== 404) return altResponse;
+        }
+        return response;
+      };
 
-          // Se a API for tão diferente que nem sequer usa o endpoint configurado (Erro 404)
-          // Vamos tentar os caminhos alternativos que os outros criadores de API usam
-          if (response.status === 404) {
-            console.log(`Endpoint ${listEndpoint} não existe em ${rapidApiHost}, a tentar alternativas...`);
-            
-            // Alternativa 1: apenas /properties
-            let altResponse = await fetch(
-              `https://${rapidApiHost}/properties?${pageQueryParams.toString()}`,
-              {
-                method: "GET",
-                headers: {
-                  "X-RapidAPI-Key": rapidApiKey,
-                  "X-RapidAPI-Host": rapidApiHost,
-                },
-              }
-            );
-
-            if (altResponse.status !== 404) {
-              return altResponse;
-            }
-
-            // Alternativa 2: /properties/search
-            altResponse = await fetch(
-              `https://${rapidApiHost}/properties/search?${pageQueryParams.toString()}`,
-              {
-                method: "GET",
-                headers: {
-                  "X-RapidAPI-Key": rapidApiKey,
-                  "X-RapidAPI-Host": rapidApiHost,
-                },
-              }
-            );
-
-            if (altResponse.status !== 404) {
-              return altResponse;
-            }
-          }
-
-          return response;
-        };
-
-        const fetchPromise = fetchPropertiesResilient().then(async (res) => {
+      return fetchPropertiesResilient()
+        .then(async (res) => {
           if (!res.ok) {
             const errText = await res.text();
             throw new Error(`Status ${res.status}: ${errText.substring(0, 150)}`);
           }
           const text = await res.text();
           return text ? JSON.parse(text) : null;
-        }).catch(err => {
+        })
+        .catch((err) => {
           console.error("Erro na página", pageNum, err);
-          // Em vez de retornar null e calar o erro, vamos atirá-lo se for o primeiro lote
-          // para forçar a UI a mostrar-lhe o que a API exigiu!
-          if (batchStart === 0 && i === 0) {
-            throw err;
-          }
+          if (throwOnError) throw err;
           return null;
         });
-        
-        fetchPromises.push(fetchPromise);
-      }
+    };
 
-      // Esperar pelo lote atual
-      const pagesData = await Promise.all(fetchPromises);
+    // Resultados por zona (não uma lista única) para depois os distribuir de
+    // forma equilibrada — senão uma zona com muitos anúncios enchia o total e
+    // escondia as outras, que era exatamente o sintoma reportado.
+    const perZoneResults: IdealistaProperty[][] = [];
+    let isFirstRequest = true;
 
-      for (const data of pagesData) {
-        if (!data) continue;
-        
-        // Algumas APIs chamam-lhe elementList, outras properties, results, data, items...
-        let pageResults = Array.isArray(data) ? data : (
-          data.elementList || 
-          data.properties || 
-          data.results || 
-          data.data || 
-          data.items || 
-          (data.data && data.data.results) ||
-          []
-        );
+    // 3. Pesquisa em CADA zona, juntando os resultados.
+    for (const loc of resolvedLocations) {
+      let zoneResults: IdealistaProperty[] = [];
+      for (let batchStart = 0; batchStart < pagesPerLocation; batchStart += batchSize) {
+        const fetchPromises: Array<Promise<any>> = [];
+        const currentBatchSize = Math.min(batchSize, pagesPerLocation - batchStart);
 
-        // REMOVIDO: O erro de diagnóstico foi removido. Se a API responder com sucesso
-        // mas a lista estiver vazia (porque o orçamento/filtros são restritivos),
-        // deixamos prosseguir normalmente com uma lista de 0 elementos.
-        
-        // Aplicar filtro de agência localmente
-        if (hasAgencyFilter && pageResults.length > 0) {
-          const normalizeString = (str: string) => str.toLowerCase().replace(/[\/\-\.\s]/g, '');
-          const agencyLower = normalizeString(params.agencyName as string);
-          
-          pageResults = pageResults.filter((p: any) => {
-            const searchSpace = [
-              p.description || '',
-              p.suggestedTexts?.title || '',
-              p.suggestedTexts?.subtitle || '',
-              p.clientName || '',
-              p.logoUrl || '',
-              p.externalReference || '',
-              p.clientAlias || '',
-              p.professionalName || ''
-            ].map(normalizeString).join(" | ");
-            
-            return searchSpace.includes(agencyLower);
-          });
+        for (let i = 0; i < currentBatchSize; i++) {
+          const pageNum = startPage + batchStart + i;
+          const pageQueryParams = new URLSearchParams(baseParams.toString());
+          pageQueryParams.set("locationId", loc.locationId);
+          pageQueryParams.set("numPage", pageNum.toString());
+          pageQueryParams.append("maxItems", "50");
+
+          // Só a PRIMEIRA página da PRIMEIRA zona rebenta o erro para a UI —
+          // uma zona sem resultados não pode fazer falhar a pesquisa toda.
+          const throwOnError = isFirstRequest;
+          isFirstRequest = false;
+          fetchPromises.push(fetchPageData(pageQueryParams, throwOnError, pageNum));
         }
 
-        // Filtro de tipologia sobre os resultados (ver filterRoomsLocally).
-        // Um imóvel sem nº de quartos declarado passa: excluí-lo esconderia
-        // resultados válidos por falta de dados do anúncio.
-        if (filterRoomsLocally && pageResults.length > 0) {
-          pageResults = pageResults.filter((p: any) => {
-            const rooms = typeof p.rooms === "number" ? p.rooms : Number(p.rooms);
-            if (!Number.isFinite(rooms)) return true;
-            return typologyAcceptsBedrooms(params.typology, rooms);
-          });
+        const pagesData = await Promise.all(fetchPromises);
+
+        for (const data of pagesData) {
+          if (!data) continue;
+
+          let pageResults = Array.isArray(data)
+            ? data
+            : data.elementList ||
+              data.properties ||
+              data.results ||
+              data.data ||
+              data.items ||
+              (data.data && data.data.results) ||
+              [];
+
+          if (hasAgencyFilter && pageResults.length > 0) {
+            const normalizeString = (str: string) => str.toLowerCase().replace(/[\/\-\.\s]/g, "");
+            const agencyLower = normalizeString(params.agencyName as string);
+            pageResults = pageResults.filter((p: any) => {
+              const searchSpace = [
+                p.description || "",
+                p.suggestedTexts?.title || "",
+                p.suggestedTexts?.subtitle || "",
+                p.clientName || "",
+                p.logoUrl || "",
+                p.externalReference || "",
+                p.clientAlias || "",
+                p.professionalName || "",
+              ]
+                .map(normalizeString)
+                .join(" | ");
+              return searchSpace.includes(agencyLower);
+            });
+          }
+
+          if (filterRoomsLocally && pageResults.length > 0) {
+            pageResults = pageResults.filter((p: any) => {
+              const rooms = typeof p.rooms === "number" ? p.rooms : Number(p.rooms);
+              if (!Number.isFinite(rooms)) return true;
+              return typologyAcceptsBedrooms(params.typology, rooms);
+            });
+          }
+
+          zoneResults = [...zoneResults, ...pageResults];
         }
 
-        allResults = [...allResults, ...pageResults];
+        if (batchStart + batchSize < pagesPerLocation) {
+          await new Promise((resolve) => setTimeout(resolve, 300));
+        }
       }
-      
-      // Se já tivermos encontrado resultados suficientes ou se ainda houver mais lotes
-      // adicionamos um pequeno atraso de segurança para não ser bloqueado pela API (300ms)
-      if (batchStart + batchSize < maxPagesToFetch) {
-        await new Promise(resolve => setTimeout(resolve, 300));
-      }
+
+      perZoneResults.push(zoneResults);
+
+      // Pequeno intervalo entre zonas para não ser bloqueado pela API.
+      if (multiZone) await new Promise((resolve) => setTimeout(resolve, 250));
     }
-    
-    // Remover duplicados potenciais e retornar a quantidade pedida
-    const uniqueResults = Array.from(new Map(allResults.map(item => [item.propertyCode, item])).values());
-    return uniqueResults.slice(0, targetCount);
+
+    // Distribuição round-robin: um imóvel de cada zona à vez, até ao limite —
+    // todas as zonas ficam representadas nos resultados. Remove duplicados (o
+    // mesmo anúncio pode aparecer em zonas vizinhas).
+    const seenCodes = new Set<string>();
+    const merged: IdealistaProperty[] = [];
+    let idx = 0;
+    let addedThisRound = true;
+    while (merged.length < targetCount && addedThisRound) {
+      addedThisRound = false;
+      for (const zoneList of perZoneResults) {
+        if (idx >= zoneList.length) continue;
+        addedThisRound = true;
+        const item = zoneList[idx];
+        if (item && !seenCodes.has(item.propertyCode)) {
+          seenCodes.add(item.propertyCode);
+          merged.push(item);
+          if (merged.length >= targetCount) break;
+        }
+      }
+      idx++;
+    }
+    return merged;
   } catch (error) {
     console.error("Erro ao pesquisar no Idealista:", error);
     throw error;

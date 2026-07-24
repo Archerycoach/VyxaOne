@@ -41,6 +41,9 @@ create table if not exists public.bulk_email_queue (
   error text,
 
   created_at timestamptz not null default now(),
+  -- Momento em que o worker reivindicou a linha (status→processing). Usado
+  -- para recuperar linhas presas SEM repor as que estão a ser enviadas agora.
+  claimed_at timestamptz,
   sent_at timestamptz
 );
 

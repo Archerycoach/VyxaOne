@@ -33,16 +33,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const deadline = Date.now() + 45_000;
     let totalProcessed = 0;
     let remaining = 0;
+    let lastProcessed = 0;
 
     do {
       const result = await processBulkEmailBatch(admin, { campaignId });
       totalProcessed += result.processed;
       remaining = result.remaining;
-      if (result.processed === 0) break; // fila vazia ou nada reivindicável
+      lastProcessed = result.processed;
+      if (result.processed === 0) break; // fila vazia ou já reivindicada por outro worker
     } while (remaining > 0 && Date.now() < deadline);
 
-    // Sobrou trabalho: continua noutra invocação (auto-encadeamento).
-    if (remaining > 0) {
+    // Sobrou trabalho E ainda estávamos a conseguir enviar (paragem por tempo,
+    // não por falta de linhas): continua noutra invocação. Se parámos porque
+    // não havia nada reivindicável (outro worker ativo), deixa o cron tratar —
+    // evita duas invocações a chamarem-se uma à outra sem fim.
+    if (remaining > 0 && lastProcessed > 0) {
       const appUrl = deriveAppUrl(req);
       void fetch(`${appUrl}/api/bulk-email/process`, {
         method: "POST",

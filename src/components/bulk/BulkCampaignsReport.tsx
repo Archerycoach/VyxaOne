@@ -57,6 +57,18 @@ export function BulkCampaignsReport({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, sourceFilter]);
 
+  // Enquanto houver uma campanha a enviar em segundo plano, refresca sozinho
+  // para o progresso subir à vista, sem o utilizador ter de carregar em Atualizar.
+  const hasInProgress = campaigns.some(
+    (c) => !c.finished_at && (c.status === "queued" || c.status === "processing"),
+  );
+  useEffect(() => {
+    if (!open || !hasInProgress) return;
+    const timer = setInterval(load, 5000);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, hasInProgress, sourceFilter]);
+
   return (
     <Card className="p-4">
       <button
@@ -83,7 +95,10 @@ export function BulkCampaignsReport({
 
           {campaigns.map((campaign) => {
             const criteria = describeCriteria(campaign.criteria || {});
-            const interrupted = !campaign.finished_at;
+            const inProgress = !campaign.finished_at && (campaign.status === "queued" || campaign.status === "processing");
+            // "Interrompido" só se ETIQUETA de conclusão em falta E não está em
+            // curso (campanhas antigas enviadas no browser que pararam a meio).
+            const interrupted = !campaign.finished_at && !inProgress;
             const missing = campaign.recipients_total - campaign.sent_count - campaign.failed_count;
 
             return (
@@ -106,6 +121,9 @@ export function BulkCampaignsReport({
                     {campaign.audience_source === "sheet_merge" && (
                       <Badge variant="secondary">Mala-direta</Badge>
                     )}
+                    {inProgress && (
+                      <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">A enviar…</Badge>
+                    )}
                     <Badge className="bg-green-100 text-green-800 hover:bg-green-100">
                       <Mail className="mr-1 h-3 w-3" />
                       {campaign.sent_count} enviados
@@ -119,6 +137,13 @@ export function BulkCampaignsReport({
                 <p className="mt-2 text-xs text-muted-foreground">
                   {campaign.recipients_total} destinatários selecionados
                 </p>
+
+                {inProgress && (
+                  <p className="mt-2 text-xs text-blue-700">
+                    A enviar em segundo plano — {campaign.sent_count + campaign.failed_count} de{" "}
+                    {campaign.recipients_total} processados.
+                  </p>
+                )}
 
                 {/* Uma campanha interrompida deixa destinatários por contactar
                     sem qualquer erro associado — vale a pena dizê-lo. */}
