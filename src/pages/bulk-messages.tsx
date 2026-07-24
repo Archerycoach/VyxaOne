@@ -983,6 +983,26 @@ export default function BulkMessages() {
     return sigHtml;
   };
 
+  // Reutilizar o email de uma campanha anterior para um novo envio.
+  const handleReuseCampaign = (campaign: import("@/services/bulkCampaignsService").BulkEmailCampaign) => {
+    setMessageType("email");
+    setSubject(campaign.subject || "");
+    if (campaign.body_html) setMessage(campaign.body_html);
+    const atts = Array.isArray(campaign.attachments) ? campaign.attachments : [];
+    setAttachments(
+      atts
+        .map((a) => ({ name: a.filename || a.name || "Anexo", size: 0, base64: a.content || a.base64 || "" }))
+        .filter((a) => a.base64),
+    );
+    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
+    toast({
+      title: "Email reutilizado",
+      description: campaign.body_html
+        ? "Assunto e texto carregados. Escolha os destinatários e envie."
+        : "Assunto carregado. O texto deste envio antigo não ficou guardado — escreva-o ou peça à IA.",
+    });
+  };
+
   const handleSend = async () => {
     if (selectedRecipients.size === 0) {
       toast({
@@ -1207,7 +1227,7 @@ export default function BulkMessages() {
           )}
 
           <div className="mb-6">
-            <BulkCampaignsReport />
+            <BulkCampaignsReport onReuse={handleReuseCampaign} />
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

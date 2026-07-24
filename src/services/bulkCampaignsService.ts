@@ -16,6 +16,9 @@ export interface BulkEmailCampaign {
   created_at: string;
   /** queued | processing | completed — estado do envio em segundo plano. */
   status?: string | null;
+  /** Modelo do email guardado (envios pela fila) — para reutilizar a campanha. */
+  body_html?: string | null;
+  attachments?: Array<{ filename?: string; name?: string; content?: string; base64?: string; encoding?: string }> | null;
 }
 
 type UntypedClient = { from: (relation: string) => any };

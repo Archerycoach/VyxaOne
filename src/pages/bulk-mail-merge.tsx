@@ -336,6 +336,26 @@ export default function BulkMailMerge() {
     }
   };
 
+  // Reutilizar o email de uma campanha anterior (assunto/corpo/anexos) para
+  // enviar a uma nova lista — o consultor só tem de carregar o novo Excel.
+  const handleReuseCampaign = (campaign: import("@/services/bulkCampaignsService").BulkEmailCampaign) => {
+    setSubject(campaign.subject || "");
+    if (campaign.body_html) setMessage(campaign.body_html);
+    const atts = Array.isArray(campaign.attachments) ? campaign.attachments : [];
+    setAttachments(
+      atts
+        .map((a) => ({ name: a.filename || a.name || "Anexo", size: 0, base64: a.content || a.base64 || "" }))
+        .filter((a) => a.base64),
+    );
+    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
+    toast({
+      title: "Email reutilizado",
+      description: campaign.body_html
+        ? "Assunto e texto carregados. Carregue a nova lista à esquerda e envie."
+        : "Assunto carregado. O texto deste envio antigo não ficou guardado — escreva-o ou peça à IA.",
+    });
+  };
+
   // ── Envio ───────────────────────────────────────────────────────────────────
   const handleSend = async () => {
     // Envia a TODOS os selecionados, mesmo os que a pesquisa esteja a esconder.
@@ -418,7 +438,7 @@ export default function BulkMailMerge() {
           </div>
 
           <div className="mb-6">
-            <BulkCampaignsReport title="Histórico de envios" defaultOpen sourceFilter="sheet_merge" />
+            <BulkCampaignsReport title="Histórico de envios" defaultOpen sourceFilter="sheet_merge" onReuse={handleReuseCampaign} />
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

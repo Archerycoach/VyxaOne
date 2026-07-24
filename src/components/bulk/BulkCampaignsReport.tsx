@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { BarChart3, ChevronDown, ChevronUp, Mail, AlertTriangle } from "lucide-react";
+import { BarChart3, ChevronDown, ChevronUp, Mail, AlertTriangle, Copy } from "lucide-react";
 import { getCampaigns, type BulkEmailCampaign } from "@/services/bulkCampaignsService";
 
 /** Descreve os critérios de procura numa frase curta ("Lisboa • T2"). */
@@ -33,12 +33,15 @@ export function BulkCampaignsReport({
   title = "Histórico de envios",
   defaultOpen = false,
   sourceFilter,
+  onReuse,
 }: {
   title?: string;
   /** Abre o histórico logo ao carregar a página (em vez de ficar recolhido). */
   defaultOpen?: boolean;
   /** Mostra só as campanhas desta origem (ex.: "sheet_merge" na mala-direta). */
   sourceFilter?: string;
+  /** Reutilizar o email desta campanha (assunto/corpo/anexos) num novo envio. */
+  onReuse?: (campaign: BulkEmailCampaign) => void;
 } = {}) {
   const [campaigns, setCampaigns] = useState<BulkEmailCampaign[]>([]);
   const [open, setOpen] = useState(defaultOpen);
@@ -165,6 +168,15 @@ export function BulkCampaignsReport({
                       ))}
                     </ul>
                   </details>
+                )}
+
+                {onReuse && (
+                  <div className="mt-3">
+                    <Button variant="outline" size="sm" onClick={() => onReuse(campaign)}>
+                      <Copy className="mr-1.5 h-3.5 w-3.5" />
+                      Reutilizar este email
+                    </Button>
+                  </div>
                 )}
               </div>
             );
