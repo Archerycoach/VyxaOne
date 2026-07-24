@@ -90,7 +90,11 @@ async function reconcileCampaign(admin: any, campaignId: string): Promise<number
     update.status = "completed";
     update.finished_at = new Date().toISOString();
   } else {
+    // Ainda há emails por enviar (inclui os recuperados por rate-limit): volta
+    // a "em curso" E limpa a marca de concluída — senão o relatório não a
+    // reconhecia como ativa e o refresh automático não ligava.
     update.status = "processing";
+    update.finished_at = null;
   }
 
   await admin.from("bulk_email_campaigns").update(update).eq("id", campaignId);
