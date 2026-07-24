@@ -21,7 +21,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Send, Mail, MessageSquare, Loader2, Users, Filter, Paperclip, X, Trash2 } from "lucide-react";
+import { Send, Mail, MessageSquare, Loader2, Users, Filter, Paperclip, X, Trash2, Sparkles } from "lucide-react";
 import { getAllLeads, type LeadWithContacts } from "@/services/leadsService";
 import { getAllContacts, type Contact } from "@/services/contactsService";
 import { getCurrentUser } from "@/services/authService";
@@ -291,6 +291,17 @@ export default function BulkMessages() {
   const [message, setMessage] = useState("");
   const [attachments, setAttachments] = useState<{name: string, size: number, base64: string}[]>([]);
   const [sendCopyToSelf, setSendCopyToSelf] = useState(false);
+
+  // Escrever o email por IA (com público-alvo/idioma e um link/brochura como base).
+  const [aiComposeOpen, setAiComposeOpen] = useState(false);
+  const [aiBrief, setAiBrief] = useState("");
+  const [aiAudience, setAiAudience] = useState("");
+  const [aiComposing, setAiComposing] = useState(false);
+  const [aiSourceUrl, setAiSourceUrl] = useState("");
+  const [aiSourceFile, setAiSourceFile] = useState<{ name: string; base64: string; size: number } | null>(null);
+  // Escolher incluir no email: o link de reserva de conversa e/ou o link/brochura.
+  const [aiIncludeBooking, setAiIncludeBooking] = useState(false);
+  const [aiIncludeSource, setAiIncludeSource] = useState(false);
   
   // UI State
   const [loading, setLoading] = useState(true);
@@ -862,7 +873,99 @@ export default function BulkMessages() {
   const removeAttachment = (index: number) => {
     setAttachments((prev) => prev.filter((_, i) => i !== index));
   };
-  
+
+  // ── Escrever o email por IA ────────────────────────────────────────────────
+  // Aqui os destinatários são leads/contactos, por isso as variáveis são as
+  // fixas do CRM (as mesmas que o envio substitui). A IA escreve com base num
+  // briefing, no público-alvo/idioma e, opcionalmente, num link ou brochura.
+  const CRM_EMAIL_VARS = ["nome", "email", "telefone", "empreendimento"];
+
+  const handleAiSourceFile = (file: File) => {
+    if (file.size > 20 * 1024 * 1024) {
+      toast({ title: "Ficheiro demasiado grande", description: "A brochura deve ter até 20 MB.", variant: "destructive" });
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = (reader.result as string).split(",")[1];
+      setAiSourceFile({ name: file.name, base64, size: file.size });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleAiCompose = async () => {
+    if (!aiBrief.trim() && !aiSourceFile && !aiSourceUrl.trim()) {
+      toast({ title: "Falta o conteúdo", description: "Descreva o email ou forneça um link/brochura.", variant: "destructive" });
+      return;
+    }
+    setAiComposing(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("Sessão expirada. Faça login novamente.");
+
+      let sourceContent: string | null = null;
+      if (aiSourceFile || aiSourceUrl.trim()) {
+        const extractRes = await fetch("/api/gpt/properties/extract-listing-content", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+          body: JSON.stringify(
+            aiSourceFile
+              ? { documentBase64: aiSourceFile.base64, documentName: aiSourceFile.name }
+              : { sourceUrl: aiSourceUrl.trim() },
+          ),
+        });
+        const extractData = await extractRes.json();
+        if (!extractRes.ok || !extractData.text) {
+          throw new Error(extractData.error || "Não consegui ler o link/brochura. Verifique e tente de novo.");
+        }
+        sourceContent = extractData.text;
+      }
+
+      // Link de reserva de conversa a incluir como CTA (se pedido).
+      let bookingUrl: string | null = null;
+      if (aiIncludeBooking) {
+        const { getOrCreateBookingLink } = await import("@/services/bookingService");
+        bookingUrl = await getOrCreateBookingLink();
+      }
+
+      // Link do imóvel a incluir no email (só quando a base é um link e o
+      // consultor escolheu incluí-lo). A brochura, sendo ficheiro, vai como anexo.
+      const propertyUrl = aiIncludeSource && aiSourceUrl.trim() ? aiSourceUrl.trim() : null;
+
+      const res = await fetch("/api/gpt/emails/compose-merge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ brief: aiBrief, audience: aiAudience, variables: CRM_EMAIL_VARS, sourceContent, bookingUrl, propertyUrl }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.subject) throw new Error(data.error || "Falha ao escrever o email.");
+      setSubject(data.subject);
+      setMessage(data.html || "");
+
+      // Brochura escolhida para incluir no email → segue como anexo.
+      if (aiIncludeSource && aiSourceFile) {
+        setAttachments((prev) =>
+          prev.some((a) => a.name === aiSourceFile.name)
+            ? prev
+            : [...prev, { name: aiSourceFile.name, size: aiSourceFile.size, base64: aiSourceFile.base64 }],
+        );
+      }
+
+      setAiComposeOpen(false);
+      setAiBrief("");
+      setAiAudience("");
+      setAiSourceUrl("");
+      setAiSourceFile(null);
+      setAiIncludeBooking(false);
+      setAiIncludeSource(false);
+      toast({ title: "Email escrito pela IA", description: "Revê e ajusta antes de enviar." });
+    } catch (error: any) {
+      toast({ title: "Erro", description: error?.message || "Não foi possível escrever o email.", variant: "destructive" });
+    } finally {
+      setAiComposing(false);
+    }
+  };
+
   // Constrói o HTML da assinatura para pré-visualização (a assinatura real é
   // sempre acrescentada pelo servidor no momento do envio — fonte única, sem
   // duplicação). A assinatura já é HTML feito no editor de assinatura, por
@@ -1516,6 +1619,12 @@ export default function BulkMessages() {
                         </div>
                       )}
 
+                      <div className="flex justify-end">
+                        <Button type="button" variant="outline" size="sm" onClick={() => setAiComposeOpen(true)}>
+                          <Sparkles className="h-4 w-4 mr-2 text-amber-500" /> Escrever com IA
+                        </Button>
+                      </div>
+
                       <div className="space-y-2">
                         <Label htmlFor="subject">Assunto *</Label>
                         <Input
@@ -1789,6 +1898,120 @@ export default function BulkMessages() {
           </div>
         </div>
       </div>
+
+      {/* Escrever email com IA */}
+      <Dialog open={aiComposeOpen} onOpenChange={setAiComposeOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Escrever email com IA</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="ai-brief">O que quer comunicar?</Label>
+              <Textarea
+                id="ai-brief"
+                value={aiBrief}
+                onChange={(e) => setAiBrief(e.target.value)}
+                placeholder="Ex.: Convidar para a angariação de um T3 em Alvalade, com visita no próximo sábado."
+                rows={4}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="ai-audience">Público-alvo, tom e idioma (opcional)</Label>
+              <Input
+                id="ai-audience"
+                value={aiAudience}
+                onChange={(e) => setAiAudience(e.target.value)}
+                placeholder="Ex.: investidores estrangeiros, em inglês, tom formal"
+              />
+              <p className="text-xs text-muted-foreground">A IA adapta o texto e escreve no idioma que indicar aqui.</p>
+            </div>
+
+            <label className="flex items-start gap-2 cursor-pointer">
+              <Checkbox
+                checked={aiIncludeBooking}
+                onCheckedChange={(c) => setAiIncludeBooking(c === true)}
+                className="mt-0.5"
+              />
+              <span className="text-sm">
+                Incluir link de reserva de conversa
+                <span className="block text-xs text-muted-foreground">
+                  A IA acrescenta um convite para o destinatário marcar uma conversa consigo.
+                </span>
+              </span>
+            </label>
+
+            <div className="space-y-2 rounded-lg border border-dashed border-slate-300 p-3">
+              <Label className="text-sm">Link do imóvel ou brochura (opcional)</Label>
+              <Input
+                type="url"
+                value={aiSourceUrl}
+                onChange={(e) => setAiSourceUrl(e.target.value)}
+                placeholder="Colar um link (ex.: anúncio do imóvel)"
+                disabled={!!aiSourceFile}
+              />
+              <div className="text-xs text-muted-foreground text-center">ou</div>
+              {aiSourceFile ? (
+                <div className="flex items-center justify-between gap-2 rounded border bg-white px-2 py-1">
+                  <span className="text-sm truncate flex items-center gap-2">
+                    <Paperclip className="h-4 w-4 shrink-0" /> {aiSourceFile.name}
+                  </span>
+                  <Button variant="ghost" size="icon" onClick={() => setAiSourceFile(null)}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              ) : (
+                <Input
+                  type="file"
+                  accept=".pdf,.docx"
+                  disabled={!!aiSourceUrl.trim()}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handleAiSourceFile(f);
+                    e.target.value = "";
+                  }}
+                />
+              )}
+              <p className="text-xs text-muted-foreground">
+                A IA lê o link ou a brochura (PDF/Word) e escreve com base nesses factos.
+              </p>
+              {(aiSourceUrl.trim() || aiSourceFile) && (
+                <label className="flex items-start gap-2 cursor-pointer pt-1">
+                  <Checkbox
+                    checked={aiIncludeSource}
+                    onCheckedChange={(c) => setAiIncludeSource(c === true)}
+                    className="mt-0.5"
+                  />
+                  <span className="text-sm">
+                    Incluir também no email
+                    <span className="block text-xs text-muted-foreground">
+                      {aiSourceFile ? "A brochura vai como anexo do email." : "O link do imóvel é incluído no texto."}
+                    </span>
+                  </span>
+                </label>
+              )}
+            </div>
+
+            <p className="text-xs text-muted-foreground">
+              Pode usar variáveis: {"{nome}"}, {"{email}"}, {"{telefone}"}, {"{empreendimento}"} — substituídas por
+              destinatário no envio.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAiComposeOpen(false)} disabled={aiComposing}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleAiCompose}
+              disabled={aiComposing || (!aiBrief.trim() && !aiSourceFile && !aiSourceUrl.trim())}
+            >
+              {aiComposing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
+              Escrever
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Save Template Dialog */}
       <Dialog open={isSaveTemplateOpen} onOpenChange={setIsSaveTemplateOpen}>

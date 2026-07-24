@@ -88,7 +88,10 @@ export default function BulkMailMerge() {
   const [aiAudience, setAiAudience] = useState("");
   const [aiComposing, setAiComposing] = useState(false);
   const [aiSourceUrl, setAiSourceUrl] = useState("");
-  const [aiSourceFile, setAiSourceFile] = useState<{ name: string; base64: string } | null>(null);
+  const [aiSourceFile, setAiSourceFile] = useState<{ name: string; base64: string; size: number } | null>(null);
+  // Escolher incluir no email: o link de reserva de conversa e/ou o link/brochura.
+  const [aiIncludeBooking, setAiIncludeBooking] = useState(false);
+  const [aiIncludeSource, setAiIncludeSource] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -245,7 +248,7 @@ export default function BulkMailMerge() {
     const reader = new FileReader();
     reader.onload = () => {
       const base64 = (reader.result as string).split(",")[1];
-      setAiSourceFile({ name: file.name, base64 });
+      setAiSourceFile({ name: file.name, base64, size: file.size });
     };
     reader.readAsDataURL(file);
   };
@@ -278,6 +281,18 @@ export default function BulkMailMerge() {
         sourceContent = extractData.text;
       }
 
+      // Link de reserva de conversa a incluir como CTA (se pedido).
+      let bookingUrl: string | null = null;
+      if (aiIncludeBooking) {
+        const { getOrCreateBookingLink } = await import("@/services/bookingService");
+        bookingUrl = await getOrCreateBookingLink();
+      }
+
+      // Link do imóvel a incluir no email (só quando a base é um link e o
+      // consultor escolheu incluí-lo). A brochura, sendo ficheiro, vai como
+      // anexo (ver abaixo) em vez de link.
+      const propertyUrl = aiIncludeSource && aiSourceUrl.trim() ? aiSourceUrl.trim() : null;
+
       const variables = Array.from(new Set([...sheetVarTokens, "nome", "email"]));
       const sample: Record<string, string> = {};
       if (sheetRows[0]) {
@@ -286,17 +301,29 @@ export default function BulkMailMerge() {
       const res = await fetch("/api/gpt/emails/compose-merge", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
-        body: JSON.stringify({ brief: aiBrief, audience: aiAudience, variables, sample, sourceContent }),
+        body: JSON.stringify({ brief: aiBrief, audience: aiAudience, variables, sample, sourceContent, bookingUrl, propertyUrl }),
       });
       const data = await res.json();
       if (!res.ok || !data.subject) throw new Error(data.error || "Falha ao escrever o email.");
       setSubject(data.subject);
       setMessage(data.html || "");
+
+      // Brochura escolhida para incluir no email → segue como anexo.
+      if (aiIncludeSource && aiSourceFile) {
+        setAttachments((prev) =>
+          prev.some((a) => a.name === aiSourceFile.name)
+            ? prev
+            : [...prev, { name: aiSourceFile.name, size: aiSourceFile.size, base64: aiSourceFile.base64 }],
+        );
+      }
+
       setAiComposeOpen(false);
       setAiBrief("");
       setAiAudience("");
       setAiSourceUrl("");
       setAiSourceFile(null);
+      setAiIncludeBooking(false);
+      setAiIncludeSource(false);
       toast({ title: "Email escrito pela IA", description: "Revê e ajusta antes de enviar." });
     } catch (error: any) {
       toast({ title: "Erro", description: error?.message || "Não foi possível escrever o email.", variant: "destructive" });
@@ -734,8 +761,22 @@ export default function BulkMailMerge() {
               <p className="text-xs text-muted-foreground">A IA adapta o texto e escreve no idioma que indicar aqui.</p>
             </div>
 
+            <label className="flex items-start gap-2 cursor-pointer">
+              <Checkbox
+                checked={aiIncludeBooking}
+                onCheckedChange={(c) => setAiIncludeBooking(c === true)}
+                className="mt-0.5"
+              />
+              <span className="text-sm">
+                Incluir link de reserva de conversa
+                <span className="block text-xs text-muted-foreground">
+                  A IA acrescenta um convite para o destinatário marcar uma conversa consigo.
+                </span>
+              </span>
+            </label>
+
             <div className="space-y-2 rounded-lg border border-dashed border-slate-300 p-3">
-              <Label className="text-sm">Base para a IA (opcional)</Label>
+              <Label className="text-sm">Link do imóvel ou brochura (opcional)</Label>
               <Input
                 type="url"
                 value={aiSourceUrl}
@@ -768,6 +809,21 @@ export default function BulkMailMerge() {
               <p className="text-xs text-muted-foreground">
                 A IA lê o link ou a brochura (PDF/Word) e escreve com base nesses factos.
               </p>
+              {(aiSourceUrl.trim() || aiSourceFile) && (
+                <label className="flex items-start gap-2 cursor-pointer pt-1">
+                  <Checkbox
+                    checked={aiIncludeSource}
+                    onCheckedChange={(c) => setAiIncludeSource(c === true)}
+                    className="mt-0.5"
+                  />
+                  <span className="text-sm">
+                    Incluir também no email
+                    <span className="block text-xs text-muted-foreground">
+                      {aiSourceFile ? "A brochura vai como anexo do email." : "O link do imóvel é incluído no texto."}
+                    </span>
+                  </span>
+                </label>
+              )}
             </div>
 
             {sheetVarTokens.length > 0 && (

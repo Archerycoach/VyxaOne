@@ -19,7 +19,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
     if (authError || !user) return res.status(401).json({ error: "Não autorizado" });
 
-    const { brief, variables, sample, sourceContent, audience } = req.body as {
+    const { brief, variables, sample, sourceContent, audience, bookingUrl, propertyUrl } = req.body as {
       brief?: string;
       variables?: string[];
       sample?: Record<string, string> | null;
@@ -27,6 +27,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       sourceContent?: string | null;
       /** Público-alvo, tom e idioma (ex.: "investidores estrangeiros, em inglês"). */
       audience?: string | null;
+      /** Link de reserva de conversa a incluir como CTA. */
+      bookingUrl?: string | null;
+      /** Link do imóvel a incluir no email (ex.: anúncio). */
+      propertyUrl?: string | null;
     };
 
     if ((!brief || !brief.trim()) && (!sourceContent || !sourceContent.trim())) {
@@ -83,8 +87,19 @@ PEDIDO DO CONSULTOR (o que o email deve dizer):
 VARIÁVEIS DISPONÍVEIS (usa-as escrevendo exatamente {assim}, e serão substituídas por destinatário):
 ${variablesBlock}${sampleBlock}
 
+${
+      bookingUrl
+        ? `\nLINK DE RESERVA DE CONVERSA (inclui-o como convite/CTA no fim, com um link HTML usando EXATAMENTE este URL): ${bookingUrl}`
+        : ""
+    }${
+      propertyUrl
+        ? `\nLINK DO IMÓVEL (inclui um link "ver o imóvel"/"ver anúncio" com EXATAMENTE este URL): ${propertyUrl}`
+        : ""
+    }
+
 REGRAS:
 - IDIOMA: se o público-alvo acima pedir outro idioma (ex.: inglês para clientes estrangeiros), escreve TODO o email — assunto e corpo — nesse idioma. Caso contrário, português de Portugal.
+- Se foi dado um link de reserva ou do imóvel acima, inclui-o como <a href="URL">texto</a> com o URL exato — nunca inventes nem alteres URLs.
 - Adapta o tom e os argumentos ao público-alvo indicado (ex.: investidores → rentabilidade, retorno, localização; primeira habitação → conforto, família; estrangeiros → contexto que quem não conhece Portugal precisa). Sem público indicado, tom profissional mas próximo.
 - Usa {nome} logo na saudação se essa variável existir. Encaixa outras variáveis onde fizerem sentido natural — nunca as ponhas todas à força.
 - Usa APENAS variáveis da lista acima. NUNCA inventes variáveis que não estejam listadas nem deixes chavetas por preencher com nomes que não existem.
