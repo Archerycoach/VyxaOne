@@ -439,6 +439,9 @@ async function sendEmailReactivation(
     to: lead.email!,
     subject,
     html,
+    // A assinatura já vem embutida no html (ordem: texto → assinatura →
+    // "deixar de receber"); não a voltar a acrescentar aqui.
+    appendSignatureToHtml: false,
   });
 
   if (!sendResult.success) {

@@ -67,6 +67,7 @@ ABORDAGEM DESTE EMAIL: ${ANGLE_BRIEFS[angle]}
 
 REGRAS:
 - Português de Portugal, tratamento por "você" (nunca "tu" nem "vós").
+- Ao referir a procura, escreve de forma natural e fluida. NÃO uses a fórmula mecânica "a sua procura de <objetivo> em <zona1>, <zona2> e <zona3>" — soa a mala-direta. Se houver várias zonas, prefere uma menção geral ("na zona de Lisboa", "nas zonas que me indicou") a enumerá-las todas numa frase. Podes até referir a procura sem repetir o objetivo e as zonas na mesma frase.
 - Curto: 3 a 5 frases no corpo. Emails longos não são lidos.
 - Tom humano e direto, como um profissional que se lembra da pessoa. Nada de linguagem de marketing ("oportunidade imperdível", "não perca").
 - NUNCA inventes imóveis, preços, nomes de clientes ou factos de mercado. Se não tens dados concretos, fala em termos gerais.

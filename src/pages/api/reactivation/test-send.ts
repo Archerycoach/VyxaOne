@@ -94,6 +94,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       to: lead.email,
       subject: `[TESTE] ${built.subject}`,
       html: built.html,
+      // A assinatura já vem embutida no html (mesma renderização da produção).
+      appendSignatureToHtml: false,
     });
 
     // O envio pode ter sido deliberadamente suprimido (opt-out / do_not_contact).

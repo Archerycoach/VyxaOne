@@ -1,5 +1,6 @@
 import { runAI } from "@/lib/ai/provider";
 import { getReactivationEmailPrompt, pickAngle } from "@/lib/ai/prompts/reactivationEmail";
+import { getSignatureHtml } from "@/lib/server/emailSignature";
 import crypto from "crypto";
 
 /**
@@ -85,10 +86,12 @@ async function buildAiReactivationEmail(params: {
   bookingUrl: string | null;
   anglesUsed: string[];
   isLastEmail: boolean;
+  /** Assinatura do consultor, já embutida aqui (sem régua) — o envio não a volta a acrescentar. */
+  signatureHtml: string;
 }): Promise<{ subject: string; html: string; templateName: string } | null> {
   const {
     lead, attemptNumber, consultor, procuraStr,
-    optOutUrl, bookingUrl, anglesUsed, isLastEmail,
+    optOutUrl, bookingUrl, anglesUsed, isLastEmail, signatureHtml,
   } = params;
 
   const angle = pickAngle(anglesUsed, isLastEmail);
@@ -142,11 +145,11 @@ async function buildAiReactivationEmail(params: {
        </p>`
     : "";
 
-  // Sem fecho nem assinatura aqui: a assinatura configurada do consultor (com
-  // nome, foto e contactos reais) é acrescentada centralmente por
-  // sendClientEmail/appendSignature. Repetir "Com os melhores cumprimentos,
-  // {consultor}" aqui gerava DUAS assinaturas — e ainda com o placeholder
-  // "Consultor Imobiliário" quando o full_name do perfil está vazio.
+  // Ordem final: corpo → CTA → assinatura → "deixar de receber".
+  // A assinatura vem embutida aqui (sem régua a separá-la do texto) e o
+  // "deixar de receber" fica DEPOIS dela, no fim de tudo. Por isso o envio
+  // (sendClientEmail) é chamado com appendSignatureToHtml:false — senão a
+  // assinatura repetia-se e ficava antes do rodapé.
   const html = `<!DOCTYPE html>
 <html lang="pt">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
@@ -155,8 +158,8 @@ async function buildAiReactivationEmail(params: {
   <div style="max-width:560px;margin:0 auto;padding:32px 24px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;color:#1f2937;line-height:1.6;">
     ${bodyHtml}
     ${ctaBlock}
-    <hr style="border:none;border-top:1px solid #e5e7eb;margin:32px 0 16px;">
-    <p style="font-size:12px;color:#6b7280;margin:0;">
+    ${signatureHtml}
+    <p style="font-size:12px;color:#6b7280;margin:32px 0 0;">
       Recebe este email porque manifestou interesse em imóveis.
       <a href="${optOutUrl}" style="color:#6b7280;">Deixar de receber</a>.
     </p>
@@ -222,6 +225,13 @@ export async function buildReactivationEmail(params: {
   const consultor = profile?.full_name || "Consultor Imobiliário";
   const empresa = profile?.company_name || "VYXA";
 
+  // Assinatura configurada do consultor, embutida diretamente no email de
+  // reativação (em vez de acrescentada no envio), para controlar a ordem:
+  // texto → assinatura → "deixar de receber". Removemos a régua superior
+  // (border-top) para o texto fluir para a assinatura sem linha a separar.
+  const rawSignature = await getSignatureHtml(supabaseAdmin, lead.user_id);
+  const signatureHtml = rawSignature.replace("border-top: 1px solid #eaeaea;", "");
+
   // buy_purpose é guardado com valores internos ("housing"/"investment") — sem
   // esta tradução, o email escrevia "a sua procura de housing", uma palavra em
   // inglês no meio do texto português.
@@ -250,6 +260,7 @@ export async function buildReactivationEmail(params: {
         bookingUrl: params.bookingUrl || null,
         anglesUsed: params.anglesUsed || [],
         isLastEmail: Boolean(params.isLastEmail),
+        signatureHtml,
       });
 
       if (aiEmail) {
@@ -306,13 +317,18 @@ export async function buildReactivationEmail(params: {
     .replace(/href\s*=\s*"[^"]*(\{\{\s*link_optin\s*\}\})[^"]*"/gi, 'href="$1"')
     .replace(/href\s*=\s*"[^"]*(\{\{\s*link_unsubscribe\s*\}\})[^"]*"/gi, 'href="$1"');
 
-  const html = styleOptInButton(normalizedBody)
+  const filledBody = styleOptInButton(normalizedBody)
     .replace(/\{\{nome\}\}/g, lead.name || "Cliente")
     .replace(/\{\{procura\}\}/g, procuraStr)
     .replace(/\{\{consultor\}\}/g, consultor)
     .replace(/\{\{empresa\}\}/g, empresa)
     .replace(/\{\{link_optin\}\}/g, optInUrl)
     .replace(/\{\{link_unsubscribe\}\}/g, optOutUrl);
+
+  // Como o envio é feito com appendSignatureToHtml:false (para a via IA
+  // controlar a ordem da assinatura), o fallback tem de embutir a assinatura
+  // aqui — senão estes emails sairiam sem assinatura nenhuma.
+  const html = signatureHtml ? `${filledBody}${signatureHtml}` : filledBody;
 
   const subject = template.subject
     .replace(/\{\{nome\}\}/g, lead.name || "Cliente")
