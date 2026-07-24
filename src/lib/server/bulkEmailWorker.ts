@@ -130,11 +130,14 @@ export async function processBulkEmailBatch(
   const cooldownIso = new Date(Date.now() + RATE_LIMIT_COOLDOWN_MINUTES * 60000).toISOString();
 
   // Recuperar emails marcados como falhados por um erro TEMPORÁRIO (limite de
-  // envio do SMTP): voltam à fila para nova tentativa depois da pausa. Não
-  // toca nas falhas definitivas (endereço inválido, etc.).
+  // envio do SMTP): voltam à fila ELEGÍVEIS já (next_attempt_at = null), para a
+  // campanha voltar de imediato a "em curso" no relatório. Se o limite ainda
+  // estiver ativo, a primeira tentativa apanha o 450 e aí sim a fila arrefece
+  // ~1h; se já tiver reposto, começam a sair logo. Não toca nas falhas
+  // definitivas (endereço inválido, etc.).
   await admin
     .from("bulk_email_queue")
-    .update({ status: "pending", claimed_at: null, next_attempt_at: cooldownIso })
+    .update({ status: "pending", claimed_at: null, next_attempt_at: null })
     .eq("status", "failed")
     .lt("attempts", MAX_ATTEMPTS)
     .or(
