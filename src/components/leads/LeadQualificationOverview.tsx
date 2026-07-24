@@ -60,6 +60,32 @@ const PROPERTY_TYPE_LABELS: Record<string, string> = {
   warehouse: "Armazém",
 };
 
+const PROPERTY_TYPE_OPTIONS = [
+  { value: "apartment", label: "Apartamento" },
+  { value: "house", label: "Moradia" },
+  { value: "land", label: "Terreno" },
+  { value: "commercial", label: "Comercial" },
+  { value: "store", label: "Loja" },
+  { value: "office", label: "Escritório" },
+  { value: "warehouse", label: "Armazém" },
+];
+
+/** "apartment, house" -> ["apartment","house"]. O campo é texto; a vírgula separa. */
+export function parsePropertyTypes(value: string | null | undefined): string[] {
+  return String(value || "")
+    .split(/[,;/]+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+/** Texto legível dos tipos de imóvel: "apartment, house" -> "Apartamento ou Moradia". */
+export function describePropertyTypes(value: string | null | undefined): string {
+  const parts = parsePropertyTypes(value).map((p) => PROPERTY_TYPE_LABELS[p] || p);
+  if (parts.length === 0) return "";
+  if (parts.length === 1) return parts[0];
+  return `${parts.slice(0, -1).join(", ")} ou ${parts[parts.length - 1]}`;
+}
+
 const BUY_PURPOSE_LABELS: Record<string, string> = {
   housing: "Habitação própria",
   investment: "Investimento",
@@ -139,9 +165,7 @@ function buildRows(lead: LeadLike): Row[] {
   push(
     "Tipo de imóvel",
     hasText(lead.property_type),
-    hasText(lead.property_type)
-      ? PROPERTY_TYPE_LABELS[lead.property_type] || lead.property_type
-      : "",
+    hasText(lead.property_type) ? describePropertyTypes(lead.property_type) : "",
   );
 
   // Comprador — objetivo e prazo
@@ -388,6 +412,16 @@ export function LeadQualificationOverview({ lead, onSave }: Props) {
     });
   };
 
+  const togglePropertyType = (option: string) => {
+    setValues((prev) => {
+      const current = parsePropertyTypes(prev.property_type);
+      const next = current.includes(option)
+        ? current.filter((item) => item !== option)
+        : [...current, option];
+      return { ...prev, property_type: next.join(", ") };
+    });
+  };
+
   const toggleTypology = (option: string) => {
     setValues((prev) => {
       const wasOpenEnded = parseTypologies(prev.typology).some((item) => item.includes("+"));
@@ -569,20 +603,28 @@ export function LeadQualificationOverview({ lead, onSave }: Props) {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Tipo de imóvel</Label>
-              <Select value={values.property_type} onValueChange={(v) => set("property_type", v)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione tipo" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="apartment">Apartamento</SelectItem>
-                  <SelectItem value="house">Moradia</SelectItem>
-                  <SelectItem value="land">Terreno</SelectItem>
-                  <SelectItem value="commercial">Comercial</SelectItem>
-                  <SelectItem value="store">Loja</SelectItem>
-                  <SelectItem value="office">Escritório</SelectItem>
-                  <SelectItem value="warehouse">Armazém</SelectItem>
-                </SelectContent>
-              </Select>
+              {/* Multi-seleção: uma lead pode aceitar mais do que um tipo
+                  (ex.: apartamento ou moradia). Guardados separados por vírgula
+                  no mesmo campo de texto. */}
+              <div className="flex flex-wrap gap-1.5">
+                {PROPERTY_TYPE_OPTIONS.map((option) => {
+                  const selected = parsePropertyTypes(values.property_type).includes(option.value);
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => togglePropertyType(option.value)}
+                      className={`rounded-md border px-3 py-1.5 text-sm transition-colors ${
+                        selected
+                          ? "border-blue-600 bg-blue-600 text-white"
+                          : "border-gray-200 bg-white text-gray-700 hover:border-blue-300"
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             <div className="space-y-2">

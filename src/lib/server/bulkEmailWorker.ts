@@ -19,6 +19,34 @@ import { personalizeMailMerge } from "@/lib/mailMergeVars";
 const DEFAULT_BATCH = 25;
 const MAX_ATTEMPTS = 3;
 const STALE_PROCESSING_MINUTES = 10;
+// Pausa após bater no limite do SMTP (ex.: limite horário de envio). Espaça as
+// tentativas por ~1h, o tempo típico de um limite "por hora" repor.
+const RATE_LIMIT_COOLDOWN_MINUTES = 60;
+// Intervalo entre envios, para não disparar rajadas que os servidores travam.
+const SEND_SPACING_MS = 400;
+
+/**
+ * O erro do SMTP é TEMPORÁRIO (limite de envio, rate-limit, greylisting)?
+ * Nesse caso o email não falhou — deve ser reenviado mais tarde, não descartado.
+ * Cobre a família 4xx e as mensagens típicas (450 4.7.1, "exceeded", "IHL",
+ * "try again later", "too many", "rate limit", "greylist", "temporarily").
+ */
+function isTransientSmtpError(message: string): boolean {
+  const m = (message || "").toLowerCase();
+  return (
+    /\b4\d\d[ -]4\.\d\.\d\b/.test(m) ||
+    /\b(421|450|451|452)\b/.test(m) ||
+    m.includes("try again later") ||
+    m.includes("exceeded") ||
+    m.includes("message limit") ||
+    m.includes("rate limit") ||
+    m.includes("too many") ||
+    m.includes("greylist") ||
+    m.includes("temporar") ||
+    m.includes("(ihl)") ||
+    m.includes("quota")
+  );
+}
 
 interface SmtpSettingsRow {
   smtp_host: string;
@@ -94,11 +122,28 @@ export async function processBulkEmailBatch(
     .gte("attempts", MAX_ATTEMPTS)
     .lt("claimed_at", staleCutoff);
 
-  // Lote de pendentes.
+  const nowIso = new Date().toISOString();
+  const cooldownIso = new Date(Date.now() + RATE_LIMIT_COOLDOWN_MINUTES * 60000).toISOString();
+
+  // Recuperar emails marcados como falhados por um erro TEMPORÁRIO (limite de
+  // envio do SMTP): voltam à fila para nova tentativa depois da pausa. Não
+  // toca nas falhas definitivas (endereço inválido, etc.).
+  await admin
+    .from("bulk_email_queue")
+    .update({ status: "pending", claimed_at: null, next_attempt_at: cooldownIso })
+    .eq("status", "failed")
+    .lt("attempts", MAX_ATTEMPTS)
+    .or(
+      "error.ilike.%exceeded%,error.ilike.%message limit%,error.ilike.%try again later%,error.ilike.%rate limit%,error.ilike.%too many%,error.ilike.%greylist%,error.ilike.%temporar%,error.ilike.%quota%",
+    );
+
+  // Lote de pendentes que já podem ser tentados (next_attempt_at no passado ou
+  // por preencher). Rejeitados com pausa por rate-limit ficam de fora até à hora.
   let query = admin
     .from("bulk_email_queue")
     .select("*")
     .eq("status", "pending")
+    .or(`next_attempt_at.is.null,next_attempt_at.lte.${nowIso}`)
     .order("created_at", { ascending: true })
     .limit(batchSize);
   if (opts.campaignId) query = query.eq("campaign_id", opts.campaignId);
@@ -114,10 +159,22 @@ export async function processBulkEmailBatch(
   const transporterCache = new Map<string, nodemailer.Transporter>();
   const signatureCache = new Map<string, string>();
   const touchedCampaigns = new Set<string>();
+  // Consultores que bateram no limite do SMTP NESTA execução: paramos de lhes
+  // enviar já e reagendamos o resto — evita gerar centenas de 450 seguidos.
+  const rateLimitedUsers = new Set<string>();
   let processed = 0;
 
   for (const row of rows as any[]) {
     touchedCampaigns.add(row.campaign_id);
+
+    // Já bateu no limite este ciclo: reagenda sem sequer tentar enviar.
+    if (rateLimitedUsers.has(row.user_id)) {
+      await admin
+        .from("bulk_email_queue")
+        .update({ status: "pending", claimed_at: null, next_attempt_at: cooldownIso })
+        .eq("id", row.id);
+      continue;
+    }
 
     // Reivindicar a linha (evita duplo envio se dois workers coincidirem).
     const { data: claimed } = await admin
@@ -230,13 +287,51 @@ export async function processBulkEmailBatch(
         }
       }
     } catch (sendError: any) {
-      await admin
-        .from("bulk_email_queue")
-        .update({ status: "failed", error: sendError?.message || "Falha ao enviar" })
-        .eq("id", row.id);
+      const message = sendError?.message || "Falha ao enviar";
+
+      if (isTransientSmtpError(message)) {
+        // Erro TEMPORÁRIO (limite/rate-limit): NÃO falha — volta à fila com
+        // pausa, e paramos de enviar a este consultor neste ciclo. attempts
+        // volta ao valor original (a tentativa reivindicada não conta como
+        // gasta, senão o limite horário esgotava as 3 tentativas à toa).
+        const firstHit = !rateLimitedUsers.has(row.user_id);
+        rateLimitedUsers.add(row.user_id);
+        await admin
+          .from("bulk_email_queue")
+          .update({
+            status: "pending",
+            claimed_at: null,
+            attempts: row.attempts || 0,
+            next_attempt_at: cooldownIso,
+            error: message.slice(0, 300),
+          })
+          .eq("id", row.id);
+
+        // Na primeira vez, arrefece TODA a fila pendente deste consultor — os
+        // ciclos seguintes (cron a cada 5 min) não voltam a martelar o SMTP
+        // dentro da hora; retomam quando a pausa passar.
+        if (firstHit) {
+          await admin
+            .from("bulk_email_queue")
+            .update({ next_attempt_at: cooldownIso })
+            .eq("user_id", row.user_id)
+            .eq("status", "pending")
+            .or(`next_attempt_at.is.null,next_attempt_at.lte.${nowIso}`);
+        }
+      } else {
+        await admin
+          .from("bulk_email_queue")
+          .update({ status: "failed", error: message.slice(0, 300) })
+          .eq("id", row.id);
+      }
     }
 
     processed++;
+
+    // Pequeno espaçamento entre envios para não disparar rajadas.
+    if (SEND_SPACING_MS > 0) {
+      await new Promise((resolve) => setTimeout(resolve, SEND_SPACING_MS));
+    }
   }
 
   // Atualizar contagens de todas as campanhas tocadas neste lote.

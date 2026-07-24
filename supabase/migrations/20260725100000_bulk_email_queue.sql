@@ -47,6 +47,15 @@ create table if not exists public.bulk_email_queue (
   sent_at timestamptz
 );
 
+-- Colunas acrescentadas via ALTER (idempotente) para apanharem também as bases
+-- onde a tabela já foi criada por uma versão anterior desta migração.
+alter table public.bulk_email_queue
+  add column if not exists claimed_at timestamptz,
+  -- Não tentar antes desta hora: usado para recuar após um erro TEMPORÁRIO do
+  -- SMTP (ex.: "exceeded the hourly outbound message limit" / 450 / IHL), em
+  -- vez de marcar o email como falhado definitivo.
+  add column if not exists next_attempt_at timestamptz;
+
 create index if not exists idx_bulk_email_queue_pending
   on public.bulk_email_queue (status, campaign_id)
   where status in ('pending', 'processing');

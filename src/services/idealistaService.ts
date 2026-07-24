@@ -27,6 +27,68 @@ interface IdealistaSearchParams {
   numPage?: number;
   maxItems?: number;
   agencyName?: string;
+  /**
+   * Tipos de imóvel aceites pela lead (ex.: ["apartment"] ou ["apartment",
+   * "house"]). O propertyType da API é a categoria ampla ("homes"), por isso o
+   * tipo concreto é garantido por filtro LOCAL sobre os resultados — senão um
+   * pedido de apartamento devolvia também moradias.
+   */
+  propertyKinds?: string[];
+}
+
+// Valores de propertyType que o Idealista devolve, agrupados por tipo pedido.
+const APARTMENT_RESULT_TYPES = new Set([
+  "flat", "penthouse", "duplex", "triplex", "studio", "apartment", "loft", "groundfloor",
+]);
+const HOUSE_RESULT_TYPES = new Set([
+  "chalet", "house", "villa", "countryhouse", "terracedhouse", "semidetachedhouse",
+  "independenthouse", "independanthouse", "townhouse",
+]);
+const LAND_RESULT_TYPES = new Set(["land", "plot", "buildingland", "rusticland"]);
+const COMMERCIAL_RESULT_TYPES = new Set([
+  "office", "premise", "premises", "commercial", "building", "local", "store", "shop",
+  "warehouse", "industrial",
+]);
+const GARAGE_RESULT_TYPES = new Set(["garage", "parking"]);
+
+const KIND_RESULT_SETS: Record<string, Set<string>> = {
+  apartment: APARTMENT_RESULT_TYPES,
+  house: HOUSE_RESULT_TYPES,
+  villa: HOUSE_RESULT_TYPES,
+  land: LAND_RESULT_TYPES,
+  commercial: COMMERCIAL_RESULT_TYPES,
+  store: COMMERCIAL_RESULT_TYPES,
+  office: COMMERCIAL_RESULT_TYPES,
+  warehouse: COMMERCIAL_RESULT_TYPES,
+  garage: GARAGE_RESULT_TYPES,
+};
+
+const ALL_KNOWN_RESULT_TYPES = new Set<string>([
+  ...APARTMENT_RESULT_TYPES,
+  ...HOUSE_RESULT_TYPES,
+  ...LAND_RESULT_TYPES,
+  ...COMMERCIAL_RESULT_TYPES,
+  ...GARAGE_RESULT_TYPES,
+]);
+
+/**
+ * O imóvel corresponde a algum dos tipos pedidos pela lead?
+ * Um tipo desconhecido ou em falta PASSA (não esconde resultados por falta de
+ * dados); só se exclui quando o tipo é conhecido e não bate com o pedido.
+ */
+function propertyKindMatches(p: any, kinds?: string[]): boolean {
+  if (!kinds || kinds.length === 0) return true;
+  const raw = String(p?.propertyType || p?.detailedType?.typology || "").toLowerCase().replace(/[^a-z]/g, "");
+  if (!raw) return true;
+  if (!ALL_KNOWN_RESULT_TYPES.has(raw)) return true;
+
+  const accepted = new Set<string>();
+  for (const kind of kinds) {
+    const set = KIND_RESULT_SETS[kind];
+    if (set) set.forEach((value) => accepted.add(value));
+  }
+  if (accepted.size === 0) return true;
+  return accepted.has(raw);
 }
 
 interface IdealistaCredentials {
@@ -372,6 +434,26 @@ export async function searchIdealistaProperties(
             });
           }
 
+          // Garantir o TIPO de imóvel pedido (apartamento ≠ moradia): a API
+          // devolve tudo o que é "homes", por isso filtra-se aqui.
+          if (params.propertyKinds && params.propertyKinds.length > 0 && pageResults.length > 0) {
+            pageResults = pageResults.filter((p: any) => propertyKindMatches(p, params.propertyKinds));
+          }
+
+          // Garantir o intervalo de preço/área mesmo que a API seja permissiva.
+          // Dados em falta passam (não escondem por falta de informação).
+          if (pageResults.length > 0) {
+            pageResults = pageResults.filter((p: any) => {
+              const price = typeof p.price === "number" ? p.price : Number(p.price);
+              const size = typeof p.size === "number" ? p.size : Number(p.size);
+              if (params.minPrice && Number.isFinite(price) && price < params.minPrice) return false;
+              if (params.maxPrice && Number.isFinite(price) && price > params.maxPrice) return false;
+              if (params.minSize && Number.isFinite(size) && size < params.minSize) return false;
+              if (params.maxSize && Number.isFinite(size) && size > params.maxSize) return false;
+              return true;
+            });
+          }
+
           zoneResults = [...zoneResults, ...pageResults];
         }
 
@@ -519,7 +601,7 @@ export function leadToIdealistaParams(lead: any): IdealistaSearchParams {
     params.operation = "rent";
   }
 
-  // Tipo de imóvel
+  // Tipo(s) de imóvel — a lead pode aceitar mais do que um ("apartment, house").
   if (lead.property_type) {
     const typeMap: Record<string, string> = {
       apartment: "homes",
@@ -532,7 +614,20 @@ export function leadToIdealistaParams(lead: any): IdealistaSearchParams {
       warehouse: "offices",
       garage: "garages",
     };
-    params.propertyType = typeMap[lead.property_type] || "homes";
+
+    const kinds = String(lead.property_type)
+      .split(/[,;/]+/)
+      .map((part: string) => part.trim().toLowerCase())
+      .filter(Boolean);
+
+    if (kinds.length > 0) {
+      params.propertyKinds = kinds;
+      // A API só aceita uma categoria por pedido. Se todos os tipos caem na
+      // mesma categoria (o caso comum: apartamento+moradia = "homes"), usa-se
+      // essa; senão usa-se a do primeiro tipo e o filtro local trata o resto.
+      const categories = Array.from(new Set(kinds.map((k) => typeMap[k] || "homes")));
+      params.propertyType = categories.length === 1 ? categories[0] : typeMap[kinds[0]] || "homes";
+    }
   }
 
   // Orçamento

@@ -90,7 +90,18 @@ export const findMatchesForLead = async (
   internalProperties = internalProperties.filter(p => p.status !== "sold");
 
   if (lead.property_type) {
-    internalProperties = internalProperties.filter(p => p.property_type === lead.property_type);
+    // A lead pode aceitar mais do que um tipo ("apartment, house"): aceita o
+    // imóvel se o seu tipo estiver entre os pedidos (antes era igualdade exata,
+    // que deixava de fora tudo numa lead multi-tipo).
+    const wantedKinds = String(lead.property_type)
+      .split(/[,;/]+/)
+      .map((part: string) => part.trim().toLowerCase())
+      .filter(Boolean);
+    if (wantedKinds.length > 0) {
+      internalProperties = internalProperties.filter(
+        (p) => p.property_type && wantedKinds.includes(String(p.property_type).toLowerCase()),
+      );
+    }
   }
   
   if (lead.budget_max) {
