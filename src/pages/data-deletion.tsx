@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 import Image from "next/image";
 import { frontendSettingsService } from "@/services/frontendSettingsService";
+import { PRIVACY_POLICY_URL } from "@/lib/legalLinks";
 
 export default function DataDeletion() {
   const [settings, setSettings] = useState<Record<string, any>>({});
@@ -88,9 +89,9 @@ export default function DataDeletion() {
                 <p className="text-gray-700 leading-relaxed mt-4">
                   Leads que já foram importadas para o seu CRM antes do pedido continuam a ser tratadas como dados de
                   clientes seus, geridos de acordo com a nossa{" "}
-                  <Link href="/privacy-policy" className="text-blue-600 hover:underline">
+                  <a href={PRIVACY_POLICY_URL} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
                     Política de Privacidade
-                  </Link>{" "}
+                  </a>{" "}
                   — se também quiser eliminar leads específicas, indique isso no mesmo email.
                 </p>
               </section>

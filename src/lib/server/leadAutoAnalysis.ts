@@ -30,6 +30,47 @@ import { getPipelineStagesForLead } from "@/lib/server/pipelineStages";
 
 const DEBOUNCE_MINUTES = 5;
 
+// Palavras sem peso na comparação de tarefas — artigos, preposições e verbos
+// genéricos que aparecem em quase todos os títulos.
+const TASK_STOPWORDS = new Set([
+  "o", "a", "os", "as", "um", "uma", "de", "do", "da", "dos", "das", "e", "ou",
+  "em", "no", "na", "nos", "nas", "para", "por", "com", "ao", "aos", "sobre", "que",
+]);
+
+function taskTitleTokens(title: string): Set<string> {
+  return new Set(
+    title
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .split(/[^a-z0-9]+/)
+      .filter((word) => word.length > 1 && !TASK_STOPWORDS.has(word))
+  );
+}
+
+/**
+ * Duas tarefas contam como a mesma quando as palavras significativas de uma
+ * cobrem ≥70% das da mais curta ("Enviar informação dos T3 do Oliveira e
+ * Telles" ≈ "Enviar informação dos T3 do Oliveira e do Telles").
+ */
+function isSimilarToExistingTask(title: string, existingTitles: string[]): boolean {
+  const candidate = taskTitleTokens(title);
+  if (candidate.size === 0) return false;
+
+  for (const existing of existingTitles) {
+    const other = taskTitleTokens(existing);
+    if (other.size === 0) continue;
+    let shared = 0;
+    for (const token of candidate) {
+      if (other.has(token)) shared += 1;
+    }
+    if (shared / Math.min(candidate.size, other.size) >= 0.7) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export type LeadAutoAnalysisTrigger = "note" | "interaction" | "voice_note";
 
 interface AutoAnalysisTask {
@@ -131,7 +172,10 @@ export async function runLeadAutoAnalysis(
     }
 
     // Contexto: histórico recente + campos de qualificação relevantes.
-    const [{ data: interactions }, { data: notes }] = await Promise.all([
+    // As tarefas abertas entram no contexto E no dedupe: sem elas, uma segunda
+    // análise (nova nota/mensagem passado o debounce) propunha a mesma tarefa
+    // com outras palavras e a lead acumulava duplicados.
+    const [{ data: interactions }, { data: notes }, { data: openTasks }] = await Promise.all([
       supabaseAdmin
         .from("interactions")
         .select("interaction_date, interaction_type, content, outcome")
@@ -142,6 +186,14 @@ export async function runLeadAutoAnalysis(
         .from("lead_notes")
         .select("note, created_at")
         .eq("lead_id", leadId)
+        .order("created_at", { ascending: false })
+        .limit(10),
+      supabaseAdmin
+        .from("tasks")
+        .select("title, description, due_date")
+        .eq("related_lead_id", leadId)
+        .eq("user_id", userId)
+        .neq("status", "completed")
         .order("created_at", { ascending: false })
         .limit(10),
     ]);
@@ -171,6 +223,7 @@ export async function runLeadAutoAnalysis(
       },
       recentInteractions: interactions || [],
       recentNotes: notes || [],
+      openTasks: openTasks || [],
       qualificationFields,
       pipelineStages,
     });
@@ -317,10 +370,21 @@ export async function runLeadAutoAnalysis(
     }
 
     // 2. Tarefas (máx. 2, garantido também aqui e não só no prompt).
+    // Rede de segurança contra duplicados: o prompt já mostra as tarefas
+    // abertas, mas a IA por vezes reformula a mesma ação com outras palavras
+    // ("…do Oliveira e Telles" vs "…do Oliveira e do Telles") — compara-se por
+    // sobreposição de palavras significativas, não por igualdade exata.
+    const existingTaskTitles = ((openTasks || []) as Array<{ title: string | null }>)
+      .map((t) => t.title || "")
+      .filter(Boolean);
     const tasks = (Array.isArray(analysis.tasks) ? analysis.tasks : [])
       .filter((t) => t && typeof t.title === "string" && t.title.trim())
       .slice(0, 2);
     for (const task of tasks) {
+      if (isSimilarToExistingTask(task.title, existingTaskTitles)) {
+        continue;
+      }
+      existingTaskTitles.push(task.title);
       const priority = ["urgent", "high", "medium", "low"].includes(task.priority || "")
         ? task.priority
         : "medium";

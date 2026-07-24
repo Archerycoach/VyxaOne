@@ -29,6 +29,8 @@ interface LeadAutoAnalysisContext {
   };
   recentInteractions: Array<{ interaction_date: string; interaction_type: string; content?: string | null; outcome?: string | null }>;
   recentNotes: Array<{ created_at: string | null; note: string }>;
+  /** Tarefas por concluir desta lead — para a IA não propor duplicados. */
+  openTasks: Array<{ title: string | null; description?: string | null; due_date?: string | null }>;
   /** Campos de qualificação relevantes para esta lead, com o valor atual conhecido. */
   qualificationFields: QualificationFieldContext[];
   /**
@@ -46,7 +48,7 @@ const TRIGGER_LABELS: Record<LeadAutoAnalysisContext["trigger"], string> = {
 };
 
 export function getLeadAutoAnalysisPrompt(context: LeadAutoAnalysisContext): string {
-  const { newContent, trigger, leadData, recentInteractions, recentNotes, qualificationFields, pipelineStages } = context;
+  const { newContent, trigger, leadData, recentInteractions, recentNotes, openTasks, qualificationFields, pipelineStages } = context;
 
   const now = new Date();
   const nowStr = now.toISOString();
@@ -62,6 +64,12 @@ export function getLeadAutoAnalysisPrompt(context: LeadAutoAnalysisContext): str
         `${idx + 1}. [${n.created_at ? new Date(n.created_at).toLocaleDateString("pt-PT") : "sem data"}] ${n.note.substring(0, 150)}`
       ).join("\n")
     : "Sem notas anteriores.";
+
+  const openTasksContext = openTasks.length > 0
+    ? openTasks
+        .map((t, idx) => `${idx + 1}. ${t.title}${t.due_date ? ` (até ${t.due_date})` : ""}`)
+        .join("\n")
+    : "Nenhuma tarefa aberta.";
 
   const qualificationContext = qualificationFields.length > 0
     ? qualificationFields
@@ -88,6 +96,9 @@ ${interactionsContext}
 **NOTAS ANTERIORES (mais recente primeiro):**
 ${notesContext}
 
+**TAREFAS JÁ ABERTAS PARA ESTA LEAD (por concluir):**
+${openTasksContext}
+
 **NOVO REGISTO (a novidade a analisar):**
 "${newContent}"
 
@@ -106,7 +117,8 @@ ${qualificationContext}
 Só inclui um campo em "extracted_data" se o novo registo o mencionar CLARA e EXPLICITAMENTE — nunca adivinhes, arredondes ou estimes. Se nada for mencionado sobre um campo, omite a chave por completo (não uses null nem string vazia).
 
 **TAREFA 3 — Tarefas (tasks):**
-Propõe no MÁXIMO 2 tarefas concretas e acionáveis que decorram diretamente da novidade (ex.: "Enviar proposta do T2 da Rua X"). Não repitas tarefas óbvias do histórico. Se não houver ação clara, devolve [].
+Propõe no MÁXIMO 2 tarefas concretas e acionáveis que decorram diretamente da novidade (ex.: "Enviar proposta do T2 da Rua X"). Não repitas tarefas óbvias do histórico.
+IMPORTANTE: compara com as "TAREFAS JÁ ABERTAS" acima — se a ação já estiver coberta por uma tarefa aberta (mesmo com palavras diferentes), NÃO a proponhas outra vez. Se tudo o que a novidade pede já tem tarefa aberta, devolve [].
 Cada tarefa: { "title", "description", "due_date": "YYYY-MM-DD", "priority": "urgent"|"high"|"medium"|"low" }
 
 **TAREFA 4 — Blocos de agenda (agenda_blocks):**

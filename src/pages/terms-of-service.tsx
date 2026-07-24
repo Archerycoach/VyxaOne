@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 import Image from "next/image";
 import { frontendSettingsService } from "@/services/frontendSettingsService";
+import { PRIVACY_POLICY_URL } from "@/lib/legalLinks";
 
 export default function TermsOfService() {
   const [settings, setSettings] = useState<Record<string, any>>({});
@@ -53,9 +54,9 @@ export default function TermsOfService() {
                 </p>
                 <p className="text-gray-700 leading-relaxed mt-4">
                   Estes Termos aplicam-se em conjunto com a nossa{" "}
-                  <Link href="/privacy-policy" className="text-blue-600 hover:underline">
+                  <a href={PRIVACY_POLICY_URL} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
                     Política de Privacidade
-                  </Link>
+                  </a>
                   , que descreve como tratamos os seus dados pessoais.
                 </p>
               </section>
