@@ -1,0 +1,61 @@
+import type { NextApiRequest, NextApiResponse } from "next";
+import { createClient } from "@supabase/supabase-js";
+import { processBulkEmailBatch } from "@/lib/server/bulkEmailWorker";
+import { deriveAppUrl } from "@/lib/server/appUrl";
+
+export const config = {
+  api: { bodyParser: { sizeLimit: "1mb" } },
+  maxDuration: 60,
+};
+
+/**
+ * Processa a fila de envio em massa, em segundo plano.
+ *
+ * Chamado pelo /api/bulk-email/enqueue logo após criar a campanha e, se ainda
+ * sobrarem destinatários no fim do seu tempo, AUTO-ENCADEIA-SE (chama-se a si
+ * próprio) até esvaziar a fila da campanha. É protegido pelo CRON_SECRET, tal
+ * como os crons — nunca é chamado diretamente pelo browser.
+ */
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method !== "POST") return res.status(405).json({ error: "Método não permitido" });
+
+  const authHeader = req.headers.authorization;
+  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    return res.status(401).json({ error: "Não autorizado" });
+  }
+
+  const admin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
+  const { campaignId } = (req.body || {}) as { campaignId?: string };
+
+  try {
+    // Processa vários lotes dentro do tempo desta invocação; deixa margem para
+    // não bater no limite de duração.
+    const deadline = Date.now() + 45_000;
+    let totalProcessed = 0;
+    let remaining = 0;
+
+    do {
+      const result = await processBulkEmailBatch(admin, { campaignId });
+      totalProcessed += result.processed;
+      remaining = result.remaining;
+      if (result.processed === 0) break; // fila vazia ou nada reivindicável
+    } while (remaining > 0 && Date.now() < deadline);
+
+    // Sobrou trabalho: continua noutra invocação (auto-encadeamento).
+    if (remaining > 0) {
+      const appUrl = deriveAppUrl(req);
+      void fetch(`${appUrl}/api/bulk-email/process`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.CRON_SECRET}` },
+        body: JSON.stringify({ campaignId }),
+      }).catch(() => {
+        // O cron de recuperação garante que a fila acaba por ser processada.
+      });
+    }
+
+    return res.status(200).json({ success: true, processed: totalProcessed, remaining });
+  } catch (error: any) {
+    console.error("[bulk-email/process]", error);
+    return res.status(500).json({ error: error.message || "Erro ao processar a fila." });
+  }
+}

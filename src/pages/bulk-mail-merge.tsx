@@ -28,13 +28,12 @@ import {
 } from "lucide-react";
 import { getCurrentUser } from "@/services/authService";
 import { supabase } from "@/integrations/supabase/client";
-import { startCampaign, finishCampaign } from "@/services/bulkCampaignsService";
 import { BulkCampaignsReport } from "@/components/bulk/BulkCampaignsReport";
 import { toast } from "@/hooks/use-toast";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
 import { collapseEmptyBlocks } from "@/lib/emailSignatureFormat";
 import { parseExcelFile } from "@/services/importService";
-import { normalizeVarToken, personalizeMailMerge } from "@/lib/mailMergeVars";
+import { normalizeVarToken } from "@/lib/mailMergeVars";
 
 /**
  * Mensagens em massa (mala-direta por Excel/CSV).
@@ -354,88 +353,38 @@ export default function BulkMailMerge() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("Sessão expirada. Faça login novamente.");
 
-      let successCount = 0;
-      let failCount = 0;
-      const errors: string[] = [];
-      let copyToSelfPending = sendCopyToSelf && Boolean(copyEmail);
+      // Envio em SEGUNDO PLANO: enfileira e devolve logo — o worker no servidor
+      // envia gradualmente, mesmo que o utilizador saia da página.
+      const res = await fetch("/api/bulk-email/enqueue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({
+          subject,
+          html: message,
+          attachments: attachments.map((att) => ({ filename: att.name, content: att.base64, encoding: "base64" })),
+          sendCopyToSender: sendCopyToSelf && Boolean(copyEmail),
+          audienceSource: "sheet_merge",
+          criteria: { file: sheetFileName, rows: sheetRows.length },
+          recipients: selectedData.map((r) => ({ email: r.email, name: r.name, vars: r.vars })),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || "Não foi possível iniciar o envio.");
 
-      const campaignId = await startCampaign({
-        subject,
-        audienceSource: "sheet_merge",
-        criteria: { file: sheetFileName, rows: sheetRows.length },
-        recipientsTotal: selectedData.length,
+      toast({
+        title: "Envio iniciado em segundo plano",
+        description: `${data.queued} email(s) na fila. Pode continuar a trabalhar — acompanhe o progresso no histórico acima.`,
       });
 
-      for (const recipient of selectedData) {
-        try {
-          const personalizedMessage = personalizeMailMerge(message, recipient.vars);
-          const personalizedSubject = personalizeMailMerge(subject, recipient.vars);
-          const textContent = personalizedMessage.replace(/<[^>]*>?/gm, "").replace(/&nbsp;/g, " ");
-          const emailAttachments = attachments.map((att) => ({
-            filename: att.name,
-            content: att.base64,
-            encoding: "base64",
-          }));
-
-          const response = await fetch("/api/smtp/send", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
-            body: JSON.stringify({
-              to: recipient.email,
-              subject: personalizedSubject,
-              html: personalizedMessage,
-              text: textContent,
-              attachments: emailAttachments.length > 0 ? emailAttachments : undefined,
-              sendCopyToSender: copyToSelfPending,
-            }),
-          });
-
-          const responseText = await response.text();
-          let result: any;
-          try {
-            result = JSON.parse(responseText);
-          } catch {
-            throw new Error(`Falha de comunicação (Status ${response.status}).`);
-          }
-
-          if (result.success) {
-            successCount++;
-            copyToSelfPending = false;
-          } else {
-            failCount++;
-            errors.push(`${recipient.name}: ${result.message}`);
-          }
-        } catch (error) {
-          failCount++;
-          errors.push(`${recipient.name}: ${error instanceof Error ? error.message : "Erro desconhecido"}`);
-        }
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      }
-
-      await finishCampaign(campaignId, { sent: successCount, failed: failCount, errors });
-
-      if (successCount > 0) {
-        toast({
-          title: "Emails Enviados",
-          description: `${successCount} email${successCount > 1 ? "s enviados" : " enviado"}${failCount > 0 ? `. ${failCount} falharam.` : "."}`,
-        });
-      }
-      if (failCount > 0) {
-        toast({
-          title: "Alguns emails falharam",
-          description: errors.length === 1 ? errors[0] : `${failCount} falharam. Detalhe: ${errors[0].substring(0, 100)}...`,
-          variant: "destructive",
-        });
-      } else if (successCount > 0) {
-        setSubject("");
-        setMessage("");
-        setAttachments([]);
-        setSelectedRecipients(new Set());
-      }
+      // Limpa o formulário; o histórico passa a refletir o progresso.
+      setSubject("");
+      setMessage("");
+      setAttachments([]);
+      setSelectedRecipients(new Set());
     } catch (error) {
       toast({
         title: "Erro",
-        description: error instanceof Error ? error.message : "Erro ao enviar. Tente novamente.",
+        description: error instanceof Error ? error.message : "Erro ao iniciar o envio. Tente novamente.",
         variant: "destructive",
       });
     } finally {

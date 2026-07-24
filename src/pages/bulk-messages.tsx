@@ -27,7 +27,6 @@ import { getAllContacts, type Contact } from "@/services/contactsService";
 import { getCurrentUser } from "@/services/authService";
 import { getWorkflowRules } from "@/services/workflowService";
 import { supabase } from "@/integrations/supabase/client";
-import { startCampaign, finishCampaign } from "@/services/bulkCampaignsService";
 import { BulkCampaignsReport } from "@/components/bulk/BulkCampaignsReport";
 import { toast } from "@/hooks/use-toast";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
@@ -1030,139 +1029,55 @@ export default function BulkMessages() {
       const selectedData = recipients.filter((r) => selectedRecipients.has(r.id));
 
       if (messageType === "email") {
-        // Get authentication token
+        // Envio em SEGUNDO PLANO: enfileira e devolve logo — o worker no
+        // servidor envia gradualmente, mesmo que o utilizador saia da página.
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) {
           throw new Error("Sessão expirada. Por favor, faça login novamente.");
         }
 
-        let successCount = 0;
-        let failCount = 0;
-        const errors: string[] = [];
-        // A cópia para o próprio só é pedida UMA vez em todo o envio em massa
-        // (senão o consultor recebia uma cópia por cada destinatário). Uma só
-        // cópia basta para ficar no histórico.
-        let copyToSelfPending = sendCopyToSelf && Boolean(copyEmail);
-
-        // Regista a campanha antes de enviar, para o relatório saber quantos
-        // emails saíram mesmo — inclusive se o envio for interrompido a meio.
-        const campaignId = await startCampaign({
-          subject,
-          audienceSource: router.query.aiDraft === "1" ? "ai_search" : "manual",
-          criteria: {
-            location: router.query.location || null,
-            typology: router.query.typology || null,
-            buyPurpose: router.query.buyPurpose || null,
-            propertyType: router.query.propertyType || null,
-          },
-          recipientsTotal: selectedData.length,
+        const res = await fetch("/api/bulk-email/enqueue", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+          body: JSON.stringify({
+            subject,
+            html: message,
+            attachments: attachments.map((att) => ({ filename: att.name, content: att.base64, encoding: "base64" })),
+            sendCopyToSender: sendCopyToSelf && Boolean(copyEmail),
+            audienceSource: router.query.aiDraft === "1" ? "ai_search" : "manual",
+            criteria: {
+              location: router.query.location || null,
+              typology: router.query.typology || null,
+              buyPurpose: router.query.buyPurpose || null,
+              propertyType: router.query.propertyType || null,
+            },
+            recipients: selectedData
+              .filter((r) => r.email)
+              .map((r) => ({
+                email: r.email,
+                name: r.name,
+                vars: {
+                  nome: r.name,
+                  email: r.email || "",
+                  telefone: r.phone || "",
+                  empreendimento: r.development_name || "",
+                },
+                leadId: r.type === "lead" ? r.id.replace("lead-", "") : undefined,
+                contactId: r.type === "contact" ? r.id.replace("contact-", "") : undefined,
+              })),
+          }),
         });
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.error || "Não foi possível iniciar o envio.");
 
-        // Send emails sequentially to avoid overwhelming the SMTP server
-        for (const recipient of selectedData) {
-          if (!recipient.email) {
-            failCount++;
-            errors.push(`${recipient.name}: Email não disponível`);
-            continue;
-          }
-
-          try {
-            // Replace variables in message
-            const personalizedMessage = message
-              .replace(/\{nome\}/g, recipient.name)
-              .replace(/\{email\}/g, recipient.email || "")
-              .replace(/\{telefone\}/g, recipient.phone || "")
-              .replace(/\{empreendimento\}/g, recipient.development_name || "");
-
-            const personalizedSubject = subject
-              .replace(/\{nome\}/g, recipient.name)
-              .replace(/\{email\}/g, recipient.email || "")
-              .replace(/\{telefone\}/g, recipient.phone || "")
-              .replace(/\{empreendimento\}/g, recipient.development_name || "");
-
-            // RichTextEditor already outputs HTML
-            const htmlContent = personalizedMessage;
-            
-            // For text version, remove basic HTML tags
-            const textContent = htmlContent.replace(/<[^>]*>?/gm, '').replace(/&nbsp;/g, ' ');
-
-            const emailAttachments = attachments.map(att => ({
-              filename: att.name,
-              content: att.base64,
-              encoding: 'base64'
-            }));
-
-            const response = await fetch("/api/smtp/send", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${session.access_token}`,
-              },
-              body: JSON.stringify({
-                to: recipient.email,
-                subject: personalizedSubject,
-                html: htmlContent,
-                text: textContent,
-                attachments: emailAttachments.length > 0 ? emailAttachments : undefined,
-                sendCopyToSender: copyToSelfPending,
-                leadId: recipient.type === "lead" ? recipient.id.replace("lead-", "") : undefined,
-                contactId: recipient.type === "contact" ? recipient.id.replace("contact-", "") : undefined,
-              }),
-            });
-
-            const responseText = await response.text();
-            let result;
-            try {
-              result = JSON.parse(responseText);
-            } catch(e) {
-              throw new Error(`Falha de comunicação (Status ${response.status}). Resposta: ${responseText.substring(0, 150)}`);
-            }
-
-            if (result.success) {
-              successCount++;
-              // Cópia já enviada com o primeiro email — não repetir nos seguintes.
-              copyToSelfPending = false;
-            } else {
-              failCount++;
-              errors.push(`${recipient.name}: ${result.message}`);
-            }
-          } catch (error) {
-            failCount++;
-            errors.push(`${recipient.name}: ${error instanceof Error ? error.message : "Erro desconhecido"}`);
-          }
-
-          // Small delay between emails to avoid rate limiting
-          await new Promise((resolve) => setTimeout(resolve, 100));
-        }
-
-        await finishCampaign(campaignId, {
-          sent: successCount,
-          failed: failCount,
-          errors,
+        toast({
+          title: "Envio iniciado em segundo plano",
+          description: `${data.queued} email(s) na fila. Pode continuar a trabalhar — o progresso aparece no histórico.`,
         });
-
-        // Show results
-        if (successCount > 0) {
-          toast({
-            title: "Emails Enviados",
-            description: `${successCount} email${successCount > 1 ? "s enviados" : " enviado"} com sucesso${failCount > 0 ? `. ${failCount} falharam.` : "."}`,
-          });
-        }
-
-        if (failCount > 0) {
-          console.error("Failed emails:", errors);
-          toast({
-            title: "Alguns emails falharam",
-            description: errors.length === 1 ? errors[0] : `${failCount} emails falharam. Verifique as configurações SMTP. Detalhe: ${errors[0].substring(0, 100)}...`,
-            variant: "destructive",
-          });
-        } else if (successCount > 0) {
-          // Reset form only on full success
-          setSubject("");
-          setMessage("");
-          setAttachments([]);
-          setSelectedRecipients(new Set());
-        }
+        setSubject("");
+        setMessage("");
+        setAttachments([]);
+        setSelectedRecipients(new Set());
       } else {
         // WhatsApp implementation
         const { data: { session } } = await supabase.auth.getSession();

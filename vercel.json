@@ -73,6 +73,10 @@
     {
       "path": "/api/cron/portal-auto-match",
       "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/cron/bulk-email-worker",
+      "schedule": "*/5 * * * *"
     }
   ],
   "headers": [
