@@ -15,6 +15,13 @@ import crypto from "crypto";
  * funcionarem). Não altera estado de follow-up, tentativas nem datas.
  */
 
+// Objetivo da procura (buy_purpose) em texto português para os emails.
+// Os valores internos ("housing"/"investment") nunca podem chegar ao cliente.
+const BUY_PURPOSE_LABELS: Record<string, string> = {
+  housing: "habitação própria",
+  investment: "investimento",
+};
+
 export const REACTIVATION_TEMPLATE_BY_ATTEMPT: Record<number, string> = {
   1: "optin_inicial",
   2: "optin_lembrete_2",
@@ -135,6 +142,11 @@ async function buildAiReactivationEmail(params: {
        </p>`
     : "";
 
+  // Sem fecho nem assinatura aqui: a assinatura configurada do consultor (com
+  // nome, foto e contactos reais) é acrescentada centralmente por
+  // sendClientEmail/appendSignature. Repetir "Com os melhores cumprimentos,
+  // {consultor}" aqui gerava DUAS assinaturas — e ainda com o placeholder
+  // "Consultor Imobiliário" quando o full_name do perfil está vazio.
   const html = `<!DOCTYPE html>
 <html lang="pt">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
@@ -143,7 +155,6 @@ async function buildAiReactivationEmail(params: {
   <div style="max-width:560px;margin:0 auto;padding:32px 24px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;color:#1f2937;line-height:1.6;">
     ${bodyHtml}
     ${ctaBlock}
-    <p style="margin:24px 0 0;">Com os melhores cumprimentos,<br><strong>${escapeHtml(consultor)}</strong></p>
     <hr style="border:none;border-top:1px solid #e5e7eb;margin:32px 0 16px;">
     <p style="font-size:12px;color:#6b7280;margin:0;">
       Recebe este email porque manifestou interesse em imóveis.
@@ -211,7 +222,10 @@ export async function buildReactivationEmail(params: {
   const consultor = profile?.full_name || "Consultor Imobiliário";
   const empresa = profile?.company_name || "VYXA";
 
-  const procuraType = lead.buy_purpose || "imóvel";
+  // buy_purpose é guardado com valores internos ("housing"/"investment") — sem
+  // esta tradução, o email escrevia "a sua procura de housing", uma palavra em
+  // inglês no meio do texto português.
+  const procuraType = BUY_PURPOSE_LABELS[(lead.buy_purpose || "").trim()] || "imóvel";
   const procuraLoc = lead.location_preference ? ` em ${lead.location_preference}` : "";
   const procuraStr = `${procuraType}${procuraLoc}`.trim();
 
