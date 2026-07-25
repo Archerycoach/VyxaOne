@@ -231,7 +231,7 @@ export default function AiOrganizer() {
                   <CardContent className="space-y-2">
                     {data.overdueTasks.map((task) => (
                       <div key={task.id} className="flex items-center justify-between gap-3 bg-red-50/50 border border-red-100 rounded-lg p-3">
-                        <div className="min-w-0">
+                        <div className="min-w-0 flex-1">
                           <button
                             className="text-sm font-medium text-slate-800 hover:underline text-left truncate block"
                             onClick={() => goToLead(task.related_lead_id)}
@@ -281,7 +281,7 @@ export default function AiOrganizer() {
                   <CardContent className="space-y-2">
                     {data.todayEvents.map((event) => (
                       <div key={event.id} className="flex items-center justify-between gap-3 bg-blue-50/50 border border-blue-100 rounded-lg p-3">
-                        <div className="min-w-0">
+                        <div className="min-w-0 flex-1">
                           <button
                             className="text-sm font-medium text-slate-800 hover:underline text-left truncate block"
                             onClick={() => goToLead(event.lead_id)}
@@ -299,7 +299,7 @@ export default function AiOrganizer() {
                     ))}
                     {data.todayTasks.map((task) => (
                       <div key={task.id} className="flex items-center justify-between gap-3 bg-blue-50/30 border border-blue-100 rounded-lg p-3">
-                        <div className="min-w-0">
+                        <div className="min-w-0 flex-1">
                           <button
                             className="text-sm font-medium text-slate-800 hover:underline text-left truncate block"
                             onClick={() => goToLead(task.related_lead_id)}
@@ -346,7 +346,7 @@ export default function AiOrganizer() {
                         onClick={() => goToLead(lead.id)}
                         className="w-full flex items-center justify-between gap-3 bg-purple-50/50 border border-purple-100 rounded-lg p-3 text-left hover:bg-purple-50 transition-colors"
                       >
-                        <div className="min-w-0">
+                        <div className="min-w-0 flex-1">
                           <p className="text-sm font-medium text-slate-800 truncate">{lead.name}</p>
                           {lead.next_follow_up && (
                             <span className="text-xs text-purple-600">
@@ -405,7 +405,7 @@ export default function AiOrganizer() {
                         onClick={() => goToLead(lead.id)}
                         className="w-full flex items-center justify-between gap-3 bg-amber-50/50 border border-amber-100 rounded-lg p-3 text-left hover:bg-amber-50 transition-colors"
                       >
-                        <div className="min-w-0">
+                        <div className="min-w-0 flex-1">
                           <p className="text-sm font-medium text-slate-800 truncate">{lead.name}</p>
                           <span className="text-xs text-amber-700">
                             {lead.filled}/{lead.total} preenchido — falta{lead.missing.length === 1 ? "" : "m"}{" "}

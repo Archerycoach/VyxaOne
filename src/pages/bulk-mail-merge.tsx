@@ -428,10 +428,10 @@ export default function BulkMailMerge() {
 
   return (
     <Layout title="Mensagens em massa">
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 p-8">
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 p-4 sm:p-8">
         <div className="max-w-7xl mx-auto">
           <div className="mb-6">
-            <h1 className="text-3xl font-bold text-gray-900">Mensagens em massa</h1>
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Mensagens em massa</h1>
             <p className="text-gray-600 mt-1">
               Mala-direta por email a partir de uma lista Excel/CSV — cada coluna vira uma variável, e a IA pode escrever o texto.
             </p>

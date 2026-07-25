@@ -199,14 +199,14 @@ export default function Leads() {
 
   return (
     <Layout title="Leads">
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 p-8">
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 p-4 sm:p-8">
         <div className="max-w-7xl mx-auto">
-          <div className="mb-6 flex justify-between items-center">
+          <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-center">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">Leads</h1>
+              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Leads</h1>
               <p className="text-gray-600 mt-1">Gerir potenciais clientes</p>
             </div>
-            <div className="flex gap-3">
+            <div className="flex flex-wrap gap-2 sm:gap-3">
               {canAssignLeads && (
                 <Button
                   onClick={() => router.push("/duplicate-leads")}

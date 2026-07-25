@@ -1213,10 +1213,10 @@ export default function BulkMessages() {
 
   return (
     <Layout title="Mensagens">
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 p-8">
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 p-4 sm:p-8">
         <div className="max-w-7xl mx-auto">
           <div className="mb-6">
-            <h1 className="text-3xl font-bold text-gray-900">Mensagens</h1>
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Mensagens</h1>
             <p className="text-gray-600 mt-1">Enviar emails ou WhatsApp para múltiplos contactos</p>
           </div>
 
@@ -1487,7 +1487,7 @@ export default function BulkMessages() {
                     <TabsContent value="email" className="space-y-4 mt-4">
                       {/* Template Selector */}
                       {(emailTemplates.length > 0 || personalTemplates.filter(t => t.template_type === 'email').length > 0) && (
-                        <div className="flex items-end justify-between pb-4 border-b gap-4">
+                        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between pb-4 border-b gap-4">
                           <div className="flex-1 space-y-2">
                             <Label htmlFor="template">Usar Template</Label>
                             <div className="flex gap-2">
@@ -1713,7 +1713,7 @@ export default function BulkMessages() {
                       )}
 
                       {whatsappSendMode === "text" && (personalTemplates.filter(t => t.template_type === 'whatsapp').length > 0) && (
-                        <div className="flex items-end justify-between pb-4 border-b gap-4">
+                        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between pb-4 border-b gap-4">
                           <div className="flex-1 space-y-2">
                             <Label htmlFor="wa-template">Usar Template Pessoal</Label>
                             <div className="flex gap-2">

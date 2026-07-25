@@ -407,13 +407,13 @@ export default function FsboPage() {
                 {searchResults && searchResults.length > 0 && (
                   <div className="space-y-2">
                     {searchResults.map((r) => (
-                      <div key={r.propertyCode} className="flex gap-3 rounded-lg border p-3">
+                      <div key={r.propertyCode} className="flex flex-col gap-3 rounded-lg border p-3 sm:flex-row">
                         {r.thumbnail && (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
                             src={r.thumbnail}
                             alt=""
-                            className="h-20 w-28 shrink-0 rounded object-cover"
+                            className="h-32 w-full shrink-0 rounded object-cover sm:h-20 sm:w-28"
                           />
                         )}
                         <div className="min-w-0 flex-1">
@@ -486,8 +486,8 @@ export default function FsboPage() {
                             </p>
                           )}
                         </div>
-                        <div className="flex shrink-0 flex-col gap-2">
-                          <Button size="sm" variant="outline" asChild>
+                        <div className="flex shrink-0 flex-row gap-2 sm:flex-col">
+                          <Button size="sm" variant="outline" asChild className="flex-1 sm:flex-none">
                             <a href={r.url} target="_blank" rel="noopener noreferrer">
                               <ExternalLink className="mr-1 h-4 w-4" />
                               Abrir
@@ -497,6 +497,7 @@ export default function FsboPage() {
                             size="sm"
                             onClick={() => saveFromSearch(r)}
                             disabled={r.alreadySaved}
+                            className="flex-1 sm:flex-none"
                           >
                             Guardar
                           </Button>

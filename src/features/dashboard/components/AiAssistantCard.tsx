@@ -92,8 +92,8 @@ export function AiAssistantCard() {
   ].filter((b): b is { icon: typeof ClipboardCheck; label: string; className: string } => !!b);
 
   return (
-    <Card className="p-6 bg-gradient-to-br from-indigo-50 to-purple-50 border-indigo-100">
-      <div className="flex items-start justify-between gap-4">
+    <Card className="p-4 sm:p-6 bg-gradient-to-br from-indigo-50 to-purple-50 border-indigo-100">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-2">
             <Bot className="h-5 w-5 text-indigo-600" />
@@ -120,7 +120,7 @@ export function AiAssistantCard() {
           )}
         </div>
 
-        <div className="flex flex-col gap-2 shrink-0">
+        <div className="flex flex-wrap gap-2 sm:flex-col sm:flex-nowrap sm:shrink-0">
           <Button size="sm" variant="outline" className="border-indigo-200 text-indigo-700 hover:bg-indigo-100" onClick={() => router.push("/ai-organizer")}>
             Ver Plano Completo
             <ArrowRight className="h-3.5 w-3.5 ml-1.5" />
