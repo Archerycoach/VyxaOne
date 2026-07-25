@@ -205,7 +205,7 @@ export function CalendarGrid({
   if (viewMode === "week") {
     return (
       <>
-        <div className="grid grid-cols-7 gap-2">
+        <div className="grid grid-cols-7 gap-1 sm:gap-2">
           {getWeekDays().map((day, index) => {
             const dayEvents = getEventsForDay(day);
             const dayTasks = getTasksForDay(day);
@@ -235,7 +235,7 @@ export function CalendarGrid({
             return (
               <div 
                 key={index} 
-                className={`border rounded-lg p-2 min-h-[200px] flex flex-col gap-1 ${isToday ? "bg-purple-50 border-purple-300" : ""}`}
+                className={`border rounded-lg p-1 sm:p-2 min-h-[110px] sm:min-h-[200px] flex flex-col gap-1 ${isToday ? "bg-purple-50 border-purple-300" : ""}`}
                 onDragOver={onDragOver}
                 onDrop={(e) => onDrop(e, day)}
               >
@@ -362,7 +362,7 @@ export function CalendarGrid({
             return (
               <div
                 key={index}
-                className={`border rounded-lg p-2 min-h-[100px] flex flex-col gap-1 ${
+                className={`border rounded-lg p-1 sm:p-2 min-h-[64px] sm:min-h-[100px] flex flex-col gap-1 ${
                   !isCurrentMonth ? "bg-gray-50 text-gray-400" : ""
                 } ${isToday ? "bg-purple-50 border-purple-300" : ""}`}
                 onDragOver={onDragOver}

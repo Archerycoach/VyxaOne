@@ -124,7 +124,7 @@ export function PipelineBoard({ leads, onLeadMove, onLeadClick, onLeadDelete, is
     >
       <div className="flex gap-4 pb-4 overflow-x-auto h-[calc(100vh-240px)]">
         {stages.map((stage, index) => (
-          <div key={stage.id} className="min-w-[320px] max-w-[320px] flex-shrink-0">
+          <div key={stage.id} className="w-[85vw] max-w-[85vw] sm:w-80 sm:max-w-80 flex-shrink-0">
             <PipelineColumn
               id={stage.id}
               title={stage.name}

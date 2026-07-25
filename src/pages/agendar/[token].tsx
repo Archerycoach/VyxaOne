@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import Head from "next/head";
-import { Calendar, Clock, CheckCircle2, Home } from "lucide-react";
+import { Calendar, Clock, CheckCircle2, Home, ChevronLeft, ChevronRight } from "lucide-react";
 
 interface Slot {
   id: string;
@@ -31,6 +31,34 @@ function formatTimeLabel(iso: string): string {
   return new Date(iso).toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" });
 }
 
+/** Chave de dia local ("2026-07-25") — agrupa slots por dia no calendário. */
+function dayKeyOf(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function dayKeyOfDate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function monthLabel(d: Date): string {
+  return d.toLocaleDateString("pt-PT", { month: "long", year: "numeric" });
+}
+
+const WEEKDAYS = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
+
+/** Matriz do mês (semana a começar 2ª feira); células null para o preenchimento. */
+function buildMonthMatrix(year: number, month: number): Array<Date | null> {
+  const first = new Date(year, month, 1);
+  const startWeekday = (first.getDay() + 6) % 7; // 0 = segunda
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const cells: Array<Date | null> = [];
+  for (let i = 0; i < startWeekday; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(year, month, d));
+  while (cells.length % 7 !== 0) cells.push(null);
+  return cells;
+}
+
 export default function BookingPage() {
   const router = useRouter();
   const { token } = router.query;
@@ -40,6 +68,8 @@ export default function BookingPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
+  const [viewMonth, setViewMonth] = useState<Date | null>(null);
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -103,12 +133,38 @@ export default function BookingPage() {
     }
   };
 
-  const slotsByDay = (data?.slots || []).reduce<Record<string, Slot[]>>((acc, slot) => {
-    const day = formatDayLabel(slot.start_time);
-    if (!acc[day]) acc[day] = [];
-    acc[day].push(slot);
+  // Slots agrupados por dia (chave "YYYY-MM-DD") + dias com disponibilidade.
+  const sortedSlots = [...(data?.slots || [])].sort(
+    (a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime(),
+  );
+  const slotsByDayKey = sortedSlots.reduce<Record<string, Slot[]>>((acc, slot) => {
+    const key = dayKeyOf(slot.start_time);
+    (acc[key] = acc[key] || []).push(slot);
     return acc;
   }, {});
+  const availableDayKeys = new Set(Object.keys(slotsByDayKey));
+  const firstSlotDate = sortedSlots.length ? new Date(sortedSlots[0].start_time) : null;
+  const lastSlotDate = sortedSlots.length ? new Date(sortedSlots[sortedSlots.length - 1].start_time) : null;
+
+  // Ao carregar os horários, abrir o calendário no 1.º mês com vagas e
+  // pré-selecionar o 1.º dia disponível.
+  useEffect(() => {
+    if (!firstSlotDate) return;
+    setViewMonth((prev) => prev || new Date(firstSlotDate.getFullYear(), firstSlotDate.getMonth(), 1));
+    setSelectedDay((prev) => prev || dayKeyOfDate(firstSlotDate));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data]);
+
+  const canGoPrev =
+    !!viewMonth && !!firstSlotDate &&
+    viewMonth > new Date(firstSlotDate.getFullYear(), firstSlotDate.getMonth(), 1);
+  const canGoNext =
+    !!viewMonth && !!lastSlotDate &&
+    viewMonth < new Date(lastSlotDate.getFullYear(), lastSlotDate.getMonth(), 1);
+  const shiftMonth = (delta: number) => {
+    setViewMonth((prev) => (prev ? new Date(prev.getFullYear(), prev.getMonth() + delta, 1) : prev));
+  };
+  const todayKey = dayKeyOfDate(new Date());
 
   return (
     <>
@@ -182,38 +238,120 @@ export default function BookingPage() {
                   )}
                 </div>
               ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-                  {Object.entries(slotsByDay).map(([day, slots]) => (
-                    <div key={day}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, color: "#3B6E8F" }}>
-                        <Calendar size={16} />
-                        <span style={{ fontWeight: 600, fontSize: 14, textTransform: "capitalize" }}>{day}</span>
-                      </div>
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                        {slots.map((slot) => (
-                          <button
-                            key={slot.id}
-                            onClick={() => setSelectedSlot(slot)}
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 6,
-                              padding: "10px 16px",
-                              borderRadius: 10,
-                              border: "1px solid #E8E0D2",
-                              background: "#FFFFFF",
-                              color: "#22303A",
-                              fontSize: 14,
-                              cursor: "pointer",
-                            }}
-                          >
-                            <Clock size={14} />
-                            {formatTimeLabel(slot.start_time)}
-                          </button>
-                        ))}
-                      </div>
+                <div
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: 24,
+                    background: "#FFFFFF",
+                    border: "1px solid #E8E0D2",
+                    borderRadius: 14,
+                    padding: 24,
+                  }}
+                >
+                  {/* Calendário mensal */}
+                  <div style={{ flex: "1 1 300px", minWidth: 280 }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+                      <button
+                        onClick={() => canGoPrev && shiftMonth(-1)}
+                        disabled={!canGoPrev}
+                        aria-label="Mês anterior"
+                        style={{
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          width: 32, height: 32, borderRadius: 8, border: "1px solid #E8E0D2",
+                          background: "#FFFFFF", cursor: canGoPrev ? "pointer" : "default",
+                          opacity: canGoPrev ? 1 : 0.35, color: "#22303A",
+                        }}
+                      >
+                        <ChevronLeft size={18} />
+                      </button>
+                      <span style={{ fontWeight: 600, fontSize: 15, textTransform: "capitalize", color: "#1A2B3C" }}>
+                        {viewMonth ? monthLabel(viewMonth) : ""}
+                      </span>
+                      <button
+                        onClick={() => canGoNext && shiftMonth(1)}
+                        disabled={!canGoNext}
+                        aria-label="Mês seguinte"
+                        style={{
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          width: 32, height: 32, borderRadius: 8, border: "1px solid #E8E0D2",
+                          background: "#FFFFFF", cursor: canGoNext ? "pointer" : "default",
+                          opacity: canGoNext ? 1 : 0.35, color: "#22303A",
+                        }}
+                      >
+                        <ChevronRight size={18} />
+                      </button>
                     </div>
-                  ))}
+
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4, marginBottom: 6 }}>
+                      {WEEKDAYS.map((w) => (
+                        <div key={w} style={{ textAlign: "center", fontSize: 11, fontWeight: 600, color: "#8A968F", padding: "4px 0" }}>
+                          {w}
+                        </div>
+                      ))}
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4 }}>
+                      {viewMonth &&
+                        buildMonthMatrix(viewMonth.getFullYear(), viewMonth.getMonth()).map((cell, i) => {
+                          if (!cell) return <div key={`e-${i}`} />;
+                          const key = dayKeyOfDate(cell);
+                          const hasSlots = availableDayKeys.has(key);
+                          const isSelected = key === selectedDay;
+                          const isToday = key === todayKey;
+                          return (
+                            <button
+                              key={key}
+                              onClick={() => hasSlots && setSelectedDay(key)}
+                              disabled={!hasSlots}
+                              style={{
+                                aspectRatio: "1 / 1",
+                                display: "flex", alignItems: "center", justifyContent: "center",
+                                borderRadius: 10,
+                                border: isToday && !isSelected ? "1px solid #3B6E8F" : "1px solid transparent",
+                                background: isSelected ? "#3B6E8F" : hasSlots ? "#EAF1F5" : "transparent",
+                                color: isSelected ? "#FFFFFF" : hasSlots ? "#22303A" : "#C9BFAE",
+                                fontSize: 14,
+                                fontWeight: hasSlots ? 600 : 400,
+                                cursor: hasSlots ? "pointer" : "default",
+                              }}
+                            >
+                              {cell.getDate()}
+                            </button>
+                          );
+                        })}
+                    </div>
+                  </div>
+
+                  {/* Horas do dia selecionado */}
+                  <div style={{ flex: "1 1 200px", minWidth: 180 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, color: "#3B6E8F" }}>
+                      <Calendar size={16} />
+                      <span style={{ fontWeight: 600, fontSize: 14, textTransform: "capitalize" }}>
+                        {selectedDay ? formatDayLabel(`${selectedDay}T00:00:00`) : "Escolha um dia"}
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 300, overflowY: "auto" }}>
+                      {(selectedDay ? slotsByDayKey[selectedDay] || [] : []).map((slot) => (
+                        <button
+                          key={slot.id}
+                          onClick={() => setSelectedSlot(slot)}
+                          style={{
+                            display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                            padding: "12px 16px", borderRadius: 10, border: "1px solid #3B6E8F",
+                            background: "#FFFFFF", color: "#3B6E8F", fontSize: 15, fontWeight: 600,
+                            cursor: "pointer",
+                          }}
+                        >
+                          <Clock size={14} />
+                          {formatTimeLabel(slot.start_time)}
+                        </button>
+                      ))}
+                      {selectedDay && (slotsByDayKey[selectedDay] || []).length === 0 && (
+                        <p style={{ color: "#8A968F", fontSize: 14, margin: 0 }}>Sem horários neste dia.</p>
+                      )}
+                    </div>
+                  </div>
                 </div>
               )
             ) : (
@@ -234,24 +372,24 @@ export default function BookingPage() {
                     placeholder="O seu nome"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    style={{ padding: "10px 14px", borderRadius: 8, border: "1px solid #E8E0D2", fontSize: 14, background: "#000000", color: "#FFFFFF" }}
+                    style={{ padding: "10px 14px", borderRadius: 8, border: "1px solid #E8E0D2", fontSize: 14, background: "#FFFFFF", color: "#22303A" }}
                   />
                   <input
                     type="email"
                     placeholder="O seu email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    style={{ padding: "10px 14px", borderRadius: 8, border: "1px solid #E8E0D2", fontSize: 14, background: "#000000", color: "#FFFFFF" }}
+                    style={{ padding: "10px 14px", borderRadius: 8, border: "1px solid #E8E0D2", fontSize: 14, background: "#FFFFFF", color: "#22303A" }}
                   />
                   <input
                     placeholder="O seu telefone (opcional)"
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
-                    style={{ padding: "10px 14px", borderRadius: 8, border: "1px solid #E8E0D2", fontSize: 14, background: "#000000", color: "#FFFFFF" }}
+                    style={{ padding: "10px 14px", borderRadius: 8, border: "1px solid #E8E0D2", fontSize: 14, background: "#FFFFFF", color: "#22303A" }}
                   />
 
                   {(data.questions || []).map((q) => {
-                    const inputStyle = { padding: "10px 14px", borderRadius: 8, border: "1px solid #E8E0D2", fontSize: 14, background: "#000000", color: "#FFFFFF", width: "100%" as const };
+                    const inputStyle = { padding: "10px 14px", borderRadius: 8, border: "1px solid #E8E0D2", fontSize: 14, background: "#FFFFFF", color: "#22303A", width: "100%" as const };
                     return (
                       <div key={q.id} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                         <label style={{ fontSize: 13, color: "#555" }}>{q.label}{q.required ? " *" : ""}</label>
