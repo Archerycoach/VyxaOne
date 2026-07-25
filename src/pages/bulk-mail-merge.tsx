@@ -34,6 +34,7 @@ import { RichTextEditor } from "@/components/ui/RichTextEditor";
 import { collapseEmptyBlocks } from "@/lib/emailSignatureFormat";
 import { parseExcelFile } from "@/services/importService";
 import { normalizeVarToken } from "@/lib/mailMergeVars";
+import { startBulkEmailSend } from "@/lib/bulkEmailClient";
 
 /**
  * Mensagens em massa (mala-direta por Excel/CSV).
@@ -379,27 +380,22 @@ export default function BulkMailMerge() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("Sessão expirada. Faça login novamente.");
 
-      // Envio em SEGUNDO PLANO: enfileira e devolve logo — o worker no servidor
-      // envia gradualmente, mesmo que o utilizador saia da página.
-      const res = await fetch("/api/bulk-email/enqueue", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
-        body: JSON.stringify({
-          subject,
-          html: message,
-          attachments: attachments.map((att) => ({ filename: att.name, content: att.base64, encoding: "base64" })),
-          sendCopyToSender: sendCopyToSelf && Boolean(copyEmail),
-          audienceSource: "sheet_merge",
-          criteria: { file: sheetFileName, rows: sheetRows.length },
-          recipients: selectedData.map((r) => ({ email: r.email, name: r.name, vars: r.vars })),
-        }),
+      // Envio em SEGUNDO PLANO: enfileira (em blocos) e devolve logo — o worker
+      // no servidor envia gradualmente, mesmo que o utilizador saia da página.
+      const { queued } = await startBulkEmailSend({
+        accessToken: session.access_token,
+        subject,
+        html: message,
+        attachments: attachments.map((att) => ({ filename: att.name, content: att.base64, encoding: "base64" })),
+        sendCopyToSender: sendCopyToSelf && Boolean(copyEmail),
+        audienceSource: "sheet_merge",
+        criteria: { file: sheetFileName, rows: sheetRows.length },
+        recipients: selectedData.map((r) => ({ email: r.email, name: r.name, vars: r.vars })),
       });
-      const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.error || "Não foi possível iniciar o envio.");
 
       toast({
         title: "Envio iniciado em segundo plano",
-        description: `${data.queued} email(s) na fila. Pode continuar a trabalhar — acompanhe o progresso no histórico acima.`,
+        description: `${queued} email(s) na fila. Pode continuar a trabalhar — acompanhe o progresso no histórico acima.`,
       });
 
       // Limpa o formulário; o histórico passa a refletir o progresso.

@@ -32,6 +32,7 @@ import { toast } from "@/hooks/use-toast";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
 import { collapseEmptyBlocks } from "@/lib/emailSignatureFormat";
 import { getTemplates, createTemplate, deleteTemplate } from "@/services/templateService";
+import { startBulkEmailSend } from "@/lib/bulkEmailClient";
 
 function normalizeText(value: string): string {
   return value
@@ -1056,43 +1057,38 @@ export default function BulkMessages() {
           throw new Error("Sessão expirada. Por favor, faça login novamente.");
         }
 
-        const res = await fetch("/api/bulk-email/enqueue", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
-          body: JSON.stringify({
-            subject,
-            html: message,
-            attachments: attachments.map((att) => ({ filename: att.name, content: att.base64, encoding: "base64" })),
-            sendCopyToSender: sendCopyToSelf && Boolean(copyEmail),
-            audienceSource: router.query.aiDraft === "1" ? "ai_search" : "manual",
-            criteria: {
-              location: router.query.location || null,
-              typology: router.query.typology || null,
-              buyPurpose: router.query.buyPurpose || null,
-              propertyType: router.query.propertyType || null,
-            },
-            recipients: selectedData
-              .filter((r) => r.email)
-              .map((r) => ({
-                email: r.email,
-                name: r.name,
-                vars: {
-                  nome: r.name,
-                  email: r.email || "",
-                  telefone: r.phone || "",
-                  empreendimento: r.development_name || "",
-                },
-                leadId: r.type === "lead" ? r.id.replace("lead-", "") : undefined,
-                contactId: r.type === "contact" ? r.id.replace("contact-", "") : undefined,
-              })),
-          }),
+        const { queued } = await startBulkEmailSend({
+          accessToken: session.access_token,
+          subject,
+          html: message,
+          attachments: attachments.map((att) => ({ filename: att.name, content: att.base64, encoding: "base64" })),
+          sendCopyToSender: sendCopyToSelf && Boolean(copyEmail),
+          audienceSource: router.query.aiDraft === "1" ? "ai_search" : "manual",
+          criteria: {
+            location: router.query.location || null,
+            typology: router.query.typology || null,
+            buyPurpose: router.query.buyPurpose || null,
+            propertyType: router.query.propertyType || null,
+          },
+          recipients: selectedData
+            .filter((r) => r.email)
+            .map((r) => ({
+              email: r.email as string,
+              name: r.name,
+              vars: {
+                nome: r.name,
+                email: r.email || "",
+                telefone: r.phone || "",
+                empreendimento: r.development_name || "",
+              },
+              leadId: r.type === "lead" ? r.id.replace("lead-", "") : undefined,
+              contactId: r.type === "contact" ? r.id.replace("contact-", "") : undefined,
+            })),
         });
-        const data = await res.json();
-        if (!res.ok || !data.success) throw new Error(data.error || "Não foi possível iniciar o envio.");
 
         toast({
           title: "Envio iniciado em segundo plano",
-          description: `${data.queued} email(s) na fila. Pode continuar a trabalhar — o progresso aparece no histórico.`,
+          description: `${queued} email(s) na fila. Pode continuar a trabalhar — o progresso aparece no histórico.`,
         });
         setSubject("");
         setMessage("");

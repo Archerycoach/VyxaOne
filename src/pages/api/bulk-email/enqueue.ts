@@ -38,6 +38,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       audienceSource,
       criteria,
       recipients,
+      recipientsTotal,
     } = req.body as {
       subject?: string;
       html?: string;
@@ -45,6 +46,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       sendCopyToSender?: boolean;
       audienceSource?: string;
       criteria?: Record<string, any>;
+      /** Opcional: destinatários inline (envios pequenos). Nos grandes vêm depois, em blocos. */
       recipients?: Array<{
         email?: string;
         name?: string;
@@ -52,13 +54,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         leadId?: string | null;
         contactId?: string | null;
       }>;
+      /** Total previsto de destinatários (quando vêm em blocos separados). */
+      recipientsTotal?: number;
     };
 
     if (!subject?.trim() || !html?.trim()) {
       return res.status(400).json({ error: "Falta o assunto ou a mensagem." });
     }
 
-    // Só destinatários com email válido, sem duplicados.
+    // Destinatários inline (envios pequenos): opcionais. Nos grandes, a lista
+    // vem depois em blocos por /api/bulk-email/enqueue-recipients — evita que um
+    // único pedido gigante estoure o limite de tamanho da plataforma.
     const seen = new Set<string>();
     const clean = (recipients || []).filter((r) => {
       const email = (r.email || "").trim().toLowerCase();
@@ -66,7 +72,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       seen.add(email);
       return true;
     });
-    if (clean.length === 0) {
+
+    const plannedTotal = typeof recipientsTotal === "number" && recipientsTotal > 0 ? recipientsTotal : clean.length;
+    if (plannedTotal === 0) {
       return res.status(400).json({ error: "Nenhum destinatário com email." });
     }
 
@@ -88,7 +96,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         channel: "email",
         audience_source: audienceSource || "manual",
         criteria: criteria || {},
-        recipients_total: clean.length,
+        recipients_total: plannedTotal,
         body_html: html,
         attachments: normalizedAttachments,
         copy_to_email: sendCopyToSender ? user.email || null : null,
@@ -102,34 +110,35 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(500).json({ error: "Não foi possível criar a campanha." });
     }
 
-    // 2. Fila: uma linha por destinatário (inserção em blocos).
-    const queueRows = clean.map((r) => ({
-      campaign_id: campaign.id,
-      user_id: user.id,
-      to_email: (r.email as string).trim(),
-      recipient_name: r.name || null,
-      vars: r.vars || {},
-      lead_id: r.leadId || null,
-      contact_id: r.contactId || null,
-    }));
+    // 2. Destinatários inline (envios pequenos): insere já e arranca. Nos
+    //    envios grandes NÃO vêm aqui — o cliente adiciona-os em blocos por
+    //    /api/bulk-email/enqueue-recipients (e é lá que arranca o worker).
+    if (clean.length > 0) {
+      const queueRows = clean.map((r) => ({
+        campaign_id: campaign.id,
+        user_id: user.id,
+        to_email: (r.email as string).trim(),
+        recipient_name: r.name || null,
+        vars: r.vars || {},
+        lead_id: r.leadId || null,
+        contact_id: r.contactId || null,
+      }));
 
-    for (let i = 0; i < queueRows.length; i += 500) {
-      const { error: qError } = await admin.from("bulk_email_queue").insert(queueRows.slice(i, i + 500));
-      if (qError) {
-        console.error("[enqueue] Erro ao inserir na fila:", qError);
-        return res.status(500).json({ error: "Falha ao preparar a fila de envio." });
+      for (let i = 0; i < queueRows.length; i += 500) {
+        const { error: qError } = await admin.from("bulk_email_queue").insert(queueRows.slice(i, i + 500));
+        if (qError) {
+          console.error("[enqueue] Erro ao inserir na fila:", qError);
+          return res.status(500).json({ error: "Falha ao preparar a fila de envio." });
+        }
       }
-    }
 
-    // 3. Arrancar o processamento (fire-and-forget — não esperamos pelo fim).
-    const appUrl = deriveAppUrl(req);
-    void fetch(`${appUrl}/api/bulk-email/process`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.CRON_SECRET}` },
-      body: JSON.stringify({ campaignId: campaign.id }),
-    }).catch(() => {
-      // Se o arranque falhar, o cron de recuperação apanha a fila na mesma.
-    });
+      const appUrl = deriveAppUrl(req);
+      void fetch(`${appUrl}/api/bulk-email/process`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.CRON_SECRET}` },
+        body: JSON.stringify({ campaignId: campaign.id }),
+      }).catch(() => {});
+    }
 
     return res.status(200).json({ success: true, campaignId: campaign.id, queued: clean.length });
   } catch (error: any) {
