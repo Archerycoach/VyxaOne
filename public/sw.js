@@ -10,7 +10,7 @@
  *
  * Ao mudar a app shell, incrementar CACHE_VERSION para limpar o cache antigo.
  */
-const CACHE_VERSION = "vyxa-v1";
+const CACHE_VERSION = "vyxa-v2";
 const OFFLINE_URL = "/offline.html";
 const PRECACHE = [OFFLINE_URL, "/icons/icon-192.png"];
 
@@ -69,4 +69,43 @@ self.addEventListener("fetch", (event) => {
       )
     );
   }
+});
+
+// ── Notificações push ────────────────────────────────────────────────────────
+self.addEventListener("push", (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch (e) {
+    data = { title: "Vyxa One", body: event.data ? event.data.text() : "" };
+  }
+
+  const title = data.title || "Vyxa One";
+  const options = {
+    body: data.body || "",
+    icon: "/icons/icon-192.png",
+    badge: "/icons/icon-192.png",
+    tag: data.tag || undefined,
+    data: { url: data.url || "/" },
+  };
+
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const targetUrl = (event.notification.data && event.notification.data.url) || "/";
+
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
+      // Se a app já está aberta, foca-a e navega para o alvo.
+      for (const client of clientList) {
+        if ("focus" in client) {
+          if ("navigate" in client) client.navigate(targetUrl).catch(() => {});
+          return client.focus();
+        }
+      }
+      return self.clients.openWindow(targetUrl);
+    })
+  );
 });

@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Bell, Check, CheckCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { PushNotificationToggle } from "@/components/PushNotificationToggle";
 import {
   Popover,
   PopoverContent,
@@ -305,6 +306,7 @@ export function NotificationCenter() {
             </div>
           )}
         </ScrollArea>
+        <PushNotificationToggle />
       </PopoverContent>
     </Popover>
   );

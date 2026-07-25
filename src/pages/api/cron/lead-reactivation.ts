@@ -1,3 +1,4 @@
+import { sendPushToUser } from "@/lib/server/webPush";
 import type { NextApiRequest, NextApiResponse } from "next";
 import { createClient } from "@supabase/supabase-js";
 import { sendWhatsAppTemplate } from "@/services/whatsappService";
@@ -308,6 +309,12 @@ async function processLead(
       title: "🔁 Ciclo de reativação concluído sem resposta",
       message: `${lead.name}: ${REACTIVATION_CADENCE_DAYS.length} emails enviados sem resposta. A sequência recomeça hoje — considera tentar por outro canal.`,
       data: { kind: "reactivation_cycle", lead_id: lead.id, action_url: "/leads" },
+    });
+
+    await sendPushToUser(supabaseAdmin, lead.user_id, {
+      title: "🔁 Reativação sem resposta",
+      body: `${lead.name}: considera tentar por outro canal (chamada, WhatsApp).`,
+      url: "/leads",
     });
   }
 

@@ -1,4 +1,5 @@
 import { runAI } from "@/lib/ai/provider";
+import { sendPushToUser } from "@/lib/server/webPush";
 import { getLeadAutoAnalysisPrompt } from "@/lib/ai/prompts/leadAutoAnalysis";
 import { getLeadQualification, formatCurrentQualificationValue, mapExtractedDataToLeadUpdate } from "@/lib/leadQualification";
 import { storeMemory } from "@/lib/ai/embeddings";
@@ -601,6 +602,13 @@ export async function runLeadAutoAnalysis(
     if (notificationError) {
       console.error(`[Lead Auto Analysis] Erro ao criar notificação (lead ${leadId}):`, notificationError);
     }
+
+    await sendPushToUser(supabaseAdmin, userId, {
+      title: `🤖 IA analisou ${lead.name}`,
+      body: applied.summary || notificationLines[0] || "Análise concluída.",
+      url: "/leads",
+      tag: `lead-analysis-${leadId}`,
+    });
 
     console.log(`[Lead Auto Analysis] Lead ${leadId} analisada (trigger: ${trigger}):`, {
       temperature: applied.temperature,

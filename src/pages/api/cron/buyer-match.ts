@@ -1,3 +1,4 @@
+import { sendPushToUser } from "@/lib/server/webPush";
 import { NextApiRequest, NextApiResponse } from "next";
 import { createClient } from "@supabase/supabase-js";
 import {
@@ -221,6 +222,13 @@ async function processUser(
         related_entity_type: "lead",
       });
       if (!notificationError) results.notifications++;
+
+      await sendPushToUser(supabaseAdmin, userId, {
+        title: `🎯 Buyer Match: ${lead.name}`,
+        body: lines[0] || "Novas oportunidades compatíveis com esta lead.",
+        url: "/leads",
+        tag: `buyer-match-${lead.id}`,
+      });
 
       // 5. Email automático ao cliente (opt-in do consultor)
       if (profile.buyer_match_email_enabled && lead.email) {

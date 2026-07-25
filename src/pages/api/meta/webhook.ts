@@ -4,6 +4,7 @@ import { parseBudgetValue } from "@/lib/server/parseBudgetValue";
 import { buffer } from "micro";
 import crypto from "crypto";
 import { logEmailInteractionServer } from "@/lib/emailInteractionLogger";
+import { sendPushToUser } from "@/lib/server/webPush";
 import { recordConsent } from "@/services/consentService";
 import { sendWhatsAppTemplate } from "@/services/whatsappService";
 import { calculateLeadScore } from "@/services/leadScoringService";
@@ -664,6 +665,12 @@ export default async function handler(
               related_entity_type: "lead",
             } as any);
 
+            await sendPushToUser(supabase, integration.user_id, {
+              title: `🔁 ${existingLead.name || "Lead"} voltou a contactar`,
+              body: `Nova submissão de formulário na Meta — sinal de intenção forte.`,
+              url: "/leads",
+            });
+
             await applyMetaFormAssociation(existingLead.id, formAssociation, existingLead.custom_fields);
 
             console.log("✅ Note added to existing lead:", existingLead.id);
@@ -883,6 +890,14 @@ export default async function handler(
             type: "lead_assignment",
             link_url: `/leads`,
             is_read: false
+          });
+
+          // Notificação push no telemóvel (best-effort).
+          await sendPushToUser(supabase, integration.user_id, {
+            title: "🎯 Nova Lead da Meta",
+            body: `${newLead.name} acabou de entrar pelo Facebook/Instagram.`,
+            url: "/leads",
+            tag: "new-lead",
           });
 
           // ✅ Run unified pipeline: notification → auto-responder → AI matcher → Notion
