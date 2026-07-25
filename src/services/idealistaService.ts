@@ -307,17 +307,24 @@ export async function searchIdealistaProperties(
     }
 
     const hasAgencyFilter = params.agencyName && params.agencyName.trim() !== "";
-    if (hasAgencyFilter) baseParams.append("keyword", params.agencyName!.trim());
+    // NÃO enviamos "keyword" à API: o keyword pesquisa no título/descrição e os
+    // anúncios de agência raramente lá têm o nome da mediadora (está no
+    // contactInfo.commercialName). Passava a devolver quase nada. Em vez disso,
+    // buscamos amplamente e filtramos a agência LOCALMENTE (ver abaixo).
 
-    const targetCount = params.maxItems || 20;
+    // Buscas por agência precisam de mostrar a carteira dela, não só 20 — e
+    // exigem varrer mais resultados, porque a agência é uma fração do total.
+    const targetCount = hasAgencyFilter ? Math.max(params.maxItems || 0, 60) : params.maxItems || 20;
     const startPage = params.numPage || 1;
     const batchSize = 2;
 
     // Páginas por zona: menos quando há várias zonas, para não disparar
     // centenas de chamadas — cada zona contribui na mesma com os seus imóveis.
+    // Com filtro de agência varremos mais páginas (a agência é uma fração do
+    // total de anúncios, é preciso mais candidatos para a encontrar toda).
     const multiZone = resolvedLocations.length > 1;
     const pagesPerLocation = hasAgencyFilter
-      ? (multiZone ? 3 : 6)
+      ? (multiZone ? 4 : 8)
       : filterRoomsLocally
         ? (multiZone ? 2 : 3)
         : 1;
@@ -407,18 +414,26 @@ export async function searchIdealistaProperties(
               [];
 
           if (hasAgencyFilter && pageResults.length > 0) {
-            const normalizeString = (str: string) => str.toLowerCase().replace(/[\/\-\.\s]/g, "");
+            const normalizeString = (str: string) => String(str || "").toLowerCase().replace(/[\/\-\.\s]/g, "");
             const agencyLower = normalizeString(params.agencyName as string);
             pageResults = pageResults.filter((p: any) => {
+              const contact = p.contactInfo || {};
+              // O nome da mediadora vem sobretudo em contactInfo.commercialName /
+              // micrositeShortName — sem estes campos o filtro apanhava quase nada.
               const searchSpace = [
-                p.description || "",
+                contact.commercialName || "",
+                contact.micrositeShortName || "",
+                contact.agencyName || "",
+                p.professionalName || "",
+                p.clientName || "",
+                p.clientAlias || "",
+                p.agencyName || "",
                 p.suggestedTexts?.title || "",
                 p.suggestedTexts?.subtitle || "",
-                p.clientName || "",
+                p.description || "",
                 p.logoUrl || "",
+                contact.agencyLogo || "",
                 p.externalReference || "",
-                p.clientAlias || "",
-                p.professionalName || "",
               ]
                 .map(normalizeString)
                 .join(" | ");
