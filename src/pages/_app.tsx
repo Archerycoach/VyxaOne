@@ -4,9 +4,23 @@ import { ThemeProvider } from "@/contexts/ThemeProvider";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export default function App({ Component, pageProps }: AppProps) {
+  // Regista o service worker do PWA (só em produção — em dev o cache atrapalha
+  // o hot reload). Torna a app instalável e resiliente a falhas de rede.
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "production") return;
+    if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
+    const register = () => {
+      navigator.serviceWorker
+        .register("/sw.js")
+        .catch((err) => console.error("[PWA] Falha ao registar o service worker:", err));
+    };
+    window.addEventListener("load", register);
+    return () => window.removeEventListener("load", register);
+  }, []);
+
   // Create QueryClient instance with useState to ensure it persists across renders
   const [queryClient] = useState(
     () =>

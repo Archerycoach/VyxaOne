@@ -15,6 +15,15 @@ export default function Document() {
           async
           data-softgen-monitoring="true"
         />
+
+        {/* PWA — instalável no telemóvel (ver public/manifest.webmanifest e sw.js). */}
+        <link rel="manifest" href="/manifest.webmanifest" />
+        <meta name="theme-color" content="#ffffff" />
+        <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <meta name="apple-mobile-web-app-title" content="Vyxa" />
       </Head>
       <body
         className={cn(
