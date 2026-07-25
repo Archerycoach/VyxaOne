@@ -57,6 +57,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       searchParams.agencyName = agencyName;
     }
 
+    // Orçamento mínimo/máximo definidos pelo consultor no painel — sobrepõem-se
+    // ao que está guardado na lead (para filtrar o que não interessa nesta busca).
+    const minPriceRaw = typeof req.query.minPrice === "string" ? Number(req.query.minPrice) : NaN;
+    if (Number.isFinite(minPriceRaw) && minPriceRaw > 0) {
+      searchParams.minPrice = minPriceRaw;
+    }
+    const maxPriceRaw = typeof req.query.maxPrice === "string" ? Number(req.query.maxPrice) : NaN;
+    if (Number.isFinite(maxPriceRaw) && maxPriceRaw > 0) {
+      searchParams.maxPrice = maxPriceRaw;
+    }
+
     // Perform search
     const properties = await searchIdealistaProperties(searchParams, credentials, user.id);
 

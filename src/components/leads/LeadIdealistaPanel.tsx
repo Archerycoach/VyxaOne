@@ -46,6 +46,11 @@ export function LeadIdealistaPanel({ lead }: LeadIdealistaPanelProps) {
   // um termo só.
   const [agencyName, setAgencyName] = useState("");
 
+  // Orçamento min/máx desta busca. Arrancam do que a lead tem guardado, mas o
+  // consultor pode ajustá-los para filtrar o que não interessa.
+  const [minBudget, setMinBudget] = useState<string>(lead.budget_min ? String(lead.budget_min) : "");
+  const [maxBudget, setMaxBudget] = useState<string>(lead.budget_max ? String(lead.budget_max) : "");
+
   const handleSearch = async () => {
     setLoading(true);
 
@@ -61,6 +66,12 @@ export function LeadIdealistaPanel({ lead }: LeadIdealistaPanelProps) {
       const query = new URLSearchParams({ leadId: lead.id });
       if (agencyName.trim()) {
         query.set("agencyName", agencyName.trim());
+      }
+      if (minBudget.trim() && Number(minBudget) > 0) {
+        query.set("minPrice", String(Number(minBudget)));
+      }
+      if (maxBudget.trim() && Number(maxBudget) > 0) {
+        query.set("maxPrice", String(Number(maxBudget)));
       }
 
       const response = await fetch(`/api/idealista/search-for-lead?${query.toString()}`, {
@@ -175,6 +186,39 @@ export function LeadIdealistaPanel({ lead }: LeadIdealistaPanelProps) {
               Esta lead ainda tem poucos critérios. A pesquisa pode ficar demasiado ampla.
             </p>
           )}
+        </div>
+
+        <div className="flex flex-wrap gap-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="idealista-min" className="text-xs text-muted-foreground">
+              Orçamento mínimo (opcional)
+            </Label>
+            <Input
+              id="idealista-min"
+              type="number"
+              inputMode="numeric"
+              value={minBudget}
+              onChange={(event) => setMinBudget(event.target.value)}
+              placeholder="Ex: 150000"
+              disabled={loading}
+              className="w-40"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="idealista-max" className="text-xs text-muted-foreground">
+              Orçamento máximo (opcional)
+            </Label>
+            <Input
+              id="idealista-max"
+              type="number"
+              inputMode="numeric"
+              value={maxBudget}
+              onChange={(event) => setMaxBudget(event.target.value)}
+              placeholder="Ex: 400000"
+              disabled={loading}
+              className="w-40"
+            />
+          </div>
         </div>
 
         <div className="space-y-1.5">
