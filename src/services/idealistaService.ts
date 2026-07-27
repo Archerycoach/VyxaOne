@@ -34,6 +34,10 @@ interface IdealistaSearchParams {
    * pedido de apartamento devolvia também moradias.
    */
   propertyKinds?: string[];
+  /** Só imóveis com garagem/estacionamento (parkingSpace.hasParkingSpace). */
+  requireGarage?: boolean;
+  /** Só obra nova / empreendimento novo (newDevelopment). */
+  onlyNewBuild?: boolean;
 }
 
 // Valores de propertyType que o Idealista devolve, agrupados por tipo pedido.
@@ -475,6 +479,19 @@ export async function searchIdealistaProperties(
             });
           }
 
+          // Opções da lead: garagem e obra nova. Só filtram quando pedidas; um
+          // imóvel sem o sinal de garagem é excluído (a lead exige garagem).
+          if (params.requireGarage && pageResults.length > 0) {
+            pageResults = pageResults.filter(
+              (p: any) => p?.parkingSpace?.hasParkingSpace === true || p?.hasParkingSpace === true
+            );
+          }
+          if (params.onlyNewBuild && pageResults.length > 0) {
+            pageResults = pageResults.filter(
+              (p: any) => p?.newDevelopment === true || p?.topNewDevelopment === true
+            );
+          }
+
           zoneResults = [...zoneResults, ...pageResults];
         }
 
@@ -614,6 +631,10 @@ export function leadToIdealistaParams(lead: any): IdealistaSearchParams {
   const params: IdealistaSearchParams = {
     maxItems: 20, // Aumentado de 3 para 20
   };
+
+  // Opções da lead: garagem e obra nova (filtradas sobre os resultados).
+  if (lead.wants_garage === true) params.requireGarage = true;
+  if (lead.wants_new_build === true) params.onlyNewBuild = true;
 
   // Tipo de operação (compra/arrendamento)
   if (lead.lead_type === "buyer" || lead.lead_type === "both") {

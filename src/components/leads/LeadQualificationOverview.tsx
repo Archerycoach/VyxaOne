@@ -42,6 +42,8 @@ interface LeadLike {
   location_preference?: string | null;
   needs_financing?: boolean | null;
   has_property_to_sell?: boolean | null;
+  wants_garage?: boolean | null;
+  wants_new_build?: boolean | null;
 }
 
 interface Props {
@@ -272,6 +274,8 @@ interface EditValues {
   location_preference: string;
   needs_financing: boolean;
   has_property_to_sell: boolean;
+  wants_garage: boolean;
+  wants_new_build: boolean;
 }
 
 function buildEditValues(lead: LeadLike): EditValues {
@@ -300,6 +304,8 @@ function buildEditValues(lead: LeadLike): EditValues {
     location_preference: lead.location_preference || "",
     needs_financing: lead.needs_financing === true,
     has_property_to_sell: lead.has_property_to_sell === true,
+    wants_garage: lead.wants_garage === true,
+    wants_new_build: lead.wants_new_build === true,
   };
 }
 
@@ -336,6 +342,8 @@ function buildUpdatePayload(values: EditValues): Record<string, unknown> {
     location_preference: values.location_preference.trim() || null,
     needs_financing: values.needs_financing,
     has_property_to_sell: values.has_property_to_sell,
+    wants_garage: values.wants_garage,
+    wants_new_build: values.wants_new_build,
   };
 }
 
@@ -794,6 +802,24 @@ export function LeadQualificationOverview({ lead, onSave }: Props) {
                   className="w-4 h-4 rounded border-gray-300"
                 />
                 Tem imóvel próprio para vender?
+              </Label>
+              <Label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={values.wants_garage}
+                  onChange={(e) => set("wants_garage", e.target.checked)}
+                  className="w-4 h-4 rounded border-gray-300"
+                />
+                Quer garagem / estacionamento?
+              </Label>
+              <Label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={values.wants_new_build}
+                  onChange={(e) => set("wants_new_build", e.target.checked)}
+                  className="w-4 h-4 rounded border-gray-300"
+                />
+                Prefere obra nova / empreendimento novo?
               </Label>
             </div>
           )}

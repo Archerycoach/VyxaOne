@@ -39,6 +39,8 @@ export function LeadIdealistaPanel({ lead }: LeadIdealistaPanelProps) {
           }).format(lead.budget_max),
         }
       : null,
+    (lead as any).wants_garage === true ? { label: "Garagem", value: "Sim" } : null,
+    (lead as any).wants_new_build === true ? { label: "Obra nova", value: "Sim" } : null,
   ].filter(Boolean) as Array<{ label: string; value: string }>;
 
   // Filtro de agência opcional. Aceita nome parcial porque há muitas agências
