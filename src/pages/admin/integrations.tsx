@@ -88,13 +88,18 @@ export default function Integrations() {
 
   const loadIdealistaSettings = async () => {
     try {
-      const res = await adminFetch("/api/admin/system-settings?keys=idealista");
+      // Pedir as CHAVES REAIS. O `?keys=idealista` antigo não correspondia a
+      // nenhuma chave (as chaves são idealista_rapidapi_*), por isso o painel
+      // mostrava sempre os valores por defeito em vez dos guardados na BD.
+      const res = await adminFetch(
+        "/api/admin/system-settings?keys=idealista_rapidapi_key,idealista_rapidapi_host,idealista_rapidapi_list_endpoint,idealista_auto_suggest_enabled,idealista_agency_filter",
+      );
       if (!res.ok) return;
-      
+
       const data = await res.json();
-      
-      setIdealistaConfigured(data.idealista_configured || false);
-      setIdealistaMaskedKey(data.idealista_key_masked || "");
+
+      setIdealistaConfigured(data.idealista_rapidapi_key_configured || false);
+      setIdealistaMaskedKey(data.idealista_rapidapi_key || "");
       setIdealistaHost(data.idealista_rapidapi_host || "idealista2.p.rapidapi.com");
       setIdealistaEndpoint(data.idealista_rapidapi_list_endpoint || "/properties/list");
       setIdealistaAutoSuggest(data.idealista_auto_suggest_enabled === "true");

@@ -222,12 +222,17 @@ export async function searchIdealistaProperties(
     const searchTypeParam = params.operation === "rent" ? "for_rent" : "for_sale";
     const propertyTypeParam = params.propertyType || "homes";
 
-    // Resolve o locationId de UMA zona pelo auto-complete do idealista17
+    // Distrito de um locationId Idealista: `0-EU-PT-<distrito>-...` → o 4.º
+    // segmento. Ex.: Lisboa = "11", Leiria = "10". Usado para desambiguar zonas
+    // com o mesmo nome em distritos diferentes (ex.: "Marquês de Pombal" existe
+    // em Lisboa e em Leiria).
+    const districtOf = (locId: string): string => String(locId || "").split("-")[3] || "";
+
+    // Resolve TODOS os candidatos de UMA zona pelo auto-complete do idealista17
     // (?location_name=&country=&property_type=&search_type=). A resposta traz
-    // `data.locations[]` e o primeiro resultado é o mais relevante. Resiliente:
-    // tenta os dois caminhos e repete uma ronda com pausa (o 503 do Idealista
-    // costuma ser transitório). Devolve null se mesmo assim não resolver.
-    const resolveLocationId = async (centerCandidate: string): Promise<string | null> => {
+    // `data.locations[]`. Resiliente: tenta dois caminhos e repete uma ronda com
+    // pausa (o 503 do Idealista costuma ser transitório). Devolve [] se falhar.
+    const resolveLocationCandidates = async (centerCandidate: string): Promise<any[]> => {
       const encodedCenter = encodeURIComponent(centerCandidate);
       const acQuery = `location_name=${encodedCenter}&country=pt&property_type=${propertyTypeParam}&search_type=${searchTypeParam}`;
       const attempts = [`/auto-complete?${acQuery}`, `/locations/auto-complete?${acQuery}`];
@@ -247,8 +252,8 @@ export async function searchIdealistaProperties(
             const autoText = await resp.text();
             const json = JSON.parse(autoText);
             const locations = json?.data?.locations || json?.locations || extractLocations(json);
-            if (Array.isArray(locations) && locations.length > 0 && locations[0]?.locationId) {
-              return locations[0].locationId;
+            if (Array.isArray(locations) && locations.length > 0) {
+              return locations.filter((l: any) => l?.locationId);
             }
             autoTextErrorSnippet = autoText.substring(0, 150);
           } catch (autoErr: any) {
@@ -260,20 +265,41 @@ export async function searchIdealistaProperties(
       }
 
       console.warn("Auto-complete falhou para:", centerCandidate, "->", autoTextErrorSnippet);
-      return null;
+      return [];
     };
 
-    // 1. Resolver o locationId de CADA zona (não parar na primeira!). Era este
-    //    o bug: uma lead com "Benfica, Loures, Odivelas, Lumiar" só pesquisava
-    //    Benfica porque o ciclo parava na 1.ª zona resolvida.
+    // 1. Resolver CADA zona. Primeiro juntam-se os candidatos de todas, depois
+    //    escolhe-se o DISTRITO DOMINANTE (a moda dos 1.os candidatos) e, para
+    //    cada zona, o candidato desse distrito — assim uma zona ambígua
+    //    ("Marquês de Pombal" em Lisboa e em Leiria) segue as outras (Lisboa) em
+    //    vez de contaminar a busca. Também garante que todos os location_ids são
+    //    do mesmo distrito (o idealista17 espera-o).
     const resolvedLocations: Array<{ center: string; locationId: string }> = [];
     if (params.locationId) {
       resolvedLocations.push({ center: params.center || "", locationId: params.locationId });
     } else {
+      const zoneCandidates: Array<{ center: string; candidates: any[] }> = [];
       for (const candidate of centerCandidates) {
-        const locId = await resolveLocationId(candidate);
-        if (locId && !resolvedLocations.some((r) => r.locationId === locId)) {
-          resolvedLocations.push({ center: candidate, locationId: locId });
+        const cands = await resolveLocationCandidates(candidate);
+        if (cands.length > 0) zoneCandidates.push({ center: candidate, candidates: cands });
+      }
+
+      // Distrito dominante = o mais frequente entre os 1.os candidatos de cada zona.
+      const districtFreq: Record<string, number> = {};
+      for (const zc of zoneCandidates) {
+        const d = districtOf(zc.candidates[0]?.locationId);
+        if (d) districtFreq[d] = (districtFreq[d] || 0) + 1;
+      }
+      const dominantDistrict =
+        Object.entries(districtFreq).sort((a, b) => b[1] - a[1])[0]?.[0] || "";
+
+      for (const zc of zoneCandidates) {
+        // Preferir o candidato do distrito dominante; senão o 1.º (melhor match).
+        const chosen =
+          (dominantDistrict && zc.candidates.find((c) => districtOf(c.locationId) === dominantDistrict)) ||
+          zc.candidates[0];
+        if (chosen?.locationId && !resolvedLocations.some((r) => r.locationId === chosen.locationId)) {
+          resolvedLocations.push({ center: zc.center, locationId: chosen.locationId });
         }
       }
     }
