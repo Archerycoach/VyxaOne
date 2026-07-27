@@ -383,15 +383,23 @@ export async function searchIdealistaProperties(
       if (hasAgencyFilter && list.length > 0) {
         list = list.filter((p: any) => {
           const contact = p.contactInfo || {};
-          // O nome da mediadora vem sobretudo em contactInfo.commercialName /
-          // micrositeShortName — sem estes campos o filtro apanhava quase nada.
-          const searchSpace = [
-            contact.commercialName || "", contact.micrositeShortName || "", contact.agencyName || "",
-            p.professionalName || "", p.clientName || "", p.clientAlias || "", p.agencyName || "",
-            p.suggestedTexts?.title || "", p.suggestedTexts?.subtitle || "", p.description || "",
-            p.logoUrl || "", contact.agencyLogo || "", p.externalReference || "",
+          // SÓ os campos da AGÊNCIA — nunca a descrição/título. A marca da
+          // mediadora vem no micrositeShortName e no URL do agencyLogo (que
+          // trazem o slug, ex.: "remax-latina"), e no commercialName/contactName.
+          // (Matchar a descrição dava falsos positivos e falhava angariações
+          // RE/MAX cuja descrição não menciona a marca — era o bug da API antiga.)
+          const agencyFields = [
+            contact.commercialName || "",
+            contact.contactName || "",
+            contact.micrositeShortName || "",
+            contact.agencyLogo || "",
+            contact.agencyName || "",
+            p.professionalName || "",
+            p.clientName || "",
+            p.clientAlias || "",
+            p.agencyName || "",
           ].map(normalizeString).join(" | ");
-          return searchSpace.includes(agencyLower);
+          return agencyFields.includes(agencyLower);
         });
       }
 
