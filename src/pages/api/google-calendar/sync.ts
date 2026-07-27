@@ -190,10 +190,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // Sync from Google to system (import from Google)
     if (integration.sync_direction === "both" || integration.sync_direction === "fromGoogle") {
-      console.log("[sync] 📥 Syncing FROM Google Calendar...");
-      const googleEventsSynced = await syncEventsFromGoogle(user.id, accessToken, integration.calendar_id || "primary");
-      console.log("[sync] ✅ Synced", googleEventsSynced, "events FROM Google");
-      syncedCount += googleEventsSynced;
+      // Calendários de origem: o principal + os adicionais escolhidos por quem
+      // tem mais do que um calendário na conta Google.
+      const importIds = Array.isArray(integration.import_calendar_ids) ? integration.import_calendar_ids : [];
+      const sourceCalendars = Array.from(
+        new Set([integration.calendar_id || "primary", ...importIds].filter(Boolean))
+      );
+      console.log("[sync] 📥 A importar de", sourceCalendars.length, "calendário(s):", sourceCalendars);
+
+      const activeIds = new Set<string>();
+      for (const cal of sourceCalendars) {
+        const { synced, activeIds: calActiveIds } = await syncEventsFromGoogle(user.id, accessToken, cal);
+        syncedCount += synced;
+        calActiveIds.forEach((id) => activeIds.add(id));
+      }
+
+      // Limpeza de órfãos: eventos locais sincronizados que já não existem em
+      // NENHUM dos calendários selecionados. Feita aqui (não por calendário)
+      // para não apagar eventos vindos de outro calendário ainda selecionado.
+      const orphansRemoved = await cleanupOrphanEvents(user.id, activeIds);
+      console.log("[sync] ✅ Importados/limpos", syncedCount, "eventos; órfãos removidos:", orphansRemoved);
+      syncedCount += orphansRemoved;
     }
     
     // Sync from system to Google (export to Google)
@@ -519,9 +536,9 @@ async function syncEventsFromGoogle(
   userId: string,
   accessToken: string,
   calendarId: string
-): Promise<number> {
+): Promise<{ synced: number; activeIds: Set<string> }> {
   try {
-    console.log("[syncEventsFromGoogle] Fetching events from Google Calendar...");
+    console.log("[syncEventsFromGoogle] Fetching events from Google Calendar...", calendarId);
     
     // Fetch events from the past 30 days to future 90 days
     const timeMin = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
@@ -544,7 +561,7 @@ async function syncEventsFromGoogle(
     if (!response.ok) {
       const errorText = await response.text();
       console.error("[syncEventsFromGoogle] ❌ Error fetching events:", errorText);
-      return 0;
+      return { synced: 0, activeIds: new Set() };
     }
 
     const data = await response.json();
@@ -752,34 +769,41 @@ async function syncEventsFromGoogle(
       }
     }
 
-    // Delete local events that no longer exist in Google Calendar
-    console.log("[syncEventsFromGoogle] 🔍 Checking for orphaned local events...");
-    const orphanedEvents = (localSyncedEvents || []).filter(
-      (e: any) => !activeGoogleEventIds.has(e.google_event_id)
-    );
-
-    if (orphanedEvents.length > 0) {
-      console.log("[syncEventsFromGoogle] 🗑️ Found", orphanedEvents.length, "orphaned events to delete");
-      
-      for (const orphan of orphanedEvents) {
-        const { error: deleteError } = await supabaseAdmin
-          .from("calendar_events")
-          .delete()
-          .eq("id", orphan.id)
-          .eq("user_id", userId);
-
-        if (!deleteError) {
-          console.log("[syncEventsFromGoogle] ✅ Deleted orphaned event:", orphan.google_event_id);
-          syncedCount++;
-        } else {
-          console.error("[syncEventsFromGoogle] ❌ Error deleting orphaned event:", deleteError);
-        }
-      }
-    }
-    
-    return syncedCount;
-  } catch (error) { 
+    // A limpeza de órfãos NÃO é feita aqui: com vários calendários de origem,
+    // apagar por calendário eliminaria eventos vindos de outro calendário. É
+    // feita uma vez no caller, contra a união dos IDs ativos de todos.
+    return { synced: syncedCount, activeIds: activeGoogleEventIds };
+  } catch (error) {
     console.error("[syncEventsFromGoogle] ❌ Fatal error:", error);
-    return 0; 
+    return { synced: 0, activeIds: new Set() };
   }
+}
+
+/**
+ * Apaga os eventos locais sincronizados (com google_event_id) que já não
+ * existem em nenhum dos calendários Google selecionados — ou seja, cujo id não
+ * está no conjunto de IDs ativos recolhido em todos os calendários deste ciclo.
+ */
+async function cleanupOrphanEvents(userId: string, activeGoogleEventIds: Set<string>): Promise<number> {
+  const { data: localSyncedEvents } = await supabaseAdmin
+    .from("calendar_events")
+    .select("id, google_event_id")
+    .eq("user_id", userId)
+    .not("google_event_id", "is", null);
+
+  const orphans = (localSyncedEvents || []).filter(
+    (e: any) => e.google_event_id && !activeGoogleEventIds.has(e.google_event_id)
+  );
+  if (orphans.length === 0) return 0;
+
+  let removed = 0;
+  for (const orphan of orphans) {
+    const { error } = await supabaseAdmin
+      .from("calendar_events")
+      .delete()
+      .eq("id", (orphan as any).id)
+      .eq("user_id", userId);
+    if (!error) removed++;
+  }
+  return removed;
 }

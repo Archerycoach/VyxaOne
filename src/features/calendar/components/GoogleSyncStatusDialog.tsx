@@ -8,9 +8,18 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Check, Clock, RefreshCw } from "lucide-react";
+import { Check, Clock, RefreshCw, CalendarDays } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
+
+interface GoogleCalendarOption {
+  id: string;
+  summary: string;
+  primary: boolean;
+  backgroundColor: string | null;
+}
 
 interface GoogleSyncStatusDialogProps {
   open: boolean;
@@ -31,8 +40,59 @@ interface SyncRow {
 // com o Google Calendar (têm google_event_id) e quais ainda estão por
 // sincronizar — um registo simples baseado no estado real de cada registo.
 export function GoogleSyncStatusDialog({ open, onOpenChange, onSync, isSyncing }: GoogleSyncStatusDialogProps) {
+  const { toast } = useToast();
   const [rows, setRows] = useState<SyncRow[]>([]);
   const [loading, setLoading] = useState(false);
+
+  // Calendários da conta Google e quais estão a ser importados.
+  const [calendars, setCalendars] = useState<GoogleCalendarOption[]>([]);
+  const [primaryCalendarId, setPrimaryCalendarId] = useState<string>("");
+  const [selectedImports, setSelectedImports] = useState<Set<string>>(new Set());
+  const [loadingCalendars, setLoadingCalendars] = useState(false);
+  const [savingCalendars, setSavingCalendars] = useState(false);
+
+  const authHeader = async () => {
+    const { data } = await supabase.auth.getSession();
+    return { "Content-Type": "application/json", Authorization: `Bearer ${data.session?.access_token || ""}` };
+  };
+
+  const loadCalendars = async () => {
+    setLoadingCalendars(true);
+    try {
+      const res = await fetch("/api/google-calendar/calendars", { headers: await authHeader() });
+      if (!res.ok) return; // não ligado / sem permissão — secção fica escondida
+      const data = await res.json();
+      setCalendars(Array.isArray(data.calendars) ? data.calendars : []);
+      setPrimaryCalendarId(data.primaryCalendarId || "");
+      setSelectedImports(new Set(Array.isArray(data.selected) ? data.selected : []));
+    } catch {
+      /* silencioso — a secção só aparece se houver calendários */
+    } finally {
+      setLoadingCalendars(false);
+    }
+  };
+
+  const toggleCalendar = async (id: string) => {
+    const next = new Set(selectedImports);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelectedImports(next);
+    setSavingCalendars(true);
+    try {
+      const res = await fetch("/api/google-calendar/calendars", {
+        method: "POST",
+        headers: await authHeader(),
+        body: JSON.stringify({ calendarIds: Array.from(next) }),
+      });
+      if (!res.ok) throw new Error();
+      toast({ title: "Calendários atualizados", description: "Sincronize para importar os eventos." });
+    } catch {
+      setSelectedImports(selectedImports); // reverte
+      toast({ title: "Não foi possível guardar", variant: "destructive" });
+    } finally {
+      setSavingCalendars(false);
+    }
+  };
 
   const load = async () => {
     setLoading(true);
@@ -94,7 +154,10 @@ export function GoogleSyncStatusDialog({ open, onOpenChange, onSync, isSyncing }
   };
 
   useEffect(() => {
-    if (open) load();
+    if (open) {
+      load();
+      loadCalendars();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -132,6 +195,40 @@ export function GoogleSyncStatusDialog({ open, onOpenChange, onSync, isSyncing }
             </Button>
           )}
         </div>
+
+        {/* Calendários a importar — só aparece se houver mais do que o principal. */}
+        {calendars.length > 1 && (
+          <div className="rounded-lg border bg-slate-50 p-3">
+            <div className="flex items-center gap-2 mb-2 text-sm font-medium text-slate-700">
+              <CalendarDays className="h-4 w-4 text-blue-600" />
+              Calendários Google a importar
+              {savingCalendars && <RefreshCw className="h-3.5 w-3.5 animate-spin text-slate-400" />}
+            </div>
+            <div className="space-y-1.5 max-h-40 overflow-y-auto">
+              {calendars.map((c) => {
+                const isPrimary = c.id === primaryCalendarId || c.primary;
+                const checked = isPrimary || selectedImports.has(c.id);
+                return (
+                  <label key={c.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                    <Checkbox
+                      checked={checked}
+                      disabled={isPrimary || savingCalendars}
+                      onCheckedChange={() => !isPrimary && toggleCalendar(c.id)}
+                    />
+                    {c.backgroundColor && (
+                      <span className="inline-block h-3 w-3 rounded-sm shrink-0" style={{ backgroundColor: c.backgroundColor }} />
+                    )}
+                    <span className="truncate">{c.summary}</span>
+                    {isPrimary && <Badge variant="outline" className="text-[10px]">principal</Badge>}
+                  </label>
+                );
+              })}
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">
+              O principal é sempre incluído. Escolha os restantes para os eventos aparecerem na agenda Vyxa.
+            </p>
+          </div>
+        )}
 
         <ScrollArea className="flex-1 min-h-0 pr-3">
           {loading ? (

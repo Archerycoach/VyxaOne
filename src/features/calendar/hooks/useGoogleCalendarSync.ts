@@ -13,6 +13,9 @@ const REQUIRED_GOOGLE_SCOPES = [
   "profile",
   "https://www.googleapis.com/auth/calendar.events",
   "https://www.googleapis.com/auth/calendar.freebusy",
+  // Listar os calendários da conta (para escolher quais importar). Scope
+  // mínimo: só lê a LISTA de calendários, não os eventos.
+  "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
   "https://www.googleapis.com/auth/userinfo.email",
 ];
 
