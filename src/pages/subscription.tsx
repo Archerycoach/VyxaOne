@@ -32,12 +32,56 @@ export default function SubscriptionPage() {
     plan: string;
     endDate: string | null;
   } | null>(null);
+  const [autoRenew, setAutoRenew] = useState(true);
+  const [savingAutoRenew, setSavingAutoRenew] = useState(false);
 
   const { reason } = router.query;
 
   useEffect(() => {
     loadSubscriptionData();
+    loadAutoRenew();
   }, []);
+
+  const loadAutoRenew = async () => {
+    try {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) return;
+      const res = await fetch("/api/subscription/auto-renew", { headers: { Authorization: `Bearer ${token}` } });
+      if (res.ok) {
+        const json = await res.json();
+        setAutoRenew(json.autoRenew !== false);
+      }
+    } catch {
+      /* silencioso */
+    }
+  };
+
+  const handleToggleAutoRenew = async (enabled: boolean) => {
+    setAutoRenew(enabled);
+    setSavingAutoRenew(true);
+    try {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      const res = await fetch("/api/subscription/auto-renew", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token || ""}` },
+        body: JSON.stringify({ enabled }),
+      });
+      if (!res.ok) throw new Error();
+      toast({
+        title: enabled ? "Renovação automática ativada" : "Renovação automática desativada",
+        description: enabled
+          ? "Vai receber um lembrete antes de cada renovação."
+          : "Não vai receber lembretes; a subscrição termina no fim do período.",
+      });
+    } catch {
+      setAutoRenew(!enabled);
+      toast({ title: "Não foi possível guardar", variant: "destructive" });
+    } finally {
+      setSavingAutoRenew(false);
+    }
+  };
 
   const loadSubscriptionData = async () => {
     try {
@@ -169,6 +213,21 @@ export default function SubscriptionPage() {
                 Tem uma subscrição {currentSubscription.plan} ativa.
                 {currentSubscription.endDate &&
                   ` Renova em ${new Date(currentSubscription.endDate).toLocaleDateString("pt-PT")}.`}
+                <label className="mt-3 flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4"
+                    checked={autoRenew}
+                    disabled={savingAutoRenew}
+                    onChange={(e) => handleToggleAutoRenew(e.target.checked)}
+                  />
+                  <span className="text-sm">
+                    Renovação automática {savingAutoRenew ? "(a guardar…)" : ""}
+                    <span className="block text-xs opacity-80">
+                      Recebe um lembrete (na app e no telemóvel) antes de cada renovação, com link para pagar.
+                    </span>
+                  </span>
+                </label>
               </AlertDescription>
             </Alert>
           )}

@@ -3,6 +3,10 @@
   "installCommand": "npm install",
   "crons": [
     {
+      "path": "/api/cron/subscription-renewals",
+      "schedule": "15 8 * * *"
+    },
+    {
       "path": "/api/cron/contact-alerts",
       "schedule": "15 7 * * *"
     },
