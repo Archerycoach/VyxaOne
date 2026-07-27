@@ -212,56 +212,55 @@ export async function searchIdealistaProperties(
 
     let autoTextErrorSnippet = "";
 
-    // Resolve o locationId de UMA zona pelo auto-complete. Devolve null se não
-    // encontrar (não deita fora — deixa continuar para as outras zonas).
+    let lastAutoStatus = 0;
+
+    // Resolve o locationId de UMA zona pelo auto-complete, de forma resiliente:
+    // tenta os dois caminhos do host configurado E o host alternativo em
+    // QUALQUER falha (incl. 5xx/503 — o Idealista devolve 503 quando está
+    // sobrecarregado), e repete uma ronda com pausa (o 503 costuma ser
+    // transitório). Devolve null se mesmo assim não resolver.
     const resolveLocationId = async (centerCandidate: string): Promise<string | null> => {
-      try {
-        const encodedCenter = encodeURIComponent(centerCandidate);
-        let autoResponse = await fetch(
-          `https://${rapidApiHost}/auto-complete?prefix=${encodedCenter}&country=pt`,
-          { method: "GET", headers: { "X-RapidAPI-Key": rapidApiKey, "X-RapidAPI-Host": rapidApiHost } },
-        );
+      const encodedCenter = encodeURIComponent(centerCandidate);
+      const attempts = [
+        { host: rapidApiHost, path: `/auto-complete?prefix=${encodedCenter}&country=pt` },
+        { host: rapidApiHost, path: `/locations/auto-complete?prefix=${encodedCenter}&country=pt` },
+        { host: "idealista2.p.rapidapi.com", path: `/auto-complete?prefix=${encodedCenter}&country=pt` },
+      ];
 
-        if (!autoResponse.ok) {
-          const altResponse = await fetch(
-            `https://${rapidApiHost}/locations/auto-complete?prefix=${encodedCenter}&country=pt`,
-            { method: "GET", headers: { "X-RapidAPI-Key": rapidApiKey, "X-RapidAPI-Host": rapidApiHost } },
-          );
-          if (altResponse.ok) autoResponse = altResponse;
+      for (let round = 0; round < 2; round++) {
+        for (const attempt of attempts) {
+          try {
+            const resp = await fetch(`https://${attempt.host}${attempt.path}`, {
+              method: "GET",
+              headers: { "X-RapidAPI-Key": rapidApiKey, "X-RapidAPI-Host": attempt.host },
+            });
+            if (!resp.ok) {
+              lastAutoStatus = resp.status;
+              autoTextErrorSnippet = `Status HTTP: ${resp.status}`;
+              continue; // tenta o próximo caminho/host
+            }
+            const autoText = await resp.text();
+            const locations = extractLocations(JSON.parse(autoText));
+            if (locations && locations.length > 0) {
+              const best =
+                locations.find((l: any) =>
+                  ["parish", "municipality", "neighborhood", "district"].includes(
+                    l.locationType?.toLowerCase() || l.type?.toLowerCase(),
+                  ),
+                ) || locations[0];
+              if (best.locationId) return best.locationId;
+            }
+            autoTextErrorSnippet = autoText.substring(0, 150);
+          } catch (autoErr: any) {
+            autoTextErrorSnippet = autoErr.message;
+          }
         }
-
-        if (autoResponse.status === 404 || autoResponse.status === 403) {
-          const safeFallbackResponse = await fetch(
-            `https://idealista2.p.rapidapi.com/auto-complete?prefix=${encodedCenter}&country=pt`,
-            { method: "GET", headers: { "X-RapidAPI-Key": rapidApiKey, "X-RapidAPI-Host": "idealista2.p.rapidapi.com" } },
-          );
-          if (safeFallbackResponse.ok) autoResponse = safeFallbackResponse;
-        }
-
-        if (!autoResponse.ok) {
-          autoTextErrorSnippet = `Status HTTP: ${autoResponse.status}`;
-          return null;
-        }
-
-        const autoText = await autoResponse.text();
-        autoTextErrorSnippet = autoText.substring(0, 150);
-        const locations = extractLocations(JSON.parse(autoText));
-        if (locations && locations.length > 0) {
-          const best =
-            locations.find((l: any) =>
-              ["parish", "municipality", "neighborhood", "district"].includes(
-                l.locationType?.toLowerCase() || l.type?.toLowerCase(),
-              ),
-            ) || locations[0];
-          return best.locationId || null;
-        }
-        console.warn("Auto-complete não encontrou ID para:", centerCandidate, "Resposta:", autoTextErrorSnippet);
-        return null;
-      } catch (autoErr: any) {
-        console.error("Erro no auto-complete:", autoErr);
-        autoTextErrorSnippet = autoErr.message;
-        return null;
+        // Pausa antes de repetir a ronda — dá tempo ao serviço recuperar do 503.
+        if (round === 0) await new Promise((r) => setTimeout(r, 700));
       }
+
+      console.warn("Auto-complete falhou para:", centerCandidate, "->", autoTextErrorSnippet);
+      return null;
     };
 
     // 1. Resolver o locationId de CADA zona (não parar na primeira!). Era este
@@ -280,6 +279,13 @@ export async function searchIdealistaProperties(
     }
 
     if (resolvedLocations.length === 0) {
+      // 5xx = o serviço do Idealista está temporariamente indisponível, não é a
+      // zona que está errada — mensagem clara para o utilizador tentar de novo.
+      if (lastAutoStatus >= 500 || lastAutoStatus === 429) {
+        throw new Error(
+          `O serviço do Idealista está temporariamente indisponível (HTTP ${lastAutoStatus}). Tente novamente dentro de alguns instantes.`,
+        );
+      }
       throw new Error(
         `Não foi possível encontrar a localização no Idealista para "${centerCandidates.join(", ") || "Localização vazia"}". Resposta da API: ${autoTextErrorSnippet}`,
       );
