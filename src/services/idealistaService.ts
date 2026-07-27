@@ -294,10 +294,13 @@ export async function searchIdealistaProperties(
         Object.entries(districtFreq).sort((a, b) => b[1] - a[1])[0]?.[0] || "";
 
       for (const zc of zoneCandidates) {
-        // Preferir o candidato do distrito dominante; senão o 1.º (melhor match).
-        const chosen =
-          (dominantDistrict && zc.candidates.find((c) => districtOf(c.locationId) === dominantDistrict)) ||
-          zc.candidates[0];
+        // Escolher o candidato do distrito dominante. Se a zona NÃO tiver
+        // candidato nesse distrito, é de outro distrito — ignora-se, para não
+        // contaminar a busca (ex.: "Marquês de Pombal" de Leiria quando as
+        // outras zonas são de Lisboa). Sem distrito dominante, usa-se o 1.º.
+        const chosen = dominantDistrict
+          ? zc.candidates.find((c) => districtOf(c.locationId) === dominantDistrict)
+          : zc.candidates[0];
         if (chosen?.locationId && !resolvedLocations.some((r) => r.locationId === chosen.locationId)) {
           resolvedLocations.push({ center: zc.center, locationId: chosen.locationId });
         }
@@ -349,7 +352,7 @@ export async function searchIdealistaProperties(
     const tightFilters =
       hasAgencyFilter || filterRoomsLocally || hasBedroomsFilter ||
       (params.propertyKinds?.length || 0) > 0 || !!params.requireGarage || !!params.onlyNewBuild;
-    const maxPages = hasAgencyFilter ? 15 : tightFilters ? 6 : 3;
+    const maxPages = hasAgencyFilter ? 25 : tightFilters ? 10 : 4;
 
     // Faz o fetch de uma página. Só a 1.ª página rebenta o erro para a UI.
     const fetchPageData = async (qp: URLSearchParams, throwOnError: boolean, pageNum: number): Promise<any> => {
