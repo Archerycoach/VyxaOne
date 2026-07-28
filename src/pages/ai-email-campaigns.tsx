@@ -53,16 +53,6 @@ interface CampaignConversationMessage {
   content: string;
 }
 
-interface EmailCampaignDebugInfo {
-  requestPrompt: string;
-  requestHistoryCount: number;
-  apiStatus: number | null;
-  contentType: string | null;
-  errorMessage: string | null;
-  backendDebug: unknown;
-  rawResponseText: string | null;
-  updatedAt: string;
-}
 
 const AI_DRAFT_STORAGE_KEY = "vyxa-ai-email-campaign-draft";
 
@@ -81,8 +71,6 @@ export default function AiEmailCampaignsPage() {
   const [latestCampaignDraft, setLatestCampaignDraft] = useState<EmailCampaignDraft | null>(null);
   const [conversationHistory, setConversationHistory] = useState<CampaignConversationMessage[]>([]);
   const [refinementPrompt, setRefinementPrompt] = useState("");
-  const [debugMode, setDebugMode] = useState(false);
-  const [debugInfo, setDebugInfo] = useState<EmailCampaignDebugInfo | null>(null);
 
   // Imóveis a divulgar (carteira + brochuras/links) — vários, opcional.
   const [selectedListings, setSelectedListings] = useState<SelectedListing[]>([]);
@@ -229,7 +217,6 @@ export default function AiEmailCampaignsPage() {
       message: prompt,
       history: historyPayload,
       campaignContext: buildCampaignContext(options?.draftContext ?? latestCampaignDraft),
-      debug: debugMode,
     };
 
     try {
@@ -259,23 +246,10 @@ export default function AiEmailCampaignsPage() {
         }
       }
 
-      const nextDebugInfo: EmailCampaignDebugInfo = {
-        requestPrompt: prompt,
-        requestHistoryCount: historyPayload.length,
-        apiStatus: response.status,
-        contentType: contentType || null,
-        errorMessage: response.ok
-          ? null
-          : data?.error || data?.message || rawResponseText || `Falha ao gerar rascunho (HTTP ${response.status})`,
-        backendDebug: data && typeof data === "object" ? data.debug ?? null : null,
-        rawResponseText,
-        updatedAt: new Date().toISOString(),
-      };
-
-      setDebugInfo(nextDebugInfo);
-
       if (!response.ok) {
-        throw new Error(nextDebugInfo.errorMessage || "Falha ao gerar rascunho");
+        const errorMessage =
+          data?.error || data?.message || rawResponseText || `Falha ao gerar rascunho (HTTP ${response.status})`;
+        throw new Error(errorMessage);
       }
 
       if (!data || typeof data !== "object") {
@@ -293,16 +267,7 @@ export default function AiEmailCampaignsPage() {
       setAssistantReply(assistantMessage);
       setLatestCampaignDraft(data.campaignDraft || null);
     } catch (error) {
-      setDebugInfo((current) => ({
-        requestPrompt: current?.requestPrompt || prompt,
-        requestHistoryCount: current?.requestHistoryCount ?? historyPayload.length,
-        apiStatus: current?.apiStatus ?? null,
-        contentType: current?.contentType ?? null,
-        errorMessage: error instanceof Error ? error.message : "Falha desconhecida no pedido.",
-        backendDebug: current?.backendDebug ?? null,
-        rawResponseText: current?.rawResponseText ?? null,
-        updatedAt: new Date().toISOString(),
-      }));
+      console.error("[emails-por-procura] Falha ao gerar rascunho:", error);
       throw error;
     }
   };
@@ -379,7 +344,6 @@ export default function AiEmailCampaignsPage() {
     setAssistantReply("");
     setConversationHistory([]);
     setLatestCampaignDraft(null);
-    setDebugInfo(null);
     setIncludedFlaggedLeadIds(new Set());
     setRemovedLeadIds(new Set());
     setManualLeads([]);
@@ -548,9 +512,6 @@ export default function AiEmailCampaignsPage() {
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
-                <Button variant="outline" onClick={() => setDebugMode((value) => !value)}>
-                  {debugMode ? "Ocultar debug" : "Mostrar debug"}
-                </Button>
                 <Link href="/ai-agent">
                   <Button variant="outline">Voltar ao Agente IA</Button>
                 </Link>
@@ -562,84 +523,6 @@ export default function AiEmailCampaignsPage() {
                 Este fluxo usa o agente IA para segmentar, rever e refinar o email antes do envio. Quando abrir em Mensagens, segue a seleção exata das leads escolhidas pelo agente.
               </AlertDescription>
             </Alert>
-
-            {debugMode && (
-              <Card className="border-amber-200 bg-amber-50">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    Debug da geração do email
-                    <Badge variant="outline">
-                      {debugInfo?.errorMessage ? "Último erro" : "À espera de execução"}
-                    </Badge>
-                  </CardTitle>
-                  <CardDescription>
-                    Use este painel para perceber se a falha vem da autenticação, da API, do parse da resposta ou da IA. Reproduza o erro e envie-me estes detalhes.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4 text-sm">
-                  {!debugInfo ? (
-                    <p className="text-gray-700">
-                      Ainda não há dados de debug. Clique em “Gerar email com IA” para registar o próximo pedido.
-                    </p>
-                  ) : (
-                    <>
-                      <div className="grid gap-3 md:grid-cols-2">
-                        <div className="rounded-lg border bg-white p-3">
-                          <p className="font-medium text-gray-900">Estado HTTP</p>
-                          <p className="mt-1 text-gray-700">{debugInfo.apiStatus ?? "sem resposta"}</p>
-                        </div>
-                        <div className="rounded-lg border bg-white p-3">
-                          <p className="font-medium text-gray-900">Content-Type</p>
-                          <p className="mt-1 break-all text-gray-700">{debugInfo.contentType || "desconhecido"}</p>
-                        </div>
-                        <div className="rounded-lg border bg-white p-3">
-                          <p className="font-medium text-gray-900">Mensagens no histórico</p>
-                          <p className="mt-1 text-gray-700">{debugInfo.requestHistoryCount}</p>
-                        </div>
-                        <div className="rounded-lg border bg-white p-3">
-                          <p className="font-medium text-gray-900">Última atualização</p>
-                          <p className="mt-1 break-all text-gray-700">{debugInfo.updatedAt}</p>
-                        </div>
-                      </div>
-
-                      <div className="rounded-lg border bg-white p-3">
-                        <p className="font-medium text-gray-900">Prompt enviado</p>
-                        <pre className="mt-2 whitespace-pre-wrap break-words text-xs text-gray-700">
-                          {debugInfo.requestPrompt}
-                        </pre>
-                      </div>
-
-                      {debugInfo.errorMessage && (
-                        <div className="rounded-lg border border-red-200 bg-red-50 p-3">
-                          <p className="font-medium text-red-800">Erro visível</p>
-                          <pre className="mt-2 whitespace-pre-wrap break-words text-xs text-red-900">
-                            {debugInfo.errorMessage}
-                          </pre>
-                        </div>
-                      )}
-
-                      {debugInfo.rawResponseText && (
-                        <div className="rounded-lg border bg-white p-3">
-                          <p className="font-medium text-gray-900">Resposta bruta do servidor</p>
-                          <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words text-xs text-gray-700">
-                            {debugInfo.rawResponseText}
-                          </pre>
-                        </div>
-                      )}
-
-                      {debugInfo.backendDebug && (
-                        <div className="rounded-lg border bg-white p-3">
-                          <p className="font-medium text-gray-900">Debug devolvido pela API</p>
-                          <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words text-xs text-gray-700">
-                            {JSON.stringify(debugInfo.backendDebug, null, 2)}
-                          </pre>
-                        </div>
-                      )}
-                    </>
-                  )}
-                </CardContent>
-              </Card>
-            )}
 
             {isCheckingConnection ? (
               <Card>

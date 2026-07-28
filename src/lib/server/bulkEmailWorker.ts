@@ -16,14 +16,20 @@ import { personalizeMailMerge } from "@/lib/mailMergeVars";
  * processamento (auto-encadeado) e pelo cron de recuperação.
  */
 
-const DEFAULT_BATCH = 25;
+const DEFAULT_BATCH = 100;
 const MAX_ATTEMPTS = 3;
 const STALE_PROCESSING_MINUTES = 10;
 // Pausa após bater no limite do SMTP (ex.: limite horário de envio). Espaça as
 // tentativas por ~1h, o tempo típico de um limite "por hora" repor.
 const RATE_LIMIT_COOLDOWN_MINUTES = 60;
-// Intervalo entre envios, para não disparar rajadas que os servidores travam.
-const SEND_SPACING_MS = 400;
+// Ritmo de envio. O ganho grande vem de NÃO reabrir a ligação a cada email: com
+// `pool` o nodemailer reutiliza a mesma ligação SMTP (poupa o handshake TLS +
+// AUTH, que era o custo dominante). O `rateLimit` mantém um teto de mensagens
+// por segundo (no total do pool) para não disparar rajadas — e os limites do
+// próprio servidor continuam a ser apanhados pelo tratamento de erros
+// temporários (cooldown de 1h). Substitui a antiga pausa fixa de 400 ms.
+const POOL_MAX_CONNECTIONS = 3;
+const POOL_RATE_LIMIT = 6; // mensagens por segundo, no total do pool
 
 /**
  * O erro do SMTP é TEMPORÁRIO (limite de envio, rate-limit, greylisting)?
@@ -228,6 +234,13 @@ export async function processBulkEmailBatch(
           secure: smtp.smtp_secure,
           auth: { user: smtp.smtp_username, pass: smtp.smtp_password },
           tls: { rejectUnauthorized: smtp.reject_unauthorized ?? true },
+          // Pool: reutiliza a ligação SMTP entre emails (o grande acelerador) e
+          // limita o ritmo a POOL_RATE_LIMIT msg/seg para não fazer rajadas.
+          pool: true,
+          maxConnections: POOL_MAX_CONNECTIONS,
+          maxMessages: Infinity,
+          rateDelta: 1000,
+          rateLimit: POOL_RATE_LIMIT,
         });
         transporterCache.set(row.user_id, transporter);
       }
@@ -334,10 +347,16 @@ export async function processBulkEmailBatch(
     }
 
     processed++;
+    // Sem pausa fixa: o ritmo é governado pelo `rateLimit` do pool SMTP, que
+    // reutiliza a ligação e mantém um teto seguro de mensagens por segundo.
+  }
 
-    // Pequeno espaçamento entre envios para não disparar rajadas.
-    if (SEND_SPACING_MS > 0) {
-      await new Promise((resolve) => setTimeout(resolve, SEND_SPACING_MS));
+  // Fecha as ligações do pool SMTP abertas neste ciclo (liberta os sockets).
+  for (const t of transporterCache.values()) {
+    try {
+      t.close();
+    } catch {
+      // fecho best-effort — não bloqueia a reconciliação.
     }
   }
 
