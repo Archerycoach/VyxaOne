@@ -47,11 +47,46 @@ const TRIGGER_LABELS: Record<LeadAutoAnalysisContext["trigger"], string> = {
   voice_note: "a transcrição de uma nota de voz gravada após um contacto",
 };
 
+/**
+ * Data/hora atual em Portugal Continental (Europe/Lisbon), em ISO 8601 com o
+ * offset local (ex.: "2026-07-28T12:00:00+01:00").
+ *
+ * Dar a hora em UTC (toISOString) punha a IA — e a análise que ela escreve —
+ * uma hora atrás no verão (WEST = UTC+1): daí referir "11h" quando o consultor
+ * agendou "12h". Com a hora e o offset locais, o modelo raciocina e devolve
+ * horários na mesma referência da agenda.
+ */
+function formatLisbonDateTime(date: Date): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Lisbon",
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
+  })
+    .formatToParts(date)
+    .reduce<Record<string, string>>((acc, part) => {
+      if (part.type !== "literal") acc[part.type] = part.value;
+      return acc;
+    }, {});
+
+  // Offset atual de Lisboa (+01:00 no verão, +00:00 no inverno).
+  const utc = new Date(date.toLocaleString("en-US", { timeZone: "UTC" }));
+  const lisbon = new Date(date.toLocaleString("en-US", { timeZone: "Europe/Lisbon" }));
+  const offsetMinutes = Math.round((lisbon.getTime() - utc.getTime()) / 60000);
+  const sign = offsetMinutes >= 0 ? "+" : "-";
+  const absOffset = Math.abs(offsetMinutes);
+  const offH = String(Math.floor(absOffset / 60)).padStart(2, "0");
+  const offM = String(absOffset % 60).padStart(2, "0");
+  const hour = parts.hour === "24" ? "00" : parts.hour; // meia-noite pode vir como "24"
+
+  return `${parts.year}-${parts.month}-${parts.day}T${hour}:${parts.minute}:${parts.second}${sign}${offH}:${offM}`;
+}
+
 export function getLeadAutoAnalysisPrompt(context: LeadAutoAnalysisContext): string {
   const { newContent, trigger, leadData, recentInteractions, recentNotes, openTasks, qualificationFields, pipelineStages } = context;
 
   const now = new Date();
-  const nowStr = now.toISOString();
+  // Hora LOCAL de Portugal (Europe/Lisbon), não UTC — ver formatLisbonDateTime.
+  const nowStr = formatLisbonDateTime(now);
 
   const interactionsContext = recentInteractions.length > 0
     ? recentInteractions.map((int, idx) =>
@@ -79,7 +114,8 @@ export function getLeadAutoAnalysisPrompt(context: LeadAutoAnalysisContext): str
 
   return `És um assistente IA de um CRM imobiliário português. O consultor acabou de adicionar ${TRIGGER_LABELS[trigger]} a uma lead. Analisa a novidade no contexto do histórico e atualiza o CRM.
 
-Data e hora atuais: ${nowStr}
+Data e hora atuais (hora de Portugal Continental, Europe/Lisbon): ${nowStr}
+Todas as horas — as que referires na análise e as dos blocos de agenda — são nesta hora local. Usa SEMPRE o mesmo offset que aparece acima (ex.: +01:00) e nunca convertas para UTC.
 
 **LEAD:**
 - Nome: ${leadData.name}

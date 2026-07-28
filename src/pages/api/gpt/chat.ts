@@ -230,6 +230,25 @@ function detectRequestedBedrooms(message: string): number | null {
   return null;
 }
 
+/**
+ * Deriva a tipologia da campanha a partir do(s) imóvel(is) divulgado(s)
+ * (listingContent), quando o consultor não a definiu no dropdown nem na
+ * mensagem. Só deriva quando há UMA tipologia distinta no conteúdo — um link de
+ * um T1 passa a segmentar leads que procuram T1. Com várias tipologias (ex.: um
+ * empreendimento com T1/T2/T3) é ambíguo e não se deriva nada.
+ */
+function deriveBedroomsFromListings(listingContent: string | null | undefined): number | null {
+  if (!listingContent) return null;
+  const normalized = normalizeText(listingContent);
+  const found = new Set<number>();
+  const re = /\bt\s*([0-9])\b/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(normalized)) !== null) {
+    found.add(Number(match[1]));
+  }
+  return found.size === 1 ? Array.from(found)[0] : null;
+}
+
 function detectRequestedBuyPurpose(message: string): string | null {
   const normalizedMessage = normalizeText(message);
 
@@ -346,7 +365,7 @@ function isEmailCampaignRequest(message: string): boolean {
   return hasEmailIntent && hasDraftIntent && hasAudienceIntent;
 }
 
-function matchesRequestedBedrooms(lead: LeadContext, bedrooms: number | null): boolean {
+function matchesRequestedBedrooms(lead: LeadContext, bedrooms: number | null, campaign = false): boolean {
   if (bedrooms === null) {
     return true;
   }
@@ -399,11 +418,12 @@ function matchesRequestedBedrooms(lead: LeadContext, bedrooms: number | null): b
     return true;
   }
 
-  // Tipologia adjacente (±1 quarto) também entra.
-  //
-  // Quem procura T2 compra T1 se o preço e a zona compensarem, e compra T3 se
-  // couber no orçamento — é o que acontece no mercado real. Exigir a tipologia
-  // exata reduzia campanhas a uma fração dos interessados.
+  // Numa campanha de um imóvel de `bedrooms` tipologias, entra quem procura essa
+  // tipologia OU MENOR — uma lead que procura T1 aceita o T2 divulgado se couber
+  // no orçamento (validado à parte, no filtro de orçamento da mesma cadeia).
+  // Quem procura MAIOR do que o imóvel (T3 para um T2) fica de fora: falta-lhe o
+  // espaço. Fora das campanhas mantém-se o ±1 simétrico (mercado real).
+  if (campaign) return leadBedrooms <= bedrooms;
   return Math.abs(leadBedrooms - bedrooms) <= 1;
 }
 
@@ -634,7 +654,13 @@ function getFallbackAudienceLeadIds(
             : null;
       if (leadBedrooms === null || Number.isNaN(leadBedrooms)) points += 0.35;
       else if (leadBedrooms === criteria.bedrooms) points += 1;
-      else if (Math.abs(leadBedrooms - criteria.bedrooms) === 1) points += 0.7;
+      else if (leadBedrooms < criteria.bedrooms && matchesLeadBudget(lead, criteria.price ?? null)) {
+        // A lead procura uma tipologia MENOR do que a do imóvel divulgado, mas
+        // este cabe no orçamento dela: é um upgrade viável, entra (com menos
+        // peso do que a correspondência exata). O contrário — procurar MAIOR do
+        // que o imóvel — não pontua: falta-lhe o espaço que a lead quer.
+        points += 0.7;
+      }
     }
 
     if (criteria.price) {
@@ -675,7 +701,7 @@ function getFallbackAudienceLeadIds(
   const structuredMatches = leads
     .filter((lead) => {
       return (
-        matchesRequestedBedrooms(lead, criteria.bedrooms) &&
+        matchesRequestedBedrooms(lead, criteria.bedrooms, true) && // campanha: tipologia igual ou inferior
         matchesRequestedLocation(lead, criteria.location) &&
         matchesRequestedBuyPurpose(lead, criteria.buyPurpose) &&
         matchesRequestedPropertyType(lead, criteria.propertyType) &&
@@ -1719,6 +1745,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           buyPurpose: detectRequestedBuyPurpose(message) ?? baseCriteria?.buyPurpose ?? null,
           propertyType: detectRequestedPropertyType(message) ?? baseCriteria?.propertyType ?? null,
         };
+
+        // Se a tipologia não foi pedida (dropdown/mensagem) mas há um imóvel a
+        // divulgar, herda-se a tipologia DESSE imóvel — "coloco um link de um T1"
+        // passa a segmentar leads que procuram T1. Antes o link não influenciava
+        // a audiência e a campanha saía também para T2.
+        if (criteria.bedrooms === null || criteria.bedrooms === undefined) {
+          const listingBedrooms = deriveBedroomsFromListings(campaignContext?.listingContent);
+          if (listingBedrooms !== null) {
+            criteria.bedrooms = listingBedrooms;
+            criteria.typology = `T${listingBedrooms}`;
+          }
+        }
 
         const [propertiesResult, developmentsResult] = await Promise.all([
           userScopedSupabase

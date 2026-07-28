@@ -576,11 +576,13 @@ async function syncEventsFromGoogle(
       .eq("user_id", userId)
       .not("google_event_id", "is", null);
 
+    // TODOS os eventos locais (não só os sem google_event_id): para casar o
+    // mesmo compromisso pelo CONTEÚDO mesmo quando o Google o traz com um id
+    // diferente (instância de recorrente, recriado) e assim não duplicar.
     const { data: localCalendarCandidates } = await supabaseAdmin
       .from("calendar_events")
       .select("id, title, start_time, end_time, google_event_id")
-      .eq("user_id", userId)
-      .is("google_event_id", null);
+      .eq("user_id", userId);
 
     const { data: localTasks } = await supabaseAdmin
       .from("tasks")
@@ -601,6 +603,22 @@ async function syncEventsFromGoogle(
     );
 
     console.log("[syncEventsFromGoogle] Found", localGoogleEventIds.size, "local synced events");
+
+    // Índice dos eventos locais por CONTEÚDO (título + início ao minuto). Serve
+    // para (a) ligar um evento local existente ao id do Google e (b) travar
+    // duplicados — inclusive dentro deste mesmo ciclo, à medida que se inserem.
+    const contentSignature = (title: string, normalizedStart: string | null): string | null =>
+      normalizedStart ? `${title} ${normalizedStart}` : null;
+    const localEventByContent = new Map<string, { id?: string; google_event_id: string | null }>();
+    for (const cand of calendarCandidates) {
+      const sig = contentSignature(cand.title, normalizeDateTime(cand.start_time));
+      if (!sig) continue;
+      const existing = localEventByContent.get(sig);
+      // Prefere o candidato AINDA sem ligação ao Google (é esse que se deve ligar).
+      if (!existing || (existing.google_event_id && !cand.google_event_id)) {
+        localEventByContent.set(sig, { id: cand.id, google_event_id: cand.google_event_id });
+      }
+    }
 
     // Track which Google event IDs we've seen (active events only)
     const activeGoogleEventIds = new Set<string>();
@@ -672,7 +690,6 @@ async function syncEventsFromGoogle(
         console.log("[syncEventsFromGoogle] Creating event:", googleEvent.summary);
 
         const normalizedStartTime = normalizeDateTime(finalStartTime);
-        const normalizedEndTime = normalizeDateTime(finalEndTime);
         const googleSummary = googleEvent.summary || "Sem título";
 
         if (googleSummary.startsWith("[Tarefa]")) {
@@ -716,32 +733,31 @@ async function syncEventsFromGoogle(
           continue;
         }
 
-        const matchingLocalEvent = calendarCandidates.find((event) => {
-          return (
-            event.title === googleSummary &&
-            normalizeDateTime(event.start_time) === normalizedStartTime &&
-            normalizeDateTime(event.end_time) === normalizedEndTime
-          );
-        });
+        const signature = contentSignature(googleSummary, normalizedStartTime);
+        const contentMatch = signature ? localEventByContent.get(signature) : undefined;
 
-        if (matchingLocalEvent) {
-          const { error: eventLinkError } = await supabaseAdmin
-            .from("calendar_events")
-            .update({
-              google_event_id: googleEvent.id,
-              is_synced: true,
-            })
-            .eq("id", matchingLocalEvent.id)
-            .eq("user_id", userId);
+        if (contentMatch) {
+          if (contentMatch.id && !contentMatch.google_event_id) {
+            // Evento local já existente mas sem ligação ao Google — liga-o a
+            // este id em vez de criar um novo.
+            const { error: eventLinkError } = await supabaseAdmin
+              .from("calendar_events")
+              .update({ google_event_id: googleEvent.id, is_synced: true })
+              .eq("id", contentMatch.id)
+              .eq("user_id", userId);
 
-          if (eventLinkError) {
-            console.error("[syncEventsFromGoogle] ❌ Error linking local event to Google event:", eventLinkError);
-          } else {
-            matchingLocalEvent.google_event_id = googleEvent.id || null;
-            console.log("[syncEventsFromGoogle] 🔗 Linked Google event to existing local event:", matchingLocalEvent.id);
-            syncedCount++;
+            if (eventLinkError) {
+              console.error("[syncEventsFromGoogle] ❌ Error linking local event to Google event:", eventLinkError);
+            } else {
+              contentMatch.google_event_id = googleEvent.id || null;
+              console.log("[syncEventsFromGoogle] 🔗 Linked Google event to existing local event:", contentMatch.id);
+              syncedCount++;
+            }
+          } else if (contentMatch.google_event_id !== googleEvent.id) {
+            // Mesmo compromisso já existe localmente com OUTRO id do Google (ou
+            // já foi inserido neste ciclo) — não criar duplicado.
+            console.log("[syncEventsFromGoogle] ⏭️ Duplicado por conteúdo ignorado:", googleEvent.id);
           }
-
           continue;
         }
 
@@ -761,6 +777,8 @@ async function syncEventsFromGoogle(
         if (!createError) {
           console.log("[syncEventsFromGoogle] ✅ Created event:", googleEvent.summary);
           syncedCount++;
+          // Regista a assinatura para travar duplicados dentro deste mesmo ciclo.
+          if (signature) localEventByContent.set(signature, { google_event_id: googleEvent.id || null });
         } else {
           console.error("[syncEventsFromGoogle] ❌ Error creating event:", createError);
         }
