@@ -170,6 +170,73 @@ async function resolveLeadVisibility(profile: any): Promise<LeadVisibility> {
   };
 }
 
+/**
+ * Contexto para o filtro de âmbito das leads ("As minhas / Do team lead / Ambas"
+ * e, para o team lead, escolher um consultor específico). Devolve o papel, o
+ * team lead (id/nome) e — para o team lead — os consultores da equipa. Para um
+ * consultor, `seesTeamLeadLeads` diz se as leads do team lead lhe são visíveis
+ * (Modo Equipa ou partilha) — só nesse caso o filtro faz sentido.
+ */
+export interface LeadScopeContext {
+  role: string;
+  currentUserId: string;
+  teamLeadId: string | null;
+  teamLeadName: string | null;
+  /** Só para team lead: consultores da equipa (para "consultor específico"). */
+  teamMembers: Array<{ id: string; name: string }>;
+  /** Só para consultor: vê as leads do team lead? */
+  seesTeamLeadLeads: boolean;
+}
+
+export const getLeadScopeContext = async (): Promise<LeadScopeContext | null> => {
+  const profile = await getCurrentUserProfile();
+  if (!profile) return null;
+
+  const role = profile.role as string;
+  const currentUserId = profile.id as string;
+  const teamLeadId = (profile.team_lead_id as string) || null;
+
+  if (role === "team_lead") {
+    const memberIds = await getTeamMemberIds(currentUserId);
+    let teamMembers: Array<{ id: string; name: string }> = [];
+    if (memberIds.length > 0) {
+      const { data } = await supabase
+        .from("profiles")
+        .select("id, full_name")
+        .in("id", memberIds);
+      teamMembers = (data || [])
+        .map((p: any) => ({ id: p.id, name: p.full_name || "Consultor" }))
+        .sort((a, b) => a.name.localeCompare(b.name, "pt"));
+    }
+    return {
+      role,
+      currentUserId,
+      teamLeadId: currentUserId,
+      teamLeadName: null, // o próprio; não é mostrado nas opções do team lead
+      teamMembers,
+      seesTeamLeadLeads: false,
+    };
+  }
+
+  if (role === "consultant") {
+    const visibility = await resolveLeadVisibility(profile);
+    const seesTeamLeadLeads = !!teamLeadId && visibility.visibleUserIds.includes(teamLeadId);
+    let teamLeadName: string | null = null;
+    if (seesTeamLeadLeads && teamLeadId) {
+      const { data } = await supabase
+        .from("profiles")
+        .select("full_name")
+        .eq("id", teamLeadId)
+        .maybeSingle();
+      teamLeadName = (data as any)?.full_name || "Team lead";
+    }
+    return { role, currentUserId, teamLeadId, teamLeadName, teamMembers: [], seesTeamLeadLeads };
+  }
+
+  // broker/admin usam o seletor de equipa completo (ScopeSelector).
+  return { role, currentUserId, teamLeadId, teamLeadName: null, teamMembers: [], seesTeamLeadLeads: false };
+};
+
 export interface LeadsStats {
   total: number;
   buyers: number;
@@ -185,11 +252,12 @@ export interface LeadsStats {
  * permite os indicadores no topo mostrarem o total verdadeiro mesmo quando a
  * lista está paginada.
  *
- * @param scopeUserId Quando indicado, conta só as leads atribuídas a esse
- *                    consultor (seletor de âmbito).
+ * @param scopeUserIds Quando indicado (não vazio), conta só as leads atribuídas
+ *                     a estes donos (filtro de âmbito). Vazio/ausente = todas as
+ *                     visíveis.
  */
 export const getLeadsStats = async (
-  scopeUserId?: string,
+  scopeUserIds?: string[],
   statuses: string[] = ["novo", "contactado", "qualificado", "proposta", "fechado"]
 ): Promise<LeadsStats> => {
   const profile = await getCurrentUserProfile();
@@ -206,8 +274,8 @@ export const getLeadsStats = async (
     if (!visibility.seeAll) {
       query = applyVisibilityOrSharedFilter(query, visibility.visibleUserIds, visibility.sharedLeadIds);
     }
-    if (scopeUserId && scopeUserId !== "all") {
-      query = query.eq("assigned_to", scopeUserId);
+    if (scopeUserIds && scopeUserIds.length > 0) {
+      query = query.in("assigned_to", scopeUserIds);
     }
     return query;
   };
@@ -244,8 +312,14 @@ export interface LeadsPageFilters {
   type?: string;
   /** Só leads associadas a este empreendimento. */
   developmentId?: string;
-  /** Consultor selecionado no seletor de âmbito, ou "all". */
+  /** Consultor selecionado no seletor de âmbito, ou "all". (legado, 1 dono) */
   scopeUserId?: string;
+  /**
+   * Âmbito por lista de donos (assigned_to). Vazio/ausente = todas as leads
+   * visíveis. Usado pelo filtro "As minhas / Do team lead / Ambas" e pelo
+   * seletor de equipa — resolvido no cliente, que conhece a composição da equipa.
+   */
+  scopeUserIds?: string[];
   showArchived?: boolean;
   /** Leads sem contacto há N dias (0/indefinido = sem filtro). */
   notContactedDays?: number;
@@ -314,7 +388,11 @@ export const getLeadsPage = async (
     query = applyVisibilityOrSharedFilter(query, visibility.visibleUserIds, visibility.sharedLeadIds);
   }
 
-  if (filters.scopeUserId && filters.scopeUserId !== "all") {
+  // Âmbito: lista de donos a mostrar (resolvida no cliente). Vazio = tudo o que
+  // já é visível. O scopeUserId único mantém-se como fallback (seletor legado).
+  if (filters.scopeUserIds && filters.scopeUserIds.length > 0) {
+    query = query.in("assigned_to", filters.scopeUserIds);
+  } else if (filters.scopeUserId && filters.scopeUserId !== "all") {
     query = query.eq("assigned_to", filters.scopeUserId);
   }
 

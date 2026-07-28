@@ -49,7 +49,7 @@ export function useLeadsPaginated(filters: LeadsPageFilters) {
     try {
       const [pageResult, statsResult] = await Promise.all([
         getLeadsPage(filters, 0),
-        getLeadsStats(filters.scopeUserId),
+        getLeadsStats(filters.scopeUserIds),
       ]);
 
       if (requestId !== requestRef.current) return; // chegou tarde: descartar

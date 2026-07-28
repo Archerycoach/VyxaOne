@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useRouter } from "next/router";
 import { LeadCard } from "./LeadCard";
 import { LeadFilters } from "./LeadFilters";
@@ -36,13 +36,14 @@ import {
   useLeadActions,
 } from "../hooks";
 import { getLeadColumnsConfig, type LeadColumnConfig } from "@/services/leadColumnsService";
-import type { LeadWithContacts } from "@/services/leadsService";
+import { getLeadScopeContext, type LeadWithContacts, type LeadScopeContext } from "@/services/leadsService";
 import { exportLeadsToExcel } from "@/services/excelService";
 import { supabase } from "@/integrations/supabase/client";
 import { getLeadRecentInteractionState } from "@/lib/leadInteractionHighlight";
 import { getLeadQualification } from "@/lib/leadQualification";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScopeSelector } from "@/components/ScopeSelector";
+import { LeadScopeFilter } from "@/components/leads/LeadScopeFilter";
 import { getStagesForUsers, type PipelineStage } from "@/services/pipelineSettingsService";
 import { LeadAdvancedFilters, EMPTY_QUALIFICATION_FILTERS, type LeadQualificationFilters } from "./LeadAdvancedFilters";
 import { ImportLeadsDialog } from "@/components/leads/ImportLeadsDialog";
@@ -172,13 +173,35 @@ export function LeadsListContainer({
   // pessoa. Aplicado antes da pesquisa/tipo, para os cartões de estatísticas
   // também reagirem ao âmbito escolhido.
   const [scopeFilter, setScopeFilter] = useState<string>("all");
+  // Contexto do filtro de âmbito (papel + equipa) e a lista de donos resolvida a
+  // partir da escolha. `null` em scopeAssignedIds = todas as leads visíveis.
+  const [scopeCtx, setScopeCtx] = useState<LeadScopeContext | null>(null);
+  const [scopeAssignedIds, setScopeAssignedIds] = useState<string[] | null>(null);
+
+  useEffect(() => {
+    getLeadScopeContext().then(setScopeCtx).catch(() => setScopeCtx(null));
+  }, []);
+
+  // Seletor de equipa (broker/admin): "all" = tudo; um id = só esse dono.
+  const handleScopeSelectorChange = useCallback((value: string) => {
+    setScopeFilter(value);
+    setScopeAssignedIds(value === "all" ? null : [value]);
+  }, []);
+
+  // Filtro "As minhas / Do team lead / Ambas" (team lead e consultores).
+  const handleLeadScopeChange = useCallback((value: string, assignedIds: string[] | null) => {
+    setScopeFilter(value);
+    setScopeAssignedIds(assignedIds);
+  }, []);
+
+  const isBrokerOrAdmin = scopeCtx?.role === "broker" || scopeCtx?.role === "admin";
 
   // Só a vista de transferidas filtra em memória; nas restantes o âmbito vai
   // na consulta (ver pageFilters).
   const sortedTransferred = useMemo(() => {
-    if (scopeFilter === "all") return transferredLeads;
-    return transferredLeads.filter((lead) => lead.assigned_to === scopeFilter);
-  }, [transferredLeads, scopeFilter]);
+    if (!scopeAssignedIds) return transferredLeads;
+    return transferredLeads.filter((lead) => scopeAssignedIds.includes(lead.assigned_to));
+  }, [transferredLeads, scopeAssignedIds]);
 
   // Fases do pipeline são isoladas por consultor — carregamos, de uma só
   // vez, as fases de todos os donos das leads visíveis (pode haver várias
@@ -226,7 +249,7 @@ export function LeadsListContainer({
     return {
       search: searchTerm.trim() || undefined,
       type: filterType,
-      scopeUserId: scopeFilter,
+      scopeUserIds: scopeAssignedIds ?? undefined,
       developmentId: developmentFilter || undefined,
       showArchived,
       notContactedDays: Number.isFinite(days) ? days : 0,
@@ -247,7 +270,7 @@ export function LeadsListContainer({
       sortOrder,
     };
   }, [
-    searchTerm, filterType, scopeFilter, showArchived, notContactedDays,
+    searchTerm, filterType, scopeAssignedIds, showArchived, notContactedDays,
     qualFilters, sortField, sortOrder, developmentFilter,
   ]);
 
@@ -891,11 +914,17 @@ export function LeadsListContainer({
       {/* Barra superior: seletor de âmbito (equipa) à esquerda; filtros e
           opções de vista à direita, na mesma linha. */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-        {canAssignLeads ? (
-          <ScopeSelector value={scopeFilter} onChange={setScopeFilter} label="Consultor / Equipa" />
-        ) : (
-          <div />
-        )}
+        {/* Slot do âmbito (sempre presente, para manter os botões à direita
+            mesmo quando o filtro não se aplica e não renderiza nada). */}
+        <div>
+          {isBrokerOrAdmin ? (
+            <ScopeSelector value={scopeFilter} onChange={handleScopeSelectorChange} label="Consultor / Equipa" />
+          ) : (
+            // Team lead e consultores (que veem a equipa): "As minhas / Do team
+            // lead / Ambas", memorizado. Esconde-se sozinho se não se aplicar.
+            <LeadScopeFilter ctx={scopeCtx} onChange={handleLeadScopeChange} />
+          )}
+        </div>
 
         <div className="flex gap-2 items-center flex-wrap md:flex-nowrap md:justify-end">
           {/* O Radar deixou de ter entrada própria no menu — vive aqui, ao pé
