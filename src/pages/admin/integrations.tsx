@@ -65,6 +65,7 @@ export default function Integrations() {
   const [idealistaMaskedKey, setIdealistaMaskedKey] = useState("");
   const [idealistaHost, setIdealistaHost] = useState("idealista2.p.rapidapi.com");
   const [idealistaEndpoint, setIdealistaEndpoint] = useState("/properties/list");
+  const [idealistaProvider, setIdealistaProvider] = useState("auto");
   const [idealistaAutoSuggest, setIdealistaAutoSuggest] = useState(false);
   const [idealistaAgencyFilter, setIdealistaAgencyFilter] = useState("");
 
@@ -92,7 +93,7 @@ export default function Integrations() {
       // nenhuma chave (as chaves são idealista_rapidapi_*), por isso o painel
       // mostrava sempre os valores por defeito em vez dos guardados na BD.
       const res = await adminFetch(
-        "/api/admin/system-settings?keys=idealista_rapidapi_key,idealista_rapidapi_host,idealista_rapidapi_list_endpoint,idealista_auto_suggest_enabled,idealista_agency_filter",
+        "/api/admin/system-settings?keys=idealista_rapidapi_key,idealista_rapidapi_host,idealista_rapidapi_list_endpoint,idealista_provider,idealista_auto_suggest_enabled,idealista_agency_filter",
       );
       if (!res.ok) return;
 
@@ -102,6 +103,7 @@ export default function Integrations() {
       setIdealistaMaskedKey(data.idealista_rapidapi_key || "");
       setIdealistaHost(data.idealista_rapidapi_host || "idealista2.p.rapidapi.com");
       setIdealistaEndpoint(data.idealista_rapidapi_list_endpoint || "/properties/list");
+      setIdealistaProvider(data.idealista_provider || "auto");
       setIdealistaAutoSuggest(data.idealista_auto_suggest_enabled === "true");
       setIdealistaAgencyFilter(data.idealista_agency_filter || "");
 
@@ -193,6 +195,7 @@ export default function Integrations() {
       const payload: any = {
         idealista_rapidapi_host: idealistaHost.trim() || "idealista2.p.rapidapi.com",
         idealista_rapidapi_list_endpoint: idealistaEndpoint.trim().startsWith('/') ? idealistaEndpoint.trim() : `/${idealistaEndpoint.trim()}`,
+        idealista_provider: idealistaProvider || "auto",
         idealista_auto_suggest_enabled: idealistaAutoSuggest ? "true" : "false",
         idealista_agency_filter: idealistaAgencyFilter.trim()
       };
@@ -841,6 +844,24 @@ export default function Integrations() {
                       Chave atual: {idealistaMaskedKey}
                     </p>
                   )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Fornecedor Idealista</Label>
+                  <select
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    value={idealistaProvider}
+                    onChange={(e) => setIdealistaProvider(e.target.value)}
+                  >
+                    <option value="auto">Automático (idealista2 → idealista17 se falhar)</option>
+                    <option value="idealista2">Só idealista2</option>
+                    <option value="idealista17">Só idealista17</option>
+                  </select>
+                  <p className="text-xs text-muted-foreground">
+                    A mesma chave RapidAPI serve ambos. Em "Automático", usa-se o
+                    idealista2 e, se der erro, recorre-se ao idealista17. O Host e
+                    Endpoint abaixo são ignorados quando se escolhe o fornecedor aqui.
+                  </p>
                 </div>
 
                 <div className="space-y-2">

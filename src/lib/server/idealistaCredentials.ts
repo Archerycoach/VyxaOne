@@ -9,6 +9,12 @@ interface IdealistaCredentials {
   apiKey: string;
   host: string;
   listEndpoint: string;
+  /**
+   * Fornecedor RapidAPI a usar: "auto" (default: idealista2 e, se falhar,
+   * idealista17), "idealista2" ou "idealista17". A mesma chave RapidAPI serve
+   * ambos (é da conta, não da API).
+   */
+  provider: string;
 }
 
 /**
@@ -39,7 +45,8 @@ export async function getIdealistaCredentials(): Promise<IdealistaCredentials> {
     .in("key", [
       "idealista_rapidapi_key",
       "idealista_rapidapi_host",
-      "idealista_rapidapi_list_endpoint"
+      "idealista_rapidapi_list_endpoint",
+      "idealista_provider"
     ]);
 
   if (error) {
@@ -52,6 +59,7 @@ export async function getIdealistaCredentials(): Promise<IdealistaCredentials> {
   const apiKeySetting = settings.find(s => s.key === "idealista_rapidapi_key");
   const hostSetting = settings.find(s => s.key === "idealista_rapidapi_host");
   const endpointSetting = settings.find(s => s.key === "idealista_rapidapi_list_endpoint");
+  const providerSetting = settings.find(s => s.key === "idealista_provider");
 
   if (!apiKeySetting?.value) {
     throw new Error("Chave da API do Idealista não configurada. Contacte o administrador para configurar em Admin → Integrações.");
@@ -60,7 +68,8 @@ export async function getIdealistaCredentials(): Promise<IdealistaCredentials> {
   const credentials: IdealistaCredentials = {
     apiKey: apiKeySetting.value,
     host: hostSetting?.value || "idealista2.p.rapidapi.com",
-    listEndpoint: endpointSetting?.value || "/properties/list"
+    listEndpoint: endpointSetting?.value || "/properties/list",
+    provider: (providerSetting?.value || "auto").toString(),
   };
 
   // Ensure endpoint starts with /

@@ -419,24 +419,23 @@ export function LeadsListContainer({
     }, 0);
   };
 
-  // Deep-link: se a página foi aberta com ?leadId=..., abre a ficha dessa
-  // lead automaticamente assim que as leads estiverem carregadas. Usado por
-  // ex. pelo hub "Hoje" para levar diretamente a uma lead específica.
+  // Deep-link: se a página foi aberta com ?leadId=..., abre a ficha dessa lead.
+  // Usado pelo hub "Hoje" e pelo Radar. Abre DIRETAMENTE pelo id (a ficha
+  // procura a lead sozinha), sem depender de a lead estar na página já
+  // carregada — senão uma lead do Radar que não venha no topo nunca abria.
   const deepLinkHandledRef = useRef(false);
   useEffect(() => {
     if (deepLinkHandledRef.current) return;
     const queryLeadId = router.query.leadId;
-    if (typeof queryLeadId !== "string" || sortedLeads.length === 0) return;
+    if (typeof queryLeadId !== "string" || !queryLeadId) return;
 
-    const targetLead = sortedLeads.find((lead: any) => lead.id === queryLeadId);
-    if (targetLead) {
-      deepLinkHandledRef.current = true;
-      handleViewDetails(targetLead);
-      // Remove o parâmetro do URL para não reabrir ao navegar/atualizar.
-      const { leadId: _leadId, ...restQuery } = router.query;
-      router.replace({ pathname: router.pathname, query: restQuery }, undefined, { shallow: true });
-    }
-  }, [router.query.leadId, sortedLeads]);
+    deepLinkHandledRef.current = true;
+    setSelectedLeadId(queryLeadId);
+    setDetailsDialogOpen(true);
+    // Remove o parâmetro do URL para não reabrir ao navegar/atualizar.
+    const { leadId: _leadId, ...restQuery } = router.query;
+    router.replace({ pathname: router.pathname, query: restQuery }, undefined, { shallow: true });
+  }, [router.query.leadId]);
 
   const handleAssign = (lead: LeadWithContacts) => {
     if (openingAssignRef.current) {

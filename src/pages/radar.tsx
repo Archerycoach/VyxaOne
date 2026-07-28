@@ -109,7 +109,9 @@ export default function RadarPage() {
   };
 
   const openEntity = (item: RadarItemEnriched) => {
-    if (item.entity_type === "lead") router.push(`/leads?id=${item.entity_id}`);
+    // `leadId` é o parâmetro que a página de Leads reconhece para abrir a ficha
+    // (o `id` antigo era ignorado, por isso o clique não abria nada).
+    if (item.entity_type === "lead") router.push(`/leads?leadId=${item.entity_id}`);
     else router.push(`/contacts`);
   };
 

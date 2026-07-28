@@ -99,6 +99,8 @@ interface IdealistaCredentials {
   apiKey: string;
   host: string;
   listEndpoint: string;
+  /** "auto" | "idealista2" | "idealista17" — ver getIdealistaCredentials. */
+  provider?: string;
 }
 
 export interface IdealistaProperty {
@@ -184,7 +186,27 @@ export async function searchIdealistaProperties(
       userId = user.id;
     }
 
-    const { apiKey: rapidApiKey, host: rapidApiHost, listEndpoint } = credentials;
+    const rapidApiKey = credentials.apiKey;
+
+    // ── Fornecedores RapidAPI suportados ─────────────────────────────────────
+    // A MESMA chave RapidAPI serve ambos (é da conta, não da API). Só diferem no
+    // auto-complete, no endpoint de lista e no envelope da resposta — os campos
+    // de cada imóvel são idênticos (mesmo schema Idealista), por isso os filtros
+    // locais (applyLocalFilters) são partilhados.
+    const PROVIDERS = {
+      idealista2: { host: "idealista2.p.rapidapi.com", listEndpoint: "/properties/list" },
+      idealista17: { host: "idealista17.p.rapidapi.com", listEndpoint: "/property-search" },
+    } as const;
+    type ProviderKey = keyof typeof PROVIDERS;
+
+    // Ordem de tentativa. "auto" = idealista2 (o operador reporta melhores
+    // resultados) e, se falhar por erro, idealista17. Escolher um fornecedor
+    // fixo desliga o fallback.
+    const providerPref = String(credentials.provider || "auto").toLowerCase();
+    const providerOrder: ProviderKey[] =
+      providerPref === "idealista17" ? ["idealista17"]
+      : providerPref === "idealista2" ? ["idealista2"]
+      : ["idealista2", "idealista17"];
 
     const centerCandidates = Array.from(
       new Set(
@@ -218,9 +240,16 @@ export async function searchIdealistaProperties(
 
     let lastAutoStatus = 0;
 
-    // Mapeamento para o formato do fornecedor idealista17 (RapidAPI).
-    const searchTypeParam = params.operation === "rent" ? "for_rent" : "for_sale";
+    // Mapeamento dos parâmetros de operação para cada fornecedor.
+    const searchTypeParam = params.operation === "rent" ? "for_rent" : "for_sale"; // idealista17
+    const operationParam = params.operation === "rent" ? "rent" : "sale";          // idealista2
     const propertyTypeParam = params.propertyType || "homes";
+
+    const httpGet = (host: string, path: string) =>
+      fetch(`https://${host}${path}`, {
+        method: "GET",
+        headers: { "X-RapidAPI-Key": rapidApiKey, "X-RapidAPI-Host": host },
+      });
 
     // Distrito de um locationId Idealista: `0-EU-PT-<distrito>-...` → o 4.º
     // segmento. Ex.: Lisboa = "11", Leiria = "10". Usado para desambiguar zonas
@@ -228,113 +257,102 @@ export async function searchIdealistaProperties(
     // em Lisboa e em Leiria).
     const districtOf = (locId: string): string => String(locId || "").split("-")[3] || "";
 
-    // Resolve TODOS os candidatos de UMA zona pelo auto-complete do idealista17
-    // (?location_name=&country=&property_type=&search_type=). A resposta traz
-    // `data.locations[]`. Resiliente: tenta dois caminhos e repete uma ronda com
+    // Auto-complete idealista17: ?location_name=&country=&property_type=&search_type=
+    // → `data.locations[]`. Resiliente: dois caminhos e repete uma ronda com
     // pausa (o 503 do Idealista costuma ser transitório). Devolve [] se falhar.
-    const resolveLocationCandidates = async (centerCandidate: string): Promise<any[]> => {
+    const resolveCandidates17 = async (host: string, centerCandidate: string): Promise<any[]> => {
       const encodedCenter = encodeURIComponent(centerCandidate);
       const acQuery = `location_name=${encodedCenter}&country=pt&property_type=${propertyTypeParam}&search_type=${searchTypeParam}`;
       const attempts = [`/auto-complete?${acQuery}`, `/locations/auto-complete?${acQuery}`];
-
       for (let round = 0; round < 2; round++) {
         for (const path of attempts) {
           try {
-            const resp = await fetch(`https://${rapidApiHost}${path}`, {
-              method: "GET",
-              headers: { "X-RapidAPI-Key": rapidApiKey, "X-RapidAPI-Host": rapidApiHost },
-            });
-            if (!resp.ok) {
-              lastAutoStatus = resp.status;
-              autoTextErrorSnippet = `Status HTTP: ${resp.status}`;
-              continue; // tenta o próximo caminho
-            }
+            const resp = await httpGet(host, path);
+            if (!resp.ok) { lastAutoStatus = resp.status; autoTextErrorSnippet = `Status HTTP: ${resp.status}`; continue; }
             const autoText = await resp.text();
             const json = JSON.parse(autoText);
             const locations = json?.data?.locations || json?.locations || extractLocations(json);
-            if (Array.isArray(locations) && locations.length > 0) {
-              return locations.filter((l: any) => l?.locationId);
-            }
+            if (Array.isArray(locations) && locations.length > 0) return locations.filter((l: any) => l?.locationId);
             autoTextErrorSnippet = autoText.substring(0, 150);
-          } catch (autoErr: any) {
-            autoTextErrorSnippet = autoErr.message;
-          }
+          } catch (autoErr: any) { autoTextErrorSnippet = autoErr.message; }
         }
-        // Pausa antes de repetir a ronda — dá tempo ao serviço recuperar do 503.
         if (round === 0) await new Promise((r) => setTimeout(r, 700));
       }
-
-      console.warn("Auto-complete falhou para:", centerCandidate, "->", autoTextErrorSnippet);
+      console.warn("Auto-complete (idealista17) falhou para:", centerCandidate, "->", autoTextErrorSnippet);
       return [];
     };
 
-    // 1. Resolver CADA zona. Primeiro juntam-se os candidatos de todas, depois
-    //    escolhe-se o DISTRITO DOMINANTE (a moda dos 1.os candidatos) e, para
-    //    cada zona, o candidato desse distrito — assim uma zona ambígua
-    //    ("Marquês de Pombal" em Lisboa e em Leiria) segue as outras (Lisboa) em
-    //    vez de contaminar a busca. Também garante que todos os location_ids são
-    //    do mesmo distrito (o idealista17 espera-o).
-    const resolvedLocations: Array<{ center: string; locationId: string }> = [];
-    if (params.locationId) {
-      resolvedLocations.push({ center: params.center || "", locationId: params.locationId });
-    } else {
+    // Auto-complete idealista2: ?prefix=&country=pt → lista (plana ou aninhada,
+    // extraída por extractLocations). Mesmo formato de locationId `0-EU-PT-...`,
+    // por isso o districtOf/desambiguação funciona igual.
+    const resolveCandidates2 = async (host: string, centerCandidate: string): Promise<any[]> => {
+      const encodedCenter = encodeURIComponent(centerCandidate);
+      const acQuery = `prefix=${encodedCenter}&country=pt`;
+      const attempts = [`/auto-complete?${acQuery}`, `/locations/auto-complete?${acQuery}`];
+      for (let round = 0; round < 2; round++) {
+        for (const path of attempts) {
+          try {
+            const resp = await httpGet(host, path);
+            if (!resp.ok) { lastAutoStatus = resp.status; autoTextErrorSnippet = `Status HTTP: ${resp.status}`; continue; }
+            const autoText = await resp.text();
+            const json = JSON.parse(autoText);
+            const locations = json?.locations || json?.data?.locations || extractLocations(json);
+            if (Array.isArray(locations) && locations.length > 0) return locations.filter((l: any) => l?.locationId);
+            autoTextErrorSnippet = autoText.substring(0, 150);
+          } catch (autoErr: any) { autoTextErrorSnippet = autoErr.message; }
+        }
+        if (round === 0) await new Promise((r) => setTimeout(r, 700));
+      }
+      console.warn("Auto-complete (idealista2) falhou para:", centerCandidate, "->", autoTextErrorSnippet);
+      return [];
+    };
+
+    // Resolve TODAS as zonas com o auto-complete de UM fornecedor, escolhendo o
+    // DISTRITO DOMINANTE (a moda dos 1.os candidatos) para desambiguar zonas com
+    // o mesmo nome em distritos diferentes (ex.: "Marquês de Pombal" em Lisboa e
+    // em Leiria). Lança erro se não resolver nada — isso aciona o fallback para o
+    // outro fornecedor no laço principal.
+    const resolveLocations = async (
+      resolveFn: (host: string, zone: string) => Promise<any[]>,
+      host: string,
+    ): Promise<Array<{ center: string; locationId: string }>> => {
+      const resolved: Array<{ center: string; locationId: string }> = [];
+      if (params.locationId) {
+        resolved.push({ center: params.center || "", locationId: params.locationId });
+        return resolved;
+      }
       const zoneCandidates: Array<{ center: string; candidates: any[] }> = [];
       for (const candidate of centerCandidates) {
-        const cands = await resolveLocationCandidates(candidate);
+        const cands = await resolveFn(host, candidate);
         if (cands.length > 0) zoneCandidates.push({ center: candidate, candidates: cands });
       }
-
-      // Distrito dominante = o mais frequente entre os 1.os candidatos de cada zona.
       const districtFreq: Record<string, number> = {};
       for (const zc of zoneCandidates) {
         const d = districtOf(zc.candidates[0]?.locationId);
         if (d) districtFreq[d] = (districtFreq[d] || 0) + 1;
       }
-      const dominantDistrict =
-        Object.entries(districtFreq).sort((a, b) => b[1] - a[1])[0]?.[0] || "";
-
+      const dominantDistrict = Object.entries(districtFreq).sort((a, b) => b[1] - a[1])[0]?.[0] || "";
       for (const zc of zoneCandidates) {
-        // Escolher o candidato do distrito dominante. Se a zona NÃO tiver
-        // candidato nesse distrito, é de outro distrito — ignora-se, para não
-        // contaminar a busca (ex.: "Marquês de Pombal" de Leiria quando as
-        // outras zonas são de Lisboa). Sem distrito dominante, usa-se o 1.º.
         const chosen = dominantDistrict
           ? zc.candidates.find((c) => districtOf(c.locationId) === dominantDistrict)
           : zc.candidates[0];
-        if (chosen?.locationId && !resolvedLocations.some((r) => r.locationId === chosen.locationId)) {
-          resolvedLocations.push({ center: zc.center, locationId: chosen.locationId });
+        if (chosen?.locationId && !resolved.some((r) => r.locationId === chosen.locationId)) {
+          resolved.push({ center: zc.center, locationId: chosen.locationId });
         }
       }
-    }
-
-    if (resolvedLocations.length === 0) {
-      // 5xx = o serviço do Idealista está temporariamente indisponível, não é a
-      // zona que está errada — mensagem clara para o utilizador tentar de novo.
-      if (lastAutoStatus >= 500 || lastAutoStatus === 429) {
-        throw new Error(
-          `O serviço do Idealista está temporariamente indisponível (HTTP ${lastAutoStatus}). Tente novamente dentro de alguns instantes.`,
-        );
+      if (resolved.length === 0) {
+        if (lastAutoStatus >= 500 || lastAutoStatus === 429) {
+          throw new Error(`O serviço do Idealista está temporariamente indisponível (HTTP ${lastAutoStatus}). Tente novamente dentro de alguns instantes.`);
+        }
+        throw new Error(`Não foi possível encontrar a localização no Idealista para "${centerCandidates.join(", ") || "Localização vazia"}". Resposta da API: ${autoTextErrorSnippet}`);
       }
-      throw new Error(
-        `Não foi possível encontrar a localização no Idealista para "${centerCandidates.join(", ") || "Localização vazia"}". Resposta da API: ${autoTextErrorSnippet}`,
-      );
-    }
-    // Para retrocompatibilidade de quem lê params.center depois da pesquisa.
-    params.center = resolvedLocations[0].center;
+      // Para retrocompatibilidade de quem lê params.center depois da pesquisa.
+      params.center = resolved[0].center;
+      return resolved;
+    };
 
-    // 2. Query base (formato idealista17). O idealista17 aceita VÁRIAS zonas
-    //    numa só chamada via `location_ids` (lista separada por vírgulas) — não
-    //    é preciso pesquisar zona a zona. Preço/quartos/área são filtrados
-    //    LOCALMENTE sobre os resultados (à prova de a API os ignorar), por isso
-    //    não vão na query.
-    const locationIds = resolvedLocations.map((l) => l.locationId).join(",");
-    const baseParams = new URLSearchParams();
-    baseParams.append("country", "pt");
-    baseParams.append("search_type", searchTypeParam);
-    baseParams.append("property_type", propertyTypeParam);
-    baseParams.append("location_ids", locationIds);
-    baseParams.append("sort_order", "default");
-
+    // Parâmetros de filtragem (partilhados pelos dois fornecedores; aplicados
+    // LOCALMENTE sobre os resultados, à prova de a API os ignorar).
     const acceptedBedrooms = typologyBedroomsList(params.typology);
     const openEndedTypology = isOpenEndedTypology(params.typology);
     const filterRoomsLocally = acceptedBedrooms.length > 1 || openEndedTypology;
@@ -354,13 +372,11 @@ export async function searchIdealistaProperties(
       (params.propertyKinds?.length || 0) > 0 || !!params.requireGarage || !!params.onlyNewBuild;
     const maxPages = hasAgencyFilter ? 25 : tightFilters ? 10 : 4;
 
-    // Faz o fetch de uma página. Só a 1.ª página rebenta o erro para a UI.
-    const fetchPageData = async (qp: URLSearchParams, throwOnError: boolean, pageNum: number): Promise<any> => {
+    // Faz o fetch de uma página de um endpoint. Só rebenta o erro (para a UI /
+    // fallback) quando `throwOnError` — tipicamente a 1.ª chamada do fornecedor.
+    const fetchPageData = async (host: string, url: string, throwOnError: boolean, pageNum: number): Promise<any> => {
       try {
-        const response = await fetch(`https://${rapidApiHost}${listEndpoint}?${qp.toString()}`, {
-          method: "GET",
-          headers: { "X-RapidAPI-Key": rapidApiKey, "X-RapidAPI-Host": rapidApiHost },
-        });
+        const response = await httpGet(host, url);
         if (!response.ok) {
           const errText = await response.text();
           throw new Error(`Status ${response.status}: ${errText.substring(0, 150)}`);
@@ -453,44 +469,117 @@ export async function searchIdealistaProperties(
       return list;
     };
 
-    // 3. Uma pesquisa que cobre TODAS as zonas (location_ids aceita lista), com
-    //    paginação (`page`) até juntar `targetCount` ou esgotar as páginas.
-    const collected: IdealistaProperty[] = [];
-    const seenCodes = new Set<string>();
-    let totalPages = maxPages;
-    for (let i = 0; i < maxPages; i++) {
-      const page = startPage + i;
-      if (page > totalPages) break;
+    // ── Runner idealista17: location_ids aceita VÁRIAS zonas numa só chamada;
+    //    pagina por `page` até juntar targetCount ou esgotar as páginas. ───────
+    const runIdealista17 = async (): Promise<IdealistaProperty[]> => {
+      const { host, listEndpoint } = PROVIDERS.idealista17;
+      const resolved = await resolveLocations(resolveCandidates17, host);
+      const baseParams = new URLSearchParams();
+      baseParams.append("country", "pt");
+      baseParams.append("search_type", searchTypeParam);
+      baseParams.append("property_type", propertyTypeParam);
+      baseParams.append("location_ids", resolved.map((l) => l.locationId).join(","));
+      baseParams.append("sort_order", "default");
 
-      const qp = new URLSearchParams(baseParams.toString());
-      qp.set("page", page.toString());
-
-      const data = await fetchPageData(qp, i === 0, page);
-      if (!data) continue;
-
-      // idealista17 devolve tudo dentro de `data`: { listings, totalPages, ... }.
-      const container = data?.data || data;
-      if (Number.isFinite(container?.totalPages)) totalPages = container.totalPages;
-
-      const listings = Array.isArray(data)
-        ? data
-        : container.listings || container.elementList || container.results || container.properties || container.items || [];
-
-      const filtered = applyLocalFilters(listings);
-      for (const item of filtered) {
-        if (item && item.propertyCode && !seenCodes.has(item.propertyCode)) {
-          seenCodes.add(item.propertyCode);
-          collected.push(item);
-          if (collected.length >= targetCount) break;
+      const collected: IdealistaProperty[] = [];
+      const seenCodes = new Set<string>();
+      let totalPages = maxPages;
+      for (let i = 0; i < maxPages; i++) {
+        const page = startPage + i;
+        if (page > totalPages) break;
+        const qp = new URLSearchParams(baseParams.toString());
+        qp.set("page", page.toString());
+        const data = await fetchPageData(host, `${listEndpoint}?${qp.toString()}`, i === 0, page);
+        if (!data) continue;
+        // idealista17 devolve tudo dentro de `data`: { listings, totalPages, ... }.
+        const container = data?.data || data;
+        if (Number.isFinite(container?.totalPages)) totalPages = container.totalPages;
+        const listings = Array.isArray(data)
+          ? data
+          : container.listings || container.elementList || container.results || container.properties || container.items || [];
+        const filtered = applyLocalFilters(listings);
+        for (const item of filtered) {
+          if (item && item.propertyCode && !seenCodes.has(item.propertyCode)) {
+            seenCodes.add(item.propertyCode);
+            collected.push(item);
+            if (collected.length >= targetCount) break;
+          }
         }
+        if (collected.length >= targetCount) break;
+        if (page >= totalPages) break;
+        await new Promise((r) => setTimeout(r, 250));
       }
+      return collected.slice(0, targetCount);
+    };
 
-      if (collected.length >= targetCount) break;
-      if (page >= totalPages) break;
-      await new Promise((r) => setTimeout(r, 250));
+    // ── Runner idealista2: um locationId por chamada (/properties/list), por
+    //    isso pagina ZONA A ZONA e junta tudo. Resposta em `elementList`. ──────
+    const runIdealista2 = async (): Promise<IdealistaProperty[]> => {
+      const { host, listEndpoint } = PROVIDERS.idealista2;
+      const resolved = await resolveLocations(resolveCandidates2, host);
+      const multiZone = resolved.length > 1;
+      // Páginas por zona (cada uma ~30 imóveis). Mais fundo com filtros apertados.
+      const pagesPerZone = hasAgencyFilter ? (multiZone ? 5 : 10) : tightFilters ? (multiZone ? 3 : 5) : 2;
+
+      const collected: IdealistaProperty[] = [];
+      const seenCodes = new Set<string>();
+      let firstRequest = true;
+      for (const loc of resolved) {
+        for (let p = 0; p < pagesPerZone; p++) {
+          const page = startPage + p;
+          const qp = new URLSearchParams();
+          qp.append("country", "pt");
+          qp.append("locale", "pt");
+          qp.append("operation", operationParam);
+          qp.append("propertyType", propertyTypeParam);
+          qp.append("locationId", loc.locationId);
+          qp.append("numPage", page.toString());
+          qp.append("maxItems", "40");
+          if (params.minPrice) qp.set("minPrice", String(params.minPrice));
+          if (params.maxPrice) qp.set("maxPrice", String(params.maxPrice));
+          // Só a 1.ª chamada de todas rebenta o erro (para acionar o fallback).
+          const data = await fetchPageData(host, `${listEndpoint}?${qp.toString()}`, firstRequest, page);
+          firstRequest = false;
+          if (!data) continue;
+          const container = data?.data || data;
+          const listings = Array.isArray(data)
+            ? data
+            : container.elementList || container.listings || container.results || container.properties || container.items || [];
+          if (!Array.isArray(listings) || listings.length === 0) break; // sem mais páginas nesta zona
+          const filtered = applyLocalFilters(listings);
+          for (const item of filtered) {
+            if (item && item.propertyCode && !seenCodes.has(item.propertyCode)) {
+              seenCodes.add(item.propertyCode);
+              collected.push(item);
+            }
+          }
+          if (collected.length >= targetCount) break;
+          await new Promise((r) => setTimeout(r, 250));
+        }
+        if (collected.length >= targetCount) break;
+        if (multiZone) await new Promise((r) => setTimeout(r, 200));
+      }
+      return collected.slice(0, targetCount);
+    };
+
+    const runners: Record<ProviderKey, () => Promise<IdealistaProperty[]>> = {
+      idealista2: runIdealista2,
+      idealista17: runIdealista17,
+    };
+
+    // 3. Tenta os fornecedores pela ordem definida; se um lançar erro (serviço em
+    //    baixo, zona não resolvida, etc.), passa ao seguinte. Só o último erro
+    //    sobe à UI se TODOS falharem.
+    let lastError: any = null;
+    for (const key of providerOrder) {
+      try {
+        return await runners[key]();
+      } catch (err) {
+        lastError = err;
+        console.error(`[idealista] fornecedor "${key}" falhou; a tentar alternativa se existir:`, err);
+      }
     }
-
-    return collected.slice(0, targetCount);
+    throw lastError || new Error("Falha na pesquisa Idealista");
   } catch (error) {
     console.error("Erro ao pesquisar no Idealista:", error);
     throw error;
