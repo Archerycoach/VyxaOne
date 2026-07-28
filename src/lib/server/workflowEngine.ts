@@ -224,8 +224,8 @@ async function executeWorkflow(
 }
 
 /**
- * Send email via the centralized client-email service (SMTP + cópia
- * best-effort no IMAP + registo em automated_email_log)
+ * Send email via the centralized client-email service (SMTP + registo em
+ * automated_email_log)
  */
 async function sendEmailAction(
   supabase: ReturnType<typeof createClient>,

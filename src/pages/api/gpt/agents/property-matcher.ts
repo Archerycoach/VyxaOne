@@ -168,7 +168,7 @@ Responde EXCLUSIVAMENTE com o HTML da mensagem.`;
     emailHtml = emailHtml.replace(/```html/g, "").replace(/```/g, "").trim();
 
     // 7. Send the email via the centralized client-email service (SMTP +
-    // cópia best-effort no IMAP + registo em automated_email_log).
+    // registo em automated_email_log).
     const emailSubject = `${enrichedProperties.length} imóveis ideais para si, ${lead.name}`;
     const sendResult = await sendClientEmail({
       supabaseAdmin: supabase,

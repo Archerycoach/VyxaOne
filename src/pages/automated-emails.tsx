@@ -33,7 +33,6 @@ interface AutomatedEmailLogRow {
   html_body: string | null;
   status: string;
   error_message: string | null;
-  imap_saved: boolean;
   created_at: string;
 }
 
@@ -226,19 +225,19 @@ export default function AutomatedSendsLogPage() {
                     <TableHead>{channel === "email" ? "Assunto" : "Mensagem"}</TableHead>
                     <TableHead>Origem</TableHead>
                     <TableHead>Estado</TableHead>
-                    {channel === "email" ? <TableHead className="text-center">IMAP</TableHead> : <TableHead>Tipo</TableHead>}
+                    {channel === "whatsapp" && <TableHead>Tipo</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {loading ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                      <TableCell colSpan={channel === "email" ? 6 : 7} className="text-center text-muted-foreground py-8">
                         A carregar...
                       </TableCell>
                     </TableRow>
                   ) : rows.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                      <TableCell colSpan={channel === "email" ? 6 : 7} className="text-center text-muted-foreground py-8">
                         {channel === "email" ? <Mail className="h-8 w-8 mx-auto mb-2 text-gray-300" /> : <MessageCircle className="h-8 w-8 mx-auto mb-2 text-gray-300" />}
                         Ainda não há registos de {channel === "email" ? "emails" : "mensagens de WhatsApp"} automáticos.
                       </TableCell>
@@ -270,13 +269,6 @@ export default function AutomatedSendsLogPage() {
                             <Badge className="bg-red-100 text-red-700 border-red-200" variant="outline" title={row.error_message || undefined}>
                               <XCircle className="h-3 w-3 mr-1" /> Falhou
                             </Badge>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-center">
-                          {row.imap_saved ? (
-                            <CheckCircle2 className="h-4 w-4 text-green-600 mx-auto" />
-                          ) : (
-                            <span className="text-gray-300">—</span>
                           )}
                         </TableCell>
                       </TableRow>

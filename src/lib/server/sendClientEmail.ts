@@ -1,5 +1,4 @@
 import nodemailer from "nodemailer";
-import { ImapFlow } from "imapflow";
 import crypto from "crypto";
 import { appendSignature } from "@/lib/server/emailSignature";
 
@@ -8,13 +7,10 @@ import { appendSignature } from "@/lib/server/emailSignature";
  * direta do consultor): reativação de leads, alertas de contacto/
  * oportunidade, property-matcher e automações/workflows.
  *
- * Concentra num único sítio três coisas que antes estavam duplicadas e
+ * Concentra num único sítio duas coisas que antes estavam duplicadas e
  * inconsistentes entre ficheiros:
  * 1. Envio via SMTP com as definições do consultor.
- * 2. Cópia best-effort na pasta "Sent" do IMAP do consultor (nunca bloqueia
- *    nem falha o envio real do email — se o IMAP falhar, o email já foi
- *    entregue na mesma).
- * 3. Registo em `automated_email_log`, a fonte única para a página de
+ * 2. Registo em `automated_email_log`, a fonte única para a página de
  *    "Emails Automáticos" em Definições.
  *
  * NÃO deve ser usado para emails enviados manualmente por um consultor
@@ -63,7 +59,6 @@ export interface SendClientEmailParams {
 export interface SendClientEmailResult {
   success: boolean;
   error?: string;
-  imapSaved: boolean;
   /** true quando o envio foi deliberadamente suprimido (opt-out / do_not_contact). */
   suppressed?: boolean;
 }
@@ -92,10 +87,6 @@ interface SmtpSettingsRow {
   reject_unauthorized: boolean | null;
   from_name: string | null;
   from_email: string;
-  imap_host: string | null;
-  imap_port: number;
-  imap_secure: boolean;
-  imap_sent_folder: string;
 }
 
 interface BuiltMailOptions {
@@ -132,9 +123,9 @@ export async function sendClientEmail(params: SendClientEmailParams): Promise<Se
         : "Suprimido: lead com opt-out de email (excluída de listas de distribuição).";
       await logAutomatedEmail(supabaseAdmin, {
         userId, leadId, leadName, source, to, subject, htmlBody: params.html,
-        status: "suppressed", errorMessage: reason, imapSaved: false,
+        status: "suppressed", errorMessage: reason,
       });
-      return { success: false, error: reason, imapSaved: false, suppressed: true };
+      return { success: false, error: reason, suppressed: true };
     }
   }
 
@@ -146,8 +137,8 @@ export async function sendClientEmail(params: SendClientEmailParams): Promise<Se
 
   if (!smtpSettings?.smtp_host) {
     const error = "SMTP não configurado para este utilizador.";
-    await logAutomatedEmail(supabaseAdmin, { userId, leadId, leadName, source, to, subject, htmlBody: params.html, status: "failed", errorMessage: error, imapSaved: false });
-    return { success: false, error, imapSaved: false };
+    await logAutomatedEmail(supabaseAdmin, { userId, leadId, leadName, source, to, subject, htmlBody: params.html, status: "failed", errorMessage: error });
+    return { success: false, error };
   }
 
   const settings = smtpSettings as SmtpSettingsRow;
@@ -160,9 +151,7 @@ export async function sendClientEmail(params: SendClientEmailParams): Promise<Se
     ? `"${settings.from_name}" <${settings.from_email}>`
     : settings.from_email;
 
-  // Fixamos messageId e date para garantirem-se idênticos entre o envio real
-  // e a cópia gerada para o IMAP (evita divergências entre o que foi enviado
-  // e o que fica arquivado).
+  // Message-ID e date explícitos para o email levar cabeçalhos próprios estáveis.
   const domain = settings.from_email.split("@")[1] || "vyxa.pt";
   const messageId = `<${crypto.randomUUID()}@${domain}>`;
   const date = new Date();
@@ -194,56 +183,13 @@ export async function sendClientEmail(params: SendClientEmailParams): Promise<Se
     await transporter.sendMail(mailOptions);
   } catch (sendError: any) {
     const errorMessage = sendError?.message || "Falha ao enviar email";
-    await logAutomatedEmail(supabaseAdmin, { userId, leadId, leadName, source, to, subject, htmlBody: html, status: "failed", errorMessage, imapSaved: false });
-    return { success: false, error: errorMessage, imapSaved: false };
+    await logAutomatedEmail(supabaseAdmin, { userId, leadId, leadName, source, to, subject, htmlBody: html, status: "failed", errorMessage });
+    return { success: false, error: errorMessage };
   }
 
-  const imapSaved = await tryArchiveInSentFolder(settings, mailOptions);
+  await logAutomatedEmail(supabaseAdmin, { userId, leadId, leadName, source, to, subject, htmlBody: html, status: "sent" });
 
-  await logAutomatedEmail(supabaseAdmin, { userId, leadId, leadName, source, to, subject, htmlBody: html, status: "sent", imapSaved });
-
-  return { success: true, imapSaved };
-}
-
-/**
- * Gera o mesmo email em bruto (sem o enviar) e tenta gravá-lo na pasta Sent
- * do IMAP do consultor. Best-effort: qualquer falha aqui é apenas registada
- * na consola, nunca lançada, porque o email real já foi entregue com sucesso.
- */
-async function tryArchiveInSentFolder(
-  settings: SmtpSettingsRow,
-  mailOptions: BuiltMailOptions
-): Promise<boolean> {
-  if (!settings.imap_host) return false;
-
-  try {
-    const previewTransport = nodemailer.createTransport({ streamTransport: true, buffer: true });
-    const previewInfo = await previewTransport.sendMail(mailOptions);
-    const rawMessage = previewInfo.message as Buffer;
-
-    const client = new ImapFlow({
-      host: settings.imap_host,
-      port: settings.imap_port,
-      secure: settings.imap_secure,
-      auth: {
-        user: settings.smtp_username,
-        pass: settings.smtp_password,
-      },
-      logger: false,
-    });
-
-    await client.connect();
-    try {
-      await client.append(settings.imap_sent_folder || "Sent", rawMessage, ["\\Seen"]);
-    } finally {
-      await client.logout();
-    }
-
-    return true;
-  } catch (imapError) {
-    console.error("[sendClientEmail] Falha ao gravar cópia no IMAP (não bloqueante):", imapError);
-    return false;
-  }
+  return { success: true };
 }
 
 interface LogAutomatedEmailParams {
@@ -256,7 +202,6 @@ interface LogAutomatedEmailParams {
   htmlBody?: string;
   status: "sent" | "failed" | "suppressed";
   errorMessage?: string;
-  imapSaved: boolean;
 }
 
 async function logAutomatedEmail(supabaseAdmin: any, params: LogAutomatedEmailParams): Promise<void> {
@@ -271,7 +216,6 @@ async function logAutomatedEmail(supabaseAdmin: any, params: LogAutomatedEmailPa
       html_body: params.htmlBody || null,
       status: params.status,
       error_message: params.errorMessage || null,
-      imap_saved: params.imapSaved,
     });
   } catch (logError) {
     console.error("[sendClientEmail] Falha ao registar em automated_email_log (não bloqueante):", logError);

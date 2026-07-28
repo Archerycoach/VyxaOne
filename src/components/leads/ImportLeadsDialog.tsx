@@ -6,14 +6,24 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { Upload, Loader2, FileSpreadsheet, AlertTriangle, CheckCircle2, CalendarClock } from "lucide-react";
+import { Upload, Loader2, FileSpreadsheet, AlertTriangle, CheckCircle2, CalendarClock, Download } from "lucide-react";
+import {
+  parseExcelFile,
+  importLeads,
+  generateLeadsTemplate,
+  type ImportResult,
+} from "@/services/importService";
 
 /**
- * Importação de leads a partir de exportações de outros CRMs.
+ * Importação de leads — um só ponto de entrada para dois casos:
  *
- * Duas fases: o ficheiro é analisado e mostrado o resumo; só depois de o
- * consultor confirmar é que se grava. Importar centenas de leads sem
- * pré-visualização seria difícil de desfazer.
+ * 1. Exportações de OUTRO CRM (MaxWork/Oportunidades): formato reconhecido
+ *    automaticamente pelo servidor, com pré-visualização antes de gravar.
+ * 2. Qualquer outro Excel: se o formato não for reconhecido, cai-se no MODELO
+ *    genérico da Vyxa (mesmo template do botão "Descarregar modelo").
+ *
+ * Em ambos há uma fase de análise antes de gravar — importar centenas de leads
+ * sem confirmação seria difícil de desfazer.
  */
 
 interface Preview {
@@ -34,6 +44,15 @@ const FORMAT_LABELS: Record<string, string> = {
   oportunidades: "Oportunidades",
 };
 
+/** Erro do passo de análise que distingue "formato não reconhecido" dos demais. */
+class ImportAnalysisError extends Error {
+  formatUnrecognized: boolean;
+  constructor(message: string, formatUnrecognized: boolean) {
+    super(message);
+    this.formatUnrecognized = formatUnrecognized;
+  }
+}
+
 interface ImportLeadsDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -47,14 +66,21 @@ export function ImportLeadsDialog({ open, onOpenChange, onImported }: ImportLead
   const [fileData, setFileData] = useState<string | null>(null);
   const [analysing, setAnalysing] = useState(false);
   const [importing, setImporting] = useState(false);
+  // Caminho CRM (MaxWork/Oportunidades): pré-visualização do servidor.
   const [preview, setPreview] = useState<Preview | null>(null);
+  // Caminho genérico (modelo Vyxa): linhas lidas do Excel + resultado da gravação.
+  const [genericRows, setGenericRows] = useState<any[] | null>(null);
+  const [genericResult, setGenericResult] = useState<ImportResult | null>(null);
 
   const reset = () => {
     setFileName(null);
     setFileData(null);
     setPreview(null);
+    setGenericRows(null);
+    setGenericResult(null);
   };
 
+  /** Chamada ao servidor para as exportações de outro CRM (deteta o formato). */
   const call = async (base64: string, apply: boolean) => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.access_token) throw new Error("Sessão expirada. Volta a entrar.");
@@ -70,71 +96,94 @@ export function ImportLeadsDialog({ open, onOpenChange, onImported }: ImportLead
     const data = await response.json();
     if (!response.ok) {
       // Quando o formato não é reconhecido, o servidor devolve as colunas que
-      // encontrou. Mostrá-las evita ter de pedir o ficheiro para diagnosticar.
+      // encontrou → é o sinal para cair no modelo genérico.
       if (data.columnsFound?.length) {
-        throw new Error(
-          `${data.error}\n\nColunas encontradas: ${data.columnsFound.join(" · ")}` +
-            (data.sheets?.length > 1 ? `\nFolhas: ${data.sheets.join(", ")}` : "")
-        );
+        throw new ImportAnalysisError(data.error || "Formato não reconhecido.", true);
       }
-      throw new Error(data.error || "Erro ao processar o ficheiro.");
+      throw new ImportAnalysisError(data.error || "Erro ao processar o ficheiro.", false);
     }
     return data;
   };
 
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+    const picked = e.target.files?.[0];
     e.target.value = "";
-    if (!file) return;
+    if (!picked) return;
 
-    if (file.size > 20 * 1024 * 1024) {
-      toast({
-        title: "Ficheiro demasiado grande",
-        description: "O limite é 20 MB.",
-        variant: "destructive",
-      });
+    if (picked.size > 20 * 1024 * 1024) {
+      toast({ title: "Ficheiro demasiado grande", description: "O limite é 20 MB.", variant: "destructive" });
       return;
     }
 
     const reader = new FileReader();
     reader.onloadend = async () => {
       const base64 = reader.result as string;
-      setFileName(file.name);
+      setFileName(picked.name);
       setFileData(base64);
       setPreview(null);
+      setGenericRows(null);
+      setGenericResult(null);
       setAnalysing(true);
       try {
+        // 1.ª tentativa: exportação de outro CRM (MaxWork/Oportunidades).
         setPreview(await call(base64, false));
       } catch (error) {
-        toast({
-          title: "Não foi possível ler",
-          description: error instanceof Error ? error.message : "Tenta outro ficheiro.",
-          variant: "destructive",
-          duration: 20000, // as colunas encontradas são longas: dá tempo de ler/copiar
-        });
-        reset();
+        if (error instanceof ImportAnalysisError && error.formatUnrecognized) {
+          // 2.ª tentativa: modelo genérico da Vyxa (leitura local do Excel).
+          try {
+            const rows = await parseExcelFile(picked);
+            if (!rows.length) {
+              toast({ title: "Ficheiro vazio", description: "Não contém dados válidos.", variant: "destructive" });
+              reset();
+            } else {
+              setGenericRows(rows);
+            }
+          } catch (parseError) {
+            toast({
+              title: "Não foi possível ler",
+              description: parseError instanceof Error ? parseError.message : "Tenta outro ficheiro.",
+              variant: "destructive",
+            });
+            reset();
+          }
+        } else {
+          toast({
+            title: "Não foi possível ler",
+            description: error instanceof Error ? error.message : "Tenta outro ficheiro.",
+            variant: "destructive",
+            duration: 20000,
+          });
+          reset();
+        }
       } finally {
         setAnalysing(false);
       }
     };
-    reader.readAsDataURL(file);
+    reader.readAsDataURL(picked);
   };
 
   const handleImport = async () => {
-    if (!fileData) return;
     setImporting(true);
     try {
-      const result = await call(fileData, true);
-      toast({
-        title: "Importação concluída",
-        description:
-          `${result.created} criada(s), ${result.updated} atualizada(s)` +
-          (result.datesCorrected ? `, ${result.datesCorrected} com data corrigida` : "") +
-          (result.interactions ? `, ${result.interactions} interações` : "") + ".",
-      });
-      onImported();
-      onOpenChange(false);
-      reset();
+      if (preview && fileData) {
+        // Caminho CRM.
+        const result = await call(fileData, true);
+        toast({
+          title: "Importação concluída",
+          description:
+            `${result.created} criada(s), ${result.updated} atualizada(s)` +
+            (result.datesCorrected ? `, ${result.datesCorrected} com data corrigida` : "") +
+            (result.interactions ? `, ${result.interactions} interações` : "") + ".",
+        });
+        onImported();
+        onOpenChange(false);
+        reset();
+      } else if (genericRows) {
+        // Caminho genérico (modelo Vyxa): grava e mostra o resumo no próprio dialog.
+        const result = await importLeads(genericRows);
+        setGenericResult(result);
+        if (result.success > 0) onImported();
+      }
     } catch (error) {
       toast({
         title: "Erro na importação",
@@ -146,14 +195,16 @@ export function ImportLeadsDialog({ open, onOpenChange, onImported }: ImportLead
     }
   };
 
+  const hasSelection = !!preview || !!genericRows || !!genericResult;
+
   return (
     <Dialog open={open} onOpenChange={(next) => { onOpenChange(next); if (!next) reset(); }}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Importar leads de outro CRM</DialogTitle>
+          <DialogTitle>Importar leads</DialogTitle>
           <DialogDescription>
-            Aceita as exportações de <strong>Leads (MaxWork)</strong> e de{" "}
-            <strong>Oportunidades</strong>, em Excel. O formato é reconhecido automaticamente.
+            Aceita exportações de <strong>Leads (MaxWork)</strong> e <strong>Oportunidades</strong> (formato
+            reconhecido automaticamente) ou qualquer Excel no <strong>modelo da Vyxa</strong>.
           </DialogDescription>
         </DialogHeader>
 
@@ -165,27 +216,39 @@ export function ImportLeadsDialog({ open, onOpenChange, onImported }: ImportLead
           onChange={handleFile}
         />
 
-        {!preview && (
-          <Button
-            variant="outline"
-            className="h-28 border-dashed"
-            onClick={() => inputRef.current?.click()}
-            disabled={analysing}
-          >
-            {analysing ? (
-              <>
-                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                A analisar {fileName}…
-              </>
-            ) : (
-              <>
-                <Upload className="mr-2 h-5 w-5" />
-                Escolher ficheiro
-              </>
-            )}
-          </Button>
+        {/* Estado inicial: escolher ficheiro + descarregar o modelo. */}
+        {!hasSelection && (
+          <div className="space-y-3">
+            <Button
+              variant="outline"
+              className="h-28 w-full border-dashed"
+              onClick={() => inputRef.current?.click()}
+              disabled={analysing}
+            >
+              {analysing ? (
+                <>
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                  A analisar {fileName}…
+                </>
+              ) : (
+                <>
+                  <Upload className="mr-2 h-5 w-5" />
+                  Escolher ficheiro
+                </>
+              )}
+            </Button>
+            <button
+              type="button"
+              onClick={() => generateLeadsTemplate()}
+              className="mx-auto flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+            >
+              <Download className="h-3.5 w-3.5" />
+              Não tens um ficheiro? Descarregar o modelo Excel da Vyxa
+            </button>
+          </div>
         )}
 
+        {/* Caminho CRM: pré-visualização detalhada. */}
         {preview && (
           <div className="space-y-4">
             <div className="flex items-center gap-2 text-sm">
@@ -255,19 +318,76 @@ export function ImportLeadsDialog({ open, onOpenChange, onImported }: ImportLead
           </div>
         )}
 
+        {/* Caminho genérico: confirmação simples antes de gravar. */}
+        {genericRows && !genericResult && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 text-sm">
+              <FileSpreadsheet className="h-4 w-4 text-muted-foreground" />
+              <span className="truncate font-medium">{fileName}</span>
+              <Badge variant="outline">Modelo Vyxa</Badge>
+            </div>
+            <div className="rounded-md border p-3 text-sm text-muted-foreground">
+              O formato não foi reconhecido como uma exportação do MaxWork/Oportunidades. Vou importar
+              pelo <strong>modelo genérico da Vyxa</strong>: <strong>{genericRows.length}</strong> linha(s).
+              Confirma que as colunas seguem o modelo (usa o botão de descarregar o modelo se precisares).
+            </div>
+          </div>
+        )}
+
+        {/* Resultado da importação genérica. */}
+        {genericResult && (
+          <div className="space-y-3 text-sm">
+            <div className="rounded-md border border-green-200 bg-green-50 p-3 text-green-800">
+              ✅ <strong>{genericResult.success}</strong> de <strong>{genericResult.total || 0}</strong> lead(s)
+              importada(s) com sucesso.
+            </div>
+            {genericResult.warnings && genericResult.warnings.length > 0 && (
+              <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-900">
+                ⚠️ {genericResult.warnings.length} aviso(s):
+                <ul className="mt-1 max-h-32 space-y-0.5 overflow-auto">
+                  {genericResult.warnings.map((w, idx) => (<li key={idx}>• {w}</li>))}
+                </ul>
+              </div>
+            )}
+            {genericResult.errors && genericResult.errors.length > 0 && (
+              <div className="rounded-md border border-red-200 bg-red-50 p-3 text-red-800">
+                ⚠️ {genericResult.errors.length} erro(s):
+                <ul className="mt-1 max-h-32 space-y-0.5 overflow-auto">
+                  {genericResult.errors.map((err: any, idx: number) => (
+                    <li key={idx}>• <strong>Linha {err.line}:</strong> {err.error}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={importing}>
-            Cancelar
-          </Button>
-          {preview && (
+          {genericResult ? (
+            <Button onClick={() => { onOpenChange(false); reset(); }}>Fechar</Button>
+          ) : (
             <>
-              <Button variant="outline" onClick={reset} disabled={importing}>
-                Outro ficheiro
+              <Button variant="outline" onClick={() => onOpenChange(false)} disabled={importing}>
+                Cancelar
               </Button>
-              <Button onClick={handleImport} disabled={importing || preview.toCreate + preview.toUpdate === 0}>
-                {importing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Importar {preview.toCreate + preview.toUpdate} lead(s)
-              </Button>
+              {(preview || genericRows) && (
+                <>
+                  <Button variant="outline" onClick={reset} disabled={importing}>
+                    Outro ficheiro
+                  </Button>
+                  {preview ? (
+                    <Button onClick={handleImport} disabled={importing || preview.toCreate + preview.toUpdate === 0}>
+                      {importing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                      Importar {preview.toCreate + preview.toUpdate} lead(s)
+                    </Button>
+                  ) : (
+                    <Button onClick={handleImport} disabled={importing || !genericRows?.length}>
+                      {importing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                      Importar {genericRows?.length || 0} lead(s)
+                    </Button>
+                  )}
+                </>
+              )}
             </>
           )}
         </DialogFooter>

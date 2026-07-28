@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/router";
 import { Button } from "@/components/ui/button";
-import { Plus, Upload, Download, Loader2, Users2 } from "lucide-react";
+import { Plus, Users2 } from "lucide-react";
 import { LeadFormContainer } from "@/features/leads/components/form";
 import { LeadsListContainer } from "@/features/leads/components/LeadsListContainer";
 import {
@@ -12,20 +12,6 @@ import {
 import { getCurrentUser } from "@/services/authService";
 import { getTeamMembers } from "@/services/adminService";
 import { Layout } from "@/components/Layout";
-import {
-  parseExcelFile,
-  importLeads,
-  generateLeadsTemplate,
-  type ImportResult,
-} from "@/services/importService";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 
 export default function Leads() {
   const router = useRouter();
@@ -37,12 +23,6 @@ export default function Leads() {
   const [searchTerm, setSearchTerm] = useState("");
   const [teamMembers, setTeamMembers] = useState<Array<{ id: string; full_name: string; email: string }>>([]);
   const [canAssignLeads, setCanAssignLeads] = useState(false);
-  
-  // Import state
-  const [showImportDialog, setShowImportDialog] = useState(false);
-  const [isImporting, setIsImporting] = useState(false);
-  const [importResult, setImportResult] = useState<ImportResult | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const checkAuth = async () => {
     try {
@@ -133,49 +113,6 @@ export default function Leads() {
     setShowForm(true);
   };
 
-  const handleDownloadTemplate = () => {
-    console.log("[Leads Page] Downloading template");
-    generateLeadsTemplate();
-  };
-
-  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    console.log("[Leads Page] Importing file:", file.name);
-    
-    try {
-      setIsImporting(true);
-      setImportResult(null);
-
-      const data = await parseExcelFile(file);
-      
-      if (data.length === 0) {
-        alert("O ficheiro está vazio ou não contém dados válidos.");
-        return;
-      }
-
-      const result = await importLeads(data);
-      setImportResult(result);
-
-      if (result.success > 0) {
-        console.log("[Leads Page] Import successful, forcing refresh...");
-        await loadLeads();
-      }
-
-      setShowImportDialog(true);
-    } catch (error: any) {
-      console.error("[Leads Page] Import error:", error);
-      alert(`Erro ao importar ficheiro: ${error.message}`);
-    } finally {
-      setIsImporting(false);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
-      console.log("[Leads Page] Import process complete");
-    }
-  };
-
   const handleFormSuccess = useCallback(async () => {
     console.log("[Leads Page] Form success, closing and refreshing...");
     
@@ -212,7 +149,7 @@ export default function Leads() {
                   onClick={() => router.push("/duplicate-leads")}
                   variant="outline"
                   className="border-amber-200 text-amber-600 hover:bg-amber-50"
-                  disabled={isImporting || isLoading}
+                  disabled={isLoading}
                 >
                   <Users2 className="h-5 w-5 mr-2" />
                   Duplicados
@@ -220,46 +157,8 @@ export default function Leads() {
               )}
 
               <Button
-                onClick={handleDownloadTemplate}
-                variant="outline"
-                className="border-purple-200 text-purple-600 hover:bg-purple-50"
-                disabled={isImporting || isLoading}
-              >
-                <Download className="h-5 w-5 mr-2" />
-                Template Excel
-              </Button>
-              
-              <Button
-                onClick={() => fileInputRef.current?.click()}
-                variant="outline"
-                className="border-blue-200 text-blue-600 hover:bg-blue-50"
-                disabled={isImporting || isLoading}
-              >
-                {isImporting ? (
-                  <>
-                    <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-                    A Importar...
-                  </>
-                ) : (
-                  <>
-                    <Upload className="h-5 w-5 mr-2" />
-                    Importar Excel
-                  </>
-                )}
-              </Button>
-              
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".xlsx,.xls,.csv"
-                onChange={handleFileSelect}
-                className="hidden"
-              />
-              
-              <Button 
-                onClick={() => setShowForm(true)} 
+                onClick={() => setShowForm(true)}
                 className="bg-purple-600 hover:bg-purple-700"
-                disabled={isImporting}
               >
                 <Plus className="h-5 w-5 mr-2" />
                 Nova Lead
@@ -284,73 +183,6 @@ export default function Leads() {
           )}
         </div>
       </div>
-
-      {/* Import Results Dialog */}
-      <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Resultado da Importação</DialogTitle>
-            <DialogDescription>
-              Resumo da importação de leads
-            </DialogDescription>
-          </DialogHeader>
-
-          {importResult && (
-            <div className="space-y-4">
-              {/* Success Summary */}
-              <Alert className="border-green-200 bg-green-50">
-                <AlertDescription className="text-green-800">
-                  ✅ <strong>{importResult.success}</strong> de <strong>{importResult.total || 0}</strong> leads importadas com sucesso
-                </AlertDescription>
-              </Alert>
-
-              {/* Warnings (leads importadas mas com dados corrigidos) */}
-              {importResult.warnings && importResult.warnings.length > 0 && (
-                <div>
-                  <h3 className="font-semibold text-amber-600 mb-2">
-                    ⚠️ {importResult.warnings.length} avisos (leads importadas na mesma):
-                  </h3>
-                  <div className="space-y-2 max-h-60 overflow-y-auto">
-                    {importResult.warnings.map((w, idx) => (
-                      <Alert key={idx} className="border-amber-200 bg-amber-50">
-                        <AlertDescription className="text-sm text-amber-800">{w}</AlertDescription>
-                      </Alert>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Errors */}
-              {importResult.errors.length > 0 && (
-                <div>
-                  <h3 className="font-semibold text-red-600 mb-2">
-                    ⚠️ {importResult.errors.length} erros encontrados:
-                  </h3>
-                  <div className="space-y-2 max-h-96 overflow-y-auto">
-                    {importResult.errors.map((error, idx) => (
-                      <Alert key={idx} className="border-red-200 bg-red-50">
-                        <AlertDescription className="text-sm text-red-800">
-                          <strong>Linha {error.line}:</strong> {error.error}
-                        </AlertDescription>
-                      </Alert>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Actions */}
-              <div className="flex justify-end gap-2 pt-4 border-t">
-                <Button
-                  onClick={() => setShowImportDialog(false)}
-                  variant="outline"
-                >
-                  Fechar
-                </Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
     </Layout>
   );
 }

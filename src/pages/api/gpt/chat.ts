@@ -365,7 +365,7 @@ function isEmailCampaignRequest(message: string): boolean {
   return hasEmailIntent && hasDraftIntent && hasAudienceIntent;
 }
 
-function matchesRequestedBedrooms(lead: LeadContext, bedrooms: number | null, campaign = false): boolean {
+function matchesRequestedBedrooms(lead: LeadContext, bedrooms: number | null): boolean {
   if (bedrooms === null) {
     return true;
   }
@@ -418,12 +418,9 @@ function matchesRequestedBedrooms(lead: LeadContext, bedrooms: number | null, ca
     return true;
   }
 
-  // Numa campanha de um imóvel de `bedrooms` tipologias, entra quem procura essa
-  // tipologia OU MENOR — uma lead que procura T1 aceita o T2 divulgado se couber
-  // no orçamento (validado à parte, no filtro de orçamento da mesma cadeia).
-  // Quem procura MAIOR do que o imóvel (T3 para um T2) fica de fora: falta-lhe o
-  // espaço. Fora das campanhas mantém-se o ±1 simétrico (mercado real).
-  if (campaign) return leadBedrooms <= bedrooms;
+  // Fora das campanhas (pesquisa geral de leads), a tipologia adjacente (±1
+  // quarto) também entra: quem procura T2 pondera T1/T3 conforme preço e zona.
+  // (Nas campanhas a regra é mais rígida e vive em passesCampaignTypologyGate.)
   return Math.abs(leadBedrooms - bedrooms) <= 1;
 }
 
@@ -584,6 +581,37 @@ function hasStructuredCampaignCriteria(criteria: EmailCampaignCriteria): boolean
   );
 }
 
+/** Nº de quartos que a lead procura, de bedrooms/typology/property_type; null se desconhecido. */
+function resolveLeadBedroomsNumber(lead: LeadContext): number | null {
+  if (typeof lead.bedrooms === "number") return lead.bedrooms;
+  const typology = resolveLeadTypology(lead);
+  if (typology) {
+    const n = parseInt(typology.replace(/\D/g, ""), 10);
+    if (!Number.isNaN(n)) return n;
+  }
+  return null;
+}
+
+/**
+ * Regra RÍGIDA de tipologia numa campanha de um imóvel de `criteria.bedrooms`
+ * tipologias (bloqueio, não pontuação):
+ *  - lead procura MAIOR do que o imóvel  → NUNCA entra (falta-lhe espaço; um T2
+ *    não pode ser escolhido para um T1).
+ *  - lead procura igual                  → entra.
+ *  - lead procura MENOR (upgrade)        → entra só se o imóvel couber no
+ *    orçamento máximo da lead (um T1 pode receber um T2 se o orçamento o cobrir).
+ *  - tipologia da lead desconhecida      → entra (não há base para excluir).
+ * Sem tipologia de campanha definida, não há regra e todas passam.
+ */
+function passesCampaignTypologyGate(lead: LeadContext, criteria: EmailCampaignCriteria): boolean {
+  if (criteria.bedrooms === null || criteria.bedrooms === undefined) return true;
+  const leadBedrooms = resolveLeadBedroomsNumber(lead);
+  if (leadBedrooms === null) return true;
+  if (leadBedrooms > criteria.bedrooms) return false;
+  if (leadBedrooms < criteria.bedrooms) return matchesLeadBudget(lead, criteria.price ?? null);
+  return true;
+}
+
 function getFallbackAudienceLeadIds(
   leads: LeadContext[],
   criteria: EmailCampaignCriteria,
@@ -591,8 +619,13 @@ function getFallbackAudienceLeadIds(
   /** Distâncias em km entre a zona pedida e as zonas das leads (geocache). */
   zoneDistances?: Map<string, number>,
 ): string[] {
+  // Bloqueio duro de tipologia PRIMEIRO: a pontuação abaixo é branda e um T2 na
+  // zona/orçamento certos ainda ultrapassava o limiar num imóvel T1. A regra de
+  // tipologia não é pontuação, é um filtro — aplica-se a TODOS os caminhos.
+  const eligibleLeads = leads.filter((lead) => passesCampaignTypologyGate(lead, criteria));
+
   const previousLeadIdSet = new Set(previousRecipientLeadIds);
-  const previousMatches = leads
+  const previousMatches = eligibleLeads
     .filter((lead) => previousLeadIdSet.has(lead.id))
     .map((lead) => lead.id);
 
@@ -687,7 +720,7 @@ function getFallbackAudienceLeadIds(
   };
 
   if (hasStructuredCampaignCriteria(criteria)) {
-    const scored = leads
+    const scored = eligibleLeads
       .map((lead) => ({ id: lead.id, score: matchScore(lead) }))
       .filter((entry) => entry.score >= MATCH_THRESHOLD)
       .sort((a, b) => b.score - a.score)
@@ -698,10 +731,9 @@ function getFallbackAudienceLeadIds(
     }
   }
 
-  const structuredMatches = leads
+  const structuredMatches = eligibleLeads
     .filter((lead) => {
       return (
-        matchesRequestedBedrooms(lead, criteria.bedrooms, true) && // campanha: tipologia igual ou inferior
         matchesRequestedLocation(lead, criteria.location) &&
         matchesRequestedBuyPurpose(lead, criteria.buyPurpose) &&
         matchesRequestedPropertyType(lead, criteria.propertyType) &&
@@ -1103,14 +1135,19 @@ async function selectEmailCampaignAudience(params: {
         })
       : [];
 
-    // O orçamento é regra de negócio, não sugestão: aplica-se SEMPRE por cima
-    // do que a IA escolheu. Se o modelo incluir uma lead cujo orçamento máximo
-    // fica mais de 10% abaixo do preço do imóvel, é retirada aqui.
+    // Orçamento E tipologia são regras de negócio, não sugestões: aplicam-se
+    // SEMPRE por cima do que a IA escolheu. Retira-se aqui qualquer lead cujo
+    // orçamento não cobre o imóvel, ou cuja tipologia viola a regra rígida (ex.:
+    // o modelo incluiu um T2 numa campanha de um T1).
     const budgetRespectingIds = selectedLeadIds.filter((leadId: string) => {
       // Uma lead pedida por nome não é filtrada por nada.
       if (explicitLeadIds.includes(leadId)) return true;
       const lead = params.leads.find((candidate) => candidate.id === leadId);
-      return lead ? matchesLeadBudget(lead, params.criteria.price ?? null) : false;
+      if (!lead) return false;
+      return (
+        matchesLeadBudget(lead, params.criteria.price ?? null) &&
+        passesCampaignTypologyGate(lead, params.criteria)
+      );
     });
 
     // União final: mesmo que a IA se tenha esquecido da lead nomeada, ela
