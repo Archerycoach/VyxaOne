@@ -20,6 +20,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { LeadDocumentsPanel } from "@/components/leads/LeadDocumentsPanel";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { SemanticPropertyMatches } from "@/components/leads/SemanticPropertyMatches";
 import { Textarea } from "@/components/ui/textarea";
@@ -992,6 +993,9 @@ export function LeadDetailsDialog({
               {(lead.lead_type === "seller" || lead.lead_type === "both") && (
                 <TabsTrigger value="properties">Imóveis ({properties.length})</TabsTrigger>
               )}
+              {(lead.lead_type === "seller" || lead.lead_type === "both") && (
+                <TabsTrigger value="documents">Documentos</TabsTrigger>
+              )}
               <TabsTrigger value="interactions">
                 Interações ({interactions.length})
               </TabsTrigger>
@@ -1360,6 +1364,12 @@ export function LeadDetailsDialog({
                     ))}
                   </div>
                 )}
+              </TabsContent>
+            )}
+
+            {(lead.lead_type === "seller" || lead.lead_type === "both") && (
+              <TabsContent value="documents" className="mt-4">
+                <LeadDocumentsPanel leadId={lead.id} />
               </TabsContent>
             )}
 
