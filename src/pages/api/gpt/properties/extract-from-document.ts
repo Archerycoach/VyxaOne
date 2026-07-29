@@ -122,6 +122,7 @@ Devolve EXATAMENTE esta estrutura:
 }
 
 Instruções CRÍTICAS:
+- TIPOLOGIA E QUARTOS (regra portuguesa, obrigatória): a caderneta predial indica o número de DIVISÕES/ASSOALHADAS, e a SALA conta como divisão. Por isso o número de QUARTOS = assoalhadas − 1. Exemplos: "5 assoalhadas" ou "5 divisões" → 4 quartos → typology "T4", bedrooms 4; "4 assoalhadas" → 3 quartos → "T3". SÓ quando o documento indica diretamente a TIPOLOGIA (ex.: "T4", "Tipologia: T3") é que esse número JÁ é o de quartos (T4 → bedrooms 4). Nunca confundas divisões/assoalhadas com quartos.
 - Usa null em TODOS os campos que não conseguires ler com certeza. NUNCA inventes.
 - Se a imagem estiver ilegível ou não for um destes documentos, devolve document_type "desconhecido" e todos os campos a null.
 - Os números devem ser números puros, sem símbolos de moeda nem separadores de milhares.

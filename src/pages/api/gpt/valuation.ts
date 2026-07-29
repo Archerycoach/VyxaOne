@@ -140,7 +140,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
     if (authError || !user) return res.status(401).json({ error: "Não autorizado" });
 
-    const { address, propertyType, area, bedrooms, bathrooms, condition, city, factors, land, ineGeoCode, coordinates, criteria, consultantDescription } = req.body || {};
+    const { address, propertyType, area, bedrooms, bathrooms, condition, city, factors, land, ineGeoCode, coordinates, criteria, consultantDescription, taxableValue } = req.body || {};
     if (!address || !propertyType) {
       return res.status(400).json({ error: "Morada e tipo de imóvel são obrigatórios" });
     }
@@ -456,14 +456,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // isso pesam mais; a zona é uma âncora mais larga que evita que uma
     // amostra pequena ou enviesada de comparáveis decida sozinha o valor.
     //
-    // Pesos: o INE vale mais do que tudo o resto porque são ESCRITURAS — o
-    // que o mercado pagou de facto. O Idealista, em qualquer das duas
-    // leituras, são preços pedidos, que incluem margem de negociação e
-    // otimismo do vendedor.
+    // Pesos: os COMPARÁVEIS locais lideram — mesma zona, área e tipologia
+    // semelhantes, é o sinal mais próximo do imóvel. O INE (escrituras) é uma
+    // ÂNCORA de realismo, não o motor: é o que o mercado pagou de facto, mas a
+    // mediana é do CONCELHO inteiro e reflete transações com atraso, por isso
+    // subavalia submercados centrais/valorizados (era a razão de a avaliação
+    // sair bem abaixo dos comparáveis e das ferramentas de mercado). A zona é
+    // uma referência larga de preço pedido.
     const sources: Array<{ value: number; weight: number }> = [];
-    if (ineReference) sources.push({ value: ineReference.pricePerSqm, weight: 0.5 });
-    if (comparablesPricePerSqm) sources.push({ value: comparablesPricePerSqm, weight: 0.35 });
-    if (zonePricePerSqm) sources.push({ value: zonePricePerSqm, weight: 0.15 });
+    if (comparablesPricePerSqm) sources.push({ value: comparablesPricePerSqm, weight: 0.45 });
+    if (ineReference) sources.push({ value: ineReference.pricePerSqm, weight: 0.3 });
+    if (zonePricePerSqm) sources.push({ value: zonePricePerSqm, weight: 0.25 });
 
     // Os pesos são normalizados pelas fontes que existirem: com só uma, vale
     // 100%; sem INE, os comparáveis e a zona repartem-se na mesma proporção
@@ -525,6 +528,57 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       suggestedCentral = Math.round((suggestedMin + suggestedMax) / 2 / 1000) * 1000;
     }
 
+    // Estimativa por CENÁRIOS de conservação — como fazem os relatórios de
+    // mercado. O mesmo imóvel vale de forma diferente conforme o estado; mostrar
+    // os três dá ao consultor a leitura do mercado E o potencial de valorização
+    // por obras (o salto do cenário A para o C).
+    //
+    // Base = €/m² PEDIDO da zona (posicionamento de mercado), não a mistura com o
+    // INE — os cenários mostram por quanto imóveis assim ANUNCIAM em cada estado,
+    // enquanto o "Valor Recomendado" (mais conservador, ancorado no vendido) é o
+    // ponto realista. Ter os dois é o que dá a leitura completa. Tiers com um
+    // prémio de conservação realista (≈ ±14%), com o terreno somado por igual.
+    const scenarioBase = zonePricePerSqm || activeAvgPricePerSqm || referencePricePerSqm;
+    const scenarios =
+      scenarioBase && area
+        ? ([
+            { key: "needs_work", label: "A necessitar de obras", mult: 0.86 },
+            { key: "conserved", label: "Conservado / obras ligeiras", mult: 1.0 },
+            { key: "renovated", label: "Totalmente remodelado", mult: 1.14 },
+          ] as const).map((tier) => {
+            const mid = (scenarioBase as number) * tier.mult;
+            const pricePerSqmMin = Math.round(mid * 0.94);
+            const pricePerSqmMax = Math.round(mid * 1.06);
+            const toValue = (psqm: number) =>
+              Math.round((psqm * (area as number)) / 1000) * 1000 + landAdjustment.adjustment;
+            return {
+              key: tier.key,
+              label: tier.label,
+              pricePerSqmMin,
+              pricePerSqmMax,
+              valueMin: toValue(pricePerSqmMin),
+              valueMax: toValue(pricePerSqmMax),
+            };
+          })
+        : [];
+
+    // Cross-check pelo VPT (Valor Patrimonial Tributário): na Área Metropolitana
+    // de Lisboa, o valor de mercado de habitação urbana ronda 3,3–3,8× o VPT numa
+    // localização consolidada. NÃO entra no valor recomendado (o múltiplo é largo
+    // e depende da localização) — é uma VALIDAÇÃO com um número oficial, que dá
+    // muita credibilidade ao documento.
+    const vptValue = Number(taxableValue);
+    const vptCrossCheck =
+      Number.isFinite(vptValue) && vptValue > 0
+        ? {
+            vpt: Math.round(vptValue),
+            multipleMin: 3.3,
+            multipleMax: 3.8,
+            valueMin: Math.round((vptValue * 3.3) / 1000) * 1000,
+            valueMax: Math.round((vptValue * 3.8) / 1000) * 1000,
+          }
+        : null;
+
     const { data: profile } = await db.from("profiles").select("full_name").eq("id", user.id).maybeSingle();
     const consultantName = profile?.full_name?.split(" ")[0] || "Consultor";
 
@@ -555,6 +609,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         activeAvgPricePerSqm,
         suggestedMin,
         suggestedMax,
+        scenarios,
+        vptCrossCheck,
       });
 
       const aiResponse = await runAI({
@@ -631,6 +687,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(200).json({
       sanityCheck,
       comparables,
+      // Estimativa por cenários de conservação (A necessita obras / B conservado
+      // / C remodelado), para a leitura de mercado que os relatórios profissionais dão.
+      scenarios,
+      // Cross-check pelo VPT (3,3–3,8× o valor patrimonial), quando disponível.
+      vptCrossCheck,
       // Diagnóstico da fonte de comparáveis: distingue "Idealista falhou/vazio"
       // de "mercado sem comparáveis". O frontend avisa quando a fonte não deu
       // nada, para não parecer que o mercado não tem imóveis semelhantes.

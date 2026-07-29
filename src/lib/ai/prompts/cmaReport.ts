@@ -85,6 +85,22 @@ interface CmaReportContext {
   activeAvgPricePerSqm: number | null;
   suggestedMin: number | null;
   suggestedMax: number | null;
+  /** Estimativa por estado de conservação (A/B/C), quando disponível. */
+  scenarios?: Array<{
+    label: string;
+    pricePerSqmMin: number;
+    pricePerSqmMax: number;
+    valueMin: number;
+    valueMax: number;
+  }> | null;
+  /** Validação pelo VPT (3,3–3,8×), quando o VPT foi indicado. */
+  vptCrossCheck?: {
+    vpt: number;
+    multipleMin: number;
+    multipleMax: number;
+    valueMin: number;
+    valueMax: number;
+  } | null;
 }
 
 /** Descreve os atributos de valor em texto legível para o prompt. */
@@ -166,7 +182,7 @@ ${comparablesList || "Nenhum comparável direto encontrado na zona."}
 
 DADOS JÁ CALCULADOS (usa estes valores exatamente, não inventes outros):
 - Preço médio/m² de imóveis VENDIDOS na zona: ${context.soldAvgPricePerSqm ? `${Math.round(context.soldAvgPricePerSqm)}€/m²` : "sem dados suficientes"}
-${context.inePricePerSqm ? `- Valor MEDIANO DE ESCRITURAS (INE, dados oficiais): ${Math.round(context.inePricePerSqm)}€/m² — esta é a referência mais fiável, porque reflete preços efetivamente pagos e não pedidos
+${context.inePricePerSqm ? `- Valor MEDIANO DE ESCRITURAS (INE, dados oficiais): ${Math.round(context.inePricePerSqm)}€/m² — ÂNCORA de realismo (preços efetivamente pagos), mas é a mediana do CONCELHO inteiro e reflete transações com algum atraso, por isso tende a subavaliar submercados centrais/valorizados. A recomendação apoia-se sobretudo nos COMPARÁVEIS locais (mesma zona, área e tipologia semelhantes), usando o INE para não descolar da realidade — não como o valor principal.
 ` : ""}- Valor de referência da ZONA: ${context.zonePricePerSqm ? `${Math.round(context.zonePricePerSqm)}€/m² (mediana de ${context.zoneSampleSize} imóveis à venda na zona, independentemente de área ou tipologia)` : "sem dados suficientes"}
 - Preço médio/m² de imóveis ATIVOS (à venda) na zona: ${context.activeAvgPricePerSqm ? `${Math.round(context.activeAvgPricePerSqm)}€/m²` : "sem dados suficientes"}
 ${context.landAdjustmentNote ? `- Terreno: ${context.landAdjustmentNote}
@@ -178,7 +194,17 @@ ${context.landAdjustmentNote ? `- Terreno: ${context.landAdjustmentNote}
 `
     : ""
 }- Intervalo de valor sugerido: ${context.suggestedMin && context.suggestedMax ? `${context.suggestedMin.toLocaleString("pt-PT")}€ — ${context.suggestedMax.toLocaleString("pt-PT")}€` : "sem dados suficientes para sugerir"}
-
+${
+  context.scenarios && context.scenarios.length > 0
+    ? `- ESTIMATIVA POR ESTADO DE CONSERVAÇÃO (posicionamento de mercado): ${context.scenarios.map((s) => `${s.label} ${s.pricePerSqmMin.toLocaleString("pt-PT")}–${s.pricePerSqmMax.toLocaleString("pt-PT")}€/m² (${s.valueMin.toLocaleString("pt-PT")}–${s.valueMax.toLocaleString("pt-PT")}€)`).join("; ")}. O salto entre cenários é o potencial de valorização por obras.
+`
+    : ""
+}${
+  context.vptCrossCheck
+    ? `- VALIDAÇÃO PELO VPT: o valor patrimonial tributário é ${context.vptCrossCheck.vpt.toLocaleString("pt-PT")}€; na Área Metropolitana de Lisboa o valor de mercado ronda ${context.vptCrossCheck.multipleMin}–${context.vptCrossCheck.multipleMax}× o VPT, o que dá ${context.vptCrossCheck.valueMin.toLocaleString("pt-PT")}–${context.vptCrossCheck.valueMax.toLocaleString("pt-PT")}€ — usa isto como CONFIRMAÇÃO oficial do intervalo, não como o valor principal.
+`
+    : ""
+}
 O teu objetivo: escreve um relatório em HTML limpo e profissional (usa h3, p, ul, li — nunca h1/h2, nunca markdown) com estas secções.
 
 REGRAS DE ESCRITA (tão importantes como o conteúdo):

@@ -62,6 +62,21 @@ interface ValuationResult {
   zoneSampleSize?: number | null;
   suggestedMax: number | null;
   narrative: string;
+  scenarios?: Array<{
+    key: string;
+    label: string;
+    pricePerSqmMin: number;
+    pricePerSqmMax: number;
+    valueMin: number;
+    valueMax: number;
+  }> | null;
+  vptCrossCheck?: {
+    vpt: number;
+    multipleMin: number;
+    multipleMax: number;
+    valueMin: number;
+    valueMax: number;
+  } | null;
   comparablesDiagnostic?: {
     idealistaRaw: number;
     idealistaKept: number;
@@ -125,6 +140,8 @@ export default function ValuationPage() {
     hasOpenViews: false,
     isSingleStorey: false,
     landArea: "",
+    // Valor Patrimonial Tributário (da caderneta) — validação pelo múltiplo do VPT.
+    taxableValue: "",
     lat: "",
     lon: "",
     county: "",
@@ -232,6 +249,7 @@ export default function ValuationPage() {
           bedrooms: form.bedrooms ? Number(form.bedrooms) : undefined,
           bathrooms: form.bathrooms ? Number(form.bathrooms) : undefined,
           condition: form.condition || undefined,
+          taxableValue: form.taxableValue ? Number(form.taxableValue) : undefined,
           factors: {
             floor: form.floor ? Number(form.floor) : null,
             energyRating: form.energyRating || null,
@@ -420,6 +438,30 @@ export default function ValuationPage() {
       );
     }
 
+    // Estimativa por estado de conservação: o mesmo imóvel em três cenários.
+    if (result.scenarios && result.scenarios.length > 0) {
+      y = addSectionTitle(doc, "Estimativa por estado de conservação", y + 4);
+      for (const s of result.scenarios) {
+        y = addBodyText(
+          doc,
+          `${s.label}: ${s.pricePerSqmMin.toLocaleString("pt-PT")}–${s.pricePerSqmMax.toLocaleString("pt-PT")} €/m²` +
+            `  →  ${formatCurrency(s.valueMin)} – ${formatCurrency(s.valueMax)}`,
+          y + 1
+        );
+      }
+    }
+
+    // Validação pelo VPT (múltiplo do valor patrimonial), quando indicado.
+    if (result.vptCrossCheck) {
+      y = addBodyText(
+        doc,
+        `Validação pelo VPT: valor patrimonial ${formatCurrency(result.vptCrossCheck.vpt)}; ` +
+          `a ${result.vptCrossCheck.multipleMin}–${result.vptCrossCheck.multipleMax}× (referência da Área Metropolitana de Lisboa) ` +
+          `dá ${formatCurrency(result.vptCrossCheck.valueMin)} – ${formatCurrency(result.vptCrossCheck.valueMax)}.`,
+        y + 2
+      );
+    }
+
     // --- Envolvente (mapa + pontos de interesse) ---
     // Só existe se as fontes externas responderam; caso contrário o documento
     // segue sem esta página, sem qualquer aviso ao cliente.
@@ -531,6 +573,7 @@ export default function ValuationPage() {
         area: prev.area || (fields.area ? String(fields.area) : ""),
         landArea: prev.landArea || (fields.land_area ? String(fields.land_area) : ""),
         bedrooms: prev.bedrooms || (fields.bedrooms ? String(fields.bedrooms) : ""),
+        taxableValue: prev.taxableValue || (fields.taxable_value ? String(fields.taxable_value) : ""),
         yearBuilt: prev.yearBuilt || (fields.year_built ? String(fields.year_built) : ""),
         energyRating: prev.energyRating || fields.energy_rating || "",
         propertyType: fields.property_type || prev.propertyType,
@@ -538,7 +581,7 @@ export default function ValuationPage() {
         address: prev.address || fields.address || "",
       }));
 
-      const filled = ["area", "land_area", "bedrooms", "year_built", "energy_rating"]
+      const filled = ["area", "land_area", "bedrooms", "taxable_value", "year_built", "energy_rating"]
         .filter((key) => fields[key] != null).length;
 
       toast({
@@ -774,6 +817,11 @@ export default function ValuationPage() {
                 <Label>Ano de Construção</Label>
                 <Input type="number" value={form.yearBuilt} onChange={(e) => setForm({ ...form, yearBuilt: e.target.value })} placeholder="Ex: 2008" />
               </div>
+              <div className="space-y-2">
+                <Label>VPT — Valor Patrimonial Tributário (€)</Label>
+                <Input type="number" value={form.taxableValue} onChange={(e) => setForm({ ...form, taxableValue: e.target.value })} placeholder="Ex: 107642 (da caderneta)" />
+                <p className="text-xs text-gray-500">Opcional. Vem da caderneta e valida o valor pelo múltiplo do VPT.</p>
+              </div>
 
               <div className="md:col-span-2 space-y-2">
                 <Label>Características</Label>
@@ -1007,6 +1055,59 @@ export default function ValuationPage() {
                 <Card className="border-amber-200 bg-amber-50/50">
                   <CardContent className="pt-6 text-sm text-amber-800">
                     Não há comparáveis suficientes na zona para sugerir um valor com confiança — reveja a análise abaixo manualmente.
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Estimativa por cenários de conservação: mostra o valor do imóvel
+                  conforme o estado (a necessitar obras → conservado → remodelado),
+                  ancorado ao €/m² da zona — a leitura que os relatórios de mercado dão. */}
+              {result.scenarios && result.scenarios.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Estimativa por estado de conservação</CardTitle>
+                    <p className="text-sm text-gray-500 mt-1">
+                      O mesmo imóvel vale de forma diferente conforme o estado. O salto entre cenários é o
+                      potencial de valorização por obras.
+                    </p>
+                  </CardHeader>
+                  <CardContent className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left text-gray-500 border-b">
+                          <th className="py-2 pr-3 font-medium">Cenário</th>
+                          <th className="py-2 px-3 font-medium">€/m²</th>
+                          <th className="py-2 pl-3 font-medium text-right">Valor total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {result.scenarios.map((s) => (
+                          <tr key={s.key} className="border-b last:border-0">
+                            <td className="py-2 pr-3 font-medium">{s.label}</td>
+                            <td className="py-2 px-3 text-gray-700 whitespace-nowrap">
+                              {s.pricePerSqmMin.toLocaleString("pt-PT")} – {s.pricePerSqmMax.toLocaleString("pt-PT")} €/m²
+                            </td>
+                            <td className="py-2 pl-3 text-right font-semibold text-gray-900 whitespace-nowrap">
+                              {formatCurrency(s.valueMin)} – {formatCurrency(s.valueMax)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Validação pelo VPT: âncora oficial que dá credibilidade ao número. */}
+              {result.vptCrossCheck && (
+                <Card className="border-blue-200 bg-blue-50/50">
+                  <CardContent className="pt-6 text-sm text-blue-900">
+                    <span className="font-medium">Validação pelo VPT: </span>
+                    o valor patrimonial tributário é {formatCurrency(result.vptCrossCheck.vpt)}. Na Área
+                    Metropolitana de Lisboa, o valor de mercado ronda {result.vptCrossCheck.multipleMin}–
+                    {result.vptCrossCheck.multipleMax}× o VPT, o que dá{" "}
+                    <strong>{formatCurrency(result.vptCrossCheck.valueMin)} – {formatCurrency(result.vptCrossCheck.valueMax)}</strong>{" "}
+                    — confirmação oficial do intervalo, não o valor principal.
                   </CardContent>
                 </Card>
               )}
