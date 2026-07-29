@@ -60,6 +60,9 @@ interface CmaReportContext {
   consultantName: string;
   address: string;
   propertyType: string;
+  freguesia?: string | null;
+  concelho?: string | null;
+  distrito?: string | null;
   area: number | null;
   bedrooms: number | null;
   bathrooms: number | null;
@@ -171,10 +174,13 @@ export function getCmaReportPrompt(context: CmaReportContext): string {
 
 IMÓVEL A AVALIAR:
 - Morada: ${context.address}
+- Freguesia / Concelho / Distrito: ${[context.freguesia, context.concelho, context.distrito].filter(Boolean).join(" / ") || "não indicados"}
 - Tipo: ${context.propertyType}
 - Área: ${context.area ? `${context.area} m²` : "não indicada"}
 - Tipologia: ${context.bedrooms ? `T${context.bedrooms}` : "não indicada"}${context.bathrooms ? `, ${context.bathrooms} casas de banho` : ""}
 - Estado de conservação: ${context.condition || "não indicado"}
+- Ano de construção: ${context.factors?.yearBuilt || "não indicado"}
+- Valor Patrimonial Tributário (VPT): ${context.vptCrossCheck ? `${context.vptCrossCheck.vpt.toLocaleString("pt-PT")}€` : "não indicado"}
 - CARACTERÍSTICAS COM IMPACTO NO VALOR: ${describeValueFactors(context.factors)}
 
 IMÓVEIS COMPARÁVEIS ENCONTRADOS:
@@ -208,24 +214,21 @@ ${
 O teu objetivo: escreve um relatório em HTML limpo e profissional (usa h3, p, ul, li — nunca h1/h2, nunca markdown) com estas secções.
 
 REGRAS DE ESCRITA (tão importantes como o conteúdo):
-- SÊ SINTÉTICO. O relatório inteiro não deve passar das 450 palavras. Um proprietário lê um documento curto e bem organizado; não lê três páginas de texto corrido.
+- SÊ SINTÉTICO. Apesar das 7 secções, o relatório inteiro não deve passar das 650 palavras. Cada secção é curta e direta; um proprietário lê um documento bem organizado, não três páginas de texto corrido.
 - Parágrafos CURTOS: no máximo 3 frases cada. Nunca um parágrafo com mais de 60 palavras.
 - Nas secções de comparáveis e de fatores, usa LISTAS (ul/li) em vez de texto corrido. Cada item numa linha, direto ao ponto.
 - NÃO repitas números que já aparecem nas tabelas e nos cartões do documento. Interpreta-os, não os recites.
 - Escolhe os 3 ou 4 comparáveis que realmente informam a decisão; não comentes todos um a um.
 - Evita fórmulas vazias ("importa sublinhar que", "neste momento", "de referir que"). Vai direto ao facto.
 
-SECÇÕES:
-1. Um parágrafo de abertura (máximo 3 frases) a contextualizar o mercado na zona.
-2. "Análise de Comparáveis" — EM LISTA. Explica o que os comparáveis mostram, distinguindo o peso de imóveis VENDIDOS (preço real) vs ATIVOS (preço pedido, pode estar inflacionado). Sempre que um comparável tenha características diferentes das do imóvel (elevador, garagem, varanda, andar, classe energética), REFERE essa diferença ao comparar preços — é o que explica desvios de €/m² entre imóveis semelhantes em área.
-3. "Fatores de Valorização" — EM LISTA, separando o que valoriza do que desvaloriza. Como as características influenciam o valor face aos comparáveis:
-   - VALORIZAM: elevador, garagem/estacionamento, varanda/terraço, jardim, arrecadação, boa classe energética (A/B), painéis solares e bomba de calor (reduzem a fatura energética e são procurados), andar alto com vista, construção recente. Numa MORADIA, a área do lote é dos fatores que mais pesa — se estiver indicada, comenta a relação entre área de construção e terreno.
-   - DESVALORIZAM: ausência de elevador em andares altos, rés-do-chão sem exterior, classe energética fraca (E/F), necessidade de obras.
-   - Sê concreto e honesto: se o imóvel tem pontos fracos, di-lo — o proprietário vai confrontar-se com eles na negociação, e um relatório que os omite perde credibilidade.
-   - Se as características não foram indicadas, diz que a avaliação ganharia precisão com esses dados. NUNCA assumas que existem.
-4. "Valor Recomendado" — apresenta o intervalo sugerido (os números já calculados acima, não os alteres) e justifica-o com base em TRÊS pilares: os comparáveis diretos, o valor de referência da ZONA (€/m² mediano) e os fatores de valorização. Se o €/m² do imóvel se afastar do valor da zona, EXPLICA porquê — é isso que dá credibilidade à avaliação.
-5. Se existir a DIFERENÇA PEDIDO vs PAGO, dedica-lhe 2 ou 3 frases dentro da secção "Valor Recomendado". Explica que o valor pedido nos anúncios não é o valor de venda, e o que essa margem significa na prática para o proprietário: um imóvel anunciado acima do que o mercado paga fica mais tempo à venda e acaba por vender com desconto. Usa os números concretos. Sê factual, não alarmista — é informação oficial, não uma tática de negociação.
-6. Um parágrafo final (máximo 3 frases), profissional e transparente, que reforça a recomendação sem soar a argumento de venda agressivo.
+SECÇÕES (usa <h3> para o título de CADA uma, exatamente estas 7 e por esta ordem):
+1. "Identificação do imóvel" — 2-3 frases factuais: morada, freguesia/concelho/distrito, tipo, tipologia, área e ano de construção; e o VPT quando indicado. Sem interpretação.
+2. "Enquadramento do mercado local" — o €/m² de referência da zona/freguesia e o caráter da zona (centralidade, comércio e transportes de proximidade, idade do parque habitacional se o ano de construção o sugerir). 2-3 frases.
+3. "Comparáveis de mercado" — EM LISTA. Comenta em UMA linha cada um dos melhores comparáveis (mesma tipologia ou adjacente, área semelhante): tipologia, área, €/m² e uma observação de estado (renovado / intermédio / a necessitar de obras). IDENTIFICA e EXCLUI explicitamente os OUTLIERS (gama alta, duplex, fortemente remodelados) do cálculo da média — di-lo. Refere diferenças (elevador, andar, estado) que expliquem desvios de €/m² entre imóveis de área semelhante.
+4. "Metodologia e cálculo" — EM LISTA, as três abordagens independentes que sustentam o valor: (a) comparativo pela ZONA/freguesia (€/m² de referência × área); (b) comparativo DIRETO (média dos comparáveis, excluindo outliers); (c) múltiplo do VPT (3,3–3,8× o VPT, típico na Área Metropolitana de Lisboa) — só quando há VPT. Uma linha por método, com o valor a que cada um chega.
+5. "Valor de mercado estimado" — apresenta o INTERVALO recomendado (os números já calculados acima, NÃO os alteres) e o ponto médio. Liga aos CENÁRIOS de conservação: onde o imóvel se posiciona conforme o estado e o potencial de valorização por obras (o salto do cenário A para o C). Se existir a diferença PEDIDO vs PAGO, explica em 1-2 frases o que a margem significa (o anúncio não é a escritura; anunciar acima do que o mercado paga arrasta o tempo de venda e o desconto final).
+6. "Notas e limitações" — EM LISTA, honesto e profissional: é uma estimativa indicativa a partir de dados públicos de mercado e da caderneta, NÃO uma avaliação pericial certificada nem bancária; não houve visita ao imóvel, pelo que os valores devem ser confirmados presencialmente; os preços dos portais são valores PEDIDOS (tipicamente reduzidos 3–8% na negociação até à escritura); o VPT serve fins fiscais (IMI/IMT) e não reflete o valor de mercado; para crédito habitação, escritura, partilha ou litígio, recomenda-se avaliação formal por perito avaliador certificado.
+7. "Fontes" — EM LISTA curta: Caderneta Predial Urbana (quando usada), relatório de preços do Idealista (concelho/freguesia), anúncios do Idealista, e mediana de escrituras do INE.
 
 Responde EXCLUSIVAMENTE com o código HTML final do relatório.`;
 }

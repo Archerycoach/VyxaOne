@@ -396,10 +396,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // As características são PREFERÊNCIA: reordenam, não removem. Excluir por
     // elas esvaziaria a amostra onde os comparáveis mais fazem falta.
     const scored = scoreByPreferences(afterCriteria, criteria?.preferredFeatures || []);
-    const comparables = scored.map((entry) => ({
-      ...entry.item,
-      preferenceScore: entry.preferenceScore,
-    }));
+    // Ordena pelos MAIS COMPARÁVEIS: área mais próxima da do imóvel primeiro
+    // (desempate pelas preferências) e fica com os melhores. Assim o documento
+    // mostra 5-6 comparáveis verdadeiramente próximos — não uma lista longa com
+    // imóveis marginais — e as médias de €/m² usam esses, não os menos parecidos.
+    const subjectArea = area || null;
+    const comparables = scored
+      .map((entry) => ({ ...entry.item, preferenceScore: entry.preferenceScore }))
+      .sort((a, b) => {
+        if (!subjectArea) return (b.preferenceScore || 0) - (a.preferenceScore || 0);
+        const da = a.area ? Math.abs(a.area - subjectArea) : Infinity;
+        const db = b.area ? Math.abs(b.area - subjectArea) : Infinity;
+        if (da !== db) return da - db;
+        return (b.preferenceScore || 0) - (a.preferenceScore || 0);
+      })
+      .slice(0, 8);
 
     if (excludedByCondition > 0 || outliers.length > 0 || belowFloor.length > 0) {
       console.log(
@@ -588,6 +599,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         consultantName,
         address,
         propertyType,
+        freguesia: coordinates?.freguesia || null,
+        concelho: coordinates?.county || city || null,
+        distrito: coordinates?.distrito || null,
         area: area || null,
         bedrooms: bedrooms || null,
         bathrooms: bathrooms || null,
@@ -604,7 +618,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         landAdjustmentNote: landAdjustment.explanation,
         factorNote: describeFactorBreakdown(valueFactors),
         consultantDescription: consultantDescription || null,
-        comparables: comparables.slice(0, 12),
+        comparables: comparables.slice(0, 6),
         soldAvgPricePerSqm,
         activeAvgPricePerSqm,
         suggestedMin,
