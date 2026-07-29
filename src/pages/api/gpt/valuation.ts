@@ -248,7 +248,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       const rawResults = await searchIdealistaProperties({ ...params, maxItems: 40 }, credentials, user.id);
       idealistaRawCount = rawResults.length;
-      const results = withinRadius(rawResults, coordinates, coordinates?.radiusKm || 4);
+      // Raio local por defeito 2 km (não 4): num concelho denso, 4 km apanha
+      // zonas com mercados diferentes e enviesa a amostra.
+      const results = withinRadius(rawResults, coordinates, coordinates?.radiusKm || 2);
 
       // O estado de conservação do imóvel a avaliar decide que comparáveis
       // servem: uma moradia habitável não se compara com ruínas, que é o que
@@ -310,8 +312,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         credentials,
         user.id
       );
-      // Zona = dobro do raio dos comparáveis: envolvente, não vizinhança.
-      const zoneResults = withinRadius(zoneRaw, coordinates, (coordinates?.radiusKm || 4) * 2);
+      // Zona LOCAL: o mesmo raio dos comparáveis, não o dobro. Num concelho
+      // denso e desigual como a Amadora, alargar a zona ao dobro apanhava as
+      // periferias baratas (Damaia, Brandoa, Reboleira) e puxava a mediana muito
+      // abaixo do submercado central (Venteira) — daí o €/m² sair irrealista.
+      const zoneResults = withinRadius(zoneRaw, coordinates, coordinates?.radiusKm || 2);
 
       const zoneValues = zoneResults
         .map((p) => p.priceByArea || (p.size && p.price ? p.price / p.size : null))
@@ -474,10 +479,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // subavalia submercados centrais/valorizados (era a razão de a avaliação
     // sair bem abaixo dos comparáveis e das ferramentas de mercado). A zona é
     // uma referência larga de preço pedido.
+    // VPT como âncora oficial: em Portugal (AML), o valor de mercado ronda
+    // 3,3–3,8× o VPT numa zona consolidada. Usamos o ponto médio (3,55×) como
+    // uma quarta abordagem independente — é o que impede a avaliação de descer
+    // abaixo do "chão" oficial (o valor não pode ser inferior a ~3,3× o VPT numa
+    // zona central) e alinha o número com o que os estudos profissionais dão.
+    const vptValue = Number(taxableValue);
+    const vptPerSqm =
+      Number.isFinite(vptValue) && vptValue > 0 && area ? (vptValue * 3.55) / area : null;
+
     const sources: Array<{ value: number; weight: number }> = [];
-    if (comparablesPricePerSqm) sources.push({ value: comparablesPricePerSqm, weight: 0.45 });
-    if (ineReference) sources.push({ value: ineReference.pricePerSqm, weight: 0.3 });
+    if (comparablesPricePerSqm) sources.push({ value: comparablesPricePerSqm, weight: 0.4 });
     if (zonePricePerSqm) sources.push({ value: zonePricePerSqm, weight: 0.25 });
+    if (ineReference) sources.push({ value: ineReference.pricePerSqm, weight: 0.2 });
+    if (vptPerSqm) sources.push({ value: vptPerSqm, weight: 0.2 });
 
     // Os pesos são normalizados pelas fontes que existirem: com só uma, vale
     // 100%; sem INE, os comparáveis e a zona repartem-se na mesma proporção
@@ -578,7 +593,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // localização consolidada. NÃO entra no valor recomendado (o múltiplo é largo
     // e depende da localização) — é uma VALIDAÇÃO com um número oficial, que dá
     // muita credibilidade ao documento.
-    const vptValue = Number(taxableValue);
     const vptCrossCheck =
       Number.isFinite(vptValue) && vptValue > 0
         ? {

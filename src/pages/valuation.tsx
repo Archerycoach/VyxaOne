@@ -147,7 +147,7 @@ export default function ValuationPage() {
     county: "",
     freguesia: "",
     distrito: "",
-    searchRadiusKm: "4",
+    searchRadiusKm: "2",
     // Critérios de análise. Preço/ano/classe excluem; características pontuam.
     criteriaMinPrice: "",
     criteriaMaxPrice: "",

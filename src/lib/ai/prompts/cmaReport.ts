@@ -221,7 +221,7 @@ REGRAS DE ESCRITA (tão importantes como o conteúdo):
 - Escolhe os 3 ou 4 comparáveis que realmente informam a decisão; não comentes todos um a um.
 - Evita fórmulas vazias ("importa sublinhar que", "neste momento", "de referir que"). Vai direto ao facto.
 
-SECÇÕES (usa <h3> para o título de CADA uma, exatamente estas 7 e por esta ordem):
+SECÇÕES (usa <h3> para o título de CADA uma, com o NÚMERO no início — ex.: <h3>1. Identificação do imóvel</h3> —, exatamente estas 7 e por esta ordem):
 1. "Identificação do imóvel" — 2-3 frases factuais: morada, freguesia/concelho/distrito, tipo, tipologia, área e ano de construção; e o VPT quando indicado. Sem interpretação.
 2. "Enquadramento do mercado local" — o €/m² de referência da zona/freguesia e o caráter da zona (centralidade, comércio e transportes de proximidade, idade do parque habitacional se o ano de construção o sugerir). 2-3 frases.
 3. "Comparáveis de mercado" — EM LISTA. Comenta em UMA linha cada um dos melhores comparáveis (mesma tipologia ou adjacente, área semelhante): tipologia, área, €/m² e uma observação de estado (renovado / intermédio / a necessitar de obras). IDENTIFICA e EXCLUI explicitamente os OUTLIERS (gama alta, duplex, fortemente remodelados) do cálculo da média — di-lo. Refere diferenças (elevador, andar, estado) que expliquem desvios de €/m² entre imóveis de área semelhante.
