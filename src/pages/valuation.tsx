@@ -62,6 +62,12 @@ interface ValuationResult {
   zoneSampleSize?: number | null;
   suggestedMax: number | null;
   narrative: string;
+  comparablesDiagnostic?: {
+    idealistaRaw: number;
+    idealistaKept: number;
+    idealistaError: string | null;
+    internalCount: number;
+  } | null;
 }
 
 interface LinkedLead {
@@ -1029,6 +1035,25 @@ export default function ValuationPage() {
               <Card>
                 <CardHeader><CardTitle className="text-base">Imóveis Comparáveis ({result.comparables.length})</CardTitle></CardHeader>
                 <CardContent className="space-y-2">
+                  {/* Distingue "fonte de dados falhou/vazia" de "mercado sem
+                      comparáveis": se o Idealista deu erro ou não devolveu nada,
+                      o problema é a integração, não o mercado. */}
+                  {result.comparablesDiagnostic &&
+                    (result.comparablesDiagnostic.idealistaError || result.comparablesDiagnostic.idealistaRaw === 0) && (
+                      <div className="flex gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+                        <span aria-hidden>⚠️</span>
+                        <div>
+                          {result.comparablesDiagnostic.idealistaError ? (
+                            <>A pesquisa de comparáveis no <strong>Idealista</strong> falhou ({result.comparablesDiagnostic.idealistaError}). </>
+                          ) : (
+                            <>O <strong>Idealista</strong> não devolveu comparáveis para esta zona/critérios. </>
+                          )}
+                          Os poucos ou nenhuns comparáveis abaixo <strong>não</strong> significam que o mercado não os tem — é a
+                          fonte de dados que não os trouxe. Verifica a integração Idealista (Admin › Integrações) ou alarga a
+                          área/critérios. A avaliação apoiou-se na mediana de escrituras do INE.
+                        </div>
+                      </div>
+                    )}
                   {result.comparables.length === 0 ? (
                     <p className="text-sm text-gray-400">Nenhum comparável encontrado na zona.</p>
                   ) : (

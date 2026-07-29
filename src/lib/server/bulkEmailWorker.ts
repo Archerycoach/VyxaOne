@@ -2,6 +2,7 @@ import nodemailer from "nodemailer";
 import { getSignatureHtml } from "@/lib/server/emailSignature";
 import { logEmailInteractionServer } from "@/lib/emailInteractionLogger";
 import { personalizeMailMerge } from "@/lib/mailMergeVars";
+import { getEspConfig, sendViaEsp } from "@/lib/server/bulkEmailEsp";
 
 /**
  * Worker do envio de emails em massa em segundo plano.
@@ -186,6 +187,11 @@ export async function processBulkEmailBatch(
   const rateLimitedUsers = new Set<string>();
   let processed = 0;
 
+  // ESP (Resend, etc.) para envio em massa por API HTTP, quando configurado. As
+  // campanhas passam por aqui (alto débito, entregável), em vez do SMTP da caixa
+  // do consultor (que tem limites apertados). Lê-se uma vez por ciclo.
+  const espConfig = await getEspConfig(admin);
+
   const rowList = rows as any[];
 
   const processRow = async (row: any) => {
@@ -235,10 +241,12 @@ export async function processBulkEmailBatch(
         smtp = (data as SmtpSettingsRow) || null;
         smtpCache.set(row.user_id, smtp);
       }
-      if (!smtp?.smtp_host) throw new Error("SMTP não configurado.");
+      // Com ESP, o SMTP do consultor é OPCIONAL (só dá o nome e o reply-to).
+      // Sem ESP, é obrigatório para poder enviar.
+      if (!espConfig && !smtp?.smtp_host) throw new Error("SMTP não configurado.");
 
       let transporter = transporterCache.get(row.user_id);
-      if (!transporter) {
+      if (!espConfig && !transporter && smtp?.smtp_host) {
         transporter = nodemailer.createTransport({
           host: smtp.smtp_host,
           port: smtp.smtp_port,
@@ -288,14 +296,28 @@ export async function processBulkEmailBatch(
         }
       }
 
-      await transporter.sendMail({
-        from: smtp.from_name ? `"${smtp.from_name}" <${smtp.from_email}>` : smtp.from_email,
-        to: row.to_email,
-        subject,
-        html: finalHtml,
-        attachments: attachments.length > 0 ? attachments : undefined,
-        bcc,
-      });
+      if (espConfig) {
+        // Campanha pelo ESP: alto débito por API HTTP. Mostra o nome do
+        // consultor e as respostas vão para o email dele (reply-to).
+        await sendViaEsp(espConfig, {
+          fromName: smtp?.from_name || null,
+          replyTo: smtp?.from_email || null,
+          to: row.to_email,
+          subject,
+          html: finalHtml,
+          bcc,
+          attachments: attachments.length > 0 ? attachments : undefined,
+        });
+      } else {
+        await transporter!.sendMail({
+          from: smtp!.from_name ? `"${smtp!.from_name}" <${smtp!.from_email}>` : smtp!.from_email,
+          to: row.to_email,
+          subject,
+          html: finalHtml,
+          attachments: attachments.length > 0 ? attachments : undefined,
+          bcc,
+        });
+      }
 
       await admin
         .from("bulk_email_queue")

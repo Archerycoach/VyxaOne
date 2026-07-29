@@ -214,15 +214,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // 2. Comparáveis do Idealista (só ativos — a API não devolve vendidos).
     let idealistaComparables: ComparableSummary[] = [];
     let excludedByCondition = 0;
+    // Diagnóstico: quantos comparáveis o Idealista devolveu (antes de filtrar) e
+    // se a procura falhou — para o frontend distinguir "fonte falhou/vazia" de
+    // "mercado sem comparáveis", em vez de o culpar em silêncio.
+    let idealistaRawCount = 0;
+    let idealistaErrorMsg: string | null = null;
     try {
       const credentials = await getIdealistaCredentials();
+      // Rede LARGA de propósito (a área semelhante é o que aproxima o valor):
+      //  - área ±40% (0.6–1.5×), não ±30%;
+      //  - tipologia com piso em bedrooms-1 (o filtro é `rooms >= n`), para um
+      //    T4 apanhar também T3/T5 de área parecida — como as ferramentas de
+      //    comparáveis fazem. Sem isto, zonas com poucos T4 saíam sem amostra.
       const pseudoLead = {
         lead_type: "buyer",
         property_type: propertyType,
         location_preference: city || address,
-        min_area: area ? Math.round(area * 0.7) : undefined,
-        max_area: area ? Math.round(area * 1.3) : undefined,
-        bedrooms: bedrooms || undefined,
+        min_area: area ? Math.round(area * 0.6) : undefined,
+        max_area: area ? Math.round(area * 1.5) : undefined,
+        bedrooms: bedrooms && bedrooms > 1 ? bedrooms - 1 : bedrooms || undefined,
       };
       const params = leadToIdealistaParams(pseudoLead);
 
@@ -236,7 +246,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       params.center = locationCandidates[0];
       params.searchCenters = locationCandidates;
 
-      const rawResults = await searchIdealistaProperties({ ...params, maxItems: 25 }, credentials, user.id);
+      const rawResults = await searchIdealistaProperties({ ...params, maxItems: 40 }, credentials, user.id);
+      idealistaRawCount = rawResults.length;
       const results = withinRadius(rawResults, coordinates, coordinates?.radiusKm || 4);
 
       // O estado de conservação do imóvel a avaliar decide que comparáveis
@@ -270,7 +281,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         .filter((c) => matchesPropertyType(propertyType, { address: c.address }));
 
       excludedByCondition = results.length - idealistaComparables.length;
-    } catch (idealistaError) {
+    } catch (idealistaError: any) {
+      idealistaErrorMsg = idealistaError?.message || "Falha na procura de comparáveis no Idealista.";
       console.error("[Valuation] Idealista indisponível (não bloqueante):", idealistaError);
     }
 
@@ -619,6 +631,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(200).json({
       sanityCheck,
       comparables,
+      // Diagnóstico da fonte de comparáveis: distingue "Idealista falhou/vazio"
+      // de "mercado sem comparáveis". O frontend avisa quando a fonte não deu
+      // nada, para não parecer que o mercado não tem imóveis semelhantes.
+      comparablesDiagnostic: {
+        idealistaRaw: idealistaRawCount,
+        idealistaKept: idealistaComparables.length,
+        idealistaError: idealistaErrorMsg,
+        internalCount: internalComparables.length,
+      },
       soldAvgPricePerSqm,
       activeAvgPricePerSqm,
       suggestedMin,

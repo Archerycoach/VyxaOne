@@ -11,6 +11,7 @@ const SECRET_KEYS = [
   'google_api_key',
   'meta_app_secret',
   'smtp_password',
+  'bulk_esp_api_key',
   'eupago_api_key',
   'notion_api_key',
   'geoapify_api_key',
