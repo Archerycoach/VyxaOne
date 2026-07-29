@@ -28,8 +28,13 @@ const RATE_LIMIT_COOLDOWN_MINUTES = 60;
 // por segundo (no total do pool) para não disparar rajadas — e os limites do
 // próprio servidor continuam a ser apanhados pelo tratamento de erros
 // temporários (cooldown de 1h). Substitui a antiga pausa fixa de 400 ms.
-const POOL_MAX_CONNECTIONS = 3;
-const POOL_RATE_LIMIT = 6; // mensagens por segundo, no total do pool
+const POOL_MAX_CONNECTIONS = 4;
+const POOL_RATE_LIMIT = 8; // mensagens por segundo, no total do pool (por consultor)
+// Nº de emails enviados EM PARALELO por ciclo. Sozinho, o loop era sequencial:
+// esperava cada envio (ida à rede + escritas na BD) antes do seguinte e nunca
+// chegava perto do teto do pool. Com concorrência, satura o `rateLimit`. Como o
+// pool (por consultor) continua a limitar o ritmo real, não rebenta o servidor.
+const SEND_CONCURRENCY = 4;
 
 /**
  * O erro do SMTP é TEMPORÁRIO (limite de envio, rate-limit, greylisting)?
@@ -170,6 +175,10 @@ export async function processBulkEmailBatch(
   const campaignCache = new Map<string, any>();
   const smtpCache = new Map<string, SmtpSettingsRow | null>();
   const transporterCache = new Map<string, nodemailer.Transporter>();
+  // Todos os transporters criados neste ciclo — incluindo algum duplicado que a
+  // concorrência possa criar em cache fria — para os fechar todos no fim e não
+  // deixar ligações SMTP penduradas.
+  const allTransporters: nodemailer.Transporter[] = [];
   const signatureCache = new Map<string, string>();
   const touchedCampaigns = new Set<string>();
   // Consultores que bateram no limite do SMTP NESTA execução: paramos de lhes
@@ -177,7 +186,9 @@ export async function processBulkEmailBatch(
   const rateLimitedUsers = new Set<string>();
   let processed = 0;
 
-  for (const row of rows as any[]) {
+  const rowList = rows as any[];
+
+  const processRow = async (row: any) => {
     touchedCampaigns.add(row.campaign_id);
 
     // Já bateu no limite este ciclo: reagenda sem sequer tentar enviar.
@@ -186,7 +197,7 @@ export async function processBulkEmailBatch(
         .from("bulk_email_queue")
         .update({ status: "pending", claimed_at: null, next_attempt_at: cooldownIso })
         .eq("id", row.id);
-      continue;
+      return;
     }
 
     // Reivindicar a linha (evita duplo envio se dois workers coincidirem).
@@ -197,7 +208,7 @@ export async function processBulkEmailBatch(
       .eq("status", "pending")
       .select("id")
       .maybeSingle();
-    if (!claimed) continue;
+    if (!claimed) return;
 
     try {
       // Campanha (modelo do email).
@@ -243,6 +254,7 @@ export async function processBulkEmailBatch(
           rateLimit: POOL_RATE_LIMIT,
         });
         transporterCache.set(row.user_id, transporter);
+        allTransporters.push(transporter);
       }
 
       // Assinatura do consultor em cache (uma leitura por consultor, não por email).
@@ -349,10 +361,24 @@ export async function processBulkEmailBatch(
     processed++;
     // Sem pausa fixa: o ritmo é governado pelo `rateLimit` do pool SMTP, que
     // reutiliza a ligação e mantém um teto seguro de mensagens por segundo.
-  }
+  };
+
+  // Envio com CONCORRÊNCIA limitada: vários trabalhadores puxam linhas da mesma
+  // lista (cada linha só é processada uma vez). O `rateLimit` do pool SMTP e o
+  // tratamento de erros temporários continuam a proteger o servidor de destino.
+  let cursor = 0;
+  const runWorker = async () => {
+    while (cursor < rowList.length) {
+      const row = rowList[cursor++];
+      await processRow(row);
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(SEND_CONCURRENCY, rowList.length) }, runWorker),
+  );
 
   // Fecha as ligações do pool SMTP abertas neste ciclo (liberta os sockets).
-  for (const t of transporterCache.values()) {
+  for (const t of allTransporters) {
     try {
       t.close();
     } catch {
