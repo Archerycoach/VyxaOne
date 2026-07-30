@@ -54,7 +54,54 @@ interface TriageResult {
  * cópia dos emails). O conteúdo é lido, analisado e descartado — só o conselho
  * volta para ser guardado.
  */
-async function triageBatch(userId: string, messages: InboxMessage[]): Promise<TriageResult[]> {
+interface TriageBatchOutcome {
+  /** Alinhado a `messages` por índice; posições não classificadas ficam undefined. */
+  results: (TriageResult | undefined)[];
+  /** Resposta crua da IA (para diagnóstico quando o parse falha). */
+  raw: string;
+}
+
+/**
+ * Extrai os itens de triagem da resposta da IA, tolerante a formato: aceita um
+ * array no topo OU um objeto `{items|results|...: [...]}`, e mapeia cada item à
+ * sua posição pelo campo `i` (à prova de desalinhamento/ordem).
+ */
+function parseTriage(raw: string, expected: number): (TriageResult | undefined)[] {
+  const results: (TriageResult | undefined)[] = new Array(expected).fill(undefined);
+  const cleaned = raw.replace(/```json/gi, "").replace(/```/g, "").trim();
+
+  let root: any = null;
+  try {
+    root = JSON.parse(cleaned);
+  } catch {
+    const match = cleaned.match(/[[{][\s\S]*[\]}]/);
+    if (match) {
+      try { root = JSON.parse(match[0]); } catch { /* desiste — devolve vazio */ }
+    }
+  }
+  if (!root) return results;
+
+  const arr: any[] | null = Array.isArray(root)
+    ? root
+    : root.items || root.results || root.emails || root.data ||
+      (Object.values(root).find((v) => Array.isArray(v)) as any[]) || null;
+  if (!Array.isArray(arr)) return results;
+
+  arr.forEach((item, idx) => {
+    if (!item || typeof item !== "object") return;
+    const pos = typeof item.i === "number" ? item.i : idx;
+    if (pos < 0 || pos >= expected) return;
+    results[pos] = {
+      importance: item.importance === "high" || item.importance === "medium" ? item.importance : "low",
+      reminder: item.reminder || "",
+      advice: item.advice || "",
+      agendaSuggestion: item.agendaSuggestion || "",
+    };
+  });
+  return results;
+}
+
+async function triageBatch(userId: string, messages: InboxMessage[]): Promise<TriageBatchOutcome> {
   const list = messages.map((m, i) => ({
     i,
     de: m.fromName || m.fromEmail || "remetente desconhecido",
@@ -64,17 +111,17 @@ async function triageBatch(userId: string, messages: InboxMessage[]): Promise<Tr
 
   const prompt = `És o assistente de um consultor imobiliário. Lês a caixa de entrada dele e transformas o que importa em LEMBRETES e CONSELHOS práticos. NÃO resumas a caixa toda — só o que exige atenção ou ação (resposta de cliente/lead, pergunta, objeção, pedido de visita/proposta, prazo, oportunidade). Ignora newsletters, promoções, notificações automáticas e spam.
 
-Para CADA email, devolve:
-- importance: "high" (precisa de ação hoje/amanhã), "medium" (a acompanhar), "low" (nada a fazer — ignora-se).
+Para CADA email, classifica:
+- importance: "high" (precisa de ação hoje/amanhã), "medium" (a acompanhar), "low" (nada a fazer).
 - reminder: UMA frase com o que precisa de atenção, dirigida ao consultor (ex.: "A Maria pergunta se pode visitar o T3 este fim de semana.").
-- advice: conselho curto de COMO tratar e responder (tom, o que dizer, o que confirmar). Ex.: "Confirma a disponibilidade dela e propõe dois horários; reforça que o imóvel tem tido procura.".
-- agendaSuggestion: conselho de AGENDA/timing (ex.: "Responder hoje ao fim do dia; marcar a visita para sábado de manhã."), ou "" se não aplicável.
+- advice: conselho curto de COMO tratar e responder (tom, o que dizer, o que confirmar).
+- agendaSuggestion: conselho de AGENDA/timing, ou "" se não aplicável.
 
 EMAILS (JSON):
 ${JSON.stringify(list)}
 
-Responde APENAS com um array JSON, na MESMA ordem e com o mesmo tamanho, cada item:
-{ "importance": "...", "reminder": "...", "advice": "...", "agendaSuggestion": "..." }`;
+Responde APENAS com um objeto JSON com a chave "items" — um item por email, incluindo o mesmo "i" do email de entrada:
+{"items":[{"i":0,"importance":"high|medium|low","reminder":"...","advice":"...","agendaSuggestion":"..."}]}`;
 
   const response = await runAI({
     userId,
@@ -82,25 +129,19 @@ Responde APENAS com um array JSON, na MESMA ordem e com o mesmo tamanho, cada it
     messages: [{ role: "user", content: prompt }],
     jsonMode: true,
     temperature: 0.3,
+    maxTokens: 4000,
   });
 
   const raw = response.text || "";
-  try {
-    const cleaned = raw.replace(/^```json\s*/i, "").replace(/```$/i, "").trim();
-    const start = cleaned.indexOf("[");
-    const end = cleaned.lastIndexOf("]");
-    const parsed = JSON.parse(cleaned.slice(start, end + 1));
-    if (Array.isArray(parsed)) return parsed as TriageResult[];
-  } catch (error) {
-    // Causa habitual: resposta truncada (muitos emails num só pedido). O lote é
-    // pequeno (ver CHUNK em processInboxForUser) precisamente para evitar isto.
-    console.error("[inbox-assistant] Conselhos IA sem JSON válido:", {
+  const results = parseTriage(raw, messages.length);
+  if (results.every((r) => !r)) {
+    console.error("[inbox-assistant] Triagem sem itens válidos:", {
       emails: messages.length,
       rawLength: raw.length,
-      rawTail: raw.slice(-200),
+      rawHead: raw.slice(0, 200),
     });
   }
-  return [];
+  return { results, raw };
 }
 
 /**
@@ -158,6 +199,8 @@ export interface ProcessResult {
   afterFilter: number;
   /** Emails que a IA conseguiu classificar (menos que afterFilter = falha IA). */
   aiCovered: number;
+  /** Excerto da resposta crua da IA quando a triagem falhou (diagnóstico). */
+  debugSample?: string;
   /** Só definido quando o IMAP falhou (auth/servidor/porta). */
   imapError?: string;
 }
@@ -218,16 +261,20 @@ export async function processInboxForUser(
   );
   const afterFilter = relevant.length;
   let aiCovered = 0;
+  let debugSample: string | undefined;
 
   if (relevant.length > 0) {
     // Tria em LOTES pequenos: uma só chamada com dezenas de emails corre o risco
     // de a resposta JSON ser truncada (excede tokens) e falhar toda a triagem.
     const CHUNK = 8;
-    const triage: TriageResult[] = [];
+    const triage: (TriageResult | undefined)[] = [];
     for (let i = 0; i < relevant.length; i += CHUNK) {
-      const part = await triageBatch(acc.user_id, relevant.slice(i, i + CHUNK));
-      for (let j = 0; j < part.length; j++) triage[i + j] = part[j];
-      aiCovered += part.filter(Boolean).length;
+      const { results, raw } = await triageBatch(acc.user_id, relevant.slice(i, i + CHUNK));
+      for (let j = 0; j < results.length; j++) triage[i + j] = results[j];
+      const covered = results.filter(Boolean).length;
+      aiCovered += covered;
+      // Guarda um excerto da 1.ª resposta que não deu itens, para diagnóstico.
+      if (covered === 0 && !debugSample) debugSample = raw.slice(0, 300);
     }
 
     for (let i = 0; i < relevant.length; i++) {
@@ -274,5 +321,5 @@ export async function processInboxForUser(
       .eq("user_id", acc.user_id);
   }
 
-  return { scanned, flagged, windowTotal, afterFilter, aiCovered };
+  return { scanned, flagged, windowTotal, afterFilter, aiCovered, debugSample };
 }

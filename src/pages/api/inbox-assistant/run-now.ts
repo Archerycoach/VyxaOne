@@ -56,8 +56,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     } else if (result.flagged > 0) {
       message = `Analisei ${result.scanned} email(s) dos últimos 3 dias; ${result.flagged} a precisar de atenção.`;
     } else if (result.aiCovered < result.afterFilter) {
-      // A IA não classificou tudo — resposta incompleta/truncada.
-      message = `Li ${result.scanned} email(s), mas a IA só conseguiu classificar ${result.aiCovered} de ${result.afterFilter}. Tente "Verificar agora" outra vez.`;
+      // A IA não classificou tudo — resposta incompleta/inválida.
+      message = `Li ${result.scanned} email(s), mas a IA só conseguiu classificar ${result.aiCovered} de ${result.afterFilter}.`;
+      if (result.aiCovered === 0 && result.debugSample) {
+        message += ` Resposta da IA (início): "${result.debugSample}"`;
+      } else {
+        message += ' Tente "Verificar agora" outra vez.';
+      }
     } else {
       const filtered = result.scanned - result.afterFilter;
       message =
