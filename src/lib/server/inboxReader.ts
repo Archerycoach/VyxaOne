@@ -43,7 +43,7 @@ export async function readNewInboxMessages(opts: {
   lastUid: number;
   sinceDays?: number;
   maxMessages?: number;
-}): Promise<{ messages: InboxMessage[]; highestUid: number }> {
+}): Promise<{ messages: InboxMessage[]; highestUid: number; totalInWindow: number }> {
   const client = new ImapFlow({
     host: opts.host,
     port: opts.port || 993,
@@ -63,12 +63,13 @@ export async function readNewInboxMessages(opts: {
     // sobretudo no primeiro ciclo (lastUid = 0).
     const since = new Date(Date.now() - (opts.sinceDays ?? 3) * 86400000);
     const uids = (await client.search({ since }, { uid: true })) || [];
+    const totalInWindow = uids.length;
     const fresh = uids
       .filter((u) => u > opts.lastUid)
       .sort((a, b) => a - b)
       .slice(0, opts.maxMessages ?? 40);
 
-    if (fresh.length === 0) return { messages, highestUid };
+    if (fresh.length === 0) return { messages, highestUid, totalInWindow };
 
     // `fresh` são UIDs (vieram do search com {uid:true}); é OBRIGATÓRIO passar
     // {uid:true} também aqui, senão o imapflow trata-os como nºs de sequência
@@ -94,10 +95,9 @@ export async function readNewInboxMessages(opts: {
         text: htmlToText(rawBody).slice(0, 1800),
       });
     }
+    return { messages, highestUid, totalInWindow };
   } finally {
     lock.release();
     await client.logout();
   }
-
-  return { messages, highestUid };
 }

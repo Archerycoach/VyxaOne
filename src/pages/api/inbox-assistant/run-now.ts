@@ -35,7 +35,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(400).json({ error: "O assistente de emails está desligado. Ative-o nas Configurações SMTP." });
     }
 
-    const result = await processInboxForUser(supabaseAdmin, acc as unknown as InboxAccount);
+    // Manual = varre sempre a janela toda (ignoreCursor), para não depender do
+    // marcador incremental do cron e servir de diagnóstico/catch-up fiável.
+    const result = await processInboxForUser(supabaseAdmin, acc as unknown as InboxAccount, {
+      ignoreCursor: true,
+    });
 
     if (result.imapError) {
       return res.status(200).json({
@@ -51,9 +55,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       scanned: result.scanned,
       flagged: result.flagged,
       message:
-        result.scanned === 0
-          ? "Ligação OK. Sem emails novos (últimos 3 dias) na caixa de entrada desde a última verificação."
-          : `Analisei ${result.scanned} email(s); ${result.flagged} a precisar de atenção.`,
+        result.windowTotal === 0
+          ? "Ligação OK. Não há emails na caixa de entrada nos últimos 3 dias."
+          : `Analisei ${result.scanned} email(s) dos últimos 3 dias; ${result.flagged} a precisar de atenção.`,
     });
   } catch (error: any) {
     console.error("[inbox-assistant/run-now] Erro:", error);

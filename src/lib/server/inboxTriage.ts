@@ -145,6 +145,8 @@ export interface InboxAccount {
 export interface ProcessResult {
   scanned: number;
   flagged: number;
+  /** Total de emails na janela dos últimos dias (antes do filtro do cursor). */
+  windowTotal: number;
   /** Só definido quando o IMAP falhou (auth/servidor/porta). */
   imapError?: string;
 }
@@ -156,12 +158,17 @@ export interface ProcessResult {
 export async function processInboxForUser(
   admin: SupabaseClient,
   acc: InboxAccount,
-  opts: { maxMessages?: number } = {},
+  opts: { maxMessages?: number; ignoreCursor?: boolean } = {},
 ): Promise<ProcessResult> {
   const host = acc.imap_host || acc.smtp_host;
   if (!host || !acc.smtp_username || !acc.smtp_password) {
-    return { scanned: 0, flagged: 0, imapError: "Faltam dados de acesso (servidor/utilizador/palavra-passe)." };
+    return { scanned: 0, flagged: 0, windowTotal: 0, imapError: "Faltam dados de acesso (servidor/utilizador/palavra-passe)." };
   }
+
+  // No modo manual ("Verificar agora") varremos sempre a janela toda (cursor=0)
+  // — o upsert com unique(user_id,message_uid) evita duplicados. O cron mantém-se
+  // incremental (a partir do cursor) por custo de IA.
+  const lastUid = opts.ignoreCursor ? 0 : acc.imap_last_uid || 0;
 
   let read;
   try {
@@ -171,7 +178,7 @@ export async function processInboxForUser(
       user: acc.smtp_username,
       pass: acc.smtp_password,
       rejectUnauthorized: acc.reject_unauthorized ?? true,
-      lastUid: acc.imap_last_uid || 0,
+      lastUid,
       sinceDays: 3,
       maxMessages: opts.maxMessages ?? MAX_MESSAGES_PER_USER,
     });
@@ -186,10 +193,11 @@ export async function processInboxForUser(
       responseText: imapError?.responseText,
       message: imapError?.message,
     });
-    return { scanned: 0, flagged: 0, imapError: describeImapError(imapError, host, acc.imap_port || 993) };
+    return { scanned: 0, flagged: 0, windowTotal: 0, imapError: describeImapError(imapError, host, acc.imap_port || 993) };
   }
 
   const scanned = read.messages.length;
+  const windowTotal = read.totalInWindow;
   let flagged = 0;
 
   // Descarta publicidade/automáticos e a lista de ignorados do consultor ANTES
@@ -245,5 +253,5 @@ export async function processInboxForUser(
       .eq("user_id", acc.user_id);
   }
 
-  return { scanned, flagged };
+  return { scanned, flagged, windowTotal };
 }
