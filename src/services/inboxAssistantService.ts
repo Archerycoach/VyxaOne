@@ -14,37 +14,39 @@ export interface InboxTriageItem {
 
 /** Emails sinalizados pelo assistente, mais importantes primeiro. */
 export async function getInboxTriage(includeHandled = false): Promise<InboxTriageItem[]> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return [];
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) return [];
 
-  let query = supabase
-    .from("inbox_triage" as any)
-    .select("*")
-    .eq("user_id", user.id);
-
-  if (!includeHandled) query = query.eq("status", "new");
-
-  const { data, error } = await query
-    .order("created_at", { ascending: false })
-    .limit(200);
-
-  if (error) {
-    console.error("[inboxAssistant] Erro ao listar:", error);
+  const res = await fetch(`/api/inbox-assistant/items?includeHandled=${includeHandled}`, {
+    headers: { Authorization: `Bearer ${session.access_token}` },
+  });
+  if (!res.ok) {
+    console.error("[inboxAssistant] Erro ao listar:", await res.text().catch(() => ""));
     return [];
   }
-
-  const rank: Record<string, number> = { high: 0, medium: 1, low: 2 };
-  return ((data || []) as unknown as InboxTriageItem[]).sort(
-    (a, b) => (rank[a.importance] ?? 1) - (rank[b.importance] ?? 1)
-  );
+  const body = await res.json().catch(() => ({ items: [] }));
+  return (body.items || []) as InboxTriageItem[];
 }
 
 export async function setTriageStatus(
   id: string,
   status: "new" | "handled" | "dismissed"
 ): Promise<void> {
-  const { error } = await supabase.from("inbox_triage" as any).update({ status }).eq("id", id);
-  if (error) throw error;
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) throw new Error("Não autenticado");
+
+  const res = await fetch("/api/inbox-assistant/items", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${session.access_token}`,
+    },
+    body: JSON.stringify({ id, status }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || "Falha ao atualizar o lembrete.");
+  }
 }
 
 export interface RunNowResult {

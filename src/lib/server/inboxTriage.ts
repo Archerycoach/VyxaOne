@@ -201,6 +201,10 @@ export interface ProcessResult {
   aiCovered: number;
   /** Excerto da resposta crua da IA quando a triagem falhou (diagnóstico). */
   debugSample?: string;
+  /** Mensagem de erro do 1.º upsert que falhou (diagnóstico de escrita). */
+  writeError?: string;
+  /** Lembretes "new" que existem de facto na BD para o consultor (sem RLS). */
+  storedNew?: number;
   /** Só definido quando o IMAP falhou (auth/servidor/porta). */
   imapError?: string;
 }
@@ -262,6 +266,7 @@ export async function processInboxForUser(
   const afterFilter = relevant.length;
   let aiCovered = 0;
   let debugSample: string | undefined;
+  let writeError: string | undefined;
 
   if (relevant.length > 0) {
     // Tria em LOTES pequenos: uma só chamada com dezenas de emails corre o risco
@@ -296,7 +301,7 @@ export async function processInboxForUser(
         leadId = (lead as any)?.id || null;
       }
 
-      await admin.from("inbox_triage").upsert(
+      const { error: upsertError } = await admin.from("inbox_triage").upsert(
         {
           user_id: acc.user_id,
           message_uid: m.uid,
@@ -309,6 +314,10 @@ export async function processInboxForUser(
         },
         { onConflict: "user_id,message_uid", ignoreDuplicates: true },
       );
+      if (upsertError) {
+        if (!writeError) writeError = upsertError.message;
+        console.error("[inbox-assistant] Falha ao guardar lembrete:", upsertError);
+      }
       flagged++;
     }
   }
@@ -321,5 +330,13 @@ export async function processInboxForUser(
       .eq("user_id", acc.user_id);
   }
 
-  return { scanned, flagged, windowTotal, afterFilter, aiCovered, debugSample };
+  // Quantos lembretes "new" existem MESMO na BD para este consultor (via
+  // service-role, sem RLS) — separa "não gravou" de "não lê" (RLS/cliente).
+  const { count: storedNew } = await admin
+    .from("inbox_triage")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", acc.user_id)
+    .eq("status", "new");
+
+  return { scanned, flagged, windowTotal, afterFilter, aiCovered, debugSample, writeError, storedNew: storedNew ?? 0 };
 }

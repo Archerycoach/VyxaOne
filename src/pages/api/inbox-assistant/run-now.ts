@@ -54,7 +54,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (result.windowTotal === 0) {
       message = "Ligação OK. Não há emails na caixa de entrada nos últimos 3 dias.";
     } else if (result.flagged > 0) {
-      message = `Analisei ${result.scanned} email(s) dos últimos 3 dias; ${result.flagged} a precisar de atenção.`;
+      if (result.writeError) {
+        message = `Analisei ${result.scanned}; ${result.flagged} a precisar de atenção, mas a gravação falhou: ${result.writeError}`;
+      } else {
+        message = `Analisei ${result.scanned} email(s) dos últimos 3 dias; ${result.flagged} a precisar de atenção` +
+          (typeof result.storedNew === "number" ? ` (${result.storedNew} guardado(s)).` : ".");
+      }
     } else if (result.aiCovered < result.afterFilter) {
       // A IA não classificou tudo — resposta incompleta/inválida.
       message = `Li ${result.scanned} email(s), mas a IA só conseguiu classificar ${result.aiCovered} de ${result.afterFilter}.`;
@@ -77,6 +82,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       afterFilter: result.afterFilter,
       aiCovered: result.aiCovered,
       windowTotal: result.windowTotal,
+      storedNew: result.storedNew,
       message,
     });
   } catch (error: any) {
