@@ -96,6 +96,40 @@ Responde APENAS com um array JSON, na MESMA ordem e com o mesmo tamanho, cada it
   return [];
 }
 
+/**
+ * Traduz um erro do ImapFlow numa mensagem acionável. O `.message` costuma ser
+ * só "Command failed" — o detalhe real está em `responseText`/`serverResponseCode`
+ * (resposta do servidor) ou no `code` de rede (host/porta errados, timeout).
+ */
+function describeImapError(err: any, host: string, port: number): string {
+  const netCode = err?.code as string | undefined;
+  const netMap: Record<string, string> = {
+    ENOTFOUND: `Servidor não encontrado (${host}). Confirme o endereço IMAP.`,
+    ECONNREFUSED: `Ligação recusada em ${host}:${port}. Confirme servidor e porta (normalmente 993).`,
+    ETIMEDOUT: `Tempo esgotado a ligar a ${host}:${port}. Servidor/porta errados ou bloqueio de firewall.`,
+    EAI_AGAIN: `Falha de DNS ao resolver ${host}. Confirme o endereço IMAP.`,
+    CERT_HAS_EXPIRED: "Certificado do servidor expirado. Pode ter de desligar a validação de certificado.",
+    DEPTH_ZERO_SELF_SIGNED_CERT: "Certificado auto-assinado. Pode ter de desligar a validação de certificado.",
+  };
+  if (netCode && netMap[netCode]) return netMap[netCode];
+
+  if (err?.authenticationFailed) {
+    return "Autenticação recusada. A palavra-passe pode estar errada — ou (Microsoft 365/Gmail) o IMAP com palavra-passe está bloqueado e exige OAuth.";
+  }
+
+  const serverText: string | undefined = err?.responseText || err?.response;
+  const code: string | undefined = err?.serverResponseCode;
+  if (serverText || code) {
+    const detail = [serverText, code].filter(Boolean).join(" — ");
+    if (/auth|login|credential|password|denied/i.test(detail)) {
+      return `Autenticação recusada pelo servidor: ${detail}. Se for Microsoft 365/Gmail, o IMAP básico está bloqueado (exige OAuth).`;
+    }
+    return `O servidor recusou o comando: ${detail}.`;
+  }
+
+  return err?.message || "Falha na ligação IMAP.";
+}
+
 export interface InboxAccount {
   user_id: string;
   smtp_host: string | null;
@@ -142,8 +176,17 @@ export async function processInboxForUser(
       maxMessages: opts.maxMessages ?? MAX_MESSAGES_PER_USER,
     });
   } catch (imapError: any) {
-    console.error(`[inbox-assistant] IMAP falhou para ${acc.user_id}:`, imapError);
-    return { scanned: 0, flagged: 0, imapError: imapError?.message || "Falha na ligação IMAP." };
+    console.error(`[inbox-assistant] IMAP falhou para ${acc.user_id}:`, {
+      host,
+      port: acc.imap_port || 993,
+      user: acc.smtp_username,
+      code: imapError?.code,
+      authenticationFailed: imapError?.authenticationFailed,
+      serverResponseCode: imapError?.serverResponseCode,
+      responseText: imapError?.responseText,
+      message: imapError?.message,
+    });
+    return { scanned: 0, flagged: 0, imapError: describeImapError(imapError, host, acc.imap_port || 993) };
   }
 
   const scanned = read.messages.length;

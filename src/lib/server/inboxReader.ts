@@ -70,9 +70,13 @@ export async function readNewInboxMessages(opts: {
 
     if (fresh.length === 0) return { messages, highestUid };
 
+    // `fresh` são UIDs (vieram do search com {uid:true}); é OBRIGATÓRIO passar
+    // {uid:true} também aqui, senão o imapflow trata-os como nºs de sequência
+    // (UIDs >> nº de mensagens → o servidor rejeita: "Command failed").
     for await (const msg of client.fetch(
       fresh,
       { uid: true, envelope: true, internalDate: true, bodyParts: ["TEXT"] },
+      { uid: true },
     )) {
       const uid = msg.uid as number;
       if (uid > highestUid) highestUid = uid;
