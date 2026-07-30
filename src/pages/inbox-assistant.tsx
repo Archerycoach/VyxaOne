@@ -8,12 +8,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { Mail, Loader2, CheckCircle, X, User, Flame, Ban, Plus } from "lucide-react";
+import { Mail, Loader2, CheckCircle, X, User, Flame, Ban, Plus, RefreshCw } from "lucide-react";
 import {
   getInboxTriage,
   setTriageStatus,
   getIgnoreSenders,
   setIgnoreSenders,
+  runInboxNow,
   type InboxTriageItem,
 } from "@/services/inboxAssistantService";
 
@@ -32,6 +33,7 @@ export default function InboxAssistantPage() {
   const [ignoreList, setIgnoreList] = useState<string[]>([]);
   const [newIgnore, setNewIgnore] = useState("");
   const [showIgnore, setShowIgnore] = useState(false);
+  const [checking, setChecking] = useState(false);
 
   const load = async () => {
     try {
@@ -46,6 +48,23 @@ export default function InboxAssistantPage() {
   useEffect(() => {
     load();
   }, []);
+
+  const checkNow = async () => {
+    setChecking(true);
+    try {
+      const result = await runInboxNow();
+      toast({
+        title: result.success ? "Caixa verificada" : "Não foi possível ler a caixa",
+        description: result.message,
+        variant: result.success ? undefined : "destructive",
+      });
+      if (result.flagged > 0) await load();
+    } catch (error: any) {
+      toast({ title: "Erro", description: error.message, variant: "destructive" });
+    } finally {
+      setChecking(false);
+    }
+  };
 
   const saveIgnore = async (next: string[]) => {
     setIgnoreList(next);
@@ -84,9 +103,18 @@ export default function InboxAssistantPage() {
       <Layout>
         <SEO title="Assistente de Emails - Vyxa One" description="Emails que merecem a sua atenção" />
         <div className="container mx-auto p-6 max-w-4xl">
-          <div className="flex items-center gap-3 mb-1">
-            <Mail className="h-7 w-7 text-indigo-600" />
-            <h1 className="text-3xl font-bold">Assistente de Emails</h1>
+          <div className="flex items-center justify-between gap-3 mb-1">
+            <div className="flex items-center gap-3">
+              <Mail className="h-7 w-7 text-indigo-600" />
+              <h1 className="text-3xl font-bold">Assistente de Emails</h1>
+            </div>
+            <Button variant="outline" size="sm" onClick={checkNow} disabled={checking}>
+              {checking ? (
+                <><Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> A verificar...</>
+              ) : (
+                <><RefreshCw className="h-4 w-4 mr-1.5" /> Verificar agora</>
+              )}
+            </Button>
           </div>
           <p className="text-muted-foreground mb-4">
             Lembretes e conselhos a partir da sua caixa — respostas de clientes, oportunidades e

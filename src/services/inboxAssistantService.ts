@@ -47,6 +47,32 @@ export async function setTriageStatus(
   if (error) throw error;
 }
 
+export interface RunNowResult {
+  success: boolean;
+  scanned: number;
+  flagged: number;
+  message: string;
+}
+
+/** Corre o assistente na hora para o próprio consultor (diagnóstico + uso). */
+export async function runInboxNow(): Promise<RunNowResult> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) throw new Error("Não autenticado");
+
+  const res = await fetch("/api/inbox-assistant/run-now", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${session.access_token}` },
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || "Falha ao verificar a caixa.");
+  return {
+    success: !!body.success,
+    scanned: body.scanned ?? 0,
+    flagged: body.flagged ?? 0,
+    message: body.message || "",
+  };
+}
+
 /** Endereços/domínios que o consultor pediu para ignorar sempre. */
 export async function getIgnoreSenders(): Promise<string[]> {
   const { data: { user } } = await supabase.auth.getUser();
