@@ -84,14 +84,21 @@ Responde APENAS com um array JSON, na MESMA ordem e com o mesmo tamanho, cada it
     temperature: 0.3,
   });
 
+  const raw = response.text || "";
   try {
-    const cleaned = response.text.replace(/^```json\s*/i, "").replace(/```$/i, "").trim();
+    const cleaned = raw.replace(/^```json\s*/i, "").replace(/```$/i, "").trim();
     const start = cleaned.indexOf("[");
     const end = cleaned.lastIndexOf("]");
     const parsed = JSON.parse(cleaned.slice(start, end + 1));
     if (Array.isArray(parsed)) return parsed as TriageResult[];
   } catch (error) {
-    console.error("[inbox-assistant] Conselhos IA sem JSON válido:", error);
+    // Causa habitual: resposta truncada (muitos emails num só pedido). O lote é
+    // pequeno (ver CHUNK em processInboxForUser) precisamente para evitar isto.
+    console.error("[inbox-assistant] Conselhos IA sem JSON válido:", {
+      emails: messages.length,
+      rawLength: raw.length,
+      rawTail: raw.slice(-200),
+    });
   }
   return [];
 }
@@ -147,6 +154,10 @@ export interface ProcessResult {
   flagged: number;
   /** Total de emails na janela dos últimos dias (antes do filtro do cursor). */
   windowTotal: number;
+  /** Emails que passaram o filtro de publicidade/ignorados e foram à IA. */
+  afterFilter: number;
+  /** Emails que a IA conseguiu classificar (menos que afterFilter = falha IA). */
+  aiCovered: number;
   /** Só definido quando o IMAP falhou (auth/servidor/porta). */
   imapError?: string;
 }
@@ -162,7 +173,7 @@ export async function processInboxForUser(
 ): Promise<ProcessResult> {
   const host = acc.imap_host || acc.smtp_host;
   if (!host || !acc.smtp_username || !acc.smtp_password) {
-    return { scanned: 0, flagged: 0, windowTotal: 0, imapError: "Faltam dados de acesso (servidor/utilizador/palavra-passe)." };
+    return { scanned: 0, flagged: 0, windowTotal: 0, afterFilter: 0, aiCovered: 0, imapError: "Faltam dados de acesso (servidor/utilizador/palavra-passe)." };
   }
 
   // No modo manual ("Verificar agora") varremos sempre a janela toda (cursor=0)
@@ -193,7 +204,7 @@ export async function processInboxForUser(
       responseText: imapError?.responseText,
       message: imapError?.message,
     });
-    return { scanned: 0, flagged: 0, windowTotal: 0, imapError: describeImapError(imapError, host, acc.imap_port || 993) };
+    return { scanned: 0, flagged: 0, windowTotal: 0, afterFilter: 0, aiCovered: 0, imapError: describeImapError(imapError, host, acc.imap_port || 993) };
   }
 
   const scanned = read.messages.length;
@@ -205,9 +216,19 @@ export async function processInboxForUser(
   const relevant = read.messages.filter(
     (m) => !shouldIgnore(m.fromEmail, acc.email_ignore_senders || []),
   );
+  const afterFilter = relevant.length;
+  let aiCovered = 0;
 
   if (relevant.length > 0) {
-    const triage = await triageBatch(acc.user_id, relevant);
+    // Tria em LOTES pequenos: uma só chamada com dezenas de emails corre o risco
+    // de a resposta JSON ser truncada (excede tokens) e falhar toda a triagem.
+    const CHUNK = 8;
+    const triage: TriageResult[] = [];
+    for (let i = 0; i < relevant.length; i += CHUNK) {
+      const part = await triageBatch(acc.user_id, relevant.slice(i, i + CHUNK));
+      for (let j = 0; j < part.length; j++) triage[i + j] = part[j];
+      aiCovered += part.filter(Boolean).length;
+    }
 
     for (let i = 0; i < relevant.length; i++) {
       const m = relevant[i];
@@ -253,5 +274,5 @@ export async function processInboxForUser(
       .eq("user_id", acc.user_id);
   }
 
-  return { scanned, flagged, windowTotal };
+  return { scanned, flagged, windowTotal, afterFilter, aiCovered };
 }

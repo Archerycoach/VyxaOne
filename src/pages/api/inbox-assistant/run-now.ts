@@ -50,14 +50,29 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
     }
 
+    let message: string;
+    if (result.windowTotal === 0) {
+      message = "Ligação OK. Não há emails na caixa de entrada nos últimos 3 dias.";
+    } else if (result.flagged > 0) {
+      message = `Analisei ${result.scanned} email(s) dos últimos 3 dias; ${result.flagged} a precisar de atenção.`;
+    } else if (result.aiCovered < result.afterFilter) {
+      // A IA não classificou tudo — resposta incompleta/truncada.
+      message = `Li ${result.scanned} email(s), mas a IA só conseguiu classificar ${result.aiCovered} de ${result.afterFilter}. Tente "Verificar agora" outra vez.`;
+    } else {
+      const filtered = result.scanned - result.afterFilter;
+      message =
+        `Analisei ${result.scanned} email(s); nenhum considerado a precisar de atenção` +
+        (filtered > 0 ? ` (${filtered} ignorado(s) como publicidade/automáticos).` : ".");
+    }
+
     return res.status(200).json({
       success: true,
       scanned: result.scanned,
       flagged: result.flagged,
-      message:
-        result.windowTotal === 0
-          ? "Ligação OK. Não há emails na caixa de entrada nos últimos 3 dias."
-          : `Analisei ${result.scanned} email(s) dos últimos 3 dias; ${result.flagged} a precisar de atenção.`,
+      afterFilter: result.afterFilter,
+      aiCovered: result.aiCovered,
+      windowTotal: result.windowTotal,
+      message,
     });
   } catch (error: any) {
     console.error("[inbox-assistant/run-now] Erro:", error);
