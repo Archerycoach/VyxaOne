@@ -278,7 +278,7 @@ export default function ValuationPage() {
                   county: form.county || form.city || null,
                   freguesia: form.freguesia || null,
                   distrito: form.distrito || null,
-                  radiusKm: Number(form.searchRadiusKm) || 4,
+                  radiusKm: Number(form.searchRadiusKm) || 2,
                 }
               : null,
           land: { landArea: form.landArea ? Number(form.landArea) : null },
@@ -1015,10 +1015,10 @@ export default function ValuationPage() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="1">1 km — mesma rua/bairro</SelectItem>
-                      <SelectItem value="2">2 km — envolvente próxima</SelectItem>
-                      <SelectItem value="4">4 km — freguesia (recomendado)</SelectItem>
-                      <SelectItem value="8">8 km — concelho</SelectItem>
-                      <SelectItem value="15">15 km — alargado</SelectItem>
+                      <SelectItem value="2">2 km — freguesia / envolvente (recomendado)</SelectItem>
+                      <SelectItem value="4">4 km — concelho</SelectItem>
+                      <SelectItem value="8">8 km — alargado</SelectItem>
+                      <SelectItem value="15">15 km — muito alargado</SelectItem>
                     </SelectContent>
                   </Select>
                   <p className="text-xs text-muted-foreground">

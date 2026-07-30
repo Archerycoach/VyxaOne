@@ -12,6 +12,10 @@ export interface SMTPSettings {
   from_name?: string;
   is_active: boolean;
   reject_unauthorized?: boolean;
+  /** Assistente de emails (leitura IMAP): servidor, porta e ligar/desligar. */
+  imap_host?: string | null;
+  imap_port?: number;
+  email_assistant_enabled?: boolean;
 }
 
 export interface EmailData {

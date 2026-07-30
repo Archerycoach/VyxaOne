@@ -43,6 +43,9 @@ export function SMTPSettingsDialog({ open, onOpenChange }: SMTPSettingsDialogPro
     from_name: "",
     is_active: true,
     reject_unauthorized: true,
+    imap_host: "",
+    imap_port: 993,
+    email_assistant_enabled: false,
   });
 
   useEffect(() => {
@@ -66,6 +69,9 @@ export function SMTPSettingsDialog({ open, onOpenChange }: SMTPSettingsDialogPro
           from_name: data.from_name || "",
           is_active: data.is_active,
           reject_unauthorized: data.reject_unauthorized ?? true,
+          imap_host: data.imap_host || "",
+          imap_port: data.imap_port ?? 993,
+          email_assistant_enabled: data.email_assistant_enabled ?? false,
         });
       }
     } catch (error) {
@@ -187,6 +193,9 @@ export function SMTPSettingsDialog({ open, onOpenChange }: SMTPSettingsDialogPro
         from_name: "",
         is_active: true,
         reject_unauthorized: true,
+        imap_host: "",
+        imap_port: 993,
+        email_assistant_enabled: false,
       });
 
       onOpenChange(false);
@@ -360,6 +369,52 @@ export function SMTPSettingsDialog({ open, onOpenChange }: SMTPSettingsDialogPro
                   />
                 </div>
               </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <Server className="h-4 w-4" />
+                Assistente de emails (leitura IMAP) — opcional
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Se ativar, a app lê (só leitura) a sua caixa de entrada e dá-lhe lembretes e conselhos
+                sobre os emails que merecem atenção. Usa o mesmo utilizador e password do SMTP acima.
+                Funciona com qualquer serviço que permita IMAP (RE/MAX, cPanel, etc.).
+                <br /><strong>RE/MAX:</strong> normalmente <code className="bg-gray-100 px-1 rounded">mail.remax.pt</code>, porta 993.
+              </p>
+
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="email_assistant_enabled"
+                  checked={settings.email_assistant_enabled ?? false}
+                  onCheckedChange={(checked) => setSettings({ ...settings, email_assistant_enabled: checked })}
+                />
+                <Label htmlFor="email_assistant_enabled">Ativar assistente de emails</Label>
+              </div>
+
+              {settings.email_assistant_enabled && (
+                <div className="grid gap-4 sm:grid-cols-2 pl-4 border-l-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="imap_host">Servidor IMAP</Label>
+                    <Input
+                      id="imap_host"
+                      placeholder="mail.remax.pt (vazio = usa o do SMTP)"
+                      value={settings.imap_host || ""}
+                      onChange={(e) => setSettings({ ...settings, imap_host: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="imap_port">Porta</Label>
+                    <Input
+                      id="imap_port"
+                      type="number"
+                      placeholder="993"
+                      value={settings.imap_port ?? 993}
+                      onChange={(e) => setSettings({ ...settings, imap_port: parseInt(e.target.value) || 993 })}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="flex items-center space-x-2">

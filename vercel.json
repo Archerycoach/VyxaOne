@@ -55,6 +55,10 @@
       "schedule": "*/15 * * * *"
     },
     {
+      "path": "/api/cron/inbox-assistant",
+      "schedule": "*/15 * * * *"
+    },
+    {
       "path": "/api/cron/calendar-reminders",
       "schedule": "0 * * * *"
     },

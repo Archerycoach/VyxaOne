@@ -147,6 +147,7 @@ export function Navigation({ onClose }: { onClose?: () => void } = {}) {
     // Idealista/Particulares nas Ferramentas — o menu principal fica só com
     // o que se usa todos os dias.
     { icon: ListTodo, label: "O Meu Dia", path: "/ai-organizer" },
+    { icon: Mail, label: "Assistente de Emails", path: "/inbox-assistant" },
     { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
     { icon: Users, label: "Leads", path: "/leads" },
     { icon: Target, label: "Pipeline", path: "/pipeline" },

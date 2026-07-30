@@ -17,10 +17,12 @@ import {
   Flame,
   ClipboardCheck,
   PartyPopper,
+  Mail,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { completeTask } from "@/services/tasksService";
+import { getInboxTriage, setTriageStatus, type InboxTriageItem } from "@/services/inboxAssistantService";
 
 interface TaskItem {
   id: string;
@@ -86,6 +88,8 @@ export default function AiOrganizer() {
   const [isLoading, setIsLoading] = useState(true);
   const [data, setData] = useState<OrganizerData | null>(null);
   const [completingTaskId, setCompletingTaskId] = useState<string | null>(null);
+  const [inboxItems, setInboxItems] = useState<InboxTriageItem[]>([]);
+  const [inboxBusyId, setInboxBusyId] = useState<string | null>(null);
 
   const fetchOrganizerData = useCallback(async () => {
     setIsLoading(true);
@@ -127,7 +131,20 @@ export default function AiOrganizer() {
 
   useEffect(() => {
     fetchOrganizerData();
+    getInboxTriage().then(setInboxItems).catch(() => setInboxItems([]));
   }, [fetchOrganizerData]);
+
+  const handleInboxDone = async (item: InboxTriageItem, status: "handled" | "dismissed") => {
+    setInboxBusyId(item.id);
+    try {
+      await setTriageStatus(item.id, status);
+      setInboxItems((current) => current.filter((i) => i.id !== item.id));
+    } catch (error: any) {
+      toast({ title: "Erro", description: error.message, variant: "destructive" });
+    } finally {
+      setInboxBusyId(null);
+    }
+  };
 
   const goToLead = (leadId: string | null | undefined) => {
     if (!leadId) return;
@@ -211,7 +228,77 @@ export default function AiOrganizer() {
                 </Card>
               )}
 
-              {totalItems === 0 && (
+              {inboxItems.length > 0 && (
+                <Card className="border-indigo-200">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base flex items-center gap-2 text-indigo-700">
+                      <Mail className="h-4 w-4" /> Emails a precisar de atenção ({inboxItems.length})
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {inboxItems.map((item) => (
+                      <div key={item.id} className="bg-indigo-50/40 border border-indigo-100 rounded-lg p-3">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Badge
+                            variant="outline"
+                            className={`text-[10px] ${
+                              item.importance === "high"
+                                ? "bg-red-50 text-red-700 border-red-200"
+                                : item.importance === "low"
+                                ? "bg-gray-50 text-gray-600 border-gray-200"
+                                : "bg-amber-50 text-amber-700 border-amber-200"
+                            }`}
+                          >
+                            {item.importance === "high" ? "Prioritário" : item.importance === "low" ? "Informativo" : "A acompanhar"}
+                          </Badge>
+                          {item.from_name && (
+                            <span className="text-xs text-slate-500">de {item.from_name}</span>
+                          )}
+                          {item.lead_id && (
+                            <Badge variant="outline" className="text-[10px] text-indigo-700 border-indigo-200 bg-indigo-50">
+                              Lead
+                            </Badge>
+                          )}
+                        </div>
+                        {item.reminder && <p className="text-sm font-medium text-slate-800 mt-1.5">{item.reminder}</p>}
+                        {item.advice && (
+                          <p className="text-sm text-slate-600 mt-1">
+                            <span className="font-medium">Como responder: </span>{item.advice}
+                          </p>
+                        )}
+                        {item.agenda_suggestion && (
+                          <p className="text-sm text-indigo-700 mt-1">🗓 {item.agenda_suggestion}</p>
+                        )}
+                        <div className="flex gap-2 mt-2">
+                          {item.lead_id && (
+                            <Button variant="outline" size="sm" onClick={() => goToLead(item.lead_id)}>
+                              Abrir lead
+                            </Button>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={inboxBusyId === item.id}
+                            onClick={() => handleInboxDone(item, "handled")}
+                          >
+                            <CheckCircle2 className="h-3.5 w-3.5 mr-1.5 text-emerald-600" /> Tratado
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={inboxBusyId === item.id}
+                            onClick={() => handleInboxDone(item, "dismissed")}
+                          >
+                            Ignorar
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
+
+              {totalItems === 0 && inboxItems.length === 0 && (
                 <Card className="border-emerald-200">
                   <CardContent className="pt-6 flex flex-col items-center text-center gap-2 py-10">
                     <PartyPopper className="h-10 w-10 text-emerald-500" />
