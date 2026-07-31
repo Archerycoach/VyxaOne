@@ -349,6 +349,16 @@ export interface ProcessResult {
   writeError?: string;
   /** Lembretes "new" que existem de facto na BD para o consultor (sem RLS). */
   storedNew?: number;
+  /** Captura de emails de leads: quantos vinham de leads conhecidas. */
+  leadEmails?: number;
+  /** Interações "Email recebido" registadas nesta análise. */
+  interactionsLogged?: number;
+  /** Eventos de agenda (ai_pending) criados nesta análise. */
+  eventsCreated?: number;
+  /** Emails cujo corpo ficou vazio após o parse (diagnóstico). */
+  emptyBodies?: number;
+  /** 1.º erro da captura (claim/interação/evento), se houver. */
+  captureError?: string;
   /** Só definido quando o IMAP falhou (auth/servidor/porta). */
   imapError?: string;
 }
@@ -427,6 +437,11 @@ export async function processInboxForUser(
   let aiCovered = 0;
   let debugSample: string | undefined;
   let writeError: string | undefined;
+  let leadEmails = 0;
+  let interactionsLogged = 0;
+  let eventsCreated = 0;
+  let captureError: string | undefined;
+  const emptyBodies = relevant.filter((m) => !m.text).length;
 
   if (relevant.length > 0) {
     const hashes = relevant.map((m) => senderHash(m.fromEmail));
@@ -482,16 +497,21 @@ export async function processInboxForUser(
       const m = relevant[i];
       const cls = relClass[i];
       if (cls.kind !== "lead" || !cls.leadId) continue;
+      leadEmails++;
 
       // Reivindica o uid: só quem inserir a linha regista a INTERAÇÃO (evita
       // duplicados quando o "Verificar agora" re-analisa a mesma janela).
-      const { data: claimed } = await admin
+      const { data: claimed, error: claimError } = await admin
         .from("inbox_email_log")
         .upsert(
           { user_id: acc.user_id, message_uid: m.uid },
           { onConflict: "user_id,message_uid", ignoreDuplicates: true },
         )
         .select("message_uid");
+      if (claimError) {
+        if (!captureError) captureError = `inbox_email_log: ${claimError.message}`;
+        console.error("[inbox-assistant] Falha no claim do email:", claimError);
+      }
 
       if (claimed && claimed.length > 0) {
         const { error: interactionError } = await admin.from("interactions").insert({
@@ -504,7 +524,10 @@ export async function processInboxForUser(
           lead_id: cls.leadId,
         });
         if (interactionError) {
+          if (!captureError) captureError = `interações: ${interactionError.message}`;
           console.error("[inbox-assistant] Falha a registar interação de email recebido:", interactionError);
+        } else {
+          interactionsLogged++;
         }
       }
 
@@ -537,7 +560,10 @@ export async function processInboxForUser(
             ai_pending: true,
           });
           if (eventError) {
+            if (!captureError) captureError = `agenda: ${eventError.message}`;
             console.error("[inbox-assistant] Falha a criar evento de agenda:", eventError);
+          } else {
+            eventsCreated++;
           }
         }
       }
@@ -608,5 +634,9 @@ export async function processInboxForUser(
     .eq("user_id", acc.user_id)
     .eq("status", "new");
 
-  return { scanned, flagged, windowTotal, afterFilter, aiCovered, debugSample, writeError, storedNew: storedNew ?? 0 };
+  return {
+    scanned, flagged, windowTotal, afterFilter, aiCovered, debugSample, writeError,
+    storedNew: storedNew ?? 0,
+    leadEmails, interactionsLogged, eventsCreated, emptyBodies, captureError,
+  };
 }

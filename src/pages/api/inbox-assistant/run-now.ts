@@ -75,6 +75,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         (filtered > 0 ? ` (${filtered} ignorado(s) como publicidade/automáticos).` : ".");
     }
 
+    // Diagnóstico da captura de emails de leads (interação/evento/corpo).
+    if ((result.leadEmails ?? 0) > 0 || result.captureError) {
+      message += ` Leads: ${result.leadEmails} email(s), ${result.interactionsLogged ?? 0} interação(ões) nova(s), ${result.eventsCreated ?? 0} evento(s).`;
+      if ((result.emptyBodies ?? 0) > 0) message += ` ${result.emptyBodies} email(s) com corpo ilegível.`;
+      if (result.captureError) message += ` ERRO de captura: ${result.captureError}`;
+    }
+
     return res.status(200).json({
       success: true,
       scanned: result.scanned,
