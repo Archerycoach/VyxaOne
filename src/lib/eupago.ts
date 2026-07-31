@@ -117,14 +117,20 @@ export const eupago = {
     }
 
     // per_dup: "0" = a referência só pode ser paga uma vez (é uma subscrição).
+    // data_inicio/data_fim: validade de 7 dias, como a UI comunica ao cliente.
+    const fmtDate = (d: Date) => d.toISOString().slice(0, 10);
+    const start = new Date();
+    const end = new Date(Date.now() + 7 * 86400000);
     const body = {
       chave: apiKey,
       valor: toValue(amount).toFixed(2),
       id: reference,
       per_dup: "0",
+      data_inicio: fmtDate(start),
+      data_fim: fmtDate(end),
     };
     // Diagnóstico SEM a chave (nunca expor a API key em logs/erros).
-    const safeBody = { valor: body.valor, id: body.id, per_dup: body.per_dup };
+    const safeBody = { valor: body.valor, id: body.id, per_dup: body.per_dup, data_inicio: body.data_inicio, data_fim: body.data_fim };
     try {
       console.log("[eupago] Multibanco request (classic):", JSON.stringify(safeBody));
       const response = await axios.post(`${classicUrl}/multibanco/create`, body, {
@@ -142,7 +148,8 @@ export const eupago = {
         success: true,
         entity: d.entidade,
         reference: d.referencia,
-        amount: d.valor ?? amount,
+        // A clássica devolve o valor como string "43.00000" — normaliza a número.
+        amount: Number(d.valor) || toValue(amount),
         expiryDate: d.data_fim || null,
       };
     } catch (error: any) {
