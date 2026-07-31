@@ -11,6 +11,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { ContactsTable } from "./ContactsTable";
 import { ContactFilters } from "./ContactFilters";
 import { ContactDialogs } from "./ContactDialogs";
+import { cleanFamily, cleanImportantDates } from "@/components/ImportantDatesFamilyEditor";
 import {
   useContacts,
   useContactFilters,
@@ -57,12 +58,15 @@ export function ContactsContainer() {
   // Form states
   const [editingContact, setEditingContact] = useState<any>(null);
   const [selectedContact, setSelectedContact] = useState<any>(null);
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<any>({
     name: "",
     email: "",
     phone: "",
     birth_date: "",
     notes: "",
+    family: {},
+    important_dates: [],
+    important_dates_email_enabled: false,
   });
 
   const [autoMessageConfig, setAutoMessageConfig] = useState<{
@@ -99,6 +103,9 @@ export function ContactsContainer() {
       phone: "",
       birth_date: "",
       notes: "",
+      family: {},
+      important_dates: [],
+      important_dates_email_enabled: false,
     });
     setDialogOpen(true);
   };
@@ -111,16 +118,25 @@ export function ContactsContainer() {
       phone: contact.phone || "",
       birth_date: contact.birth_date || "",
       notes: contact.notes || "",
+      family: contact.family || {},
+      important_dates: Array.isArray(contact.important_dates) ? contact.important_dates : [],
+      important_dates_email_enabled: !!contact.important_dates_email_enabled,
     });
     setDialogOpen(true);
   };
 
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Limpa família/datas (remove entradas incompletas) antes de gravar.
+    const payload = {
+      ...formData,
+      family: cleanFamily(formData.family || {}),
+      important_dates: cleanImportantDates(formData.important_dates || []),
+    };
     if (editingContact) {
-      await handleUpdate(editingContact.id, formData);
+      await handleUpdate(editingContact.id, payload);
     } else {
-      await handleCreate(formData);
+      await handleCreate(payload);
     }
     setDialogOpen(false);
   };

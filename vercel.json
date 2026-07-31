@@ -85,6 +85,10 @@
     {
       "path": "/api/cron/bulk-email-worker",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/important-dates",
+      "schedule": "5 9 * * *"
     }
   ],
   "headers": [

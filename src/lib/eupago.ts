@@ -30,8 +30,20 @@ const eupagoError = (error: any): string => {
   return error?.message || "erro desconhecido";
 };
 
+// A API REST v1.02 rejeita com {transactionStatus:"Rejected", code, text}. Lança
+// com o código/detalhe reais em vez de um "erro genérico".
+const throwIfRejected = (data: any) => {
+  if (data && String(data.transactionStatus || "").toLowerCase() === "rejected") {
+    throw new Error(data.text ? `${data.code || "Rejeitado"}: ${data.text}` : data.code || "Pagamento rejeitado");
+  }
+};
+
+// Valor no formato da API REST (número, não string).
+const toValue = (amount: number) => Number(Number(amount).toFixed(2));
+
 export const eupago = {
-  // Create MBWay payment
+  // Create MBWay payment (API REST v1.02: corpo ANINHADO com payment.amount e
+  // customerPhone + countryCode — o formato antigo `alias` dava CUSTOMERPHONE_MISSING).
   createMBWayPayment: async ({
     amount,
     phone,
@@ -48,31 +60,36 @@ export const eupago = {
       throw new Error("Chave EuPago não configurada (Admin › Definições de Pagamento).");
     }
 
+    // Telemóvel nacional (9 dígitos) + indicativo à parte, como a API espera.
+    const nationalPhone = String(phone).replace(/\D/g, "").slice(-9);
+
     try {
       const response = await axios.post(`${baseUrl}/mbway/create`, {
-        chave: apiKey,
-        valor: amount.toFixed(2),
-        alias: phone,
-        id: reference,
-        descricao: description,
+        payment: {
+          identifier: reference,
+          amount: { value: toValue(amount), currency: "EUR" },
+          customerPhone: nationalPhone,
+          countryCode: "+351",
+          description,
+        },
       }, eupagoAuth(apiKey));
 
-      if (response.data.estado === "ok") {
-        return {
-          success: true,
-          transactionId: response.data.transacao,
-          reference: response.data.referencia,
-          message: response.data.mensagem,
-        };
-      }
-      throw new Error(response.data.mensagem || "Erro ao criar pagamento MBWay");
+      const d = response.data || {};
+      throwIfRejected(d);
+      console.log("[eupago] MBWay create OK, keys:", Object.keys(d));
+      return {
+        success: true,
+        transactionId: d.transactionID || d.transactionId || d.transacao || d.reference,
+        reference: d.reference || d.referencia,
+        message: d.text || d.mensagem || "Pagamento MBWay iniciado.",
+      };
     } catch (error: any) {
       console.error("Error creating MBWay payment:", eupagoError(error));
       throw new Error(`Erro MBWay: ${eupagoError(error)}`);
     }
   },
 
-  // Create Multibanco reference
+  // Create Multibanco reference (API REST v1.02: corpo ANINHADO).
   createMultibancoReference: async ({
     amount,
     reference,
@@ -89,30 +106,31 @@ export const eupago = {
 
     try {
       const response = await axios.post(`${baseUrl}/multibanco/create`, {
-        chave: apiKey,
-        valor: amount.toFixed(2),
-        id: reference,
-        descricao: description,
+        payment: {
+          identifier: reference,
+          amount: { value: toValue(amount), currency: "EUR" },
+          description,
+        },
       }, eupagoAuth(apiKey));
 
-      if (response.data.estado === "ok") {
-        return {
-          success: true,
-          entity: response.data.entidade,
-          reference: response.data.referencia,
-          amount: response.data.valor,
-          expiryDate: response.data.data_fim,
-        };
-      }
-      throw new Error(response.data.mensagem || "Erro ao criar referência Multibanco");
+      const d = response.data || {};
+      throwIfRejected(d);
+      console.log("[eupago] Multibanco create OK, keys:", Object.keys(d));
+      return {
+        success: true,
+        entity: d.entity || d.entidade,
+        reference: d.reference || d.referencia,
+        amount: d.amount?.value ?? d.valor ?? amount,
+        expiryDate: d.expirationDate || d.endDate || d.data_fim,
+      };
     } catch (error: any) {
       console.error("Error creating Multibanco reference:", eupagoError(error));
       throw new Error(`Erro Multibanco: ${eupagoError(error)}`);
     }
   },
 
-  // Create Credit Card payment (redirect flow — EuPago devolve um URL para onde
-  // o cliente é encaminhado para introduzir os dados do cartão).
+  // Create Credit Card payment (API REST v1.02: corpo ANINHADO; devolve um URL
+  // para onde o cliente é encaminhado para introduzir os dados do cartão).
   createCreditCardPayment: async ({
     amount,
     reference,
@@ -133,20 +151,22 @@ export const eupago = {
 
     try {
       const response = await axios.post(`${baseUrl}/creditcard/create`, {
-        chave: apiKey,
-        valor: amount.toFixed(2),
-        id: reference,
-        descricao: description,
-        url_retorno: successUrl,
-        url_cancelamento: failUrl,
+        payment: {
+          identifier: reference,
+          amount: { value: toValue(amount), currency: "EUR" },
+          description,
+          successUrl,
+          failUrl,
+          backUrl: failUrl,
+        },
       }, eupagoAuth(apiKey));
 
-      // A EuPago devolve o URL do formulário de cartão em `url` (ou `redirect`).
-      const url = response.data.url || response.data.redirect || response.data.link;
-      if (response.data.estado === "ok" && url) {
-        return { success: true, url, reference: response.data.referencia };
-      }
-      throw new Error(response.data.mensagem || "Erro ao criar pagamento por cartão");
+      const d = response.data || {};
+      throwIfRejected(d);
+      console.log("[eupago] CreditCard create OK, keys:", Object.keys(d));
+      const url = d.redirectUrl || d.url || d.redirect || d.link;
+      if (!url) throw new Error("A EuPago não devolveu o URL do formulário de cartão.");
+      return { success: true, url, reference: d.reference || d.referencia };
     } catch (error: any) {
       console.error("Error creating credit card payment:", eupagoError(error));
       throw new Error(`Erro cartão: ${eupagoError(error)}`);

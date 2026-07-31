@@ -153,6 +153,14 @@ export default function AdminDashboard() {
       bgColor: "bg-amber-50",
     },
     {
+      title: "Envio em Massa",
+      description: "Ritmo das campanhas (blocos espaçados no tempo)",
+      icon: Mail,
+      href: "/admin/bulk-email",
+      color: "text-blue-600",
+      bgColor: "bg-blue-50",
+    },
+    {
       title: "Workflows Pessoal",
       description: "Gerir workflows pessoais",
       icon: Workflow,

@@ -2,7 +2,6 @@ import nodemailer from "nodemailer";
 import { getSignatureHtml } from "@/lib/server/emailSignature";
 import { logEmailInteractionServer } from "@/lib/emailInteractionLogger";
 import { personalizeMailMerge } from "@/lib/mailMergeVars";
-import { getEspConfig, sendViaEsp } from "@/lib/server/bulkEmailEsp";
 
 /**
  * Worker do envio de emails em massa em segundo plano.
@@ -71,6 +70,43 @@ interface SmtpSettingsRow {
   from_email: string;
 }
 
+/**
+ * Ritmo do envio em massa, configurável em Admin › Envio em Massa
+ * (system_settings). Fallback para os valores por defeito. Limitado a
+ * intervalos sãos para não permitir configurações destrutivas.
+ */
+interface BulkPacing {
+  batch: number;          // emails por ciclo
+  ratePerSec: number;     // teto de msg/seg no pool SMTP (por consultor)
+  cooldownMinutes: number;// pausa após bater no limite do servidor
+}
+
+async function loadBulkPacing(admin: any): Promise<BulkPacing> {
+  const fallback: BulkPacing = {
+    batch: DEFAULT_BATCH,
+    ratePerSec: POOL_RATE_LIMIT,
+    cooldownMinutes: RATE_LIMIT_COOLDOWN_MINUTES,
+  };
+  try {
+    const { data } = await admin
+      .from("system_settings")
+      .select("key, value")
+      .in("key", ["bulk_batch_size", "bulk_rate_limit_per_sec", "bulk_cooldown_minutes"]);
+    const map = new Map<string, string>((data ?? []).map((r: any) => [r.key, String(r.value ?? "")]));
+    const parse = (k: string, def: number, min: number, max: number) => {
+      const n = parseInt(String(map.get(k) ?? "").replace(/"/g, ""), 10);
+      return Number.isFinite(n) ? Math.max(min, Math.min(max, n)) : def;
+    };
+    return {
+      batch: parse("bulk_batch_size", DEFAULT_BATCH, 1, 1000),
+      ratePerSec: parse("bulk_rate_limit_per_sec", POOL_RATE_LIMIT, 1, 100),
+      cooldownMinutes: parse("bulk_cooldown_minutes", RATE_LIMIT_COOLDOWN_MINUTES, 1, 1440),
+    };
+  } catch {
+    return fallback;
+  }
+}
+
 async function countQueue(admin: any, campaignId: string, status: string | string[]): Promise<number> {
   let q = admin.from("bulk_email_queue").select("*", { count: "exact", head: true }).eq("campaign_id", campaignId);
   q = Array.isArray(status) ? q.in("status", status) : q.eq("status", status);
@@ -117,7 +153,8 @@ export async function processBulkEmailBatch(
   admin: any,
   opts: { campaignId?: string; batchSize?: number } = {},
 ): Promise<{ processed: number; remaining: number }> {
-  const batchSize = opts.batchSize || DEFAULT_BATCH;
+  const pacing = await loadBulkPacing(admin);
+  const batchSize = opts.batchSize || pacing.batch;
 
   // Recuperar linhas presas em "processing" há demasiado tempo (um envio que
   // morreu a meio): voltam a "pending", ou vão a "failed" se já esgotaram as
@@ -139,7 +176,7 @@ export async function processBulkEmailBatch(
     .lt("claimed_at", staleCutoff);
 
   const nowIso = new Date().toISOString();
-  const cooldownIso = new Date(Date.now() + RATE_LIMIT_COOLDOWN_MINUTES * 60000).toISOString();
+  const cooldownIso = new Date(Date.now() + pacing.cooldownMinutes * 60000).toISOString();
 
   // Recuperar emails marcados como falhados por um erro TEMPORÁRIO (limite de
   // envio do SMTP): voltam à fila ELEGÍVEIS já (next_attempt_at = null), para a
@@ -186,11 +223,6 @@ export async function processBulkEmailBatch(
   // enviar já e reagendamos o resto — evita gerar centenas de 450 seguidos.
   const rateLimitedUsers = new Set<string>();
   let processed = 0;
-
-  // ESP (Resend, etc.) para envio em massa por API HTTP, quando configurado. As
-  // campanhas passam por aqui (alto débito, entregável), em vez do SMTP da caixa
-  // do consultor (que tem limites apertados). Lê-se uma vez por ciclo.
-  const espConfig = await getEspConfig(admin);
 
   const rowList = rows as any[];
 
@@ -241,12 +273,11 @@ export async function processBulkEmailBatch(
         smtp = (data as SmtpSettingsRow) || null;
         smtpCache.set(row.user_id, smtp);
       }
-      // Com ESP, o SMTP do consultor é OPCIONAL (só dá o nome e o reply-to).
-      // Sem ESP, é obrigatório para poder enviar.
-      if (!espConfig && !smtp?.smtp_host) throw new Error("SMTP não configurado.");
+      // Envio em massa é sempre pelo SMTP do consultor — obrigatório.
+      if (!smtp?.smtp_host) throw new Error("SMTP não configurado.");
 
       let transporter = transporterCache.get(row.user_id);
-      if (!espConfig && !transporter && smtp?.smtp_host) {
+      if (!transporter && smtp?.smtp_host) {
         transporter = nodemailer.createTransport({
           host: smtp.smtp_host,
           port: smtp.smtp_port,
@@ -259,7 +290,7 @@ export async function processBulkEmailBatch(
           maxConnections: POOL_MAX_CONNECTIONS,
           maxMessages: Infinity,
           rateDelta: 1000,
-          rateLimit: POOL_RATE_LIMIT,
+          rateLimit: pacing.ratePerSec,
         });
         transporterCache.set(row.user_id, transporter);
         allTransporters.push(transporter);
@@ -296,28 +327,16 @@ export async function processBulkEmailBatch(
         }
       }
 
-      if (espConfig) {
-        // Campanha pelo ESP: alto débito por API HTTP. Mostra o nome do
-        // consultor e as respostas vão para o email dele (reply-to).
-        await sendViaEsp(espConfig, {
-          fromName: smtp?.from_name || null,
-          replyTo: smtp?.from_email || null,
-          to: row.to_email,
-          subject,
-          html: finalHtml,
-          bcc,
-          attachments: attachments.length > 0 ? attachments : undefined,
-        });
-      } else {
-        await transporter!.sendMail({
-          from: smtp!.from_name ? `"${smtp!.from_name}" <${smtp!.from_email}>` : smtp!.from_email,
-          to: row.to_email,
-          subject,
-          html: finalHtml,
-          attachments: attachments.length > 0 ? attachments : undefined,
-          bcc,
-        });
-      }
+      // Envio pelo SMTP do consultor — o "De" é sempre o endereço configurado
+      // por ele nas definições (from_email/from_name).
+      await transporter!.sendMail({
+        from: smtp!.from_name ? `"${smtp!.from_name}" <${smtp!.from_email}>` : smtp!.from_email,
+        to: row.to_email,
+        subject,
+        html: finalHtml,
+        attachments: attachments.length > 0 ? attachments : undefined,
+        bcc,
+      });
 
       await admin
         .from("bulk_email_queue")

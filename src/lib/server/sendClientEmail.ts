@@ -29,7 +29,8 @@ export type AutomatedEmailSource =
   | "booking_confirmation"
   | "landing_monthly_report"
   | "portal_new_property"
-  | "portal_invite";
+  | "portal_invite"
+  | "important_date";
 
 export interface EmailAttachment {
   filename?: string;

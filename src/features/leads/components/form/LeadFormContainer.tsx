@@ -15,6 +15,12 @@ import type { LeadWithContacts } from "@/services/leadsService";
 import { LeadFormBasicFields } from "./LeadFormBasicFields";
 import { LeadFormBuyerFields } from "./LeadFormBuyerFields";
 import { LeadFormSellerFields } from "./LeadFormSellerFields";
+import {
+  ImportantDatesFamilyEditor,
+  cleanFamily,
+  cleanImportantDates,
+  type ImportantDatesValue,
+} from "@/components/ImportantDatesFamilyEditor";
 
 interface LeadFormContainerProps {
   initialData?: LeadWithContacts;
@@ -120,6 +126,12 @@ export function LeadFormContainer({ initialData, onSuccess, onCancel }: LeadForm
     property_area: "",
     desired_price: "",
   });
+  const [datesValue, setDatesValue] = useState<ImportantDatesValue>({
+    birthday: "",
+    family: {},
+    importantDates: [],
+    enabled: false,
+  });
 
   useEffect(() => {
     const fetchDevelopments = async () => {
@@ -158,6 +170,13 @@ export function LeadFormContainer({ initialData, onSuccess, onCancel }: LeadForm
         bathrooms: initialData.bathrooms ? initialData.bathrooms.toString() : "",
         property_area: initialData.property_area ? initialData.property_area.toString() : "",
         desired_price: initialData.desired_price ? initialData.desired_price.toString() : "",
+      });
+      const d = initialData as any;
+      setDatesValue({
+        birthday: d.birthday || "",
+        family: d.family || {},
+        importantDates: Array.isArray(d.important_dates) ? d.important_dates : [],
+        enabled: !!d.important_dates_email_enabled,
       });
     }
   }, [initialData]);
@@ -252,16 +271,23 @@ export function LeadFormContainer({ initialData, onSuccess, onCancel }: LeadForm
         lead_score: 0,
         probability: 0,
         estimated_value: 0,
+        // Datas importantes + família (felicitações automáticas)
+        birthday: datesValue.birthday || null,
+        family: cleanFamily(datesValue.family),
+        important_dates: cleanImportantDates(datesValue.importantDates),
+        important_dates_email_enabled: datesValue.enabled,
       };
 
       if (initialData) {
-        await updateLead(initialData.id, leadData);
+        // Cast: family/important_dates_email_enabled são colunas novas (jsonb/bool)
+        // ainda não refletidas nos tipos gerados do Supabase.
+        await updateLead(initialData.id, leadData as any);
         toast({
           title: "Sucesso",
           description: "Lead atualizado com sucesso",
         });
       } else {
-        await createLead(leadData);
+        await createLead(leadData as any);
         toast({
           title: "Sucesso",
           description: "Lead criado com sucesso",
@@ -299,6 +325,9 @@ export function LeadFormContainer({ initialData, onSuccess, onCancel }: LeadForm
 
           {/* Seller Specific Fields */}
           {isSeller && <LeadFormSellerFields formData={{ ...formData, lead_type: formData.lead_type }} onChange={handleChange} />}
+
+          {/* Datas importantes e família */}
+          <ImportantDatesFamilyEditor value={datesValue} onChange={setDatesValue} />
 
           {/* Notes */}
           <div className="space-y-2">

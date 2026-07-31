@@ -34,6 +34,7 @@ import {
   Clock,
 } from "lucide-react";
 import type { InteractionWithDetails } from "@/services/interactionsService";
+import { ImportantDatesFamilyEditor } from "@/components/ImportantDatesFamilyEditor";
 
 interface ContactDialogsProps {
   // Contact Form Dialog
@@ -255,6 +256,26 @@ export function ContactDialogs({
                 rows={3}
               />
             </div>
+
+            {/* Datas importantes e família (aniversário = "Data de Nascimento" acima). */}
+            <ImportantDatesFamilyEditor
+              showBirthday={false}
+              value={{
+                birthday: (formData as any).birth_date || "",
+                family: (formData as any).family || {},
+                importantDates: (formData as any).important_dates || [],
+                enabled: !!(formData as any).important_dates_email_enabled,
+              }}
+              onChange={(v) =>
+                onFormDataChange({
+                  ...formData,
+                  family: v.family,
+                  important_dates: v.importantDates,
+                  important_dates_email_enabled: v.enabled,
+                })
+              }
+            />
+
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => onDialogOpenChange(false)}>
                 Cancelar
