@@ -24,6 +24,7 @@ import {
 import { addToRadar, getRadarDefaultCadence, getRadarItemFor } from "@/services/radarService";
 import { createTask } from "@/services/tasksService";
 import { createCalendarEvent } from "@/services/calendarService";
+import { AiFeatureNotice } from "@/components/ai/AiFeatureNotice";
 
 const INTENT_LABEL: Record<string, string> = {
   visita: "Visita",
@@ -258,6 +259,9 @@ export default function InboxAssistantPage() {
             pendências. O assistente lê e aconselha; <strong>não guarda os emails</strong> nem
             escreve ou envia nada. Publicidade, automáticos e as pastas de Spam/Lixo são ignorados.
           </p>
+
+          <AiFeatureNotice feature="O Assistente de Emails" className="mb-4" />
+
 
           {/* Filtro: remetentes a ignorar sempre. */}
           <div className="mb-6">

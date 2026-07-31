@@ -63,20 +63,22 @@ export const eupago = {
     // Telemóvel nacional (9 dígitos) + indicativo à parte, como a API espera.
     const nationalPhone = String(phone).replace(/\D/g, "").slice(-9);
 
+    const body = {
+      payment: {
+        identifier: reference,
+        amount: { value: toValue(amount), currency: "EUR" },
+        customerPhone: nationalPhone,
+        countryCode: "+351",
+      },
+      customer: { notify: false },
+    };
     try {
-      const response = await axios.post(`${baseUrl}/mbway/create`, {
-        payment: {
-          identifier: reference,
-          amount: { value: toValue(amount), currency: "EUR" },
-          customerPhone: nationalPhone,
-          countryCode: "+351",
-          description,
-        },
-      }, eupagoAuth(apiKey));
+      console.log("[eupago] MBWay request:", JSON.stringify(body));
+      const response = await axios.post(`${baseUrl}/mbway/create`, body, eupagoAuth(apiKey));
 
       const d = response.data || {};
+      console.log("[eupago] MBWay response:", JSON.stringify(d));
       throwIfRejected(d);
-      console.log("[eupago] MBWay create OK, keys:", Object.keys(d));
       return {
         success: true,
         transactionId: d.transactionID || d.transactionId || d.transacao || d.reference,
@@ -104,18 +106,19 @@ export const eupago = {
       throw new Error("Chave EuPago não configurada.");
     }
 
+    const body = {
+      payment: {
+        identifier: reference,
+        amount: { value: toValue(amount), currency: "EUR" },
+      },
+    };
     try {
-      const response = await axios.post(`${baseUrl}/multibanco/create`, {
-        payment: {
-          identifier: reference,
-          amount: { value: toValue(amount), currency: "EUR" },
-          description,
-        },
-      }, eupagoAuth(apiKey));
+      console.log("[eupago] Multibanco request:", JSON.stringify(body));
+      const response = await axios.post(`${baseUrl}/multibanco/create`, body, eupagoAuth(apiKey));
 
       const d = response.data || {};
+      console.log("[eupago] Multibanco response:", JSON.stringify(d));
       throwIfRejected(d);
-      console.log("[eupago] Multibanco create OK, keys:", Object.keys(d));
       return {
         success: true,
         entity: d.entity || d.entidade,
@@ -149,21 +152,24 @@ export const eupago = {
       throw new Error("Chave EuPago não configurada.");
     }
 
+    const body = {
+      payment: {
+        identifier: reference,
+        amount: { value: toValue(amount), currency: "EUR" },
+        successUrl,
+        failUrl,
+        backUrl: failUrl,
+        lang: "PT",
+      },
+      customer: { notify: false },
+    };
     try {
-      const response = await axios.post(`${baseUrl}/creditcard/create`, {
-        payment: {
-          identifier: reference,
-          amount: { value: toValue(amount), currency: "EUR" },
-          description,
-          successUrl,
-          failUrl,
-          backUrl: failUrl,
-        },
-      }, eupagoAuth(apiKey));
+      console.log("[eupago] CreditCard request:", JSON.stringify(body));
+      const response = await axios.post(`${baseUrl}/creditcard/create`, body, eupagoAuth(apiKey));
 
       const d = response.data || {};
+      console.log("[eupago] CreditCard response:", JSON.stringify(d));
       throwIfRejected(d);
-      console.log("[eupago] CreditCard create OK, keys:", Object.keys(d));
       const url = d.redirectUrl || d.url || d.redirect || d.link;
       if (!url) throw new Error("A EuPago não devolveu o URL do formulário de cartão.");
       return { success: true, url, reference: d.reference || d.referencia };

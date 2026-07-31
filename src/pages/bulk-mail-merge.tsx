@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
 import { Layout } from "@/components/Layout";
+import { AiFeatureNotice } from "@/components/ai/AiFeatureNotice";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -432,6 +433,8 @@ export default function BulkMailMerge() {
               Mala-direta por email a partir de uma lista Excel/CSV — cada coluna vira uma variável, e a IA pode escrever o texto.
             </p>
           </div>
+
+          <AiFeatureNotice feature="A escrita de texto por IA" className="mb-6" />
 
           <div className="mb-6">
             <BulkCampaignsReport title="Histórico de envios" defaultOpen sourceFilter="sheet_merge" onReuse={handleReuseCampaign} />

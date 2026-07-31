@@ -23,6 +23,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { completeTask } from "@/services/tasksService";
 import { getInboxTriage, setTriageStatus, type InboxTriageItem } from "@/services/inboxAssistantService";
+import { AiFeatureNotice } from "@/components/ai/AiFeatureNotice";
 
 interface TaskItem {
   id: string;
@@ -209,6 +210,8 @@ export default function AiOrganizer() {
               )}
             </Button>
           </div>
+
+          <AiFeatureNotice feature="O Meu Dia" />
 
           {isLoading && !data && (
             <div className="flex flex-col items-center justify-center py-20 space-y-3">

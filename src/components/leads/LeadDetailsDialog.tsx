@@ -85,6 +85,8 @@ import { VoiceNoteRecorder } from "./VoiceNoteRecorder";
 import { LeadTimeline } from "@/components/LeadTimeline";
 import { QuickReplyMenu } from "@/components/leads/QuickReplyMenu";
 import { LeadSearchEmailCard } from "@/components/leads/LeadSearchEmailCard";
+import { LeadComposeEmailDialog } from "@/components/leads/LeadComposeEmailDialog";
+import { AiFeatureNotice } from "@/components/ai/AiFeatureNotice";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { updateLead } from "@/services/leadsService";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -152,6 +154,7 @@ export function LeadDetailsDialog({
   const [isUpdatingTemperature, setIsUpdatingTemperature] = useState(false);
   const [sendCopyToSelf, setSendCopyToSelf] = useState(false);
   const [isRunningAutomations, setIsRunningAutomations] = useState(false);
+  const [composeEmailOpen, setComposeEmailOpen] = useState(false);
   const [whatsappConsentStatus, setWhatsappConsentStatus] = useState<WhatsAppConsentStatus>("none");
   const [isUpdatingDoNotContact, setIsUpdatingDoNotContact] = useState(false);
   const [isUpdatingAiListExclusion, setIsUpdatingAiListExclusion] = useState(false);
@@ -1229,6 +1232,20 @@ export function LeadDetailsDialog({
             </TabsContent>
 
             <TabsContent value="ai-assistant" className="mt-0 space-y-4">
+              <AiFeatureNotice feature="O assistente de IA da lead" />
+
+              <Card className="border-indigo-100">
+                <CardContent className="pt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <p className="font-medium text-indigo-900">Escrever email com IA</p>
+                    <p className="text-xs text-muted-foreground">Converse com a IA para definir o tema; ela escreve o email e você revê antes de enviar.</p>
+                  </div>
+                  <Button onClick={() => setComposeEmailOpen(true)} className="shrink-0" disabled={!lead.email}>
+                    <Sparkles className="h-4 w-4 mr-1.5" /> Escrever email
+                  </Button>
+                </CardContent>
+              </Card>
+
               <LeadSearchEmailCard lead={lead} onSent={refreshInteractions} />
 
               <LeadConversionProbabilityPanel leadId={lead.id} />
@@ -1581,6 +1598,13 @@ export function LeadDetailsDialog({
           open={assignDialogOpen}
           onOpenChange={setAssignDialogOpen}
           onAssignSuccess={handleAssignSuccess}
+        />
+
+        <LeadComposeEmailDialog
+          lead={{ id: lead.id, name: lead.name, email: lead.email }}
+          open={composeEmailOpen}
+          onOpenChange={setComposeEmailOpen}
+          onSent={refreshInteractions}
         />
 
         <QuickTaskDialog

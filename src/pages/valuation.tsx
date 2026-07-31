@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/router";
 import { Layout } from "@/components/Layout";
+import { AiFeatureNotice } from "@/components/ai/AiFeatureNotice";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -669,6 +670,8 @@ export default function ValuationPage() {
               <Badge variant="outline" className="mt-3 bg-white">Ligada a {linkedLead.name}</Badge>
             )}
           </div>
+
+          <AiFeatureNotice feature="A avaliação por IA" />
 
           <Card>
             <CardHeader><CardTitle className="text-base">Dados do Imóvel</CardTitle></CardHeader>
