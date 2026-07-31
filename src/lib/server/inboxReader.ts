@@ -44,13 +44,44 @@ function htmlToText(input: string): string {
     .trim();
 }
 
+/**
+ * Limpa o texto para leitura humana (e para a IA): preserva parágrafos, remove
+ * os URLs que o parser injeta junto aos links ("texto <https://...>") e CORTA o
+ * histórico citado — a resposta nova é o que interessa; por baixo vem o nosso
+ * próprio email original, assinatura e rodapés.
+ */
+function cleanEmailText(input: string): string {
+  const text = input
+    .replace(/\r\n/g, "\n")
+    .replace(/<https?:\/\/[^>\s]+>/g, "")
+    .replace(/\[https?:\/\/[^\]\s]+\]/g, "")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+  // Marcadores típicos do início do histórico citado (Outlook/Gmail, PT/EN).
+  const markers = [
+    /^-{2,}\s*(Original Message|Mensagem original).*$/im,
+    /^(De|From):\s.+$/m,
+    /^(Em|On) .+ (escreveu|wrote):?\s*$/m,
+    /^>+\s/m,
+  ];
+  let cut = text.length;
+  for (const rx of markers) {
+    const match = rx.exec(text);
+    if (match && match.index > 0 && match.index < cut) cut = match.index;
+  }
+  const head = text.slice(0, cut).trim();
+  return head || text;
+}
+
 /** Extrai o texto legível de uma mensagem MIME completa (best-effort). */
 async function parseBodyText(source: Buffer | undefined): Promise<string> {
   if (!source || source.length === 0) return "";
   try {
     const parsed = await simpleParser(source, { skipImageLinks: true } as any);
-    if (parsed.text && parsed.text.trim()) return parsed.text.replace(/\s+/g, " ").trim();
-    if (parsed.html) return htmlToText(String(parsed.html));
+    if (parsed.text && parsed.text.trim()) return cleanEmailText(parsed.text);
+    if (parsed.html) return cleanEmailText(htmlToText(String(parsed.html)));
     return "";
   } catch (error) {
     console.error("[inboxReader] Falha a fazer parse do email (a devolver vazio):", (error as any)?.message);
