@@ -121,6 +121,7 @@ export function useCalendarFilters() {
 
   return {
     currentDate,
+    setCurrentDate,
     viewMode,
     showTasks,
     showEvents,

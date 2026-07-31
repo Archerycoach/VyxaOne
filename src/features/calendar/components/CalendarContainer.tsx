@@ -167,6 +167,7 @@ export function CalendarContainer() {
     viewMode,
     setViewMode,
     currentDate,
+    setCurrentDate,
     showEvents,
     showTasks,
     setShowEvents,
@@ -947,6 +948,47 @@ export function CalendarContainer() {
         autoSyncEnabled={autoSyncEnabled}
         onToggleAutoSync={handleToggleAutoSync}
       />
+
+      {/* Sugestões da IA pendentes — localizador: diz ONDE estão sem abrir dia
+          a dia. "Ir para" salta para o dia do evento; Confirmar/Rejeitar agem
+          diretamente daqui. */}
+      {events.some((e: any) => e.aiPending) && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-2">
+          <p className="text-sm font-medium text-amber-900">
+            ⏳ Sugestões da IA a aguardar confirmação:
+          </p>
+          {events
+            .filter((e: any) => e.aiPending)
+            .sort((a: any, b: any) => new Date(a.startTime || a.start_time).getTime() - new Date(b.startTime || b.start_time).getTime())
+            .map((e: any) => {
+              const when = new Date(e.startTime || e.start_time);
+              return (
+                <div key={e.id} className="flex flex-wrap items-center gap-2 text-sm">
+                  <span className="font-medium text-amber-900">
+                    {when.toLocaleDateString("pt-PT", { day: "numeric", month: "short", year: "numeric" })}
+                  </span>
+                  <span className="text-amber-800 truncate">{e.title}</span>
+                  <span className="flex gap-1.5 ml-auto">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 border-amber-300 bg-white"
+                      onClick={() => { setCurrentDate(when); setViewMode("day"); }}
+                    >
+                      Ir para o dia
+                    </Button>
+                    <Button size="sm" className="h-7 bg-emerald-600 hover:bg-emerald-700" onClick={() => confirmAiEvent(e.id)}>
+                      Confirmar
+                    </Button>
+                    <Button size="sm" variant="ghost" className="h-7 text-red-600" onClick={() => rejectAiEvent(e.id)}>
+                      Rejeitar
+                    </Button>
+                  </span>
+                </div>
+              );
+            })}
+        </div>
+      )}
 
       <GoogleSyncStatusDialog
         open={syncStatusOpen}
