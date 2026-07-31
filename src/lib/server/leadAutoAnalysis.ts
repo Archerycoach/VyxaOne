@@ -81,11 +81,76 @@ interface AutoAnalysisTask {
   priority?: string;
 }
 
+/**
+ * Horas candidatas por período do dia (hora LOCAL de Lisboa). Usadas quando o
+ * cliente indica o dia mas não a hora ("ligar domingo da parte da tarde") — o
+ * evento é criado no primeiro horário LIVRE do período.
+ */
+const PERIOD_HOURS: Record<string, number[]> = {
+  manha: [9, 10, 11],
+  tarde: [14, 15, 16, 17, 18],
+  noite: [19, 20],
+};
+
+/** Constrói um Date para as HH:00 locais de Lisboa numa dada data. */
+function lisbonHourToDate(dateStr: string, hour: number): Date {
+  // Offset de Lisboa nessa data (0 no inverno, 1 no verão), medido com uma sonda.
+  const probe = new Date(`${dateStr}T12:00:00Z`);
+  const lisbonH = parseInt(
+    new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Lisbon", hour: "2-digit", hour12: false }).format(probe),
+    10,
+  );
+  const offsetH = lisbonH - 12;
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d, hour - offsetH, 0, 0));
+}
+
+/**
+ * Primeiro horário LIVRE (blocos de 1h) no período pedido desse dia. Se tudo
+ * estiver ocupado, devolve a primeira hora do período — o aviso de conflito a
+ * jusante encarrega-se de alertar o consultor.
+ */
+async function findFreeSlotStart(
+  supabaseAdmin: any,
+  userId: string,
+  dateStr: string,
+  period: string | undefined,
+): Promise<Date> {
+  const hours = PERIOD_HOURS[period || ""] || PERIOD_HOURS.tarde;
+
+  const dayStart = lisbonHourToDate(dateStr, 0);
+  const dayEnd = lisbonHourToDate(dateStr, 23);
+  const { data: dayEvents } = await supabaseAdmin
+    .from("calendar_events")
+    .select("start_time, end_time")
+    .eq("user_id", userId)
+    .neq("is_bookable", true)
+    .lt("start_time", dayEnd.toISOString())
+    .gt("end_time", dayStart.toISOString());
+
+  const busy = ((dayEvents || []) as Array<{ start_time: string; end_time: string }>).map((e) => ({
+    start: new Date(e.start_time).getTime(),
+    end: new Date(e.end_time).getTime(),
+  }));
+
+  for (const hour of hours) {
+    const start = lisbonHourToDate(dateStr, hour);
+    const end = start.getTime() + 60 * 60 * 1000;
+    const overlaps = busy.some((b) => b.start < end && b.end > start.getTime());
+    if (!overlaps) return start;
+  }
+  return lisbonHourToDate(dateStr, hours[0]);
+}
+
 interface AutoAnalysisAgendaBlock {
   title: string;
   description?: string;
   start_time: string;
   end_time?: string;
+  /** Dia sem hora ("ligar domingo à tarde"): a IA devolve date+period e o
+   *  sistema escolhe um horário livre no período. */
+  date?: string;
+  period?: string;
   event_type?: string;
 }
 
@@ -420,9 +485,23 @@ export async function runLeadAutoAnalysis(
     const agendaBlocks = calendarLevel === "off"
       ? []
       : (Array.isArray(analysis.agenda_blocks) ? analysis.agenda_blocks : [])
-          .filter((b) => b && typeof b.title === "string" && b.title.trim() && b.start_time)
+          .filter(
+            (b) =>
+              b && typeof b.title === "string" && b.title.trim() &&
+              (b.start_time || (b.date && /^\d{4}-\d{2}-\d{2}$/.test(b.date))),
+          )
           .slice(0, 2);
     for (const block of agendaBlocks) {
+      // Dia SEM hora ("ligar domingo da parte da tarde"): escolhe um horário
+      // LIVRE no período indicado (por defeito, a tarde) desse dia.
+      if (!block.start_time && block.date) {
+        const slot = await findFreeSlotStart(supabaseAdmin, userId, block.date, block.period);
+        block.start_time = slot.toISOString();
+        block.end_time = new Date(slot.getTime() + 60 * 60 * 1000).toISOString();
+        console.log(
+          `[Lead Auto Analysis] Bloco "${block.title}" sem hora — slot livre escolhido: ${block.start_time} (período ${block.period || "tarde"}).`
+        );
+      }
       const rawStart = new Date(block.start_time);
 
       if (Number.isNaN(rawStart.getTime())) {

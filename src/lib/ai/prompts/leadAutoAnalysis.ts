@@ -166,8 +166,9 @@ Um pedido do cliente para ser contactado a uma hora concreta É um compromisso �
 
 Usa a data/hora atual acima para resolver referências relativas ("amanhã", "sábado", "quarta"). Referências a dias da semana significam SEMPRE a próxima ocorrência futura, nunca uma data que já passou.
 
-NUNCA inventes compromissos nem horários — sem hora concreta, devolve [] e regista antes como tarefa.
-Cada bloco: { "title", "description", "start_time": ISO 8601 com timezone de Lisboa, "end_time": ISO 8601 (por defeito 1 hora depois), "event_type": "viewing" (visita) | "meeting" (reunião) | "call" (chamada) | "followup" }
+Se houver DIA mas NÃO houver hora concreta ("ligar domingo da parte da tarde", "contactar na sexta"), cria o bloco NA MESMA: preenche "date" (YYYY-MM-DD) e "period" ("manha" | "tarde" | "noite" — usa "tarde" se o cliente não indicar), e deixa "start_time"/"end_time" vazios — o sistema escolhe um horário livre nesse período. NUNCA inventes uma hora exata.
+Só quando NÃO há dia nenhum ("liga-me para a semana", "mais tarde") é que devolves [] e registas como tarefa.
+Cada bloco: { "title", "description", "start_time": ISO 8601 com timezone de Lisboa (ou "" se sem hora), "end_time": ISO 8601 (por defeito 1 hora depois; ou ""), "date": "YYYY-MM-DD" (só quando sem hora), "period": "manha"|"tarde"|"noite" (só quando sem hora), "event_type": "viewing" (visita) | "meeting" (reunião) | "call" (chamada) | "followup" }
 
 **TAREFA 5 — Próximas ações (next_actions):**
 1 a 3 sugestões curtas e específicas para o consultor (texto livre, ex.: "Confirmar com o proprietário a disponibilidade para sábado"). Não repitas as tasks.
@@ -179,7 +180,7 @@ Responde APENAS com JSON válido (sem markdown), com EXATAMENTE esta estrutura:
   "suggested_temperature": "string",
   "extracted_data": { "chave_do_campo": valor },
   "tasks": [{ "title": "string", "description": "string", "due_date": "YYYY-MM-DD", "priority": "string" }],
-  "agenda_blocks": [{ "title": "string", "description": "string", "start_time": "string", "end_time": "string", "event_type": "string" }],
+  "agenda_blocks": [{ "title": "string", "description": "string", "start_time": "string", "end_time": "string", "date": "string", "period": "string", "event_type": "string" }],
   "next_actions": ["string"]
 }`;
 }
