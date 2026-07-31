@@ -120,6 +120,7 @@ export function Navigation({ onClose }: { onClose?: () => void } = {}) {
     if (path === "/calendar") return pendingCounts.agenda;
     if (path === "/ai-inbox") return pendingCounts.aiInbox;
     if (path === "/tasks") return pendingCounts.tasks;
+    if (path === "/inbox-assistant") return pendingCounts.inbox;
     return 0;
   };
 

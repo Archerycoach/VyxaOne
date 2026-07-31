@@ -20,16 +20,18 @@ export interface PendingMenuCounts {
   aiInbox: number;
   /** Tarefas com prazo vencido ou para hoje, por concluir. */
   tasks: number;
+  /** Lembretes novos do Assistente de Emails. */
+  inbox: number;
 }
 
-const EMPTY: PendingMenuCounts = { agenda: 0, aiInbox: 0, tasks: 0 };
+const EMPTY: PendingMenuCounts = { agenda: 0, aiInbox: 0, tasks: 0, inbox: 0 };
 const REFRESH_MS = 60000;
 
 async function fetchCounts(userId: string): Promise<PendingMenuCounts> {
   const endOfToday = new Date();
   endOfToday.setHours(23, 59, 59, 999);
 
-  const [agendaRes, aiRes, tasksRes] = await Promise.all([
+  const [agendaRes, aiRes, tasksRes, inboxRes] = await Promise.all([
     (supabase as any)
       .from("calendar_events")
       .select("id", { count: "exact", head: true })
@@ -48,12 +50,18 @@ async function fetchCounts(userId: string): Promise<PendingMenuCounts> {
       .or(`user_id.eq.${userId},assigned_to.eq.${userId}`)
       .neq("status", "completed")
       .lte("due_date", endOfToday.toISOString()),
+    (supabase as any)
+      .from("inbox_triage")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .eq("status", "new"),
   ]);
 
   return {
     agenda: agendaRes.count ?? 0,
     aiInbox: aiRes.count ?? 0,
     tasks: tasksRes.count ?? 0,
+    inbox: inboxRes.count ?? 0,
   };
 }
 

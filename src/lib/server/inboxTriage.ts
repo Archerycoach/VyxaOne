@@ -483,7 +483,8 @@ export async function processInboxForUser(
       const cls = relClass[i];
       if (cls.kind !== "lead" || !cls.leadId) continue;
 
-      // Reivindica o uid: só quem inserir a linha regista (evita duplicados).
+      // Reivindica o uid: só quem inserir a linha regista a INTERAÇÃO (evita
+      // duplicados quando o "Verificar agora" re-analisa a mesma janela).
       const { data: claimed } = await admin
         .from("inbox_email_log")
         .upsert(
@@ -491,36 +492,53 @@ export async function processInboxForUser(
           { onConflict: "user_id,message_uid", ignoreDuplicates: true },
         )
         .select("message_uid");
-      if (!claimed || claimed.length === 0) continue;
 
-      const { error: interactionError } = await admin.from("interactions").insert({
-        interaction_type: "email",
-        interaction_date: m.receivedAt || new Date().toISOString(),
-        outcome: "Email recebido",
-        subject: m.subject || "(sem assunto)",
-        content: `De: ${m.fromName || ""} <${m.fromEmail || ""}>\nAssunto: ${m.subject || "(sem assunto)"}\n\n${m.text || ""}`,
-        user_id: acc.user_id,
-        lead_id: cls.leadId,
-      });
-      if (interactionError) {
-        console.error("[inbox-assistant] Falha a registar interação de email recebido:", interactionError);
+      if (claimed && claimed.length > 0) {
+        const { error: interactionError } = await admin.from("interactions").insert({
+          interaction_type: "email",
+          interaction_date: m.receivedAt || new Date().toISOString(),
+          outcome: "Email recebido",
+          subject: m.subject || "(sem assunto)",
+          content: `De: ${m.fromName || ""} <${m.fromEmail || ""}>\nAssunto: ${m.subject || "(sem assunto)"}\n\n${m.text || ""}`,
+          user_id: acc.user_id,
+          lead_id: cls.leadId,
+        });
+        if (interactionError) {
+          console.error("[inbox-assistant] Falha a registar interação de email recebido:", interactionError);
+        }
       }
 
       // Evento na agenda quando a lead pediu contacto numa data concreta.
+      // Fora do claim (para poder criar-se numa análise posterior, ex.: quando a
+      // IA só extrai a data depois de o corpo ficar legível), com dedupe próprio:
+      // no máximo UM evento "call" pendente/na mesma data por lead.
       const t0 = triage[i];
       if (t0?.agendaDate && new Date(`${t0.agendaDate}T00:00:00Z`).getTime() > Date.now() - 86400000) {
-        const { error: eventError } = await admin.from("calendar_events").insert({
-          user_id: acc.user_id,
-          lead_id: cls.leadId,
-          title: `Contactar ${m.fromName || "lead"} (pedido por email)`,
-          description: t0.reminder || t0.agendaSuggestion || null,
-          event_type: "call",
-          start_time: `${t0.agendaDate}T09:00:00Z`,
-          end_time: `${t0.agendaDate}T09:30:00Z`,
-          ai_pending: true,
-        });
-        if (eventError) {
-          console.error("[inbox-assistant] Falha a criar evento de agenda:", eventError);
+        const { data: existingEv } = await admin
+          .from("calendar_events")
+          .select("id")
+          .eq("user_id", acc.user_id)
+          .eq("lead_id", cls.leadId)
+          .eq("event_type", "call")
+          .gte("start_time", `${t0.agendaDate}T00:00:00Z`)
+          .lte("start_time", `${t0.agendaDate}T23:59:59Z`)
+          .limit(1)
+          .maybeSingle();
+
+        if (!existingEv) {
+          const { error: eventError } = await admin.from("calendar_events").insert({
+            user_id: acc.user_id,
+            lead_id: cls.leadId,
+            title: `Contactar ${m.fromName || "lead"} (pedido por email)`,
+            description: t0.reminder || t0.agendaSuggestion || null,
+            event_type: "call",
+            start_time: `${t0.agendaDate}T09:00:00Z`,
+            end_time: `${t0.agendaDate}T09:30:00Z`,
+            ai_pending: true,
+          });
+          if (eventError) {
+            console.error("[inbox-assistant] Falha a criar evento de agenda:", eventError);
+          }
         }
       }
     }
@@ -561,7 +579,10 @@ export async function processInboxForUser(
           email_subject: cls.kind === "lead" ? m.subject || null : null,
           email_body: cls.kind === "lead" ? m.text || null : null,
         },
-        { onConflict: "user_id,message_uid", ignoreDuplicates: true },
+        // ATUALIZA em conflito (sem ignoreDuplicates): re-análises da mesma
+        // janela refrescam conselho/urgência e preenchem o corpo em lembretes
+        // antigos (backfill). O `status` não vai no payload → nunca é mexido.
+        { onConflict: "user_id,message_uid" },
       );
       if (upsertError) {
         if (!writeError) writeError = upsertError.message;
