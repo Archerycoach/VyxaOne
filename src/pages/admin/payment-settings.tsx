@@ -41,6 +41,7 @@ export default function PaymentSettingsPage() {
     test_mode: true,
   });
   const [saveMessage, setSaveMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [isTesting, setIsTesting] = useState(false);
 
   // Fetch seguro via API (sem LocalStorage)
   const adminFetch = async (url: string, options: RequestInit = {}) => {
@@ -53,6 +54,31 @@ export default function PaymentSettingsPage() {
         Authorization: `Bearer ${token}`
       }
     });
+  };
+
+  // Teste seguro da EuPago: gera uma referência Multibanco (não cobra nada).
+  const testEupago = async () => {
+    setIsTesting(true);
+    setSaveMessage(null);
+    try {
+      const res = await adminFetch("/api/eupago/test-connection", { method: "POST" });
+      const body = await res.json();
+      if (body.ok) {
+        setSaveMessage({
+          type: "success",
+          text: `${body.message} (ambiente: ${body.environment}${body.entity ? `; entidade ${body.entity}, ref ${body.reference}` : ""}).`,
+        });
+      } else {
+        setSaveMessage({
+          type: "error",
+          text: `Falha (${body.environment || "?"}): ${body.error}`,
+        });
+      }
+    } catch (error: any) {
+      setSaveMessage({ type: "error", text: error.message || "Erro ao testar a ligação." });
+    } finally {
+      setIsTesting(false);
+    }
   };
 
   useEffect(() => {
@@ -311,6 +337,19 @@ export default function PaymentSettingsPage() {
                         onCheckedChange={(checked) => updateConfig("mbway_enabled", checked)}
                         disabled={!config.eupago_enabled}
                       />
+                    </div>
+
+                    <div className="flex items-center justify-between border rounded-lg p-4">
+                      <div>
+                        <Label className="text-base font-semibold">Testar ligação</Label>
+                        <p className="text-sm text-gray-600 mt-1">
+                          Gera uma referência Multibanco de teste — confirma que a chave autentica.
+                          Não cobra nada (guarde a config primeiro).
+                        </p>
+                      </div>
+                      <Button variant="outline" onClick={testEupago} disabled={isTesting || !config.eupago_enabled}>
+                        {isTesting ? "A testar..." : "Testar ligação"}
+                      </Button>
                     </div>
                   </div>
                 </CardContent>

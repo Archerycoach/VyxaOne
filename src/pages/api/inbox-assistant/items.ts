@@ -27,7 +27,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const includeHandled = req.query.includeHandled === "true";
       let query = db
         .from("inbox_triage")
-        .select("id, from_name, importance, reminder, advice, agenda_suggestion, lead_id, status, created_at")
+        .select("id, from_name, importance, urgency, intent, sender_kind, reminder, advice, agenda_suggestion, lead_id, status, created_at")
         .eq("user_id", user.id);
 
       if (!includeHandled) query = query.eq("status", "new");
@@ -47,6 +47,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (!id || !["new", "handled", "dismissed"].includes(status)) {
         return res.status(400).json({ error: "Parâmetros inválidos (id, status)." });
       }
+
+      // Lê o remetente (hash) do lembrete antes de atualizar — para aprendizagem.
+      const { data: row } = await db
+        .from("inbox_triage")
+        .select("sender_hash")
+        .eq("id", id)
+        .eq("user_id", user.id)
+        .maybeSingle();
+
       // Limita ao próprio: só atualiza se a linha for do user autenticado.
       const { error } = await db
         .from("inbox_triage")
@@ -54,6 +63,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         .eq("id", id)
         .eq("user_id", user.id);
       if (error) throw error;
+
+      // APRENDIZAGEM: conta "tratado"/"ignorado" por remetente (não conta o
+      // voltar a "new"). Read-modify-write simples — sem corridas relevantes
+      // (é o próprio consultor a clicar).
+      const senderHash = (row as any)?.sender_hash as string | undefined;
+      if (senderHash && (status === "handled" || status === "dismissed")) {
+        const { data: stat } = await db
+          .from("inbox_sender_stats")
+          .select("handled_count, dismissed_count")
+          .eq("user_id", user.id)
+          .eq("sender_hash", senderHash)
+          .maybeSingle();
+        const handled = ((stat as any)?.handled_count || 0) + (status === "handled" ? 1 : 0);
+        const dismissed = ((stat as any)?.dismissed_count || 0) + (status === "dismissed" ? 1 : 0);
+        await db.from("inbox_sender_stats").upsert(
+          { user_id: user.id, sender_hash: senderHash, handled_count: handled, dismissed_count: dismissed, updated_at: new Date().toISOString() },
+          { onConflict: "user_id,sender_hash" },
+        );
+      }
+
       return res.status(200).json({ success: true });
     }
 

@@ -1,6 +1,14 @@
+import { createHash } from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { readNewInboxMessages, type InboxMessage } from "@/lib/server/inboxReader";
 import { runAI } from "@/lib/ai/provider";
+
+/** Identificador PSEUDONIMIZADO do remetente (hash do email, não o email). */
+function senderHash(email: string | null): string | null {
+  const e = (email || "").toLowerCase().trim();
+  if (!e) return null;
+  return createHash("sha256").update(e).digest("hex");
+}
 
 /**
  * Lógica partilhada do assistente de emails: ler a caixa (IMAP, só leitura) de
@@ -43,11 +51,14 @@ export function shouldIgnore(fromEmail: string | null, ignoreList: string[]): bo
 }
 
 interface TriageResult {
-  importance: "high" | "medium" | "low";
+  urgency: number; // 1..5 (5 = ação imediata)
+  intent: string;  // visita | proposta | pergunta | documento | agendamento | negociacao | nova_lead | outro
   reminder: string;
   advice: string;
   agendaSuggestion: string;
 }
+
+const INTENTS = ["visita", "proposta", "pergunta", "documento", "agendamento", "negociacao", "nova_lead", "outro"];
 
 /**
  * Pede à IA para, a partir dos emails, gerar LEMBRETES e CONSELHOS (não uma
@@ -91,8 +102,13 @@ function parseTriage(raw: string, expected: number): (TriageResult | undefined)[
     if (!item || typeof item !== "object") return;
     const pos = typeof item.i === "number" ? item.i : idx;
     if (pos < 0 || pos >= expected) return;
+    let urgency = Number(item.urgency);
+    if (!Number.isFinite(urgency)) urgency = 2;
+    urgency = Math.max(1, Math.min(5, Math.round(urgency)));
+    const intent = typeof item.intent === "string" && INTENTS.includes(item.intent) ? item.intent : "outro";
     results[pos] = {
-      importance: item.importance === "high" || item.importance === "medium" ? item.importance : "low",
+      urgency,
+      intent,
       reminder: item.reminder || "",
       advice: item.advice || "",
       agendaSuggestion: item.agendaSuggestion || "",
@@ -101,27 +117,55 @@ function parseTriage(raw: string, expected: number): (TriageResult | undefined)[
   return results;
 }
 
-async function triageBatch(userId: string, messages: InboxMessage[]): Promise<TriageBatchOutcome> {
-  const list = messages.map((m, i) => ({
-    i,
-    de: m.fromName || m.fromEmail || "remetente desconhecido",
-    assunto: m.subject || "(sem assunto)",
-    excerto: (m.text || "").slice(0, 800),
-  }));
+/** Item já enriquecido (identidade + contexto de lead + histórico) para a IA. */
+interface TriageInput {
+  i: number;
+  de: string;
+  assunto: string;
+  excerto: string;
+  /** "lead conhecida" | "contacto conhecido" | "notificação de portal" | "desconhecido". */
+  remetente: string;
+  /** Histórico da lead conhecida (estado, último contacto, notas…), se houver. */
+  contextoLead?: string;
+  /** O que o consultor costuma fazer com este remetente (tratado/ignorado). */
+  historicoRemetente?: string;
+}
 
-  const prompt = `És o assistente de um consultor imobiliário. Lês a caixa de entrada dele e transformas o que importa em LEMBRETES e CONSELHOS práticos. NÃO resumas a caixa toda — só o que exige atenção ou ação (resposta de cliente/lead, pergunta, objeção, pedido de visita/proposta, prazo, oportunidade). Ignora newsletters, promoções, notificações automáticas e spam.
+async function triageBatch(userId: string, items: TriageInput[], style: string): Promise<TriageBatchOutcome> {
+  const styleLine = style && style.trim()
+    ? `\n\nESTILO DE RESPOSTA DO CONSULTOR (adapta o campo "advice" a este tom/estilo): ${style.trim()}`
+    : "";
 
-Para CADA email, classifica:
-- importance: "high" (precisa de ação hoje/amanhã), "medium" (a acompanhar), "low" (nada a fazer).
-- reminder: UMA frase com o que precisa de atenção, dirigida ao consultor (ex.: "A Maria pergunta se pode visitar o T3 este fim de semana.").
-- advice: conselho curto de COMO tratar e responder (tom, o que dizer, o que confirmar).
+  const prompt = `És o assistente de um consultor imobiliário. Avalias cada email da caixa de entrada e devolves, para cada um, um nível de URGÊNCIA, a INTENÇÃO, e conselhos práticos. Sê RIGOROSO: a maioria dos emails NÃO é urgente. Só sobem de nível os que pedem uma resposta/ação de uma pessoa real.
+
+RUBRICA DE URGÊNCIA (1 a 5):
+- 5: pede ação hoje (proposta/decisão a expirar, visita para as próximas horas, cliente à espera de resposta urgente).
+- 4: resposta de cliente/lead que espera resposta em 1-2 dias (pergunta, pedido de visita, negociação).
+- 3: a acompanhar esta semana (interesse, follow-up, documento a tratar sem pressa).
+- 2: informativo, pode esperar/arquivar (confirmações, recibos, avisos).
+- 1: irrelevante/automático/publicidade (newsletter, promoção, notificação de sistema).
+
+REGRAS:
+- Um email de "lead conhecida" ou "contacto conhecido" que faça uma pergunta ou peça algo NUNCA é inferior a 4.
+- "notificação de portal" (Idealista, Imovirtual, etc.) que traga um NOVO contacto/pedido de informação é urgência 4-5 e intenção "nova_lead".
+- Newsletters, promoções, notificações automáticas e recibos são urgência 1-2, mesmo que "pareçam" importantes.
+
+INTENÇÃO (escolhe uma): visita, proposta, pergunta, documento, agendamento, negociacao, nova_lead, outro.
+
+Para CADA email devolve:
+- urgency: número 1-5 (rubrica acima).
+- intent: uma das intenções.
+- reminder: UMA frase do que precisa de atenção, dirigida ao consultor.
+- advice: conselho curto de COMO tratar e responder.
 - agendaSuggestion: conselho de AGENDA/timing, ou "" se não aplicável.
 
-EMAILS (JSON):
-${JSON.stringify(list)}
+USA os campos de cada email quando presentes: "remetente" (identidade), "contextoLead" (histórico da lead — personaliza e não repitas o já feito), "historicoRemetente" (se o consultor costuma IGNORAR este remetente, baixa a urgência salvo sinal claro; se costuma TRATAR, sobe).${styleLine}
 
-Responde APENAS com um objeto JSON com a chave "items" — um item por email, incluindo o mesmo "i" do email de entrada:
-{"items":[{"i":0,"importance":"high|medium|low","reminder":"...","advice":"...","agendaSuggestion":"..."}]}`;
+EMAILS (JSON):
+${JSON.stringify(items)}
+
+Responde APENAS com um objeto JSON com a chave "items" — um item por email, com o mesmo "i" do email de entrada:
+{"items":[{"i":0,"urgency":1,"intent":"outro","reminder":"...","advice":"...","agendaSuggestion":"..."}]}`;
 
   const response = await runAI({
     userId,
@@ -133,10 +177,10 @@ Responde APENAS com um objeto JSON com a chave "items" — um item por email, in
   });
 
   const raw = response.text || "";
-  const results = parseTriage(raw, messages.length);
+  const results = parseTriage(raw, items.length);
   if (results.every((r) => !r)) {
     console.error("[inbox-assistant] Triagem sem itens válidos:", {
-      emails: messages.length,
+      emails: items.length,
       rawLength: raw.length,
       rawHead: raw.slice(0, 200),
     });
@@ -188,6 +232,97 @@ export interface InboxAccount {
   imap_port: number | null;
   imap_last_uid: number | null;
   email_ignore_senders: string[] | null;
+  /** Perfil de tom/estilo de resposta do consultor (aprendizagem #3). */
+  inbox_reply_style?: string | null;
+}
+
+/** Contexto resumido de uma lead conhecida, para informar o conselho da IA. */
+async function loadLeadContext(
+  admin: SupabaseClient,
+  userId: string,
+  fromEmail: string,
+): Promise<{ leadId: string; context: string } | null> {
+  const { data: lead } = await admin
+    .from("leads")
+    .select("id, name, status, temperature, last_contact_date, next_follow_up, notes")
+    .ilike("email", fromEmail)
+    .or(`assigned_to.eq.${userId},user_id.eq.${userId}`)
+    .limit(1)
+    .maybeSingle();
+
+  const l = lead as any;
+  if (!l?.id) return null;
+
+  const parts: string[] = [];
+  if (l.status) parts.push(`estado=${l.status}`);
+  if (l.temperature) parts.push(`temperatura=${l.temperature}`);
+  if (l.last_contact_date) parts.push(`último contacto=${String(l.last_contact_date).slice(0, 10)}`);
+  if (l.next_follow_up) parts.push(`próximo follow-up=${String(l.next_follow_up).slice(0, 10)}`);
+  if (l.notes) parts.push(`notas="${String(l.notes).slice(0, 240)}"`);
+
+  return { leadId: l.id, context: parts.join("; ") || "lead conhecida, sem detalhes" };
+}
+
+// Domínios/marcas de portais imobiliários e fontes de leads — as suas
+// notificações vêm muitas vezes de noreply@/info@ e SÃO leads. Não podem ser
+// tratadas como publicidade.
+const PORTAL_HINTS = [
+  "idealista", "imovirtual", "casa.sapo", "casasapo", "sapo.pt", "custojusto",
+  "green-acres", "greenacres", "bpiexpressoimobiliario", "facebookmail", "fbmail",
+  "kwportugal", "remax", "era.pt", "supercasa", "trovit", "properstar",
+];
+
+export type SenderKind = "lead" | "contact" | "portal" | "unknown";
+
+const SENDER_KIND_LABEL: Record<SenderKind, string> = {
+  lead: "lead conhecida",
+  contact: "contacto conhecido",
+  portal: "notificação de portal (possível nova lead)",
+  unknown: "desconhecido",
+};
+
+/**
+ * Classifica o remetente: portal (por domínio/marca), lead ou contacto conhecido
+ * (por email), ou desconhecido. Remetentes conhecidos/portais NÃO são pré-
+ * filtrados como publicidade e ganham prioridade na rubrica.
+ */
+async function classifySender(
+  admin: SupabaseClient,
+  userId: string,
+  fromEmail: string | null,
+): Promise<{ kind: SenderKind; leadId?: string; context?: string }> {
+  const email = (fromEmail || "").toLowerCase().trim();
+  if (!email) return { kind: "unknown" };
+
+  if (PORTAL_HINTS.some((h) => email.includes(h))) {
+    return { kind: "portal" };
+  }
+
+  const lead = await loadLeadContext(admin, userId, email);
+  if (lead) return { kind: "lead", leadId: lead.leadId, context: lead.context };
+
+  const { data: contact } = await admin
+    .from("contacts")
+    .select("id, name")
+    .ilike("email", email)
+    .eq("user_id", userId)
+    .limit(1)
+    .maybeSingle();
+  if ((contact as any)?.id) {
+    return { kind: "contact", context: `contacto conhecido: ${(contact as any).name || "sem nome"}` };
+  }
+
+  return { kind: "unknown" };
+}
+
+/** Pista textual do que o consultor costuma fazer com um remetente. */
+function senderHistoryHint(stat: { handled_count: number; dismissed_count: number } | undefined): string | undefined {
+  if (!stat) return undefined;
+  const { handled_count: h, dismissed_count: d } = stat;
+  if (h === 0 && d === 0) return undefined;
+  if (d > 0 && h === 0) return `o consultor já ignorou ${d} email(s) deste remetente e nunca agiu`;
+  if (h > 0 && d === 0) return `o consultor costuma tratar emails deste remetente (${h} tratado(s))`;
+  return `histórico deste remetente: ${h} tratado(s), ${d} ignorado(s)`;
 }
 
 export interface ProcessResult {
@@ -258,59 +393,105 @@ export async function processInboxForUser(
   const windowTotal = read.totalInWindow;
   let flagged = 0;
 
-  // Descarta publicidade/automáticos e a lista de ignorados do consultor ANTES
-  // da IA — não são analisados nem contam para nada.
-  const relevant = read.messages.filter(
-    (m) => !shouldIgnore(m.fromEmail, acc.email_ignore_senders || []),
+  // --- IDENTIDADE DO REMETENTE (antes de tudo) --------------------------------
+  // Classifica cada remetente (lead/contacto/portal/desconhecido), sem repetir
+  // consultas (cache por email). Remetentes CONHECIDOS ou de PORTAL nunca são
+  // pré-filtrados como publicidade — é aí que escapavam leads reais.
+  const uniqueEmails = Array.from(
+    new Set((read.messages as InboxMessage[]).map((m) => (m.fromEmail || "").toLowerCase()).filter(Boolean)),
+  ) as string[];
+  const clsEntries = await Promise.all(
+    uniqueEmails.map(async (e) => [e, await classifySender(admin, acc.user_id, e)] as const),
   );
+  const clsMap = new Map(clsEntries);
+  const classOf = (m: InboxMessage) =>
+    clsMap.get((m.fromEmail || "").toLowerCase()) || { kind: "unknown" as SenderKind };
+
+  // Filtro: só descarta ANTES da IA os DESCONHECIDOS que pareçam publicidade ou
+  // estejam na lista de ignorados. Conhecidos/portais passam sempre.
+  const kept = read.messages
+    .map((m) => ({ m, cls: classOf(m) }))
+    .filter(({ m, cls }) => cls.kind !== "unknown" || !shouldIgnore(m.fromEmail, acc.email_ignore_senders || []));
+  const relevant = kept.map((k) => k.m);
+  const relClass = kept.map((k) => k.cls);
   const afterFilter = relevant.length;
   let aiCovered = 0;
   let debugSample: string | undefined;
   let writeError: string | undefined;
 
   if (relevant.length > 0) {
-    // Tria em LOTES pequenos: uma só chamada com dezenas de emails corre o risco
-    // de a resposta JSON ser truncada (excede tokens) e falhar toda a triagem.
+    const hashes = relevant.map((m) => senderHash(m.fromEmail));
+
+    // Estatísticas de decisões por remetente (aprendizagem com Tratado/Ignorar).
+    const uniqueHashes = Array.from(new Set(hashes.filter(Boolean) as string[]));
+    const statsMap = new Map<string, { handled_count: number; dismissed_count: number }>();
+    if (uniqueHashes.length > 0) {
+      const { data: stats } = await admin
+        .from("inbox_sender_stats")
+        .select("sender_hash, handled_count, dismissed_count")
+        .eq("user_id", acc.user_id)
+        .in("sender_hash", uniqueHashes);
+      (stats as any[] | null)?.forEach((s) =>
+        statsMap.set(s.sender_hash, { handled_count: s.handled_count, dismissed_count: s.dismissed_count }),
+      );
+    }
+
+    const style = acc.inbox_reply_style || "";
+
+    const buildInput = (m: InboxMessage, localIndex: number, globalIndex: number): TriageInput => ({
+      i: localIndex,
+      de: m.fromName || m.fromEmail || "remetente desconhecido",
+      assunto: m.subject || "(sem assunto)",
+      excerto: (m.text || "").slice(0, 800),
+      remetente: SENDER_KIND_LABEL[relClass[globalIndex].kind],
+      contextoLead: relClass[globalIndex].context,
+      historicoRemetente: senderHistoryHint(hashes[globalIndex] ? statsMap.get(hashes[globalIndex]!) : undefined),
+    });
+
+    // Tria em LOTES pequenos (evita truncagem do JSON).
     const CHUNK = 8;
     const triage: (TriageResult | undefined)[] = [];
     for (let i = 0; i < relevant.length; i += CHUNK) {
-      const { results, raw } = await triageBatch(acc.user_id, relevant.slice(i, i + CHUNK));
+      const chunk = relevant.slice(i, i + CHUNK);
+      const items = chunk.map((m, j) => buildInput(m, j, i + j));
+      const { results, raw } = await triageBatch(acc.user_id, items, style);
       for (let j = 0; j < results.length; j++) triage[i + j] = results[j];
       const covered = results.filter(Boolean).length;
       aiCovered += covered;
-      // Guarda um excerto da 1.ª resposta que não deu itens, para diagnóstico.
       if (covered === 0 && !debugSample) debugSample = raw.slice(0, 300);
     }
 
     for (let i = 0; i < relevant.length; i++) {
       const m = relevant[i];
       const t = triage[i];
-      if (!t || t.importance === "low") continue;
+      if (!t) continue;
 
-      // Ligar ao lead quando o remetente é conhecido (só para o link — o email
-      // em si não fica guardado).
-      let leadId: string | null = null;
-      if (m.fromEmail) {
-        const { data: lead } = await admin
-          .from("leads")
-          .select("id")
-          .ilike("email", m.fromEmail)
-          .or(`assigned_to.eq.${acc.user_id},user_id.eq.${acc.user_id}`)
-          .limit(1)
-          .maybeSingle();
-        leadId = (lead as any)?.id || null;
-      }
+      const cls = relClass[i];
+      const known = cls.kind === "lead" || cls.kind === "contact";
+
+      // CALIBRAÇÃO "equilibrada": leads/contactos conhecidos aparecem SEMPRE;
+      // os restantes (incl. portais e desconhecidos) só a partir de urgência 3.
+      if (!known && t.urgency < 3) continue;
+
+      // Importância derivada da urgência; conhecidos nunca ficam abaixo de "medium".
+      let importance: "high" | "medium" | "low" =
+        t.urgency >= 4 ? "high" : t.urgency === 3 ? "medium" : "low";
+      if (known && importance === "low") importance = "medium";
 
       const { error: upsertError } = await admin.from("inbox_triage").upsert(
         {
           user_id: acc.user_id,
           message_uid: m.uid,
           from_name: m.fromName,
-          importance: t.importance,
+          sender_hash: hashes[i],
+          sender_kind: cls.kind,
+          urgency: t.urgency,
+          intent: t.intent,
+          importance,
           reminder: t.reminder || null,
           advice: t.advice || null,
           agenda_suggestion: t.agendaSuggestion || null,
-          lead_id: leadId,
+          lead_id: cls.leadId || null,
         },
         { onConflict: "user_id,message_uid", ignoreDuplicates: true },
       );

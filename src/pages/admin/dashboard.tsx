@@ -97,6 +97,14 @@ export default function AdminDashboard() {
       bgColor: "bg-green-50",
     },
     {
+      title: "Custos & Proveitos",
+      description: "Consumo de IA e contabilidade (receitas vs. custos)",
+      icon: TrendingUp,
+      href: "/admin/finance",
+      color: "text-emerald-600",
+      bgColor: "bg-emerald-50",
+    },
+    {
       title: "Chave de IA (Agência)",
       description: "Configurar a chave de IA integrada usada pelos planos com IA",
       icon: Bot,

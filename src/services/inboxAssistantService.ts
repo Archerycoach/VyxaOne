@@ -4,12 +4,32 @@ export interface InboxTriageItem {
   id: string;
   from_name: string | null;
   importance: "high" | "medium" | "low";
+  urgency: number | null;
+  intent: string | null;
+  sender_kind: "lead" | "contact" | "portal" | "unknown" | null;
   reminder: string | null;
   advice: string | null;
   agenda_suggestion: string | null;
   lead_id: string | null;
   status: "new" | "handled" | "dismissed";
   created_at: string | null;
+}
+
+/** Sugere um rascunho de resposta para um lembrete (nunca envia). */
+export async function suggestReply(id: string): Promise<string> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) throw new Error("Não autenticado");
+  const res = await fetch("/api/inbox-assistant/draft", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${session.access_token}`,
+    },
+    body: JSON.stringify({ id }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || "Falha ao gerar rascunho.");
+  return body.draft || "";
 }
 
 /** Emails sinalizados pelo assistente, mais importantes primeiro. */
@@ -85,6 +105,28 @@ export async function getIgnoreSenders(): Promise<string[]> {
     .eq("user_id", user.id)
     .maybeSingle());
   return ((data as any)?.email_ignore_senders as string[]) || [];
+}
+
+/** Perfil de tom/estilo de resposta do consultor (a IA adapta os conselhos). */
+export async function getReplyStyle(): Promise<string> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return "";
+  const { data } = await (supabase
+    .from("user_smtp_settings" as any)
+    .select("inbox_reply_style")
+    .eq("user_id", user.id)
+    .maybeSingle());
+  return ((data as any)?.inbox_reply_style as string) || "";
+}
+
+export async function setReplyStyle(style: string): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Não autenticado");
+  const { error } = await (supabase
+    .from("user_smtp_settings" as any)
+    .update({ inbox_reply_style: style.trim() || null })
+    .eq("user_id", user.id));
+  if (error) throw error;
 }
 
 export async function setIgnoreSenders(list: string[]): Promise<void> {

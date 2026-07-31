@@ -34,6 +34,68 @@ function htmlToText(input: string): string {
     .trim();
 }
 
+/** Descodifica quoted-printable para UTF-8 (junta bytes; não assume ASCII). */
+function decodeQuotedPrintable(input: string): string {
+  const noSoftBreaks = input.replace(/=\r?\n/g, "");
+  const bytes: number[] = [];
+  for (let i = 0; i < noSoftBreaks.length; i++) {
+    const ch = noSoftBreaks[i];
+    if (ch === "=" && /^[0-9A-Fa-f]{2}$/.test(noSoftBreaks.substr(i + 1, 2))) {
+      bytes.push(parseInt(noSoftBreaks.substr(i + 1, 2), 16));
+      i += 2;
+    } else {
+      bytes.push(noSoftBreaks.charCodeAt(i) & 0xff);
+    }
+  }
+  return Buffer.from(bytes).toString("utf8");
+}
+
+/** Parece uma sequência base64 (blocos longos do charset base64)? */
+function looksBase64(input: string): boolean {
+  const compact = input.replace(/\s+/g, "");
+  return compact.length > 24 && /^[A-Za-z0-9+/=]+$/.test(compact);
+}
+
+/**
+ * Extrai texto LEGÍVEL do corpo IMAP para a triagem. O `bodyParts:["TEXT"]` vem
+ * cru: pode ser multipart (com fronteiras e sub-cabeçalhos) e/ou codificado em
+ * base64 / quoted-printable. Sem descodificar, a IA lê lixo e classifica mal.
+ * Heurística: se for multipart, escolhe o text/plain (senão text/html) e
+ * descodifica pela Content-Transfer-Encoding; se for parte única, tenta
+ * detetar a codificação. É best-effort — não precisa de ser perfeito.
+ */
+function extractReadableText(raw: string): string {
+  if (!raw) return "";
+
+  // Multipart? Divide pelas linhas de fronteira ("--boundary").
+  const looksMultipart = /Content-Type:\s*multipart/i.test(raw) || /^--[^\r\n]+$/m.test(raw);
+  if (looksMultipart && /Content-Type:/i.test(raw)) {
+    const segments = raw.split(/^--[^\r\n]*\r?\n/m).filter((s) => /Content-Type:/i.test(s));
+    const pick = (type: RegExp) => segments.find((s) => type.test(s));
+    const seg = pick(/Content-Type:\s*text\/plain/i) || pick(/Content-Type:\s*text\/html/i);
+    if (seg) {
+      const splitAt = seg.search(/\r?\n\r?\n/);
+      const header = splitAt >= 0 ? seg.slice(0, splitAt) : "";
+      let body = splitAt >= 0 ? seg.slice(splitAt).trim() : seg;
+      if (/Content-Transfer-Encoding:\s*base64/i.test(header)) {
+        body = Buffer.from(body.replace(/\s+/g, ""), "base64").toString("utf8");
+      } else if (/Content-Transfer-Encoding:\s*quoted-printable/i.test(header)) {
+        body = decodeQuotedPrintable(body);
+      }
+      return htmlToText(body);
+    }
+  }
+
+  // Parte única: deteta a codificação pelo conteúdo.
+  let body = raw;
+  if (/=[0-9A-Fa-f]{2}/.test(body) && /=\r?\n|=[0-9A-Fa-f]{2}/.test(body)) {
+    body = decodeQuotedPrintable(body);
+  } else if (looksBase64(body)) {
+    try { body = Buffer.from(body.replace(/\s+/g, ""), "base64").toString("utf8"); } catch { /* mantém */ }
+  }
+  return htmlToText(body);
+}
+
 export async function readNewInboxMessages(opts: {
   host: string;
   port: number;
@@ -92,7 +154,7 @@ export async function readNewInboxMessages(opts: {
         fromName: from?.name || null,
         subject: msg.envelope?.subject || null,
         receivedAt: msg.internalDate ? new Date(msg.internalDate).toISOString() : null,
-        text: htmlToText(rawBody).slice(0, 1800),
+        text: extractReadableText(rawBody).slice(0, 1800),
       });
     }
     return { messages, highestUid, totalInWindow };
