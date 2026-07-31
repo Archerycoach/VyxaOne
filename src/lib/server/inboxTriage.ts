@@ -56,6 +56,9 @@ interface TriageResult {
   reminder: string;
   advice: string;
   agendaSuggestion: string;
+  /** Data CONCRETA (YYYY-MM-DD) quando o email pede contacto/ação numa altura
+   *  específica ("liguem-me no fim de setembro") — senão "". */
+  agendaDate: string;
 }
 
 const INTENTS = ["visita", "proposta", "pergunta", "documento", "agendamento", "negociacao", "nova_lead", "outro"];
@@ -106,12 +109,17 @@ function parseTriage(raw: string, expected: number): (TriageResult | undefined)[
     if (!Number.isFinite(urgency)) urgency = 2;
     urgency = Math.max(1, Math.min(5, Math.round(urgency)));
     const intent = typeof item.intent === "string" && INTENTS.includes(item.intent) ? item.intent : "outro";
+    const agendaDate =
+      typeof item.agendaDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(item.agendaDate)
+        ? item.agendaDate
+        : "";
     results[pos] = {
       urgency,
       intent,
       reminder: item.reminder || "",
       advice: item.advice || "",
       agendaSuggestion: item.agendaSuggestion || "",
+      agendaDate,
     };
   });
   return results;
@@ -158,6 +166,7 @@ Para CADA email devolve:
 - reminder: UMA frase do que precisa de atenção, dirigida ao consultor.
 - advice: conselho curto de COMO tratar e responder.
 - agendaSuggestion: conselho de AGENDA/timing, ou "" se não aplicável.
+- agendaDate: se o email pedir contacto/ação numa ALTURA CONCRETA (ex.: "liguem-me no fim de setembro", "só depois das férias em agosto"), converte para UMA data concreta futura no formato YYYY-MM-DD (hoje é ${new Date().toISOString().slice(0, 10)}; "fim do mês X" = dia 28 desse mês; "início" = dia 2). Senão "".
 
 USA os campos de cada email quando presentes: "remetente" (identidade), "contextoLead" (histórico da lead — personaliza e não repitas o já feito), "historicoRemetente" (se o consultor costuma IGNORAR este remetente, baixa a urgência salvo sinal claro; se costuma TRATAR, sobe).${styleLine}
 
@@ -165,7 +174,7 @@ EMAILS (JSON):
 ${JSON.stringify(items)}
 
 Responde APENAS com um objeto JSON com a chave "items" — um item por email, com o mesmo "i" do email de entrada:
-{"items":[{"i":0,"urgency":1,"intent":"outro","reminder":"...","advice":"...","agendaSuggestion":"..."}]}`;
+{"items":[{"i":0,"urgency":1,"intent":"outro","reminder":"...","advice":"...","agendaSuggestion":"...","agendaDate":""}]}`;
 
   const response = await runAI({
     userId,
@@ -461,6 +470,61 @@ export async function processInboxForUser(
       if (covered === 0 && !debugSample) debugSample = raw.slice(0, 300);
     }
 
+    // --- CAPTURA de emails de LEADS (decisão do operador, 2026-07-31) -------
+    // Emails de leads conhecidas são SEMPRE registados na ficha da lead como
+    // interação "Email recebido" (com cópia do texto), e quando a lead pede
+    // contacto numa data concreta cria-se um evento ai_pending na agenda (o
+    // consultor confirma/rejeita, como nos eventos da análise automática).
+    // Dedupe por uid em inbox_email_log — o "Verificar agora" re-analisa a
+    // mesma janela sem duplicar registos. Remetentes desconhecidos continuam
+    // sem qualquer captura (minimização).
+    for (let i = 0; i < relevant.length; i++) {
+      const m = relevant[i];
+      const cls = relClass[i];
+      if (cls.kind !== "lead" || !cls.leadId) continue;
+
+      // Reivindica o uid: só quem inserir a linha regista (evita duplicados).
+      const { data: claimed } = await admin
+        .from("inbox_email_log")
+        .upsert(
+          { user_id: acc.user_id, message_uid: m.uid },
+          { onConflict: "user_id,message_uid", ignoreDuplicates: true },
+        )
+        .select("message_uid");
+      if (!claimed || claimed.length === 0) continue;
+
+      const { error: interactionError } = await admin.from("interactions").insert({
+        interaction_type: "email",
+        interaction_date: m.receivedAt || new Date().toISOString(),
+        outcome: "Email recebido",
+        subject: m.subject || "(sem assunto)",
+        content: `De: ${m.fromName || ""} <${m.fromEmail || ""}>\nAssunto: ${m.subject || "(sem assunto)"}\n\n${m.text || ""}`,
+        user_id: acc.user_id,
+        lead_id: cls.leadId,
+      });
+      if (interactionError) {
+        console.error("[inbox-assistant] Falha a registar interação de email recebido:", interactionError);
+      }
+
+      // Evento na agenda quando a lead pediu contacto numa data concreta.
+      const t0 = triage[i];
+      if (t0?.agendaDate && new Date(`${t0.agendaDate}T00:00:00Z`).getTime() > Date.now() - 86400000) {
+        const { error: eventError } = await admin.from("calendar_events").insert({
+          user_id: acc.user_id,
+          lead_id: cls.leadId,
+          title: `Contactar ${m.fromName || "lead"} (pedido por email)`,
+          description: t0.reminder || t0.agendaSuggestion || null,
+          event_type: "call",
+          start_time: `${t0.agendaDate}T09:00:00Z`,
+          end_time: `${t0.agendaDate}T09:30:00Z`,
+          ai_pending: true,
+        });
+        if (eventError) {
+          console.error("[inbox-assistant] Falha a criar evento de agenda:", eventError);
+        }
+      }
+    }
+
     for (let i = 0; i < relevant.length; i++) {
       const m = relevant[i];
       const t = triage[i];
@@ -492,6 +556,10 @@ export async function processInboxForUser(
           advice: t.advice || null,
           agenda_suggestion: t.agendaSuggestion || null,
           lead_id: cls.leadId || null,
+          // Cópia do email SÓ para leads conhecidas (decisão do operador) —
+          // permite "Ver email recebido" no assistente.
+          email_subject: cls.kind === "lead" ? m.subject || null : null,
+          email_body: cls.kind === "lead" ? m.text || null : null,
         },
         { onConflict: "user_id,message_uid", ignoreDuplicates: true },
       );

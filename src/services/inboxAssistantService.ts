@@ -13,6 +13,9 @@ export interface InboxTriageItem {
   lead_id: string | null;
   status: "new" | "handled" | "dismissed";
   created_at: string | null;
+  /** Cópia do email recebido — só preenchido para leads conhecidas. */
+  email_subject: string | null;
+  email_body: string | null;
 }
 
 /** Sugere um rascunho de resposta para um lembrete (nunca envia). */

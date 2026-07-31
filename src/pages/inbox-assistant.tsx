@@ -405,6 +405,16 @@ export default function InboxAssistantPage() {
                           {item.agenda_suggestion && (
                             <p className="text-sm mt-1 text-indigo-700">🗓 {item.agenda_suggestion}</p>
                           )}
+                          {item.email_body && (
+                            <details className="mt-2">
+                              <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground select-none">
+                                📩 Ver email recebido{item.email_subject ? ` — ${item.email_subject}` : ""}
+                              </summary>
+                              <div className="mt-1.5 rounded-md border bg-slate-50 p-3 text-sm text-slate-700 whitespace-pre-wrap">
+                                {item.email_body}
+                              </div>
+                            </details>
+                          )}
                         </div>
                       </div>
 

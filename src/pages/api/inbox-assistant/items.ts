@@ -27,7 +27,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const includeHandled = req.query.includeHandled === "true";
       let query = db
         .from("inbox_triage")
-        .select("id, from_name, importance, urgency, intent, sender_kind, reminder, advice, agenda_suggestion, lead_id, status, created_at")
+        .select("id, from_name, importance, urgency, intent, sender_kind, reminder, advice, agenda_suggestion, lead_id, status, created_at, email_subject, email_body")
         .eq("user_id", user.id);
 
       if (!includeHandled) query = query.eq("status", "new");
