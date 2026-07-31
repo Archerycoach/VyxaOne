@@ -48,6 +48,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       description: `Subscrição ${plan.name} - Vyxa One CRM`,
       successUrl: `${appUrl}/subscription?success=true`,
       failUrl: `${appUrl}/subscription?canceled=true`,
+      customerEmail: user.email || undefined,
     });
 
     const { error } = await supabaseAdmin

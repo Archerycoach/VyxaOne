@@ -31,10 +31,13 @@ const eupagoError = (error: any): string => {
 };
 
 // A API REST v1.02 rejeita com {transactionStatus:"Rejected", code, text}. Lança
-// com o código/detalhe reais em vez de um "erro genérico".
-const throwIfRejected = (data: any) => {
+// com o código/detalhe reais E o corpo `payment` enviado (diagnóstico visível
+// enquanto afinamos o formato — remover depois de estabilizar).
+const throwIfRejected = (data: any, sentPayment?: any) => {
   if (data && String(data.transactionStatus || "").toLowerCase() === "rejected") {
-    throw new Error(data.text ? `${data.code || "Rejeitado"}: ${data.text}` : data.code || "Pagamento rejeitado");
+    const base = data.text ? `${data.code || "Rejeitado"}: ${data.text}` : data.code || "Pagamento rejeitado";
+    const sent = sentPayment ? ` [enviado: ${JSON.stringify(sentPayment)}]` : "";
+    throw new Error(base + sent);
   }
 };
 
@@ -78,7 +81,7 @@ export const eupago = {
 
       const d = response.data || {};
       console.log("[eupago] MBWay response:", JSON.stringify(d));
-      throwIfRejected(d);
+      throwIfRejected(d, body.payment);
       return {
         success: true,
         transactionId: d.transactionID || d.transactionId || d.transacao || d.reference,
@@ -118,7 +121,7 @@ export const eupago = {
 
       const d = response.data || {};
       console.log("[eupago] Multibanco response:", JSON.stringify(d));
-      throwIfRejected(d);
+      throwIfRejected(d, body.payment);
       return {
         success: true,
         entity: d.entity || d.entidade,
@@ -140,12 +143,14 @@ export const eupago = {
     description,
     successUrl,
     failUrl,
+    customerEmail,
   }: {
     amount: number;
     reference: string;
     description: string;
     successUrl: string;
     failUrl: string;
+    customerEmail?: string;
   }) => {
     const { apiKey, baseUrl } = await getEupago();
     if (!apiKey) {
@@ -161,7 +166,7 @@ export const eupago = {
         backUrl: failUrl,
         lang: "PT",
       },
-      customer: { notify: false },
+      customer: { notify: false, email: customerEmail || "noreply@vyxa.pt" },
     };
     try {
       console.log("[eupago] CreditCard request:", JSON.stringify(body));
@@ -169,7 +174,7 @@ export const eupago = {
 
       const d = response.data || {};
       console.log("[eupago] CreditCard response:", JSON.stringify(d));
-      throwIfRejected(d);
+      throwIfRejected(d, body.payment);
       const url = d.redirectUrl || d.url || d.redirect || d.link;
       if (!url) throw new Error("A EuPago não devolveu o URL do formulário de cartão.");
       return { success: true, url, reference: d.reference || d.referencia };
