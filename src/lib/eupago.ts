@@ -87,8 +87,8 @@ export const eupago = {
       };
     } catch (error: any) {
       const detail = eupagoError(error);
-      console.error("Error creating MBWay payment:", detail, "sent:", JSON.stringify(body.payment));
-      throw new Error(`Erro MBWay: ${detail} [enviado: ${JSON.stringify(body.payment)}]`);
+      console.error("Error creating MBWay payment:", detail, "sent:", JSON.stringify(body));
+      throw new Error(`Erro MBWay: ${detail} [enviado: ${JSON.stringify(body)}]`);
     }
   },
 
@@ -112,6 +112,7 @@ export const eupago = {
         identifier: reference,
         amount: { value: toValue(amount), currency: "EUR" },
       },
+      customer: { notify: false },
     };
     try {
       console.log("[eupago] Multibanco request:", JSON.stringify(body));
@@ -129,8 +130,8 @@ export const eupago = {
       };
     } catch (error: any) {
       const detail = eupagoError(error);
-      console.error("Error creating Multibanco reference:", detail, "sent:", JSON.stringify(body.payment));
-      throw new Error(`Erro Multibanco: ${detail} [enviado: ${JSON.stringify(body.payment)}]`);
+      console.error("Error creating Multibanco reference:", detail, "sent:", JSON.stringify(body));
+      throw new Error(`Erro Multibanco: ${detail} [enviado: ${JSON.stringify(body)}]`);
     }
   },
 
@@ -179,8 +180,8 @@ export const eupago = {
       return { success: true, url, reference: d.reference || d.referencia };
     } catch (error: any) {
       const detail = eupagoError(error);
-      console.error("Error creating credit card payment:", detail, "sent:", JSON.stringify(body.payment));
-      throw new Error(`Erro cartão: ${detail} [enviado: ${JSON.stringify(body.payment)}]`);
+      console.error("Error creating credit card payment:", detail, "sent:", JSON.stringify(body));
+      throw new Error(`Erro cartão: ${detail} [enviado: ${JSON.stringify(body)}]`);
     }
   },
 
