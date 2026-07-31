@@ -30,14 +30,11 @@ const eupagoError = (error: any): string => {
   return error?.message || "erro desconhecido";
 };
 
-// A API REST v1.02 rejeita com {transactionStatus:"Rejected", code, text}. Lança
-// com o código/detalhe reais E o corpo `payment` enviado (diagnóstico visível
-// enquanto afinamos o formato — remover depois de estabilizar).
-const throwIfRejected = (data: any, sentPayment?: any) => {
+// A API REST rejeita ora com HTTP 200 + {transactionStatus:"Rejected",...} ora
+// com HTTP 4xx (nesse caso o axios lança e cai no catch). Trata o caso 200.
+const throwIfRejected = (data: any) => {
   if (data && String(data.transactionStatus || "").toLowerCase() === "rejected") {
-    const base = data.text ? `${data.code || "Rejeitado"}: ${data.text}` : data.code || "Pagamento rejeitado";
-    const sent = sentPayment ? ` [enviado: ${JSON.stringify(sentPayment)}]` : "";
-    throw new Error(base + sent);
+    throw new Error(data.text ? `${data.code || "Rejeitado"}: ${data.text}` : data.code || "Pagamento rejeitado");
   }
 };
 
@@ -81,7 +78,7 @@ export const eupago = {
 
       const d = response.data || {};
       console.log("[eupago] MBWay response:", JSON.stringify(d));
-      throwIfRejected(d, body.payment);
+      throwIfRejected(d);
       return {
         success: true,
         transactionId: d.transactionID || d.transactionId || d.transacao || d.reference,
@@ -89,8 +86,9 @@ export const eupago = {
         message: d.text || d.mensagem || "Pagamento MBWay iniciado.",
       };
     } catch (error: any) {
-      console.error("Error creating MBWay payment:", eupagoError(error));
-      throw new Error(`Erro MBWay: ${eupagoError(error)}`);
+      const detail = eupagoError(error);
+      console.error("Error creating MBWay payment:", detail, "sent:", JSON.stringify(body.payment));
+      throw new Error(`Erro MBWay: ${detail} [enviado: ${JSON.stringify(body.payment)}]`);
     }
   },
 
@@ -121,7 +119,7 @@ export const eupago = {
 
       const d = response.data || {};
       console.log("[eupago] Multibanco response:", JSON.stringify(d));
-      throwIfRejected(d, body.payment);
+      throwIfRejected(d);
       return {
         success: true,
         entity: d.entity || d.entidade,
@@ -130,8 +128,9 @@ export const eupago = {
         expiryDate: d.expirationDate || d.endDate || d.data_fim,
       };
     } catch (error: any) {
-      console.error("Error creating Multibanco reference:", eupagoError(error));
-      throw new Error(`Erro Multibanco: ${eupagoError(error)}`);
+      const detail = eupagoError(error);
+      console.error("Error creating Multibanco reference:", detail, "sent:", JSON.stringify(body.payment));
+      throw new Error(`Erro Multibanco: ${detail} [enviado: ${JSON.stringify(body.payment)}]`);
     }
   },
 
@@ -174,13 +173,14 @@ export const eupago = {
 
       const d = response.data || {};
       console.log("[eupago] CreditCard response:", JSON.stringify(d));
-      throwIfRejected(d, body.payment);
+      throwIfRejected(d);
       const url = d.redirectUrl || d.url || d.redirect || d.link;
       if (!url) throw new Error("A EuPago não devolveu o URL do formulário de cartão.");
       return { success: true, url, reference: d.reference || d.referencia };
     } catch (error: any) {
-      console.error("Error creating credit card payment:", eupagoError(error));
-      throw new Error(`Erro cartão: ${eupagoError(error)}`);
+      const detail = eupagoError(error);
+      console.error("Error creating credit card payment:", detail, "sent:", JSON.stringify(body.payment));
+      throw new Error(`Erro cartão: ${detail} [enviado: ${JSON.stringify(body.payment)}]`);
     }
   },
 
