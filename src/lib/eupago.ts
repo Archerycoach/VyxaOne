@@ -6,13 +6,20 @@ import { getPaymentConfig } from "@/lib/server/paymentConfig";
 // URL de produção devolve 401 — daí escolhermos o URL certo por modo.
 const EUPAGO_PROD_URL = "https://clientes.eupago.pt/api/v1.02";
 const EUPAGO_SANDBOX_URL = "https://sandbox.eupago.pt/api/v1.02";
+// A EuPago tem DUAS gerações de API em simultâneo: a REST v1.02 (corpo aninhado
+// — MBWay, Cartão) e a "clássica" (corpo plano com `chave` — MULTIBANCO). O
+// Multibanco NÃO existe na v1.02: enviá-lo para lá dá sempre AMOUNT_MISSING,
+// seja o corpo plano ou aninhado. Referências MB vão para a API clássica.
+const EUPAGO_PROD_CLASSIC_URL = "https://clientes.eupago.pt/clientes/rest_api";
+const EUPAGO_SANDBOX_CLASSIC_URL = "https://sandbox.eupago.pt/clientes/rest_api";
 
-// Chave + URL base geridas em Admin › Definições de Pagamento (BD), fallback env.
-const getEupago = async (): Promise<{ apiKey: string; baseUrl: string }> => {
+// Chave + URLs base geridas em Admin › Definições de Pagamento (BD), fallback env.
+const getEupago = async (): Promise<{ apiKey: string; baseUrl: string; classicUrl: string }> => {
   const { eupagoApiKey, testMode } = await getPaymentConfig();
   return {
     apiKey: eupagoApiKey || "",
     baseUrl: testMode ? EUPAGO_SANDBOX_URL : EUPAGO_PROD_URL,
+    classicUrl: testMode ? EUPAGO_SANDBOX_CLASSIC_URL : EUPAGO_PROD_CLASSIC_URL,
   };
 };
 
@@ -92,7 +99,9 @@ export const eupago = {
     }
   },
 
-  // Create Multibanco reference (API REST v1.02: corpo ANINHADO).
+  // Create Multibanco reference — API CLÁSSICA (corpo plano com `chave`; ver
+  // nota nos URLs). Resposta clássica: {sucesso, estado:0, resposta:"OK",
+  // referencia, entidade, valor}.
   createMultibancoReference: async ({
     amount,
     reference,
@@ -102,36 +111,44 @@ export const eupago = {
     reference: string;
     description: string;
   }) => {
-    const { apiKey, baseUrl } = await getEupago();
+    const { apiKey, classicUrl } = await getEupago();
     if (!apiKey) {
       throw new Error("Chave EuPago não configurada.");
     }
 
+    // per_dup: "0" = a referência só pode ser paga uma vez (é uma subscrição).
     const body = {
-      payment: {
-        identifier: reference,
-        amount: { value: toValue(amount), currency: "EUR" },
-      },
-      customer: { notify: false },
+      chave: apiKey,
+      valor: toValue(amount).toFixed(2),
+      id: reference,
+      per_dup: "0",
     };
+    // Diagnóstico SEM a chave (nunca expor a API key em logs/erros).
+    const safeBody = { valor: body.valor, id: body.id, per_dup: body.per_dup };
     try {
-      console.log("[eupago] Multibanco request:", JSON.stringify(body));
-      const response = await axios.post(`${baseUrl}/multibanco/create`, body, eupagoAuth(apiKey));
+      console.log("[eupago] Multibanco request (classic):", JSON.stringify(safeBody));
+      const response = await axios.post(`${classicUrl}/multibanco/create`, body, {
+        headers: { "Content-Type": "application/json" },
+      });
 
       const d = response.data || {};
       console.log("[eupago] Multibanco response:", JSON.stringify(d));
-      throwIfRejected(d);
+      // Sucesso clássico: sucesso=true (e/ou estado 0). Senão, lança com o detalhe.
+      const ok = d.sucesso === true || d.sucesso === "true" || Number(d.estado) === 0;
+      if (!ok) {
+        throw new Error(d.resposta || d.mensagem || `Referência recusada (estado ${d.estado ?? "?"}).`);
+      }
       return {
         success: true,
-        entity: d.entity || d.entidade,
-        reference: d.reference || d.referencia,
-        amount: d.amount?.value ?? d.valor ?? amount,
-        expiryDate: d.expirationDate || d.endDate || d.data_fim,
+        entity: d.entidade,
+        reference: d.referencia,
+        amount: d.valor ?? amount,
+        expiryDate: d.data_fim || null,
       };
     } catch (error: any) {
       const detail = eupagoError(error);
-      console.error("Error creating Multibanco reference:", detail, "sent:", JSON.stringify(body));
-      throw new Error(`Erro Multibanco: ${detail} [enviado: ${JSON.stringify(body)}]`);
+      console.error("Error creating Multibanco reference:", detail, "sent:", JSON.stringify(safeBody));
+      throw new Error(`Erro Multibanco: ${detail} [enviado: ${JSON.stringify(safeBody)}]`);
     }
   },
 
