@@ -24,7 +24,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     const { data: acc } = await supabaseAdmin
       .from("user_smtp_settings")
-      .select("user_id, smtp_host, smtp_username, smtp_password, reject_unauthorized, imap_host, imap_port, imap_last_uid, email_assistant_enabled, email_ignore_senders, inbox_reply_style")
+      .select("user_id, smtp_host, smtp_username, smtp_password, from_email, reject_unauthorized, imap_host, imap_port, imap_last_uid, email_assistant_enabled, email_ignore_senders, inbox_reply_style")
       .eq("user_id", user.id)
       .maybeSingle();
 

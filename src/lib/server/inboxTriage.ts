@@ -236,6 +236,8 @@ export interface InboxAccount {
   smtp_host: string | null;
   smtp_username: string | null;
   smtp_password: string | null;
+  /** Endereço remetente do consultor — emails vindos dele são da própria app. */
+  from_email?: string | null;
   reject_unauthorized: boolean | null;
   imap_host: string | null;
   imap_port: number | null;
@@ -303,10 +305,8 @@ async function classifySender(
   const email = (fromEmail || "").toLowerCase().trim();
   if (!email) return { kind: "unknown" };
 
-  if (PORTAL_HINTS.some((h) => email.includes(h))) {
-    return { kind: "portal" };
-  }
-
+  // Lead/contacto PRIMEIRO: um endereço @remax.pt (colega, o próprio) contém a
+  // marca e cairia na heurística de portal — a identidade real tem prioridade.
   const lead = await loadLeadContext(admin, userId, email);
   if (lead) return { kind: "lead", leadId: lead.leadId, context: lead.context };
 
@@ -426,9 +426,19 @@ export async function processInboxForUser(
   const classOf = (m: InboxMessage) =>
     clsMap.get((m.fromEmail || "").toLowerCase()) || { kind: "unknown" as SenderKind };
 
+  // Emails do PRÓPRIO consultor (o remetente é ele mesmo) são os que a própria
+  // aplicação envia — alertas, resumos diários, cópias de campanhas. Nunca são
+  // "correio a precisar de atenção": filtram-se SEMPRE, antes de tudo.
+  const selfEmails = new Set(
+    [acc.smtp_username, acc.from_email]
+      .map((e) => (e || "").toLowerCase().trim())
+      .filter(Boolean),
+  );
+
   // Filtro: só descarta ANTES da IA os DESCONHECIDOS que pareçam publicidade ou
   // estejam na lista de ignorados. Conhecidos/portais passam sempre.
   const kept = read.messages
+    .filter((m) => !selfEmails.has((m.fromEmail || "").toLowerCase().trim()))
     .map((m) => ({ m, cls: classOf(m) }))
     .filter(({ m, cls }) => cls.kind !== "unknown" || !shouldIgnore(m.fromEmail, acc.email_ignore_senders || []));
   const relevant = kept.map((k) => k.m);
