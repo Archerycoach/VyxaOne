@@ -8,7 +8,12 @@ import { getLocationInsights, getLocationInsightsForPoint } from "@/lib/server/l
 import { getGeoapifyKey } from "@/lib/server/geoapifyCredentials";
 import { calculateLandAdjustment } from "@/lib/server/landValueAdjustment";
 import { calculateValueFactors, describeFactorBreakdown } from "@/lib/server/valueFactorAdjustment";
-import { getInePriceReference, resolveIneGeoCode } from "@/lib/server/inePriceReference";
+import {
+  getInePriceReference,
+  resolveIneGeoCodes,
+  getIneSeries,
+  getIneRentReference,
+} from "@/lib/server/inePriceReference";
 import {
   getMarketSanityCheckPrompt,
   parseSanityCheck,
@@ -455,16 +460,37 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // pedido, tipicamente otimista); só usa ativos se não houver vendidos.
     const comparablesPricePerSqm = soldAvgPricePerSqm || activeAvgPricePerSqm;
 
-    // Referência oficial do INE (escrituras, por município).
-    //
-    // O código é resolvido a partir do concelho da morada — nada disto é
-    // visível para o consultor.
+    // Referência oficial do INE (escrituras): valor da FREGUESIA quando o INE
+    // o publica (amostra suficiente), município como fallback estável. A série
+    // histórica do município dá a tendência homóloga; as rendas medianas de
+    // novos contratos dão a yield bruta para o perfil investidor.
     let resolvedIneGeo: string | null = ineGeoCode || null;
+    let ineFreguesiaCode: string | null = null;
     if (!resolvedIneGeo) {
-      const resolved = await resolveIneGeoCode(coordinates?.county || city || null);
-      resolvedIneGeo = resolved?.code ?? null;
+      const resolvedGeos = await resolveIneGeoCodes(
+        coordinates?.county || city || null,
+        coordinates?.freguesia || null
+      );
+      resolvedIneGeo = resolvedGeos.municipality?.code ?? null;
+      ineFreguesiaCode = resolvedGeos.freguesia?.code ?? null;
     }
-    const ineReference = await getInePriceReference(resolvedIneGeo);
+
+    const [ineMunSeries, ineFregSeries, ineRent] = await Promise.all([
+      getIneSeries(resolvedIneGeo),
+      ineFreguesiaCode ? getIneSeries(ineFreguesiaCode) : Promise.resolve(null),
+      getIneRentReference(resolvedIneGeo),
+    ]);
+
+    const seriesToReference = (s: { latest: { value: number; geoName: string | null; periodCode: string } } | null) =>
+      s ? { pricePerSqm: s.latest.value, geoName: s.latest.geoName, periodCode: s.latest.periodCode, source: "INE" as const } : null;
+
+    const ineReference =
+      seriesToReference(ineFregSeries) ??
+      seriesToReference(ineMunSeries) ??
+      (await getInePriceReference(resolvedIneGeo));
+
+    // Tendência do MUNICÍPIO (amostra maior = tendência mais estável).
+    const ineTrendYoyPct = ineMunSeries?.yoyPct ?? null;
 
     // A referência da zona entra COM os comparáveis, não em vez deles.
     //
@@ -512,6 +538,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const referencePricePerSqm: number | null =
       totalWeight > 0
         ? sources.reduce((sum, entry) => sum + entry.value * entry.weight, 0) / totalWeight
+        : null;
+
+    // Yield bruta estimada (perfil investidor): renda mediana anual do INE
+    // sobre o €/m² de referência do imóvel. Bruta — sem impostos nem encargos.
+    const grossYieldPct =
+      ineRent && referencePricePerSqm
+        ? Math.round(((ineRent.rentPerSqm * 12) / referencePricePerSqm) * 1000) / 10
         : null;
 
     let suggestedMin: number | null = null;
@@ -627,6 +660,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         zonePricePerSqm,
         zoneSampleSize,
         inePricePerSqm: ineReference?.pricePerSqm ?? null,
+        ineGeoName: ineReference?.geoName ?? null,
+        ineTrendYoyPct,
+        ineRentPerSqm: ineRent?.rentPerSqm ?? null,
+        grossYieldPct,
         askingPricePerSqm: askingPricePerSqm ?? null,
         askingVsSoldGapPct,
         landAdjustmentNote: landAdjustment.explanation,
@@ -739,6 +776,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       zoneSampleSize,
       inePricePerSqm: ineReference?.pricePerSqm ?? null,
       ineGeoName: ineReference?.geoName ?? null,
+      ineTrendYoyPct,
+      ineRentPerSqm: ineRent?.rentPerSqm ?? null,
+      ineRentYoyPct: ineRent?.yoyPct ?? null,
+      grossYieldPct,
       askingPricePerSqm: askingPricePerSqm ?? null,
       askingVsSoldGapPct,
       landPricePerSqm,

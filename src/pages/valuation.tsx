@@ -429,6 +429,30 @@ export default function ValuationPage() {
       );
     }
 
+    // Tendência homóloga e yield bruta (INE) — contexto de mercado adicional.
+    const trendYoy = (result as any).ineTrendYoyPct;
+    if (typeof trendYoy === "number") {
+      y = addBodyText(
+        doc,
+        `Tendência do mercado (INE, concelho): a mediana de escrituras variou ` +
+          `${trendYoy > 0 ? "+" : ""}${String(trendYoy).replace(".", ",")}% face ao período homólogo.`,
+        y + 2
+      );
+    }
+    const rentSqm = (result as any).ineRentPerSqm;
+    const yieldPct = (result as any).grossYieldPct;
+    if (typeof rentSqm === "number") {
+      y = addBodyText(
+        doc,
+        `Rendas (INE): renda mediana de novos contratos no concelho de ` +
+          `${rentSqm.toFixed(2).replace(".", ",")} €/m²/mês` +
+          (typeof yieldPct === "number"
+            ? `, equivalente a uma yield bruta estimada de ${String(yieldPct).replace(".", ",")}%/ano ao valor recomendado (antes de impostos e encargos).`
+            : "."),
+        y + 2
+      );
+    }
+
     if (result.zonePricePerSqm) {
       y = addBodyText(
         doc,

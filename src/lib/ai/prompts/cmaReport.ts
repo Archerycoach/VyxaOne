@@ -80,6 +80,14 @@ interface CmaReportContext {
   consultantDescription?: string | null;
   /** Valor mediano de escrituras do INE, quando disponível. */
   inePricePerSqm?: number | null;
+  /** Geografia do valor INE (freguesia quando publicada, senão concelho). */
+  ineGeoName?: string | null;
+  /** Evolução homóloga (%) da mediana de escrituras do concelho. */
+  ineTrendYoyPct?: number | null;
+  /** Renda mediana €/m² de novos contratos (INE), quando disponível. */
+  ineRentPerSqm?: number | null;
+  /** Yield bruta estimada (%) ao valor recomendado. */
+  grossYieldPct?: number | null;
   /** €/m² pedido nos anúncios, para contrastar com o que se paga. */
   askingPricePerSqm?: number | null;
   /** Quanto o mercado PEDE acima (ou abaixo) do que PAGA, em %. */
@@ -188,7 +196,9 @@ ${comparablesList || "Nenhum comparável direto encontrado na zona."}
 
 DADOS JÁ CALCULADOS (usa estes valores exatamente, não inventes outros):
 - Preço médio/m² de imóveis VENDIDOS na zona: ${context.soldAvgPricePerSqm ? `${Math.round(context.soldAvgPricePerSqm)}€/m²` : "sem dados suficientes"}
-${context.inePricePerSqm ? `- Valor MEDIANO DE ESCRITURAS (INE, dados oficiais): ${Math.round(context.inePricePerSqm)}€/m² — ÂNCORA de realismo (preços efetivamente pagos), mas é a mediana do CONCELHO inteiro e reflete transações com algum atraso, por isso tende a subavaliar submercados centrais/valorizados. A recomendação apoia-se sobretudo nos COMPARÁVEIS locais (mesma zona, área e tipologia semelhantes), usando o INE para não descolar da realidade — não como o valor principal.
+${context.inePricePerSqm ? `- Valor MEDIANO DE ESCRITURAS (INE, dados oficiais${context.ineGeoName ? `, ${context.ineGeoName}` : ""}): ${Math.round(context.inePricePerSqm)}€/m² — ÂNCORA de realismo (preços efetivamente pagos), com transações refletidas com algum atraso, por isso tende a subavaliar submercados centrais/valorizados. A recomendação apoia-se sobretudo nos COMPARÁVEIS locais (mesma zona, área e tipologia semelhantes), usando o INE para não descolar da realidade — não como o valor principal.
+` : ""}${context.ineTrendYoyPct !== null && context.ineTrendYoyPct !== undefined ? `- TENDÊNCIA DO MERCADO (INE, concelho): a mediana de escrituras variou ${context.ineTrendYoyPct > 0 ? "+" : ""}${context.ineTrendYoyPct}% face ao período homólogo — usa isto no enquadramento de mercado (secção 2).
+` : ""}${context.ineRentPerSqm ? `- RENDAS (INE): a renda mediana de novos contratos no concelho é ${context.ineRentPerSqm.toFixed(2).replace(".", ",")}€/m²/mês${context.grossYieldPct ? `, o que ao valor recomendado equivale a uma yield bruta estimada de ~${String(context.grossYieldPct).replace(".", ",")}%/ano (antes de impostos e encargos) — relevante se o comprador-alvo for investidor` : ""}.
 ` : ""}- Valor de referência da ZONA: ${context.zonePricePerSqm ? `${Math.round(context.zonePricePerSqm)}€/m² (mediana de ${context.zoneSampleSize} imóveis à venda na zona, independentemente de área ou tipologia)` : "sem dados suficientes"}
 - Preço médio/m² de imóveis ATIVOS (à venda) na zona: ${context.activeAvgPricePerSqm ? `${Math.round(context.activeAvgPricePerSqm)}€/m²` : "sem dados suficientes"}
 ${context.landAdjustmentNote ? `- Terreno: ${context.landAdjustmentNote}
@@ -223,7 +233,7 @@ REGRAS DE ESCRITA (tão importantes como o conteúdo):
 
 SECÇÕES (usa <h3> para o título de CADA uma, com o NÚMERO no início — ex.: <h3>1. Identificação do imóvel</h3> —, exatamente estas 7 e por esta ordem):
 1. "Identificação do imóvel" — 2-3 frases factuais: morada, freguesia/concelho/distrito, tipo, tipologia, área e ano de construção; e o VPT quando indicado. Sem interpretação.
-2. "Enquadramento do mercado local" — o €/m² de referência da zona/freguesia e o caráter da zona (centralidade, comércio e transportes de proximidade, idade do parque habitacional se o ano de construção o sugerir). 2-3 frases.
+2. "Enquadramento do mercado local" — o €/m² de referência da zona/freguesia, a TENDÊNCIA homóloga do INE quando disponível (ex.: "o mercado do concelho valorizou X% no último ano"), a renda mediana/yield quando disponível, e o caráter da zona (centralidade, comércio e transportes de proximidade, idade do parque habitacional se o ano de construção o sugerir). 2-4 frases.
 3. "Comparáveis de mercado" — EM LISTA. Comenta em UMA linha cada um dos melhores comparáveis (mesma tipologia ou adjacente, área semelhante): tipologia, área, €/m² e uma observação de estado (renovado / intermédio / a necessitar de obras). IDENTIFICA e EXCLUI explicitamente os OUTLIERS (gama alta, duplex, fortemente remodelados) do cálculo da média — di-lo. Refere diferenças (elevador, andar, estado) que expliquem desvios de €/m² entre imóveis de área semelhante.
 4. "Metodologia e cálculo" — EM LISTA, as três abordagens independentes que sustentam o valor: (a) comparativo pela ZONA/freguesia (€/m² de referência × área); (b) comparativo DIRETO (média dos comparáveis, excluindo outliers); (c) múltiplo do VPT (3,3–3,8× o VPT, típico na Área Metropolitana de Lisboa) — só quando há VPT. Uma linha por método, com o valor a que cada um chega.
 5. "Valor de mercado estimado" — apresenta o INTERVALO recomendado (os números já calculados acima, NÃO os alteres) e o ponto médio. Liga aos CENÁRIOS de conservação: onde o imóvel se posiciona conforme o estado e o potencial de valorização por obras (o salto do cenário A para o C). Se existir a diferença PEDIDO vs PAGO, explica em 1-2 frases o que a margem significa (o anúncio não é a escritura; anunciar acima do que o mercado paga arrasta o tempo de venda e o desconto final).
