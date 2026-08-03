@@ -16,6 +16,7 @@ import {
   updateCalendarEvent,
   updateCalendarSeriesFromDate,
   deleteCalendarSeriesFromDate,
+  setEventCompleted,
 } from "@/services/calendarService";
 import {
   AlertDialog,
@@ -28,7 +29,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { updateTask, createTask } from "@/services/tasksService";
+import { updateTask, createTask, completeTask } from "@/services/tasksService";
 import { setupAutoSync } from "@/lib/googleCalendar";
 import { useToast } from "@/hooks/use-toast";
 import type { CalendarEvent, Task } from "@/types";
@@ -927,6 +928,27 @@ export function CalendarContainer() {
     return nonDuplicateEvents;
   }, [filteredEvents, tasks, showTasks]);
 
+  // Marcar como FEITO diretamente dos cartões da Agenda (evento reversível;
+  // tarefa usa o fluxo normal de conclusão).
+  const handleToggleCompleteEvent = async (eventId: string, completed: boolean) => {
+    try {
+      await setEventCompleted(eventId, completed);
+      await refetchEvents();
+    } catch (error: any) {
+      toast({ title: "Erro ao atualizar o evento", description: error.message, variant: "destructive" });
+    }
+  };
+
+  const handleCompleteTaskQuick = async (taskId: string) => {
+    try {
+      await completeTask(taskId);
+      toast({ title: "✅ Tarefa concluída" });
+      await refetchTasks();
+    } catch (error: any) {
+      toast({ title: "Erro ao concluir tarefa", description: error.message, variant: "destructive" });
+    }
+  };
+
   return (
     <div className="space-y-6">
       <CalendarHeader
@@ -1012,6 +1034,8 @@ export function CalendarContainer() {
           onDeleteEvent={deleteEvent}
           onConfirmAiEvent={confirmAiEvent}
           onRejectAiEvent={rejectAiEvent}
+          onToggleCompleteEvent={handleToggleCompleteEvent}
+          onCompleteTask={handleCompleteTaskQuick}
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
           onDragOver={handleDragOver}
@@ -1031,6 +1055,8 @@ export function CalendarContainer() {
           onDeleteEvent={deleteEvent}
           onConfirmAiEvent={confirmAiEvent}
           onRejectAiEvent={rejectAiEvent}
+          onToggleCompleteEvent={handleToggleCompleteEvent}
+          onCompleteTask={handleCompleteTaskQuick}
         />
       )}
 

@@ -34,6 +34,10 @@ interface CalendarTimeGridProps {
   onRescheduleTask: (id: string, newDueISO: string) => void;
   /** Clique num espaço vazio → criar evento àquela hora. */
   onSlotClick?: (date: Date) => void;
+  /** Aceites por paridade com a vista de mês (marcar feito); a vista de
+   *  hora usa os blocos próprios, o clique abre o editor. */
+  onToggleCompleteEvent?: (eventId: string, completed: boolean) => void;
+  onCompleteTask?: (taskId: string) => void;
   /** Eliminar um evento. */
   onDeleteEvent?: (eventId: string) => void;
   /** Confirmar um bloco sugerido pela IA (aiPending). */

@@ -319,6 +319,8 @@ export interface CalendarEvent {
   recurrenceGroupId?: string | null;
   /** Evento criado pela análise automática de IA, à espera de confirmação do consultor. */
   aiPending?: boolean;
+  /** Evento marcado como feito na Agenda (reversível). */
+  completedAt?: string | null;
 }
 
 // Pipeline Stage Types

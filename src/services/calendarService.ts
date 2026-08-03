@@ -29,6 +29,7 @@ const mapDbEventToFrontend = (dbEvent: DbCalendarEvent & { leads?: { name: strin
   // "ai_pending" só existe nos tipos gerados depois de correr a migração
   // 20260716100000_lead_auto_analysis.sql e regenerar database.types.ts.
   aiPending: Boolean((dbEvent as any).ai_pending),
+  completedAt: (dbEvent as any).completed_at ?? null,
   // Bloco de disponibilidade por reservar: a agenda mostra-o como "livre para
   // reserva", não como compromisso. Passa a evento normal quando um cliente
   // reserva (o confirm.ts põe is_bookable a false).
@@ -694,4 +695,19 @@ export const getEventsByLead = async (leadId: string): Promise<CalendarEvent[]> 
 
   console.log("[calendarService] Found events for lead:", data?.length || 0);
   return (data || []).map(mapDbEventToFrontend);
+};
+
+/**
+ * Marca/desmarca um evento como FEITO (Agenda). Só o campo completed_at —
+ * não mexe em sync Google nem noutros estados.
+ */
+export const setEventCompleted = async (eventId: string, completed: boolean): Promise<void> => {
+  const { error } = await (supabase as any)
+    .from("calendar_events")
+    .update({ completed_at: completed ? new Date().toISOString() : null })
+    .eq("id", eventId);
+  if (error) {
+    console.error("[calendarService] Erro ao marcar evento como feito:", error);
+    throw new Error("Não foi possível atualizar o evento");
+  }
 };

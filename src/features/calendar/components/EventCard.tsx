@@ -32,6 +32,8 @@ interface EventCardProps {
   onDragEnd?: (e: React.DragEvent) => void;
   compact?: boolean;
   showSyncStatus?: boolean;
+  /** Marcar/desmarcar o evento como feito (✓ no cartão). */
+  onToggleComplete?: (eventId: string, completed: boolean) => void;
 }
 
 export function EventCard({
@@ -44,8 +46,16 @@ export function EventCard({
   onDragEnd,
   compact = false,
   showSyncStatus = true,
+  onToggleComplete,
 }: EventCardProps) {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+
+  // Evento marcado como feito: fica esbatido e riscado, reversível.
+  const isCompleted = Boolean(event.completedAt);
+  const handleToggleComplete = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (onToggleComplete) onToggleComplete(event.id, !isCompleted);
+  };
 
   // Bloco criado pela análise automática de IA, à espera de confirmação
   const isAiPending = Boolean(event.aiPending);
@@ -95,7 +105,7 @@ export function EventCard({
           draggable={!!onDragStart}
           onDragStart={onDragStart}
           onDragEnd={onDragEnd}
-          className={`text-xs rounded p-1 truncate cursor-move transition-opacity group relative ${
+          className={`text-xs rounded p-1 truncate cursor-move transition-opacity group relative ${isCompleted ? "opacity-55" : ""} ${
             isAiPending
               ? "bg-amber-50 hover:bg-amber-100 border border-dashed border-amber-400"
               : isBookable
@@ -135,7 +145,7 @@ export function EventCard({
               <div className="font-medium truncate">
                 {new Date(event.startTime).toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" })}
               </div>
-              <div className="truncate">{event.title}</div>
+              <div className={`truncate ${isCompleted ? "line-through" : ""}`}>{event.title}</div>
             </div>
           </div>
           {isAiPending && onConfirmAi && (
@@ -159,6 +169,17 @@ export function EventCard({
                 <X className="h-3 w-3 text-red-700" />
               </Button>
             </div>
+          )}
+          {onToggleComplete && !isAiPending && !isBookable && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className={`absolute top-0 right-5 h-5 w-5 transition-opacity ${isCompleted ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+              onClick={handleToggleComplete}
+              title={isCompleted ? "Desmarcar como feito" : "Marcar como feito"}
+            >
+              <Check className={`h-3 w-3 ${isCompleted ? "text-green-600" : "text-gray-400"}`} />
+            </Button>
           )}
           {onDelete && !isAiPending && (
             <Button
@@ -198,7 +219,7 @@ export function EventCard({
         draggable={!!onDragStart}
         onDragStart={onDragStart}
         onDragEnd={onDragEnd}
-        className={`border rounded-lg p-4 cursor-move transition-opacity group relative ${
+        className={`border rounded-lg p-4 cursor-move transition-opacity group relative ${isCompleted ? "opacity-60" : ""} ${
           isAiPending
             ? "bg-amber-50 hover:bg-amber-100 border-dashed border-amber-400"
             : isBookable
@@ -209,6 +230,17 @@ export function EventCard({
         }`}
         onClick={handleClick}
       >
+        {onToggleComplete && !isAiPending && !isBookable && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className={`absolute top-2 right-11 h-8 w-8 transition-opacity ${isCompleted ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+            onClick={handleToggleComplete}
+            title={isCompleted ? "Desmarcar como feito" : "Marcar como feito"}
+          >
+            <Check className={`h-4 w-4 ${isCompleted ? "text-green-600" : "text-gray-400"}`} />
+          </Button>
+        )}
         {onDelete && !isAiPending && (
           <Button
             variant="ghost"
@@ -223,7 +255,13 @@ export function EventCard({
         <div className="flex items-start justify-between">
           <div className="flex-1 pr-10">
             <div className="flex items-center gap-2">
-              <h3 className="font-semibold">{event.title}</h3>
+              <h3 className={`font-semibold ${isCompleted ? "line-through text-gray-500" : ""}`}>{event.title}</h3>
+              {isCompleted && (
+                <Badge variant="outline" className="text-xs bg-green-100 border-green-400 text-green-800">
+                  <Check className="h-3 w-3 mr-1" />
+                  Feito
+                </Badge>
+              )}
               {isAiPending && (
                 <Badge variant="outline" className="text-xs bg-amber-100 border-amber-400 text-amber-800">
                   <Sparkles className="h-3 w-3 mr-1" />

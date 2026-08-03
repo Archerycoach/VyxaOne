@@ -17,6 +17,9 @@ interface CalendarGridProps {
   /** Confirmar um bloco de agenda criado pela IA (ai_pending). */
   onConfirmAiEvent?: (eventId: string) => void;
   onRejectAiEvent?: (eventId: string) => void;
+  /** Marcar evento como feito / tarefa como concluída, direto do cartão. */
+  onToggleCompleteEvent?: (eventId: string, completed: boolean) => void;
+  onCompleteTask?: (taskId: string) => void;
   // Drag and Drop handlers
   onDragStart: (e: React.DragEvent, item: { id: string; type: "event" | "task"; startTime: string }) => void;
   onDragEnd: (e: React.DragEvent) => void;
@@ -34,6 +37,8 @@ export function CalendarGrid({
   onDeleteEvent,
   onConfirmAiEvent,
   onRejectAiEvent,
+  onToggleCompleteEvent,
+  onCompleteTask,
   onDragStart,
   onDragEnd,
   onDragOver,
@@ -163,6 +168,7 @@ export function CalendarGrid({
                   onDragEnd={onDragEnd}
                 >
                   <TaskCard 
+                    onComplete={onCompleteTask}
                     task={item as Task} 
                     onClick={() => onTaskClick(item as Task)}
                   />
@@ -181,6 +187,7 @@ export function CalendarGrid({
                   onDragEnd={onDragEnd}
                 >
                   <EventCard 
+                    onToggleComplete={onToggleCompleteEvent}
                     event={item as CalendarEvent} 
                     onClick={() => onEventClick(item as CalendarEvent)}
                     onDelete={(eventId) => {
@@ -262,6 +269,7 @@ export function CalendarGrid({
                         onDragEnd={onDragEnd}
                       >
                         <EventCard 
+                    onToggleComplete={onToggleCompleteEvent}
                           event={event}
                           onClick={() => onEventClick(event)}
                           onDelete={(eventId) => {
@@ -317,6 +325,8 @@ export function CalendarGrid({
         </div>
         
         <DayEventsDialog
+          onToggleCompleteEvent={onToggleCompleteEvent}
+          onCompleteTask={onCompleteTask}
           open={dayDialogOpen}
           onOpenChange={setDayDialogOpen}
           date={selectedDayDate || new Date()}
@@ -384,6 +394,7 @@ export function CalendarGrid({
                       onDragEnd={onDragEnd}
                     >
                       <EventCard 
+                    onToggleComplete={onToggleCompleteEvent}
                         event={event}
                         onClick={() => onEventClick(event)}
                         onDelete={(eventId) => {
@@ -439,6 +450,8 @@ export function CalendarGrid({
       </div>
       
       <DayEventsDialog
+          onToggleCompleteEvent={onToggleCompleteEvent}
+          onCompleteTask={onCompleteTask}
         open={dayDialogOpen}
         onOpenChange={setDayDialogOpen}
         date={selectedDayDate || new Date()}

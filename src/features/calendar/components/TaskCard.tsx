@@ -1,5 +1,5 @@
 import React from "react";
-import { Clock, User } from "lucide-react";
+import { Check, Clock, User } from "lucide-react";
 import type { Task } from "@/types";
 import { Badge } from "@/components/ui/badge";
 
@@ -9,6 +9,8 @@ interface TaskCardProps {
   onDragStart?: (e: React.DragEvent) => void;
   onDragEnd?: (e: React.DragEvent) => void;
   compact?: boolean;
+  /** Concluir a tarefa diretamente do cartão da Agenda. */
+  onComplete?: (taskId: string) => void;
 }
 
 export function TaskCard({
@@ -17,10 +19,17 @@ export function TaskCard({
   onDragStart,
   onDragEnd,
   compact = false,
+  onComplete,
 }: TaskCardProps) {
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     onClick();
+  };
+
+  const isCompleted = task.status === "completed";
+  const handleComplete = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (onComplete && !isCompleted) onComplete(task.id);
   };
 
   if (compact) {
@@ -29,13 +38,23 @@ export function TaskCard({
         draggable={!!onDragStart}
         onDragStart={onDragStart}
         onDragEnd={onDragEnd}
-        className="text-xs rounded p-1 truncate cursor-move transition-opacity bg-blue-100 hover:bg-blue-200"
+        className={`text-xs rounded p-1 truncate cursor-move transition-opacity bg-blue-100 hover:bg-blue-200 group relative ${isCompleted ? "opacity-55" : ""}`}
         onClick={handleClick}
       >
+        {onComplete && !isCompleted && (
+          <button
+            type="button"
+            className="absolute top-0 right-0 rounded p-0.5 opacity-0 group-hover:opacity-100 hover:bg-green-200"
+            onClick={handleComplete}
+            title="Marcar como concluída"
+          >
+            <Check className="h-3 w-3 text-green-700" />
+          </button>
+        )}
         <div className="font-medium">
           {task.dueDate && new Date(task.dueDate).toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" })}
         </div>
-        <div className="truncate">{task.title}</div>
+        <div className={`truncate ${isCompleted ? "line-through" : ""}`}>{task.title}</div>
         {task.relatedLeadName && (
           <div className="truncate text-[10px] text-blue-800/80">{task.relatedLeadName}</div>
         )}
@@ -48,13 +67,23 @@ export function TaskCard({
       draggable={!!onDragStart}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
-      className="border rounded-lg p-4 cursor-move transition-opacity bg-blue-50 hover:bg-blue-100"
+      className={`border rounded-lg p-4 cursor-move transition-opacity bg-blue-50 hover:bg-blue-100 group relative ${isCompleted ? "opacity-60" : ""}`}
       onClick={handleClick}
     >
+      {onComplete && !isCompleted && (
+        <button
+          type="button"
+          className="absolute top-2 right-2 rounded-md p-1.5 opacity-0 group-hover:opacity-100 hover:bg-green-100 transition-opacity"
+          onClick={handleComplete}
+          title="Marcar como concluída"
+        >
+          <Check className="h-4 w-4 text-green-700" />
+        </button>
+      )}
       <div className="flex items-start justify-between">
         <div className="flex-1">
           <div className="flex items-center gap-2">
-            <h3 className="font-semibold">{task.title}</h3>
+            <h3 className={`font-semibold ${isCompleted ? "line-through text-gray-500" : ""}`}>{task.title}</h3>
             {task.status && (
               <Badge
                 className={

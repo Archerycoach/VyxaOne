@@ -21,6 +21,8 @@ interface DayEventsDialogProps {
   /** Confirmar um bloco de agenda criado pela IA (ai_pending). */
   onConfirmAiEvent?: (eventId: string) => void;
   onRejectAiEvent?: (eventId: string) => void;
+  onToggleCompleteEvent?: (eventId: string, completed: boolean) => void;
+  onCompleteTask?: (taskId: string) => void;
 }
 
 export function DayEventsDialog({
@@ -34,6 +36,8 @@ export function DayEventsDialog({
   onDeleteEvent,
   onConfirmAiEvent,
   onRejectAiEvent,
+  onToggleCompleteEvent,
+  onCompleteTask,
 }: DayEventsDialogProps) {
   const formattedDate = date.toLocaleDateString("pt-PT", {
     weekday: "long",
@@ -74,6 +78,7 @@ export function DayEventsDialog({
                   </h3>
                   {events.map((event) => (
                     <EventCard
+                      onToggleComplete={onToggleCompleteEvent}
                       key={event.id}
                       event={event}
                       onClick={() => {
@@ -99,6 +104,7 @@ export function DayEventsDialog({
                   </h3>
                   {tasks.map((task) => (
                     <TaskCard
+                      onComplete={onCompleteTask}
                       key={task.id}
                       task={task}
                       onClick={() => {

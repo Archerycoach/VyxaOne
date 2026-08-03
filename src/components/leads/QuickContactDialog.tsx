@@ -95,6 +95,16 @@ const OUTCOME_OPTIONS = [
   },
 ];
 
+/**
+ * Mensagem padrão do seguimento pós-chamada. Editável no próprio diálogo; a
+ * frase com {link_agenda} é removida no envio se o consultor não tiver link
+ * de agenda configurado.
+ */
+const DEFAULT_FOLLOWUP_TEMPLATE =
+  "Olá {primeiro_nome}, tentei ligar-lhe agora mas não consegui falar consigo. " +
+  "Quando tiver disponibilidade, pode responder-me por aqui — fica mais fácil para ambos. " +
+  "Se preferir, reserve diretamente uma conversa: {link_agenda}";
+
 export function QuickContactDialog({
   leadId,
   leadName,
@@ -130,6 +140,48 @@ export function QuickContactDialog({
       localStorage.setItem("vyxa_quick_contact_wa_snippet", followUpSnippetId);
     }
   }, [followUpSnippetId]);
+
+  // Texto EDITÁVEL da mensagem de seguimento: o consultor vê e afina aqui o
+  // que vai abrir no WhatsApp (em vez de o corrigir lá a cada envio), e pode
+  // guardá-lo como resposta rápida para ficar de vez.
+  const [waDraft, setWaDraft] = useState<string>("");
+  const [savingSnippet, setSavingSnippet] = useState(false);
+  useEffect(() => {
+    const chosen = waSnippets.find((s) => s.id === followUpSnippetId);
+    setWaDraft(chosen?.content || DEFAULT_FOLLOWUP_TEMPLATE);
+  }, [followUpSnippetId, waSnippets, open]);
+
+  const saveDraftAsSnippet = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    const content = waDraft.trim();
+    if (!content) return;
+    setSavingSnippet(true);
+    try {
+      const svc = await import("@/services/messageSnippetsService");
+      const chosen = waSnippets.find((s) => s.id === followUpSnippetId);
+      if (chosen) {
+        await svc.updateMessageSnippet(chosen.id, { content });
+        setWaSnippets((prev) => prev.map((s) => (s.id === chosen.id ? { ...s, content } : s)));
+        toast({ title: "Resposta rápida atualizada" });
+      } else {
+        const created = await svc.createMessageSnippet({
+          title: "Seguimento pós-chamada",
+          content,
+          channel: "whatsapp",
+        });
+        setWaSnippets((prev) => [...prev, { id: created.id, title: created.title, content: created.content }]);
+        setFollowUpSnippetId(created.id);
+        toast({
+          title: "Guardado como resposta rápida",
+          description: "Passa a aparecer na lista (e em Definições → Respostas rápidas).",
+        });
+      }
+    } catch (error: any) {
+      toast({ title: "Erro ao guardar", description: error.message, variant: "destructive" });
+    } finally {
+      setSavingSnippet(false);
+    }
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -194,13 +246,18 @@ export function QuickContactDialog({
           );
           const sender = await getSnippetSenderContext();
 
-          // A resposta escolhida pelo consultor; a padrão é o recurso.
+          // O texto do editor do diálogo manda (é o que o consultor está a
+          // ver); a resposta escolhida/padrão é o recurso.
           const chosenSnippet = waSnippets.find((snippet) => snippet.id === followUpSnippetId);
-          const template =
-            chosenSnippet?.content ||
-            "Olá {primeiro_nome}, tentei ligar-lhe agora mas não consegui falar consigo. " +
-              "Quando tiver disponibilidade, pode responder-me por aqui — fica mais fácil para ambos." +
-              (sender.booking_url ? " Se preferir, reserve diretamente uma conversa: {link_agenda}" : "");
+          let template = waDraft.trim() || chosenSnippet?.content || DEFAULT_FOLLOWUP_TEMPLATE;
+          // Sem link de agenda configurado, remove-se a frase inteira que o
+          // menciona — senão ficava "reserve uma conversa: " sem nada à frente.
+          if (!sender.booking_url) {
+            template = template
+              .replace(/[^.!?\n]*\{link_agenda\}[^.!?\n]*[.!?]?/g, "")
+              .replace(/\s{2,}/g, " ")
+              .trim();
+          }
 
           const followUpText = personalizeSnippet(template, {
             name: leadName,
@@ -331,19 +388,39 @@ export function QuickContactDialog({
                     na cronologia.
                   </span>
                   {sendFollowUp && (
-                    <select
-                      value={followUpSnippetId}
-                      onChange={(e) => setFollowUpSnippetId(e.target.value)}
-                      onClick={(e) => e.preventDefault()}
-                      className="mt-2 block w-full rounded-md border border-green-300 bg-white px-2 py-1.5 text-sm"
-                    >
-                      <option value="default">Mensagem padrão — "Tentei ligar-lhe agora..."</option>
-                      {waSnippets.map((snippet) => (
-                        <option key={snippet.id} value={snippet.id}>
-                          {snippet.title}
-                        </option>
-                      ))}
-                    </select>
+                    <>
+                      <select
+                        value={followUpSnippetId}
+                        onChange={(e) => setFollowUpSnippetId(e.target.value)}
+                        onClick={(e) => e.preventDefault()}
+                        className="mt-2 block w-full rounded-md border border-green-300 bg-white px-2 py-1.5 text-sm"
+                      >
+                        <option value="default">Mensagem padrão — "Tentei ligar-lhe agora..."</option>
+                        {waSnippets.map((snippet) => (
+                          <option key={snippet.id} value={snippet.id}>
+                            {snippet.title}
+                          </option>
+                        ))}
+                      </select>
+                      <textarea
+                        value={waDraft}
+                        onChange={(e) => setWaDraft(e.target.value)}
+                        onClick={(e) => e.preventDefault()}
+                        rows={3}
+                        className="mt-2 block w-full rounded-md border border-green-300 bg-white px-2 py-1.5 text-sm"
+                      />
+                      <span className="mt-1 flex flex-wrap items-center justify-between gap-2 text-[11px] text-green-800">
+                        <span>{"Variáveis: {primeiro_nome}, {nome}, {consultor}, {link_agenda}"}</span>
+                        <button
+                          type="button"
+                          onClick={saveDraftAsSnippet}
+                          disabled={savingSnippet}
+                          className="font-medium underline hover:text-green-900 disabled:opacity-50"
+                        >
+                          {savingSnippet ? "A guardar…" : "Guardar esta mensagem para o futuro"}
+                        </button>
+                      </span>
+                    </>
                   )}
                 </span>
               </label>
