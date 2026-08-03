@@ -377,7 +377,8 @@ const eurPdf = (value: number): string =>
   }).format(value);
 
 /** Título de secção, com filete de destaque. Devolve o novo y. */
-export function addSectionTitle(doc: jsPDF, title: string, y: number): number {
+export function addSectionTitle(doc: jsPDF, rawTitle: string, y: number): number {
+  const title = pdfSafeText(rawTitle);
   const pageWidth = doc.internal.pageSize.getWidth();
 
   doc.setFillColor(ACCENT.r, ACCENT.g, ACCENT.b);
@@ -602,10 +603,33 @@ export function addComparableCard(doc: jsPDF, comparable: ComparableCard, y: num
 }
 
 /**
+ * Torna o texto seguro para as fontes standard do jsPDF (WinAnsi/CP1252).
+ *
+ * Caracteres fora dessa codificação saem como lixo e desalinham a linha
+ * inteira (era o "!'" no lugar da seta → e o espaçamento esticado nos números
+ * dos cenários): setas viram "->", espaços especiais (U+00A0/U+202F, que o
+ * toLocaleString/Intl usa como separador de milhares) viram espaço normal, e
+ * aspas tipográficas viram aspas simples.
+ */
+export function pdfSafeText(input: string): string {
+  return String(input ?? "")
+    .replace(/[→➔➡⇒]/g, "->")
+    .replace(/[      ⁠﻿]/g, " ")
+    .replace(/[‘’‚]/g, "'")
+    .replace(/[“”„]/g, '"')
+    .replace(/−/g, "-");
+}
+
+/**
  * Texto corrido de uma secção, com quebra de página automática.
  * Devolve o novo y, já na página certa.
  */
-export function addBodyText(doc: jsPDF, text: string, y: number): number {
+export function addBodyText(doc: jsPDF, rawText: string, y: number): number {
+  const text = pdfSafeText(rawText);
+  return addBodyTextSafe(doc, text, y);
+}
+
+function addBodyTextSafe(doc: jsPDF, text: string, y: number): number {
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
 
