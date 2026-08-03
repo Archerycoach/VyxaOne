@@ -75,20 +75,74 @@ function buildLocationCandidates(coordinates: any, city: string | null, address:
   return Array.from(new Set(candidates.filter(Boolean)));
 }
 
+/** Coordenadas do anúncio, tolerantes a strings ("38,74"/"38.74") e a 0/0. */
+function listingCoords(item: any): { lat: number; lon: number } | null {
+  const lat = Number(String(item?.latitude ?? item?.lat ?? "").replace(",", "."));
+  const lon = Number(String(item?.longitude ?? item?.lon ?? "").replace(",", "."));
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  if (lat === 0 && lon === 0) return null;
+  return { lat, lon };
+}
+
+export interface RadiusStats {
+  withCoords: number;
+  nearKept: number;
+  farExcluded: number;
+  noCoordsTextKept: number;
+  noCoordsExcluded: number;
+}
+
 /**
- * O raio aplica-se DEPOIS, sobre os resultados: os anúncios trazem
- * latitude/longitude. Um anúncio sem coordenadas passa — excluí-lo
- * penalizaria anúncios incompletos, não anúncios longe.
+ * O raio aplica-se DEPOIS, sobre os resultados.
+ *
+ * Correção importante: antes, um anúncio SEM coordenadas numéricas passava
+ * sempre — e como os fornecedores RapidAPI podem devolver lat/lon como texto
+ * (ou omiti-los), o filtro tornava-se um no-op e entravam comparáveis da
+ * cidade inteira (ex.: Ajuda/Alcântara num estudo junto à Av. do Brasil).
+ * Agora: coordenadas são normalizadas (string → número); sem coordenadas, o
+ * anúncio só entra se o TEXTO (morada/bairro/distrito) bater com a freguesia
+ * do imóvel avaliado.
  */
-function withinRadius<T extends { latitude?: number | null; longitude?: number | null }>(
+function withinRadius<T extends Record<string, any>>(
   results: T[],
   coordinates: any,
-  radiusKm: number
+  radiusKm: number,
+  stats?: RadiusStats
 ): T[] {
   if (!coordinates?.lat || !coordinates?.lon) return results;
+
+  const freguesiaNorm = String(coordinates?.freguesia || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .trim();
+
   return results.filter((item) => {
-    if (typeof item.latitude !== "number" || typeof item.longitude !== "number") return true;
-    return distanceKm(coordinates.lat, coordinates.lon, item.latitude, item.longitude) <= radiusKm;
+    const c = listingCoords(item);
+    if (c) {
+      if (stats) stats.withCoords++;
+      const ok = distanceKm(coordinates.lat, coordinates.lon, c.lat, c.lon) <= radiusKm;
+      if (stats) {
+        if (ok) stats.nearKept++;
+        else stats.farExcluded++;
+      }
+      return ok;
+    }
+    if (freguesiaNorm) {
+      const hay = `${item.address || ""} ${item.neighborhood || ""} ${item.district || ""} ${item.municipality || ""}`
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[̀-ͯ]/g, "");
+      const ok = hay.includes(freguesiaNorm);
+      if (stats) {
+        if (ok) stats.noCoordsTextKept++;
+        else stats.noCoordsExcluded++;
+      }
+      return ok;
+    }
+    // Sem freguesia conhecida não há critério melhor do que a localidade da
+    // pesquisa — mantém-se o comportamento antigo para não esvaziar tudo.
+    return true;
   });
 }
 
@@ -224,6 +278,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // "mercado sem comparáveis", em vez de o culpar em silêncio.
     let idealistaRawCount = 0;
     let idealistaErrorMsg: string | null = null;
+    // Estatísticas do filtro de zona (raio/texto) — vão no diagnóstico para se
+    // ver de onde vieram (ou porque foram excluídos) os comparáveis.
+    const radiusStats: RadiusStats = {
+      withCoords: 0,
+      nearKept: 0,
+      farExcluded: 0,
+      noCoordsTextKept: 0,
+      noCoordsExcluded: 0,
+    };
     try {
       const credentials = await getIdealistaCredentials();
       // Rede LARGA de propósito (a área semelhante é o que aproxima o valor):
@@ -255,7 +318,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       idealistaRawCount = rawResults.length;
       // Raio local por defeito 2 km (não 4): num concelho denso, 4 km apanha
       // zonas com mercados diferentes e enviesa a amostra.
-      const results = withinRadius(rawResults, coordinates, coordinates?.radiusKm || 2);
+      const results = withinRadius(rawResults, coordinates, coordinates?.radiusKm || 2, radiusStats);
 
       // O estado de conservação do imóvel a avaliar decide que comparáveis
       // servem: uma moradia habitável não se compara com ruínas, que é o que
@@ -765,6 +828,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         idealistaKept: idealistaComparables.length,
         idealistaError: idealistaErrorMsg,
         internalCount: internalComparables.length,
+        // Diagnóstico do filtro de zona: se subjectHasCoords for false, a
+        // morada não veio do autocompletar (sem lat/lon) e o filtro por raio
+        // não pôde atuar — os comparáveis podem vir do concelho inteiro.
+        subjectHasCoords: Boolean(coordinates?.lat && coordinates?.lon),
+        radiusKm: coordinates?.radiusKm || 2,
+        radiusStats,
       },
       soldAvgPricePerSqm,
       activeAvgPricePerSqm,

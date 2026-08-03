@@ -83,6 +83,15 @@ interface ValuationResult {
     idealistaKept: number;
     idealistaError: string | null;
     internalCount: number;
+    subjectHasCoords?: boolean;
+    radiusKm?: number;
+    radiusStats?: {
+      withCoords: number;
+      nearKept: number;
+      farExcluded: number;
+      noCoordsTextKept: number;
+      noCoordsExcluded: number;
+    };
   } | null;
 }
 
@@ -1181,6 +1190,24 @@ export default function ValuationPage() {
                           área/critérios. A avaliação apoiou-se na mediana de escrituras do INE.
                         </div>
                       </div>
+                    )}
+                  {result.comparablesDiagnostic && result.comparablesDiagnostic.subjectHasCoords === false && (
+                    <div className="flex gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+                      <span aria-hidden>📍</span>
+                      <div>
+                        A morada não trouxe <strong>coordenadas</strong> (não foi escolhida do autocompletar), por isso o
+                        filtro por raio não pôde atuar — os comparáveis podem vir de todo o concelho. Volte a introduzir a
+                        morada e <strong>selecione-a da lista de sugestões</strong> para restringir à zona.
+                      </div>
+                    </div>
+                  )}
+                  {result.comparablesDiagnostic?.radiusStats &&
+                    result.comparablesDiagnostic.radiusStats.farExcluded + result.comparablesDiagnostic.radiusStats.noCoordsExcluded > 0 && (
+                      <p className="text-xs text-gray-400">
+                        Filtro de zona ({result.comparablesDiagnostic.radiusKm} km):{" "}
+                        {result.comparablesDiagnostic.radiusStats.nearKept + result.comparablesDiagnostic.radiusStats.noCoordsTextKept} na zona,{" "}
+                        {result.comparablesDiagnostic.radiusStats.farExcluded + result.comparablesDiagnostic.radiusStats.noCoordsExcluded} excluídos por estarem fora.
+                      </p>
                     )}
                   {result.comparables.length === 0 ? (
                     <p className="text-sm text-gray-400">Nenhum comparável encontrado na zona.</p>
