@@ -376,10 +376,25 @@ const eurPdf = (value: number): string =>
     maximumFractionDigits: 0,
   }).format(value);
 
-/** Título de secção, com filete de destaque. Devolve o novo y. */
+/**
+ * Título de secção, com filete de destaque. Devolve o novo y.
+ *
+ * Anti-órfão: se o título fosse cair no fundo da página (sem espaço para pelo
+ * menos algumas linhas de conteúdo por baixo), passa primeiro para uma página
+ * nova — um título sozinho no fim da página, com o conteúdo na seguinte, é o
+ * que se quer evitar num documento entregue ao cliente.
+ */
 export function addSectionTitle(doc: jsPDF, rawTitle: string, y: number): number {
   const title = pdfSafeText(rawTitle);
   const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+
+  // Título (16mm) + ~3 linhas de corpo (14mm) têm de caber acima do rodapé.
+  const MIN_SPACE_FOR_SECTION = 30;
+  if (y > pageHeight - FOOTER_RESERVE_MM - MIN_SPACE_FOR_SECTION) {
+    doc.addPage();
+    y = 25;
+  }
 
   doc.setFillColor(ACCENT.r, ACCENT.g, ACCENT.b);
   doc.rect(MARGIN, y - 4, 3, 9, "F");
