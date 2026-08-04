@@ -54,8 +54,8 @@ import {
 } from "lucide-react";
 import { getLeadById, assignLead } from "@/services/leadsService";
 import { AssignLeadDialog } from "./AssignLeadDialog";
-import { getInteractionsByLead, createInteraction } from "@/services/interactionsService";
-import { getNotesByLead, createNote } from "@/services/notesService";
+import { getInteractionsByLead, createInteraction, updateInteraction, deleteInteraction } from "@/services/interactionsService";
+import { getNotesByLead, createNote, updateNote, deleteNote } from "@/services/notesService";
 import { getEventsByLead } from "@/services/calendarService";
 import { getTasksByLead } from "@/services/tasksService";
 import { getPropertiesByLead } from "@/services/propertiesService";
@@ -87,6 +87,12 @@ import { QuickReplyMenu } from "@/components/leads/QuickReplyMenu";
 import { LeadSearchEmailCard } from "@/components/leads/LeadSearchEmailCard";
 import { LeadComposeEmailDialog } from "@/components/leads/LeadComposeEmailDialog";
 import { AiFeatureNotice } from "@/components/ai/AiFeatureNotice";
+import {
+  ImportantDatesFamilyEditor,
+  cleanFamily,
+  cleanImportantDates,
+  type ImportantDatesValue,
+} from "@/components/ImportantDatesFamilyEditor";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { updateLead } from "@/services/leadsService";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -155,6 +161,76 @@ export function LeadDetailsDialog({
   const [sendCopyToSelf, setSendCopyToSelf] = useState(false);
   const [isRunningAutomations, setIsRunningAutomations] = useState(false);
   const [composeEmailOpen, setComposeEmailOpen] = useState(false);
+
+  // Cartão editável "Datas importantes e família" no separador Informações —
+  // tudo o que a criação pede fica também acessível na ficha, sem saltar para
+  // o formulário de edição.
+  const [datesValue, setDatesValue] = useState<ImportantDatesValue>({ birthday: "", family: {}, importantDates: [], enabled: false });
+  const [savingDates, setSavingDates] = useState(false);
+
+  useEffect(() => {
+    const d = lead as any;
+    if (!d) return;
+    setDatesValue({
+      birthday: d.birthday || "",
+      family: d.family || {},
+      importantDates: Array.isArray(d.important_dates) ? d.important_dates : [],
+      enabled: !!d.important_dates_email_enabled,
+    });
+  }, [lead]);
+
+  const saveDates = async () => {
+    if (!lead) return;
+    setSavingDates(true);
+    try {
+      await updateLead(lead.id, {
+        birthday: datesValue.birthday || null,
+        family: cleanFamily(datesValue.family),
+        important_dates: cleanImportantDates(datesValue.importantDates),
+        important_dates_email_enabled: datesValue.enabled,
+      } as any);
+      toast({ title: "Datas e família guardadas" });
+    } catch (error: any) {
+      toast({ title: "Erro ao guardar", description: error.message, variant: "destructive" });
+    } finally {
+      setSavingDates(false);
+    }
+  };
+
+  // Cronologia editável: interações e notas alteram-se/apagam-se no próprio
+  // registo (as tarefas continuam no separador Tarefas).
+  const handleEditInteraction = async (id: string, content: string) => {
+    try {
+      await updateInteraction(id, { content } as any);
+      await refreshInteractions();
+    } catch (error: any) {
+      toast({ title: "Erro ao editar", description: error.message, variant: "destructive" });
+    }
+  };
+  const handleDeleteInteraction = async (id: string) => {
+    try {
+      await deleteInteraction(id);
+      await refreshInteractions();
+    } catch (error: any) {
+      toast({ title: "Erro ao apagar", description: error.message, variant: "destructive" });
+    }
+  };
+  const handleEditNote = async (id: string, note: string) => {
+    try {
+      await updateNote(id, { note } as any);
+      if (lead) setNotes(await getNotesByLead(lead.id));
+    } catch (error: any) {
+      toast({ title: "Erro ao editar a nota", description: error.message, variant: "destructive" });
+    }
+  };
+  const handleDeleteNote = async (id: string) => {
+    try {
+      await deleteNote(id);
+      if (lead) setNotes(await getNotesByLead(lead.id));
+    } catch (error: any) {
+      toast({ title: "Erro ao apagar a nota", description: error.message, variant: "destructive" });
+    }
+  };
   const [whatsappConsentStatus, setWhatsappConsentStatus] = useState<WhatsAppConsentStatus>("none");
   const [isUpdatingDoNotContact, setIsUpdatingDoNotContact] = useState(false);
   const [isUpdatingAiListExclusion, setIsUpdatingAiListExclusion] = useState(false);
@@ -1229,6 +1305,17 @@ export function LeadDetailsDialog({
               {(lead.lead_type === "buyer" || lead.lead_type === "both") && (
                 <LeadIdealistaPanel lead={lead} />
               )}
+              {/* Datas importantes e família — editável aqui, sem abrir o
+                  formulário de edição da lead. */}
+              <div className="space-y-2">
+                <ImportantDatesFamilyEditor value={datesValue} onChange={setDatesValue} />
+                <div className="flex justify-end">
+                  <Button size="sm" onClick={saveDates} disabled={savingDates}>
+                    {savingDates && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
+                    Guardar datas e família
+                  </Button>
+                </div>
+              </div>
             </TabsContent>
 
             <TabsContent value="ai-assistant" className="mt-0 space-y-4">
@@ -1434,6 +1521,10 @@ export function LeadDetailsDialog({
                 interactions={interactions}
                 notes={notes}
                 tasks={tasks}
+                onEditInteraction={handleEditInteraction}
+                onDeleteInteraction={handleDeleteInteraction}
+                onEditNote={handleEditNote}
+                onDeleteNote={handleDeleteNote}
               />
             </TabsContent>
 

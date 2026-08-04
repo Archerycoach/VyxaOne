@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,6 +14,9 @@ import {
   Filter,
   User,
   Clock,
+  Pencil,
+  Trash2,
+  Loader2,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -24,6 +28,11 @@ interface LeadTimelineProps {
   interactions: InteractionWithDetails[];
   notes: LeadNote[];
   tasks: Task[];
+  /** Editar/apagar registos diretamente na cronologia (interações e notas). */
+  onEditInteraction?: (id: string, content: string) => Promise<void>;
+  onDeleteInteraction?: (id: string) => Promise<void>;
+  onEditNote?: (id: string, note: string) => Promise<void>;
+  onDeleteNote?: (id: string) => Promise<void>;
 }
 
 type TimelineItemType = "email" | "whatsapp" | "voice_note" | "note" | "task" | "call" | "visit";
@@ -69,8 +78,51 @@ const channelLabels: Record<TimelineItemType, string> = {
   visit: "Visita",
 };
 
-export function LeadTimeline({ interactions, notes, tasks }: LeadTimelineProps) {
+export function LeadTimeline({
+  interactions,
+  notes,
+  tasks,
+  onEditInteraction,
+  onDeleteInteraction,
+  onEditNote,
+  onDeleteNote,
+}: LeadTimelineProps) {
   const [activeFilter, setActiveFilter] = useState<TimelineItemType | "all">("all");
+
+  // Edição inline: um item de cada vez, com o texto completo no editor.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  const startEdit = (item: { id: string; content: string }) => {
+    setEditingId(item.id);
+    setEditDraft(item.content);
+  };
+
+  const saveEdit = async (item: { id: string; originalData: any }) => {
+    const text = editDraft.trim();
+    if (!text) return;
+    setSavingEdit(true);
+    try {
+      if (item.id.startsWith("note-") && onEditNote) {
+        await onEditNote(item.originalData.id, text);
+      } else if (item.id.startsWith("interaction-") && onEditInteraction) {
+        await onEditInteraction(item.originalData.id, text);
+      }
+      setEditingId(null);
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const deleteItem = async (item: { id: string; originalData: any }) => {
+    if (!confirm("Apagar este registo da cronologia?")) return;
+    if (item.id.startsWith("note-") && onDeleteNote) {
+      await onDeleteNote(item.originalData.id);
+    } else if (item.id.startsWith("interaction-") && onDeleteInteraction) {
+      await onDeleteInteraction(item.originalData.id);
+    }
+  };
 
   // Consolidar todas as interações numa timeline unificada
   const timelineItems = useMemo(() => {
@@ -259,14 +311,57 @@ export function LeadTimeline({ interactions, notes, tasks }: LeadTimelineProps) 
                             <User className="h-3 w-3" />
                             <span>{item.author}</span>
                           </div>
+                          {/* Editar/apagar: interações e notas (tarefas geridas no separador Tarefas). */}
+                          {item.type !== "task" &&
+                            ((item.id.startsWith("note-") && onEditNote) ||
+                              (item.id.startsWith("interaction-") && onEditInteraction)) && (
+                              <span className="flex gap-0.5">
+                                <button
+                                  type="button"
+                                  className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                                  onClick={() => startEdit(item)}
+                                  title="Editar"
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600"
+                                  onClick={() => deleteItem(item)}
+                                  title="Apagar"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </span>
+                            )}
                         </div>
 
-                        {/* Conteúdo da mensagem/nota */}
-                        <div className="text-sm text-gray-700 mb-2 whitespace-pre-wrap break-words">
-                          {item.content.length > 300 
-                            ? `${item.content.substring(0, 300)}...` 
-                            : item.content}
-                        </div>
+                        {/* Conteúdo da mensagem/nota (ou editor inline) */}
+                        {editingId === item.id ? (
+                          <div className="mb-2 space-y-2">
+                            <Textarea
+                              value={editDraft}
+                              onChange={(e) => setEditDraft(e.target.value)}
+                              rows={4}
+                              className="text-sm"
+                            />
+                            <div className="flex gap-2 justify-end">
+                              <Button size="sm" variant="ghost" onClick={() => setEditingId(null)} disabled={savingEdit}>
+                                Cancelar
+                              </Button>
+                              <Button size="sm" onClick={() => saveEdit(item)} disabled={savingEdit || !editDraft.trim()}>
+                                {savingEdit && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}
+                                Guardar
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="text-sm text-gray-700 mb-2 whitespace-pre-wrap break-words">
+                            {item.content.length > 300
+                              ? `${item.content.substring(0, 300)}...`
+                              : item.content}
+                          </div>
+                        )}
 
                         {/* Footer - Data */}
                         <div className="flex items-center gap-1 text-xs text-gray-400">

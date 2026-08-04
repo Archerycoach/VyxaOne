@@ -287,7 +287,17 @@ export function LeadFormContainer({ initialData, onSuccess, onCancel }: LeadForm
           description: "Lead atualizado com sucesso",
         });
       } else {
-        await createLead(leadData as any);
+        const created = await createLead(leadData as any);
+        // A nota da criação entra na CRONOLOGIA (como nota), não só no campo
+        // notes da ficha — é onde o consultor procura o histórico.
+        if (created?.id && formData.notes.trim()) {
+          try {
+            const { createNote } = await import("@/services/notesService");
+            await createNote({ lead_id: created.id, note: formData.notes.trim() } as any);
+          } catch (noteError) {
+            console.error("Nota da criação não registada na cronologia:", noteError);
+          }
+        }
         toast({
           title: "Sucesso",
           description: "Lead criado com sucesso",
@@ -326,8 +336,9 @@ export function LeadFormContainer({ initialData, onSuccess, onCancel }: LeadForm
           {/* Seller Specific Fields */}
           {isSeller && <LeadFormSellerFields formData={{ ...formData, lead_type: formData.lead_type }} onChange={handleChange} />}
 
-          {/* Datas importantes e família */}
-          <ImportantDatesFamilyEditor value={datesValue} onChange={setDatesValue} />
+          {/* Datas importantes e família — só na edição: a criação é enxuta e
+              estes campos estão acessíveis na ficha da lead (Informações). */}
+          {initialData && <ImportantDatesFamilyEditor value={datesValue} onChange={setDatesValue} />}
 
           {/* Notes */}
           <div className="space-y-2">
