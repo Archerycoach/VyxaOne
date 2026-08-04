@@ -256,7 +256,12 @@ export default function SubscriptionPage() {
                         €{plan.price}
                       </span>
                       <span className="text-muted-foreground">
-                        /{plan.billing_interval === "month" ? "mês" : "ano"}
+                        {/* Valores reais na BD: monthly | semiannual | yearly. */}
+                        /{plan.billing_interval === "monthly" || plan.billing_interval === "month"
+                          ? "mês"
+                          : plan.billing_interval === "semiannual"
+                          ? "semestre"
+                          : "ano"}
                       </span>
                     </CardDescription>
                   </CardHeader>
