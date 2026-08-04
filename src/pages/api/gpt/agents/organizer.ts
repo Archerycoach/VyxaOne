@@ -70,7 +70,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const threeDaysAgo = new Date(now);
     threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
 
-    const [tasksResult, eventsResult, followUpResult, hotLeadsResult, recentLeadsResult, profileResult] = await Promise.all([
+    const [tasksResult, eventsResult, followUpResult, hotLeadsResult, recentLeadsResult, profileResult, inboxResult] = await Promise.all([
       supabaseAdmin
         .from("tasks")
         .select("id, title, due_date, priority, related_lead_id")
@@ -85,18 +85,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         .gte("start_time", todayStartISO)
         .lt("start_time", todayEndISO)
         .order("start_time", { ascending: true }),
-      supabaseAdmin
+      (supabaseAdmin as any)
         .from("leads")
-        .select("id, name, next_follow_up, temperature, phone, email")
+        .select("id, name, next_follow_up, temperature, phone, email, conversion_probability")
         .eq("user_id", user.id)
         .not("follow_up_state", "in", '("archived","opt_out")')
         .not("next_follow_up", "is", null)
         .lte("next_follow_up", todayEndISO)
         .order("next_follow_up", { ascending: true })
         .limit(15),
-      supabaseAdmin
+      (supabaseAdmin as any)
         .from("leads")
-        .select("id, name, last_contact_date, phone, email")
+        .select("id, name, last_contact_date, phone, email, conversion_probability")
         .eq("user_id", user.id)
         .eq("temperature", "hot")
         .not("follow_up_state", "in", '("archived","opt_out")')
@@ -109,6 +109,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         .order("updated_at", { ascending: false })
         .limit(40),
       supabaseAdmin.from("profiles").select("full_name").eq("id", user.id).maybeSingle(),
+      (supabaseAdmin as any)
+        .from("inbox_triage")
+        .select("id, reminder, lead_id, urgency, from_name")
+        .eq("user_id", user.id)
+        .eq("status", "new")
+        .eq("importance", "high")
+        .order("created_at", { ascending: false })
+        .limit(5),
     ]);
 
     const allTasks = (tasksResult.data || []) as TaskRecord[];
@@ -136,6 +144,103 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       .filter((entry) => entry.total > 0 && entry.missing.length > 0)
       .sort((a, b) => a.missing.length - b.missing.length)
       .slice(0, 8);
+
+    // ------------------------------------------------------------------
+    // "As 3 de hoje": em vez de N listas com o mesmo peso, escolhe-se — com
+    // pontuação determinística e explicável — as três ações que mais valem o
+    // tempo do consultor AGORA. Cruzam-se urgência (atraso), valor da lead
+    // (probabilidade de conversão do scoring preditivo + temperatura) e os
+    // sinais do Assistente de Emails. Uma ação por lead, para as três não
+    // serem a mesma pessoa.
+    // ------------------------------------------------------------------
+    interface TopAction {
+      kind: "task_overdue" | "task_today" | "follow_up" | "hot_stale" | "inbox";
+      title: string;
+      reason: string;
+      leadId?: string | null;
+      taskId?: string | null;
+      score: number;
+    }
+    const candidates: TopAction[] = [];
+    const priorityBonus = (p: string | null) =>
+      p === "urgent" ? 25 : p === "high" ? 18 : p === "medium" ? 8 : 0;
+    const probBonus = (p: unknown) => {
+      const n = Number(p);
+      return Number.isFinite(n) ? Math.min(20, Math.round(n / 5)) : 0;
+    };
+
+    for (const t of overdueTasks) {
+      const daysLate = Math.max(1, Math.floor((now.getTime() - new Date(t.due_date!).getTime()) / 86400000));
+      candidates.push({
+        kind: "task_overdue",
+        title: t.title,
+        reason: `Tarefa atrasada há ${daysLate} dia${daysLate === 1 ? "" : "s"}${t.priority === "high" || t.priority === "urgent" ? ", prioridade alta" : ""}`,
+        leadId: t.related_lead_id,
+        taskId: t.id,
+        score: 50 + priorityBonus(t.priority) + Math.min(18, daysLate * 3),
+      });
+    }
+    for (const t of todayTasks) {
+      candidates.push({
+        kind: "task_today",
+        title: t.title,
+        reason: `Vence hoje${t.priority === "high" || t.priority === "urgent" ? ", prioridade alta" : ""}`,
+        leadId: t.related_lead_id,
+        taskId: t.id,
+        score: 40 + priorityBonus(t.priority),
+      });
+    }
+    for (const l of followUpDueLeads as any[]) {
+      const prob = Number(l.conversion_probability);
+      candidates.push({
+        kind: "follow_up",
+        title: `Retomar contacto com ${l.name}`,
+        reason: [
+          "Follow-up vencido",
+          l.temperature === "hot" ? "lead quente" : l.temperature === "warm" ? "lead morna" : null,
+          Number.isFinite(prob) ? `${Math.round(prob)}% prob. de conversão` : null,
+        ].filter(Boolean).join(" · "),
+        leadId: l.id,
+        score: 55 + (l.temperature === "hot" ? 20 : l.temperature === "warm" ? 8 : 0) + probBonus(l.conversion_probability),
+      });
+    }
+    for (const l of hotLeadsStale as any[]) {
+      const days = l.last_contact_date
+        ? Math.floor((now.getTime() - new Date(l.last_contact_date).getTime()) / 86400000)
+        : null;
+      const prob = Number(l.conversion_probability);
+      candidates.push({
+        kind: "hot_stale",
+        title: `Ligar a ${l.name} antes que arrefeça`,
+        reason: [
+          days !== null ? `Lead quente sem contacto há ${days} dias` : "Lead quente sem contacto registado",
+          Number.isFinite(prob) ? `${Math.round(prob)}% prob. de conversão` : null,
+        ].filter(Boolean).join(" · "),
+        leadId: l.id,
+        score: 58 + Math.min(16, (days ?? 8) * 2) + probBonus(l.conversion_probability),
+      });
+    }
+    for (const r of ((inboxResult as any)?.data || []) as any[]) {
+      if (!r.reminder) continue;
+      candidates.push({
+        kind: "inbox",
+        title: r.reminder,
+        reason: `Email prioritário${r.from_name ? ` de ${r.from_name}` : ""} no Assistente de Emails`,
+        leadId: r.lead_id,
+        score: 62 + (Number(r.urgency) >= 5 ? 12 : 6),
+      });
+    }
+
+    // Uma ação por lead (a melhor); ações sem lead concorrem individualmente.
+    const bestByKey = new Map<string, TopAction>();
+    for (const c of candidates) {
+      const key = c.leadId || `solo-${c.kind}-${c.taskId || c.title}`;
+      const existing = bestByKey.get(key);
+      if (!existing || c.score > existing.score) bestByKey.set(key, c);
+    }
+    const topThree = Array.from(bestByKey.values())
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 3);
 
     const highlights: string[] = [];
     if (todayEvents.length > 0) {
@@ -180,6 +285,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     return res.status(200).json({
       summary,
+      topThree,
       overdueTasks,
       todayTasks,
       todayEvents,

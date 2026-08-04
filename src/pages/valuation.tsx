@@ -78,6 +78,22 @@ interface ValuationResult {
     valueMin: number;
     valueMax: number;
   } | null;
+  homogenization?: {
+    pricePerSqm: number | null;
+    rawPricePerSqm: number | null;
+    sampleSize: number;
+    deltaPct: number | null;
+    applied: boolean;
+    sample: Array<{
+      rawPricePerSqm: number;
+      homogenizedPricePerSqm: number;
+      totalCoefficient: number;
+      lines: { label: string; coefficient: number }[];
+    }>;
+  } | null;
+  costMethod?: { valueMin: number; valueMax: number; landValue: number; breakdown: string[] } | null;
+  dependentAreas?: { total: number; lines: { label: string; value: number }[] } | null;
+  incomeMethod?: { value: number; yieldRate: number; netYieldRate: number; note: string } | null;
   comparablesDiagnostic?: {
     idealistaRaw: number;
     idealistaKept: number;
@@ -150,6 +166,19 @@ export default function ValuationPage() {
     hasOpenViews: false,
     isSingleStorey: false,
     landArea: "",
+    // ÁREAS DEPENDENTES (manual, pág. 25-35): não têm valor de mercado próprio
+    // — valem uma fração do €/m² da área principal (varandas) ou um valor de
+    // mercado absoluto (estacionamento, arrecadação, terraço).
+    balconyOpenSqm: "",
+    balconyEnclosedSqm: "",
+    storageSqm: "",
+    storagePricePerSqm: "500",
+    parkingType: "",
+    parkingCount: "",
+    terraceSqm: "",
+    terraceLocation: "",
+    // Vistas (tabela do manual, pág. 52) — substitui os booleanos genéricos.
+    viewType: "",
     // Valor Patrimonial Tributário (da caderneta) — validação pelo múltiplo do VPT.
     taxableValue: "",
     lat: "",
@@ -278,6 +307,19 @@ export default function ValuationPage() {
             hasOpenViews: form.hasOpenViews,
             isSingleStorey: form.isSingleStorey,
             landArea: form.landArea ? Number(form.landArea) : null,
+            // Vistas segundo a tabela do manual (impacto 0,70 a 1,40).
+            viewType: form.viewType || null,
+          },
+          // Áreas dependentes: valorizadas à parte da área principal.
+          dependentAreas: {
+            balconyOpenSqm: form.balconyOpenSqm ? Number(form.balconyOpenSqm) : null,
+            balconyEnclosedSqm: form.balconyEnclosedSqm ? Number(form.balconyEnclosedSqm) : null,
+            storageSqm: form.storageSqm ? Number(form.storageSqm) : null,
+            storagePricePerSqm: form.storagePricePerSqm ? Number(form.storagePricePerSqm) : null,
+            parkingType: form.parkingType || null,
+            parkingCount: form.parkingCount ? Number(form.parkingCount) : null,
+            terraceSqm: form.terraceSqm ? Number(form.terraceSqm) : null,
+            terraceLocation: form.terraceLocation || null,
           },
           // Coordenadas exatas quando o consultor escolheu da lista.
           coordinates:
@@ -435,6 +477,21 @@ export default function ValuationPage() {
           `${Math.round((result as any).inePricePerSqm).toLocaleString("pt-PT")} €/m². ` +
           `Reflete preços efetivamente pagos, e não valores pedidos.`,
         y + 2
+      );
+    }
+
+    // Áreas dependentes: o cliente tem de ver o que foi somado e porquê.
+    const dep = (result as any).dependentAreas;
+    if (dep && dep.lines?.length > 0) {
+      y = addSectionTitle(doc, "Áreas dependentes", y + 4);
+      for (const line of dep.lines) {
+        y = addBodyText(doc, `${line.label}: ${formatCurrency(line.value)}`, y + 1);
+      }
+      y = addBodyText(
+        doc,
+        `Total somado ao valor: ${formatCurrency(dep.total)}. As varandas valem uma fração do €/m² da ` +
+          `área principal; a arrecadação e o estacionamento têm valor de mercado próprio.`,
+        y + 1
       );
     }
 
@@ -893,6 +950,139 @@ export default function ValuationPage() {
                 </div>
               </div>
 
+              {/* ÁREAS DEPENDENTES E VISTAS — o que o método comparativo
+                  exige valorizar à parte (manual, pág. 25-35 e 52). */}
+              <div className="md:col-span-2 space-y-3 rounded-lg border bg-slate-50/60 p-4">
+                <div>
+                  <Label className="text-base">Áreas dependentes e vistas</Label>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    As varandas, arrecadações e garagens não entram na área principal: valem à parte.
+                    Preencher melhora a precisão do valor final.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-sm">Varanda aberta (m²)</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      value={form.balconyOpenSqm}
+                      onChange={(e) => setForm({ ...form, balconyOpenSqm: e.target.value })}
+                      placeholder="Ex: 6"
+                    />
+                    <p className="text-[11px] text-muted-foreground">Vale 50% do €/m² da área principal.</p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-sm">Varanda fechada (m²)</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      value={form.balconyEnclosedSqm}
+                      onChange={(e) => setForm({ ...form, balconyEnclosedSqm: e.target.value })}
+                      placeholder="Ex: 4"
+                    />
+                    <p className="text-[11px] text-muted-foreground">Vale 100% do €/m² (bem fechada).</p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-sm">Arrecadação (m²)</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      value={form.storageSqm}
+                      onChange={(e) => setForm({ ...form, storageSqm: e.target.value })}
+                      placeholder="Ex: 8"
+                    />
+                    <p className="text-[11px] text-muted-foreground">Valorizada a 250–1000 €/m².</p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label className="text-sm">Valor da arrecadação (€/m²)</Label>
+                    <Input
+                      type="number"
+                      min="250"
+                      max="1000"
+                      value={form.storagePricePerSqm}
+                      onChange={(e) => setForm({ ...form, storagePricePerSqm: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-sm">Estacionamento</Label>
+                    <select
+                      className="w-full rounded-md border bg-white px-3 py-2 text-sm"
+                      value={form.parkingType}
+                      onChange={(e) => setForm({ ...form, parkingType: e.target.value })}
+                    >
+                      <option value="">Sem lugar</option>
+                      <option value="individual">Individual (box/lugar) — 10.000 €</option>
+                      <option value="double">Duplo lado a lado — 20.000 €</option>
+                      <option value="double_row">Duplo em fila — 15.000 €</option>
+                      <option value="triple_row">Triplo em fila — 22.500 €</option>
+                      <option value="outdoor">Ao ar livre — 5.000 €</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-sm">Nº de lugares</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      value={form.parkingCount}
+                      onChange={(e) => setForm({ ...form, parkingCount: e.target.value })}
+                      placeholder="Ex: 1"
+                      disabled={!form.parkingType}
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label className="text-sm">Terraço (m²)</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      value={form.terraceSqm}
+                      onChange={(e) => setForm({ ...form, terraceSqm: e.target.value })}
+                      placeholder="Ex: 20"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-sm">Localização do terraço</Label>
+                    <select
+                      className="w-full rounded-md border bg-white px-3 py-2 text-sm"
+                      value={form.terraceLocation}
+                      onChange={(e) => setForm({ ...form, terraceLocation: e.target.value })}
+                      disabled={!form.terraceSqm}
+                    >
+                      <option value="">—</option>
+                      <option value="top">Último piso (vistas, privacidade)</option>
+                      <option value="ground">Rés do chão</option>
+                    </select>
+                    <p className="text-[11px] text-muted-foreground">
+                      O terraço no último piso vale muito mais do que ao nível térreo.
+                    </p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-sm">Tipo de vista</Label>
+                    <select
+                      className="w-full rounded-md border bg-white px-3 py-2 text-sm"
+                      value={form.viewType}
+                      onChange={(e) => setForm({ ...form, viewType: e.target.value })}
+                    >
+                      <option value="">Não especificada</option>
+                      <option value="sea_front_close">Mar/rio frontal próximo (+30 a +40%)</option>
+                      <option value="sea_front">Mar/rio frontal (+20 a +30%)</option>
+                      <option value="sea_distant">Mar/rio algo distante (+10 a +20%)</option>
+                      <option value="sea_far">Mar/rio distante (+5 a +10%)</option>
+                      <option value="sea_side">Mar/rio lateral (+0 a +5%)</option>
+                      <option value="river">Rio (+10 a +15%)</option>
+                      <option value="city_panoramic">Panorâmica de cidade (+15 a +40%)</option>
+                      <option value="nature">Serra / natureza (+5 a +10%)</option>
+                      <option value="building">Prédio em frente (neutro)</option>
+                      <option value="privacy_invaded">Devassa da intimidade (−10 a −30%)</option>
+                      <option value="cemetery">Campas de cemitério (−10 a −30%)</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
               <div className="space-y-2 md:col-span-2">
                 <Label>Descrição do imóvel (opcional)</Label>
                 <Textarea
@@ -1175,6 +1365,67 @@ export default function ValuationPage() {
                   {/* Distingue "fonte de dados falhou/vazia" de "mercado sem
                       comparáveis": se o Idealista deu erro ou não devolveu nada,
                       o problema é a integração, não o mercado. */}
+                  {/* Homogeneização: o núcleo do método comparativo. Mostra o
+                      que a média simples esconderia. */}
+                  {result.homogenization?.applied && result.homogenization.pricePerSqm && (
+                    <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm">
+                      <p className="font-medium text-emerald-900">
+                        Comparáveis homogeneizados: {Math.round(result.homogenization.pricePerSqm).toLocaleString("pt-PT")} €/m²
+                      </p>
+                      <p className="text-xs text-emerald-800 mt-1">
+                        Cada comparável foi ajustado às condições deste imóvel (negociação, área, estado, idade,
+                        piso/elevador, vistas) antes da mediana — método comparativo com homogeneização.
+                        {result.homogenization.rawPricePerSqm && result.homogenization.deltaPct != null && (
+                          <>
+                            {" "}A média simples dos anúncios daria{" "}
+                            {Math.round(result.homogenization.rawPricePerSqm).toLocaleString("pt-PT")} €/m² (
+                            {result.homogenization.deltaPct > 0 ? "+" : ""}
+                            {result.homogenization.deltaPct}% de diferença).
+                          </>
+                        )}
+                      </p>
+                    </div>
+                  )}
+
+                  {result.dependentAreas && result.dependentAreas.lines.length > 0 && (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-3 text-sm">
+                      <p className="font-medium text-amber-900">
+                        Áreas dependentes: +{result.dependentAreas.total.toLocaleString("pt-PT")} €
+                      </p>
+                      <ul className="mt-1 space-y-0.5">
+                        {result.dependentAreas.lines.map((l, i) => (
+                          <li key={i} className="text-xs text-amber-800 flex justify-between gap-3">
+                            <span>{l.label}</span>
+                            <span className="font-medium shrink-0">{l.value.toLocaleString("pt-PT")} €</span>
+                          </li>
+                        ))}
+                      </ul>
+                      <p className="text-[11px] text-amber-700 mt-1.5">
+                        Já somadas ao valor recomendado. Varandas valem uma fração do €/m² da área
+                        principal; garagem e arrecadação têm valor de mercado próprio.
+                      </p>
+                    </div>
+                  )}
+
+                  {(result.costMethod || result.incomeMethod) && (
+                    <div className="rounded-lg border bg-slate-50 p-3 text-sm space-y-1">
+                      <p className="font-medium text-slate-700">Validação por outros métodos</p>
+                      {result.costMethod && (
+                        <p className="text-xs text-slate-600">
+                          <span className="font-medium">Custo:</span>{" "}
+                          {result.costMethod.valueMin.toLocaleString("pt-PT")} € –{" "}
+                          {result.costMethod.valueMax.toLocaleString("pt-PT")} € (terreno + construção + encargos + lucro)
+                        </p>
+                      )}
+                      {result.incomeMethod && (
+                        <p className="text-xs text-slate-600">
+                          <span className="font-medium">Rendimento:</span>{" "}
+                          {result.incomeMethod.value.toLocaleString("pt-PT")} € — {result.incomeMethod.note}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
                   {result.comparablesDiagnostic &&
                     (result.comparablesDiagnostic.idealistaError || result.comparablesDiagnostic.idealistaRaw === 0) && (
                       <div className="flex gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">

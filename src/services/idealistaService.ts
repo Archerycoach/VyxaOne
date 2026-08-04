@@ -129,6 +129,9 @@ export interface IdealistaProperty {
   neighborhood: string;
   latitude: number;
   longitude: number;
+  /** Piso do imóvel (string ou número, conforme o fornecedor). Usado na
+   *  homogeneização dos comparáveis (variável "posição na vertical"). */
+  floor?: string | number | null;
   description: string;
   hasVideo: boolean;
   status: string;

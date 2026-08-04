@@ -66,7 +66,17 @@ interface QualificationGapItem {
   filled: number;
 }
 
+interface TopAction {
+  kind: string;
+  title: string;
+  reason: string;
+  leadId?: string | null;
+  taskId?: string | null;
+  score: number;
+}
+
 interface OrganizerData {
+  topThree?: TopAction[];
   summary: string;
   overdueTasks: TaskItem[];
   todayTasks: TaskItem[];
@@ -222,6 +232,53 @@ export default function AiOrganizer() {
 
           {data && (
             <>
+              {/* As 3 de hoje: a escolha forçada — três ações, por ordem, com o
+                  porquê à vista. O resto da página é contexto; isto é o foco. */}
+              {data.topThree && data.topThree.length > 0 && (
+                <Card className="border-indigo-300 bg-gradient-to-br from-indigo-50 to-white shadow-sm">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base flex items-center gap-2 text-indigo-800">
+                      🎯 As 3 de hoje
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2.5">
+                    {data.topThree.map((action, i) => (
+                      <div key={i} className="flex items-start gap-3 rounded-lg border border-indigo-100 bg-white p-3">
+                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-sm font-bold text-white">
+                          {i + 1}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium text-slate-900">{action.title}</p>
+                          <p className="text-xs text-slate-500 mt-0.5">{action.reason}</p>
+                        </div>
+                        <span className="flex shrink-0 gap-1.5">
+                          {action.leadId && (
+                            <Button size="sm" variant="outline" onClick={() => goToLead(action.leadId)}>
+                              Abrir lead
+                            </Button>
+                          )}
+                          {action.taskId && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              disabled={completingTaskId === action.taskId}
+                              onClick={() => handleCompleteTask(action.taskId!)}
+                              title="Concluir tarefa"
+                            >
+                              {completingTaskId === action.taskId ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                              )}
+                            </Button>
+                          )}
+                        </span>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
+
               {data.summary && (
                 <Card className="border-indigo-200 bg-indigo-50/50">
                   <CardContent className="pt-6 flex items-start gap-3">

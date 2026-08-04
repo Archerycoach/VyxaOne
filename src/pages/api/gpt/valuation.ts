@@ -8,6 +8,8 @@ import { getLocationInsights, getLocationInsightsForPoint } from "@/lib/server/l
 import { getGeoapifyKey } from "@/lib/server/geoapifyCredentials";
 import { calculateLandAdjustment } from "@/lib/server/landValueAdjustment";
 import { calculateValueFactors, describeFactorBreakdown } from "@/lib/server/valueFactorAdjustment";
+import { homogenizeComparables } from "@/lib/server/comparableHomogenization";
+import { costMethod, incomeMethod, valueDependentAreas } from "@/lib/server/valuationMethods";
 import {
   getInePriceReference,
   resolveIneGeoCodes,
@@ -199,7 +201,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
     if (authError || !user) return res.status(401).json({ error: "Não autorizado" });
 
-    const { address, propertyType, area, bedrooms, bathrooms, condition, city, factors, land, ineGeoCode, coordinates, criteria, consultantDescription, taxableValue } = req.body || {};
+    const { address, propertyType, area, bedrooms, bathrooms, condition, city, factors, land, ineGeoCode, coordinates, criteria, consultantDescription, taxableValue, dependentAreas } = req.body || {};
     if (!address || !propertyType) {
       return res.status(400).json({ error: "Morada e tipo de imóvel são obrigatórios" });
     }
@@ -343,6 +345,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             thumbnail: p.thumbnail || null,
             condition: candidateCondition,
             conditionLabel: conditionLabel(candidateCondition),
+            // Campos técnicos para a HOMOGENEIZAÇÃO (método comparativo):
+            // piso e elevador entram na variável "posição na vertical".
+            floor: typeof p.floor === "number" ? p.floor : Number(p.floor) || null,
+            hasLift: typeof p.hasLift === "boolean" ? p.hasLift : null,
           };
         })
         .filter((c) => conditionsAreComparable(subjectState, c.condition))
@@ -577,8 +583,69 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const vptPerSqm =
       Number.isFinite(vptValue) && vptValue > 0 && area ? (vptValue * 3.55) / area : null;
 
+    // Diferença entre o que o mercado PEDE e o que efetivamente PAGA.
+    //
+    // É o argumento mais forte contra um preço irrealista: mostra ao
+    // proprietário, com números oficiais, a margem que existe entre anúncio e
+    // escritura. Alimenta também o FATOR NEGOCIAL da homogeneização.
+    const askingPricePerSqm = zonePricePerSqm || comparablesPricePerSqm;
+    let askingVsSoldGapPct: number | null = null;
+    if (ineReference && askingPricePerSqm) {
+      askingVsSoldGapPct = Math.round(((askingPricePerSqm / ineReference.pricePerSqm) - 1) * 100);
+    }
+
+    // ------------------------------------------------------------------
+    // HOMOGENEIZAÇÃO DOS COMPARÁVEIS (método comparativo, Ruy Figueiredo 2026)
+    //
+    // A média crua dos €/m² dos anúncios é o erro clássico: compara imóveis de
+    // áreas, idades, pisos e estados diferentes como se fossem iguais. O manual
+    // demonstra que a diferença entre a média crua e a homogeneizada chega a
+    // 23%. Aqui cada referência é ajustada ÀS CONDIÇÕES do imóvel a avaliar
+    // (fator negocial, área, conservação, idade, piso/elevador, vistas) e só
+    // depois se tira a mediana.
+    // ------------------------------------------------------------------
+    const subjectAgeYears =
+      factors?.yearBuilt && Number(factors.yearBuilt) > 1800
+        ? new Date().getFullYear() - Number(factors.yearBuilt)
+        : null;
+
+    const homogenization = homogenizeComparables(
+      {
+        area: Number(area) || null,
+        propertyType: propertyType || null,
+        condition: condition || null,
+        floor: factors?.floor ?? null,
+        hasLift: factors?.hasElevator ?? null,
+        view: factors?.viewType || (factors?.hasSeaView ? "sea_front" : factors?.hasOpenViews ? "city_panoramic" : null),
+        ageYears: subjectAgeYears,
+      },
+      comparables.map((c: any) => ({
+        pricePerSqm: c.pricePerSqm,
+        area: c.area,
+        status: c.status,
+        condition: c.condition ?? null,
+        floor: c.floor ?? null,
+        hasLift: c.hasLift ?? null,
+      })),
+      { askingVsSoldGapPct },
+    );
+
+    // O €/m² dos comparáveis passa a ser o HOMOGENEIZADO quando há amostra
+    // suficiente; senão mantém-se a média simples (melhor do que nada).
+    const comparablesHomogenizedPricePerSqm =
+      homogenization.sampleSize >= 2 ? homogenization.pricePerSqm : null;
+    const effectiveComparablesPricePerSqm =
+      comparablesHomogenizedPricePerSqm || comparablesPricePerSqm;
+
     const sources: Array<{ value: number; weight: number }> = [];
-    if (comparablesPricePerSqm) sources.push({ value: comparablesPricePerSqm, weight: 0.4 });
+    // Comparáveis homogeneizados pesam MAIS (0.45) do que a média crua pesava:
+    // depois do ajuste técnico são o sinal mais fiável do valor de mercado.
+    if (effectiveComparablesPricePerSqm) {
+      sources.push({
+        value: effectiveComparablesPricePerSqm,
+        weight: comparablesHomogenizedPricePerSqm ? 0.45 : 0.4,
+      });
+    }
     if (zonePricePerSqm) sources.push({ value: zonePricePerSqm, weight: 0.25 });
     if (ineReference) sources.push({ value: ineReference.pricePerSqm, weight: 0.2 });
     if (vptPerSqm) sources.push({ value: vptPerSqm, weight: 0.2 });
@@ -586,17 +653,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // Os pesos são normalizados pelas fontes que existirem: com só uma, vale
     // 100%; sem INE, os comparáveis e a zona repartem-se na mesma proporção
     // relativa de antes.
-    // Diferença entre o que o mercado PEDE e o que efetivamente PAGA.
-    //
-    // É o argumento mais forte contra um preço irrealista: mostra ao
-    // proprietário, com números oficiais, a margem que existe entre anúncio e
-    // escritura. Só faz sentido com as duas fontes presentes.
-    const askingPricePerSqm = zonePricePerSqm || comparablesPricePerSqm;
-    let askingVsSoldGapPct: number | null = null;
-    if (ineReference && askingPricePerSqm) {
-      askingVsSoldGapPct = Math.round(((askingPricePerSqm / ineReference.pricePerSqm) - 1) * 100);
-    }
-
     const totalWeight = sources.reduce((sum, entry) => sum + entry.weight, 0);
     const referencePricePerSqm: number | null =
       totalWeight > 0
@@ -609,6 +665,43 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       ineRent && referencePricePerSqm
         ? Math.round(((ineRent.rentPerSqm * 12) / referencePricePerSqm) * 1000) / 10
         : null;
+
+    // ------------------------------------------------------------------
+    // VALIDAÇÃO CRUZADA: métodos do CUSTO e do RENDIMENTO.
+    //
+    // O manual é claro: os comparáveis mandam, mas uma avaliação defensável
+    // confirma-se por outra via. O custo é decisivo em moradias e obra nova
+    // (terreno + construção + encargos + lucro do promotor); o rendimento
+    // responde ao investidor (V = renda × 12 / yield).
+    // ------------------------------------------------------------------
+    const referenceValueForMethods =
+      referencePricePerSqm && area ? referencePricePerSqm * Number(area) : null;
+
+    // Custo: só faz sentido quando há área de construção. Para moradias a
+    // quota do terreno é maior (30%); em apartamentos o "terreno" é a quota
+    // parte, tipicamente 25%.
+    const costCheck =
+      area && Number(area) > 0
+        ? costMethod({
+            constructionArea: Number(area),
+            quality: condition && String(condition).includes("nov") ? "alta" : "corrente",
+            scale: propertyType === "house" ? "moradia" : "predio",
+            referenceValue: referenceValueForMethods,
+            landQuotaPct: propertyType === "house" ? 0.3 : 0.25,
+            landValue: land?.landValue ?? null,
+          })
+        : null;
+
+    // Rendimento: usa a renda mediana do INE para a área do imóvel; a yield
+    // vem da tipologia (T0-T2 rendem mais que T3+, pág. 92 do manual).
+    const estimatedMonthlyRent =
+      ineRent && area ? ineRent.rentPerSqm * Number(area) : null;
+    const incomeCheck = estimatedMonthlyRent
+      ? incomeMethod({
+          monthlyRent: estimatedMonthlyRent,
+          bedrooms: bedrooms ? Number(bedrooms) : null,
+        })
+      : null;
 
     let suggestedMin: number | null = null;
     let suggestedMax: number | null = null;
@@ -643,10 +736,47 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       builtArea: area,
     });
 
+    // ÁREAS DEPENDENTES (manual, pág. 25-35): varandas, arrecadação, garagem e
+    // terraço NÃO estão na área principal — valem à parte e somam-se ao valor.
+    // As varandas valem uma fração do €/m² da área principal (α: 0,5 aberta,
+    // 1,0 bem fechada); estacionamento e arrecadação têm valor de mercado próprio.
+    const terraceValue = (() => {
+      const sqm = Number(dependentAreas?.terraceSqm);
+      if (!Number.isFinite(sqm) || sqm <= 0) return 0;
+      // Manual: terraço no último piso 15.000-100.000 €; ao nível térreo
+      // 5.000-25.000 €. Escala-se com a área, dentro desses intervalos.
+      const top = dependentAreas?.terraceLocation === "top";
+      const perSqm = top ? 700 : 250;
+      const cap = top ? 100000 : 25000;
+      const floorValue = top ? 15000 : 5000;
+      return Math.min(cap, Math.max(floorValue, Math.round(sqm * perSqm)));
+    })();
+
+    const dependentAreasResult = adjustedPricePerSqm
+      ? valueDependentAreas({
+          mainPricePerSqm: adjustedPricePerSqm,
+          balconyOpenSqm: dependentAreas?.balconyOpenSqm ?? null,
+          balconyEnclosedSqm: dependentAreas?.balconyEnclosedSqm ?? null,
+          storageSqm: dependentAreas?.storageSqm ?? null,
+          storagePricePerSqm: dependentAreas?.storagePricePerSqm ?? null,
+          parkingType: dependentAreas?.parkingType ?? null,
+          parkingCount: dependentAreas?.parkingCount ?? null,
+        })
+      : { total: 0, lines: [] as { label: string; value: number }[] };
+
+    if (terraceValue > 0) {
+      dependentAreasResult.lines.push({
+        label: `Terraço (${dependentAreas.terraceSqm} m², ${dependentAreas?.terraceLocation === "top" ? "último piso" : "rés do chão"})`,
+        value: terraceValue,
+      });
+      dependentAreasResult.total += terraceValue;
+    }
+
     let suggestedCentral: number | null = null;
     if (adjustedPricePerSqm && area) {
-      suggestedMin = Math.round((adjustedPricePerSqm * 0.93 * area) / 1000) * 1000 + landAdjustment.adjustment;
-      suggestedMax = Math.round((adjustedPricePerSqm * 1.07 * area) / 1000) * 1000 + landAdjustment.adjustment;
+      const extras = landAdjustment.adjustment + dependentAreasResult.total;
+      suggestedMin = Math.round((adjustedPricePerSqm * 0.93 * area) / 1000) * 1000 + extras;
+      suggestedMax = Math.round((adjustedPricePerSqm * 1.07 * area) / 1000) * 1000 + extras;
       suggestedCentral = Math.round((suggestedMin + suggestedMax) / 2 / 1000) * 1000;
     }
 
@@ -724,6 +854,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         zoneSampleSize,
         inePricePerSqm: ineReference?.pricePerSqm ?? null,
         ineGeoName: ineReference?.geoName ?? null,
+        homogenizedPricePerSqm: comparablesHomogenizedPricePerSqm,
+        homogenizationDeltaPct: homogenization.deltaPct,
+        homogenizationSampleSize: homogenization.sampleSize,
+        costMethodMin: costCheck?.valueMin ?? null,
+        costMethodMax: costCheck?.valueMax ?? null,
+        incomeMethodValue: incomeCheck?.value ?? null,
+        incomeMethodYieldPct: incomeCheck ? Math.round(incomeCheck.yieldRate * 1000) / 10 : null,
         ineTrendYoyPct,
         ineRentPerSqm: ineRent?.rentPerSqm ?? null,
         grossYieldPct,
@@ -845,6 +982,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       zoneSampleSize,
       inePricePerSqm: ineReference?.pricePerSqm ?? null,
       ineGeoName: ineReference?.geoName ?? null,
+      // Método comparativo homogeneizado + validação cruzada (custo/rendimento).
+      homogenization: {
+        pricePerSqm: homogenization.pricePerSqm,
+        rawPricePerSqm: homogenization.rawPricePerSqm,
+        sampleSize: homogenization.sampleSize,
+        deltaPct: homogenization.deltaPct,
+        applied: Boolean(comparablesHomogenizedPricePerSqm),
+        sample: homogenization.items.slice(0, 6).map((i) => ({
+          rawPricePerSqm: Math.round(i.rawPricePerSqm),
+          homogenizedPricePerSqm: Math.round(i.homogenizedPricePerSqm),
+          totalCoefficient: i.totalCoefficient,
+          lines: i.lines,
+        })),
+      },
+      costMethod: costCheck,
+      incomeMethod: incomeCheck,
+      dependentAreas: dependentAreasResult.total > 0 ? dependentAreasResult : null,
       ineTrendYoyPct,
       ineRentPerSqm: ineRent?.rentPerSqm ?? null,
       ineRentYoyPct: ineRent?.yoyPct ?? null,
