@@ -65,10 +65,11 @@ e mensagens de commit em **português de Portugal**.
 ## Memória
 
 O contexto detalhado de cada funcionalidade (decisões, bugs corrigidos, gotchas) está na
-memória do projeto em `~/.claude/projects/C--Users-eduar-OneDrive-Work-Github-VyxaOne/memory/`
-— consultar antes de reimplementar algo que possa já existir.
+memória do projeto em `~/.claude/projects/C--Github-VyxaOne/memory/` — consultar antes de
+reimplementar algo que possa já existir.
 
 Essa pasta é uma junction para `OneDrive\Work\Work\10 Vyxa\Memória` (vault do Obsidian).
+O repositório trabalha-se em `C:\Github\VyxaOne` — nunca dentro do OneDrive.
 
 ## Sobre o Eduardo Santos
 
