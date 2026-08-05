@@ -115,13 +115,18 @@ interface CmaReportContext {
     valueMin: number;
     valueMax: number;
   }> | null;
-  /** Validação pelo VPT (3,3–3,8×), quando o VPT foi indicado. */
+  /**
+   * Validação pelo VPT, quando o VPT foi indicado. "aml" = rácio oficial
+   * 3,3–3,8× (só válido nos 18 concelhos da Área Metropolitana de Lisboa);
+   * "manual" = múltiplo único que o consultor indicou para esta zona.
+   */
   vptCrossCheck?: {
     vpt: number;
     multipleMin: number;
     multipleMax: number;
     valueMin: number;
     valueMax: number;
+    source: "aml" | "manual";
   } | null;
 }
 
@@ -231,7 +236,11 @@ ${
     : ""
 }${
   context.vptCrossCheck
-    ? `- VALIDAÇÃO PELO VPT: o valor patrimonial tributário é ${context.vptCrossCheck.vpt.toLocaleString("pt-PT")}€; na Área Metropolitana de Lisboa o valor de mercado ronda ${context.vptCrossCheck.multipleMin}–${context.vptCrossCheck.multipleMax}× o VPT, o que dá ${context.vptCrossCheck.valueMin.toLocaleString("pt-PT")}–${context.vptCrossCheck.valueMax.toLocaleString("pt-PT")}€ — usa isto como CONFIRMAÇÃO oficial do intervalo, não como o valor principal.
+    ? `- VALIDAÇÃO PELO VPT: o valor patrimonial tributário é ${context.vptCrossCheck.vpt.toLocaleString("pt-PT")}€; ${
+        context.vptCrossCheck.source === "aml"
+          ? `na Área Metropolitana de Lisboa o valor de mercado ronda ${context.vptCrossCheck.multipleMin}–${context.vptCrossCheck.multipleMax}× o VPT`
+          : `usando o múltiplo de ${context.vptCrossCheck.multipleMin}× que o consultor indicou para esta zona (fora da Área Metropolitana de Lisboa, onde o rácio oficial não se aplica)`
+      }, o que dá ${context.vptCrossCheck.valueMin.toLocaleString("pt-PT")}–${context.vptCrossCheck.valueMax.toLocaleString("pt-PT")}€ — usa isto como ${context.vptCrossCheck.source === "aml" ? "CONFIRMAÇÃO oficial" : "referência indicativa"} do intervalo, não como o valor principal.
 `
     : ""
 }

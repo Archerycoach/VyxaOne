@@ -42,6 +42,34 @@ interface ComparableSummary {
   price: number | null;
 }
 
+/**
+ * Os 18 concelhos da Área Metropolitana de Lisboa — é a zona a que o rácio
+ * 3,3–3,8× VPT (ver vptValue mais abaixo) se refere. Fora daqui não há estudo
+ * que valide este múltiplo (o Algarve, por exemplo, tem historicamente VPTs
+ * muito baixos face ao valor de mercado, por matrizes desatualizadas em zona
+ * turística) — por isso só se aplica dentro da AML, salvo o consultor indicar
+ * um múltiplo próprio para a zona.
+ */
+const AML_MUNICIPALITIES = new Set([
+  "alcochete", "almada", "amadora", "barreiro", "cascais", "lisboa", "loures",
+  "mafra", "moita", "montijo", "odivelas", "oeiras", "palmela", "seixal",
+  "sesimbra", "setubal", "sintra", "vila franca de xira",
+]);
+
+function normalizeMunicipality(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z ]+/g, "")
+    .trim();
+}
+
+function isInAML(concelho: string | null): boolean {
+  if (!concelho) return false;
+  return AML_MUNICIPALITIES.has(normalizeMunicipality(concelho));
+}
+
 /** Distância em km entre dois pontos (Haversine). */
 function distanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371;
@@ -201,7 +229,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
     if (authError || !user) return res.status(401).json({ error: "Não autorizado" });
 
-    const { address, propertyType, area, bedrooms, bathrooms, condition, city, factors, land, ineGeoCode, coordinates, criteria, consultantDescription, taxableValue, dependentAreas } = req.body || {};
+    const { address, propertyType, area, bedrooms, bathrooms, condition, city, factors, land, ineGeoCode, coordinates, criteria, consultantDescription, taxableValue, dependentAreas, vptMultiplierOverride } = req.body || {};
     if (!address || !propertyType) {
       return res.status(400).json({ error: "Morada e tipo de imóvel são obrigatórios" });
     }
@@ -574,14 +602,47 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // subavalia submercados centrais/valorizados (era a razão de a avaliação
     // sair bem abaixo dos comparáveis e das ferramentas de mercado). A zona é
     // uma referência larga de preço pedido.
-    // VPT como âncora oficial: em Portugal (AML), o valor de mercado ronda
-    // 3,3–3,8× o VPT numa zona consolidada. Usamos o ponto médio (3,55×) como
-    // uma quarta abordagem independente — é o que impede a avaliação de descer
-    // abaixo do "chão" oficial (o valor não pode ser inferior a ~3,3× o VPT numa
-    // zona central) e alinha o número com o que os estudos profissionais dão.
+    // VPT como âncora oficial: na AML (18 concelhos, ver AML_MUNICIPALITIES),
+    // o valor de mercado ronda 3,3–3,8× o VPT numa zona consolidada. Usamos o
+    // ponto médio (3,55×) como uma quarta abordagem independente — é o que
+    // impede a avaliação de descer abaixo do "chão" oficial e alinha o número
+    // com o que os estudos profissionais dão.
+    //
+    // Fora da AML este múltiplo NÃO está validado — aplicá-lo às cegas dava um
+    // número de Lisboa disfarçado de confirmação oficial para outra zona. Por
+    // isso só entra: (a) dentro da AML, com o rácio oficial, ou (b) fora dela,
+    // se o consultor indicar um múltiplo próprio para a zona
+    // (vptMultiplierOverride — ver o campo no formulário, com a nota sobre o
+    // simulador de zonamento do Portal das Finanças). Sem nenhuma das duas, o
+    // VPT simplesmente não entra — melhor não ter âncora do que ter uma errada.
     const vptValue = Number(taxableValue);
+    const concelho: string | null = coordinates?.county || city || null;
+    const vptInAml = isInAML(concelho);
+    const vptOverride = Number(vptMultiplierOverride);
+    const vptHasManualOverride = Number.isFinite(vptOverride) && vptOverride > 0;
+
+    let vptMultiplierMin: number | null = null;
+    let vptMultiplierMax: number | null = null;
+    let vptMultiplierMid: number | null = null;
+    let vptSource: "aml" | "manual" | null = null;
+
+    if (vptInAml) {
+      vptMultiplierMin = 3.3;
+      vptMultiplierMax = 3.8;
+      vptMultiplierMid = 3.55;
+      vptSource = "aml";
+    } else if (vptHasManualOverride) {
+      // Ponto único indicado pelo consultor, não um intervalo oficial.
+      vptMultiplierMin = vptOverride;
+      vptMultiplierMax = vptOverride;
+      vptMultiplierMid = vptOverride;
+      vptSource = "manual";
+    }
+
     const vptPerSqm =
-      Number.isFinite(vptValue) && vptValue > 0 && area ? (vptValue * 3.55) / area : null;
+      Number.isFinite(vptValue) && vptValue > 0 && area && vptMultiplierMid
+        ? (vptValue * vptMultiplierMid) / area
+        : null;
 
     // Diferença entre o que o mercado PEDE e o que efetivamente PAGA.
     //
@@ -814,19 +875,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           })
         : [];
 
-    // Cross-check pelo VPT (Valor Patrimonial Tributário): na Área Metropolitana
-    // de Lisboa, o valor de mercado de habitação urbana ronda 3,3–3,8× o VPT numa
-    // localização consolidada. NÃO entra no valor recomendado (o múltiplo é largo
-    // e depende da localização) — é uma VALIDAÇÃO com um número oficial, que dá
-    // muita credibilidade ao documento.
+    // Cross-check pelo VPT (Valor Patrimonial Tributário) — mesma regra de
+    // âmbito da vptPerSqm acima: só com o rácio oficial da AML, ou com o
+    // múltiplo que o consultor indicou para a zona. "source" diz ao frontend e
+    // ao relatório qual dos dois é, para o texto nunca dizer "Área
+    // Metropolitana de Lisboa" para um múltiplo que não é esse.
     const vptCrossCheck =
-      Number.isFinite(vptValue) && vptValue > 0
+      Number.isFinite(vptValue) && vptValue > 0 && vptMultiplierMin && vptMultiplierMax && vptSource
         ? {
             vpt: Math.round(vptValue),
-            multipleMin: 3.3,
-            multipleMax: 3.8,
-            valueMin: Math.round((vptValue * 3.3) / 1000) * 1000,
-            valueMax: Math.round((vptValue * 3.8) / 1000) * 1000,
+            multipleMin: vptMultiplierMin,
+            multipleMax: vptMultiplierMax,
+            valueMin: Math.round((vptValue * vptMultiplierMin) / 1000) * 1000,
+            valueMax: Math.round((vptValue * vptMultiplierMax) / 1000) * 1000,
+            source: vptSource,
           }
         : null;
 

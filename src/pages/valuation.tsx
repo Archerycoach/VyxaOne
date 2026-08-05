@@ -33,6 +33,24 @@ import {
   buildConsultantIdentity, type ConsultantIdentity,
 } from "@/lib/pdfDocument";
 
+// Os 18 concelhos da AML — fora daqui o rácio oficial de 3,3–3,8× VPT não se
+// aplica (mesma lista do servidor, src/pages/api/gpt/valuation.ts).
+const AML_MUNICIPALITIES = new Set([
+  "alcochete", "almada", "amadora", "barreiro", "cascais", "lisboa", "loures",
+  "mafra", "moita", "montijo", "odivelas", "oeiras", "palmela", "seixal",
+  "sesimbra", "setubal", "sintra", "vila franca de xira",
+]);
+
+function isInAML(concelho: string): boolean {
+  const normalized = concelho
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z ]+/g, "")
+    .trim();
+  return AML_MUNICIPALITIES.has(normalized);
+}
+
 interface Comparable {
   source: string;
   status: "sold" | "active";
@@ -77,6 +95,7 @@ interface ValuationResult {
     multipleMax: number;
     valueMin: number;
     valueMax: number;
+    source: "aml" | "manual";
   } | null;
   homogenization?: {
     pricePerSqm: number | null;
@@ -181,6 +200,9 @@ export default function ValuationPage() {
     viewType: "",
     // Valor Patrimonial Tributário (da caderneta) — validação pelo múltiplo do VPT.
     taxableValue: "",
+    // Fora da AML o rácio oficial (3,3–3,8×) não se aplica; o consultor pode
+    // indicar um múltiplo próprio para a zona.
+    vptMultiplierOverride: "",
     lat: "",
     lon: "",
     county: "",
@@ -289,6 +311,7 @@ export default function ValuationPage() {
           bathrooms: form.bathrooms ? Number(form.bathrooms) : undefined,
           condition: form.condition || undefined,
           taxableValue: form.taxableValue ? Number(form.taxableValue) : undefined,
+          vptMultiplierOverride: form.vptMultiplierOverride ? Number(form.vptMultiplierOverride) : undefined,
           factors: {
             floor: form.floor ? Number(form.floor) : null,
             energyRating: form.energyRating || null,
@@ -547,7 +570,8 @@ export default function ValuationPage() {
       y = addBodyText(
         doc,
         `Validação pelo VPT: valor patrimonial ${formatCurrency(result.vptCrossCheck.vpt)}; ` +
-          `a ${result.vptCrossCheck.multipleMin}–${result.vptCrossCheck.multipleMax}× (referência da Área Metropolitana de Lisboa) ` +
+          `a ${result.vptCrossCheck.multipleMin}–${result.vptCrossCheck.multipleMax}× ` +
+          `(${result.vptCrossCheck.source === "aml" ? "referência oficial da Área Metropolitana de Lisboa" : "múltiplo indicado pelo consultor para esta zona"}) ` +
           `dá ${formatCurrency(result.vptCrossCheck.valueMin)} – ${formatCurrency(result.vptCrossCheck.valueMax)}.`,
         y + 2
       );
@@ -631,6 +655,11 @@ export default function ValuationPage() {
   // extrator dos documentos do imóvel — mesma IA, mesmo formato de resposta.
   const [extractingDoc, setExtractingDoc] = useState(false);
   const cadernetaInputRef = useRef<HTMLInputElement>(null);
+  // O VPT vem da caderneta por omissão (não é editável à mão) — só desbloqueia
+  // escrita manual quando uma caderneta foi lida e a IA não conseguiu extrair
+  // o VPT dela (ex.: documento digitalizado sem essa página legível). Não é
+  // "escreve o que quiseres à partida"; é uma exceção só quando a leitura falha.
+  const [vptManualUnlocked, setVptManualUnlocked] = useState(false);
 
   const handleCadernetaFile = async (file: File) => {
     setExtractingDoc(true);
@@ -657,14 +686,33 @@ export default function ValuationPage() {
 
       const fields = data.fields || {};
 
-      // Só preenche o que veio com valor E ainda está vazio no formulário —
-      // a caderneta completa, não substitui o que o consultor escreveu.
+      // O VPT: se esta leitura o encontrou, substitui o que lá estava (é como
+      // se corrige uma leitura anterior mal feita) e o campo fica bloqueado —
+      // veio de um documento, não se edita à mão por cima disso. Se esta
+      // leitura NÃO o encontrou, não apaga um valor já lido antes; e se também
+      // não havia nenhum, desbloqueia a escrita manual — é a única forma de o
+      // consultor conseguir avançar quando a caderneta não tem essa página
+      // legível (ex.: PDF digitalizado).
+      // Leitura encontrou VPT: bloqueia (o documento manda, por cima de
+      // qualquer valor manual que lá estivesse). Leitura falhou: só desbloqueia
+      // se ainda não havia nenhum valor — se já havia um (lido antes, ou
+      // escrito à mão numa tentativa anterior), este segundo documento sem VPT
+      // não deve trancar nem destrancar nada, só se mantém como estava.
+      if (fields.taxable_value) {
+        setVptManualUnlocked(false);
+      } else if (!form.taxableValue) {
+        setVptManualUnlocked(true);
+      }
+
+      // Para os restantes campos: só preenche o que veio com valor E ainda
+      // está vazio — a caderneta completa, não substitui o que o consultor
+      // já escreveu.
       setForm((prev) => ({
         ...prev,
         area: prev.area || (fields.area ? String(fields.area) : ""),
         landArea: prev.landArea || (fields.land_area ? String(fields.land_area) : ""),
         bedrooms: prev.bedrooms || (fields.bedrooms ? String(fields.bedrooms) : ""),
-        taxableValue: prev.taxableValue || (fields.taxable_value ? String(fields.taxable_value) : ""),
+        taxableValue: fields.taxable_value ? String(fields.taxable_value) : prev.taxableValue,
         yearBuilt: prev.yearBuilt || (fields.year_built ? String(fields.year_built) : ""),
         energyRating: prev.energyRating || fields.energy_rating || "",
         propertyType: fields.property_type || prev.propertyType,
@@ -912,9 +960,75 @@ export default function ValuationPage() {
               </div>
               <div className="space-y-2">
                 <Label>VPT — Valor Patrimonial Tributário (€)</Label>
-                <Input type="number" value={form.taxableValue} onChange={(e) => setForm({ ...form, taxableValue: e.target.value })} placeholder="Ex: 107642 (da caderneta)" />
-                <p className="text-xs text-gray-500">Opcional. Vem da caderneta e valida o valor pelo múltiplo do VPT.</p>
+                <div className="flex gap-2">
+                  <Input
+                    type="number"
+                    value={form.taxableValue}
+                    readOnly={!vptManualUnlocked}
+                    className={vptManualUnlocked ? "" : "bg-muted cursor-default"}
+                    onChange={(e) => setForm({ ...form, taxableValue: e.target.value })}
+                    placeholder={
+                      vptManualUnlocked
+                        ? "Ex: 107642 (da nota de cobrança do IMI, por exemplo)"
+                        : "Lê a caderneta acima para preencher"
+                    }
+                  />
+                  {form.taxableValue && !vptManualUnlocked && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setForm({ ...form, taxableValue: "" })}
+                      title="Limpar (não apaga a caderneta, só este valor)"
+                    >
+                      Limpar
+                    </Button>
+                  )}
+                </div>
+                <p className="text-xs text-gray-500">
+                  {vptManualUnlocked
+                    ? "Não consegui ler o VPT desta caderneta (pode estar digitalizada ou sem essa página legível) — podes indicá-lo à mão, se o tiveres de outro documento (ex.: nota de cobrança do IMI)."
+                    : "Opcional, e vem da caderneta predial (botão acima) — fica bloqueado enquanto a leitura tiver corrido bem, para o número se manter rastreável a um documento oficial. Sem VPT, a avaliação simplesmente não usa esta validação."}
+                </p>
               </div>
+
+              {form.taxableValue && form.county && !isInAML(form.county) && (
+                <div className="space-y-2 md:col-span-2">
+                  <Label>Múltiplo VPT → mercado nesta zona</Label>
+                  <Input
+                    type="number"
+                    step="0.1"
+                    value={form.vptMultiplierOverride}
+                    onChange={(e) => setForm({ ...form, vptMultiplierOverride: e.target.value })}
+                    placeholder="Ex: 4.2"
+                  />
+                  <p className="text-xs text-gray-500">
+                    {form.county} não é um concelho da Área Metropolitana de Lisboa — o rácio oficial
+                    de 3,3–3,8× o VPT só está validado aí, por isso não se aplica automaticamente
+                    fora dela. Se souberes um múltiplo de referência para esta zona, indica-o aqui;
+                    senão, deixa em branco e a validação pelo VPT simplesmente não aparece (mais
+                    seguro do que um número de Lisboa disfarçado de confirmação oficial).
+                  </p>
+                  <div className="rounded-md border border-blue-200 bg-blue-50/50 p-2.5 text-xs text-blue-900">
+                    <span className="font-medium">Onde ir buscar um valor de referência: </span>
+                    o{" "}
+                    <a
+                      href="https://zonamentopf.portaldasfinancas.gov.pt/simulador/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline font-medium inline-flex items-center gap-0.5"
+                    >
+                      simulador de zonamento do Portal das Finanças
+                      <ExternalLink className="h-3 w-3" />
+                    </a>{" "}
+                    dá o Coeficiente de Localização desta zona, usado no cálculo do próprio VPT.
+                    <strong> Não é o mesmo número</strong> que este múltiplo, e não há um estudo que
+                    converta um no outro — serve só de contexto sobre se a zona é mais ou menos
+                    valorizada do que a média. O múltiplo em si tem de vir do teu conhecimento do
+                    mercado local (o que os imóveis desta zona costumam vender face ao VPT).
+                  </div>
+                </div>
+              )}
 
               <div className="md:col-span-2 space-y-2">
                 <Label>Características</Label>
@@ -1329,11 +1443,15 @@ export default function ValuationPage() {
                 <Card className="border-blue-200 bg-blue-50/50">
                   <CardContent className="pt-6 text-sm text-blue-900">
                     <span className="font-medium">Validação pelo VPT: </span>
-                    o valor patrimonial tributário é {formatCurrency(result.vptCrossCheck.vpt)}. Na Área
-                    Metropolitana de Lisboa, o valor de mercado ronda {result.vptCrossCheck.multipleMin}–
-                    {result.vptCrossCheck.multipleMax}× o VPT, o que dá{" "}
+                    o valor patrimonial tributário é {formatCurrency(result.vptCrossCheck.vpt)}.{" "}
+                    {result.vptCrossCheck.source === "aml" ? (
+                      <>Na Área Metropolitana de Lisboa, o valor de mercado ronda {result.vptCrossCheck.multipleMin}–{result.vptCrossCheck.multipleMax}× o VPT</>
+                    ) : (
+                      <>Com o múltiplo de {result.vptCrossCheck.multipleMin}× indicado para esta zona</>
+                    )}
+                    , o que dá{" "}
                     <strong>{formatCurrency(result.vptCrossCheck.valueMin)} – {formatCurrency(result.vptCrossCheck.valueMax)}</strong>{" "}
-                    — confirmação oficial do intervalo, não o valor principal.
+                    — {result.vptCrossCheck.source === "aml" ? "confirmação oficial do intervalo" : "referência indicativa"}, não o valor principal.
                   </CardContent>
                 </Card>
               )}
