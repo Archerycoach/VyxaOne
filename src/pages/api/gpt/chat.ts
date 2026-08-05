@@ -9,6 +9,7 @@ import {
 import { getIdealistaCredentials } from "@/lib/server/idealistaCredentials";
 import { buildLeadUpdateProposal, FIELD_LABELS as LEAD_FIELD_LABELS } from "@/lib/server/leadChatUpdate";
 import { sanitizeQuerySpec, executeLeadQuery, LEAD_QUERY_TOOL_PROMPT } from "@/lib/server/leadQueryTool";
+import { getKnowledgeContext } from "@/lib/server/knowledgeBase";
 
 interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -2356,8 +2357,21 @@ ${notes.length > 0 ? `Notas: ${notes.join("; ")}` : ""}
       }
     }
 
-    const systemWithQuery: ChatMessage = queryResultBlock
-      ? { ...systemMessage, content: `${systemMessage.content}\n${queryResultBlock}` }
+    // ── Base de Conhecimento ──────────────────────────────────────────────
+    //
+    // Excertos dos documentos do consultor e da agência relevantes para a
+    // pergunta. Devolve "" quando não há nada — e nunca lança, porque um
+    // extra não pode impedir a resposta ao consultor.
+    const knowledgeBlock = await getKnowledgeContext({
+      userId: user.id,
+      query: message,
+      supabase,
+    });
+
+    const extraBlocks = [queryResultBlock, knowledgeBlock].filter(Boolean).join("\n");
+
+    const systemWithQuery: ChatMessage = extraBlocks
+      ? { ...systemMessage, content: `${systemMessage.content}\n${extraBlocks}` }
       : systemMessage;
 
     const messages: ChatMessage[] = [systemWithQuery, ...((history || []) as ChatMessage[]), { role: "user", content: message }];

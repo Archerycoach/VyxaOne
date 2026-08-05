@@ -44,6 +44,7 @@ import {
   Banknote,
   Search,
   FileSpreadsheet,
+  BookOpen,
 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
@@ -195,6 +196,7 @@ export function Navigation({ onClose }: { onClose?: () => void } = {}) {
         { icon: Bot, label: "Agente IA", path: "/ai-agent" },
         { icon: BrainCircuit, label: "Emails por Procura", path: "/ai-email-campaigns" },
         { icon: Brain, label: "Coach de Performance", path: "/ai-performance-coach" },
+        { icon: BookOpen, label: "Base de Conhecimento", path: "/knowledge-base" },
       ]
     },
 
