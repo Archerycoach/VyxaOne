@@ -18,7 +18,8 @@ export type AiCapability =
   | "lead_temperature"
   | "lead_status"
   | "task_create"
-  | "calendar_block";
+  | "calendar_block"
+  | "profile_voice";
 
 export type AiCapabilityLevel = "off" | "propose" | "auto";
 
@@ -50,6 +51,8 @@ export const DEFAULT_CAPABILITY_LEVELS: Record<AiCapability, AiCapabilityLevel> 
   lead_status: "auto",
   task_create: "auto",
   calendar_block: "propose",
+  // Nunca automático: é a identidade do consultor. Ver consultantProfile.ts.
+  profile_voice: "propose",
 };
 
 export const CAPABILITY_LABELS: Record<AiCapability, string> = {
@@ -58,6 +61,7 @@ export const CAPABILITY_LABELS: Record<AiCapability, string> = {
   lead_status: "Alterar a fase da lead",
   task_create: "Criar tarefas",
   calendar_block: "Criar blocos na agenda",
+  profile_voice: "Ajustar o Perfil da IA",
 };
 
 export const CAPABILITY_DESCRIPTIONS: Record<AiCapability, string> = {
@@ -67,6 +71,8 @@ export const CAPABILITY_DESCRIPTIONS: Record<AiCapability, string> = {
   lead_status: "Move a lead para outra fase do pipeline quando a conversa o justifica.",
   task_create: "Cria tarefas de seguimento (ligar, enviar informação, remarcar).",
   calendar_block: "Marca blocos na agenda para visitas, chamadas ou reuniões.",
+  profile_voice:
+    "Aprende com as correções que fazes aos rascunhos de email e propõe ajustes ao teu Perfil da IA. Nunca é aplicado sem confirmares.",
 };
 
 /** Resolve o nível de uma capacidade a partir do jsonb do perfil. */
@@ -87,7 +93,7 @@ export interface RecordAiActionParams {
   userId: string;
   capability: AiCapability;
   level: AiCapabilityLevel;
-  entityType: "lead" | "task" | "calendar_event";
+  entityType: "lead" | "task" | "calendar_event" | "profile";
   entityId?: string | null;
   leadId?: string | null;
   /** Frase curta que o consultor lê na caixa de entrada. */
@@ -284,6 +290,40 @@ export async function applyAiAction(params: {
         break;
       }
 
+      case "profile_voice": {
+        // Ajuste ao Perfil da IA aprendido com as correções do consultor.
+        // payload.slots traz só os papéis a mudar; previous_state.slots o que lá
+        // estava, para o Desfazer funcionar.
+        const slots = (action.payload?.slots || {}) as Record<string, string>;
+        const campos = Object.keys(slots);
+        if (campos.length === 0) {
+          return await failAction(supabaseAdmin, action, "sem alterações ao perfil");
+        }
+
+        const { error } = await supabaseAdmin
+          .from("consultant_profile")
+          .upsert(
+            { user_id: action.user_id, ...slots, updated_at: new Date().toISOString() },
+            { onConflict: "user_id" }
+          );
+        if (error) return await failAction(supabaseAdmin, action, error.message);
+
+        const anterior = (action.previous_state?.slots || {}) as Record<string, string>;
+        await supabaseAdmin.from("consultant_profile_history").insert(
+          campos.map((slot) => ({
+            user_id: action.user_id,
+            slot,
+            old_value: anterior[slot] ?? null,
+            new_value: slots[slot],
+            reason: action.reason || null,
+            source: "ai_proposal",
+          }))
+        );
+
+        result = { updated_slots: campos };
+        break;
+      }
+
       default:
         return await failAction(supabaseAdmin, action, `capacidade desconhecida: ${action.capability}`);
     }
@@ -359,6 +399,20 @@ export async function revertAiAction(params: {
             .eq("id", eventId)
             .eq("user_id", action.user_id);
         }
+        break;
+      }
+
+      case "profile_voice": {
+        const anterior = (action.previous_state?.slots || {}) as Record<string, string>;
+        const campos = Object.keys(anterior);
+        if (campos.length === 0) {
+          return { ok: false, error: "sem estado anterior guardado" };
+        }
+        const { error } = await supabaseAdmin
+          .from("consultant_profile")
+          .update({ ...anterior, updated_at: new Date().toISOString() })
+          .eq("user_id", action.user_id);
+        if (error) return { ok: false, error: error.message };
         break;
       }
     }

@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { runAI } from "@/lib/ai/provider";
 import { getKnowledgeContext } from "@/lib/server/knowledgeBase";
+import { getProfileBlock } from "@/lib/server/consultantProfile";
 
 /**
  * Compositor de email CONVERSACIONAL para UMA lead.
@@ -60,14 +61,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       lead.notes ? `Notas: ${String(lead.notes).slice(0, 400)}` : null,
     ].filter(Boolean).join("\n");
 
-    // Procedimentos e argumentário do consultor/agência relevantes para o tema
-    // que ele está a pedir. Vazio quando não há nada — nunca bloqueia.
-    const knowledgeBlock = await getKnowledgeContext({
-      userId: user.id,
-      query: messages.map((m: any) => m.content).join(" ").slice(-1500),
-      topK: 4,
-      supabase: supabaseAdmin,
-    });
+    // O perfil (identidade e voz) entra sempre; os procedimentos só quando são
+    // relevantes ao tema. Vazios quando não há nada — nunca bloqueiam.
+    const [profileBlock, knowledgeBlock] = await Promise.all([
+      getProfileBlock({ userId: user.id, supabase: supabaseAdmin }),
+      getKnowledgeContext({
+        userId: user.id,
+        query: messages.map((m: any) => m.content).join(" ").slice(-1500),
+        topK: 4,
+        supabase: supabaseAdmin,
+      }),
+    ]);
 
     const system = `És o assistente de ${consultantName}, consultor imobiliário. Ajudas a ESCREVER um email PESSOAL para uma lead concreta, conversando com o consultor para definir o TEMA e o conteúdo. Português de Portugal, tom próximo mas profissional.
 
@@ -82,7 +86,7 @@ COMO AGIR:
 
 Responde SEMPRE só com JSON:
 {"reply":"o que dizes ao consultor (pergunta OU nota curta a acompanhar o rascunho)","ready":true|false,"subject":"(só quando ready)","html":"<p>...</p> (só quando ready)"}
-${knowledgeBlock}`;
+${profileBlock}${knowledgeBlock}`;
 
     const aiResponse = await runAI({
       userId: user.id,

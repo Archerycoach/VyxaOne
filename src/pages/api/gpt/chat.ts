@@ -10,6 +10,7 @@ import { getIdealistaCredentials } from "@/lib/server/idealistaCredentials";
 import { buildLeadUpdateProposal, FIELD_LABELS as LEAD_FIELD_LABELS } from "@/lib/server/leadChatUpdate";
 import { sanitizeQuerySpec, executeLeadQuery, LEAD_QUERY_TOOL_PROMPT } from "@/lib/server/leadQueryTool";
 import { getKnowledgeContext } from "@/lib/server/knowledgeBase";
+import { getProfileBlock } from "@/lib/server/consultantProfile";
 
 interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -1299,12 +1300,31 @@ function formatEmailCampaignReply(draft: EmailCampaignDraft): string {
   return `Preparei um rascunho de email para ${draft.recipients.length} leads com ${draft.filterSummary || "o perfil pedido"}${coverageNote}\n\nAssunto: ${draft.subject}\n\nPrimeiras leads abrangidas:\n${recipientPreview}\n\nO rascunho detalhado ficou disponível abaixo para revisão antes de enviar.`;
 }
 
+/**
+ * A mensagem é um pedido de LISTAGEM de leads?
+ *
+ * Isto decide um curto-circuito que responde com a lista e não chega a chamar o
+ * modelo, por isso um falso positivo é caro: "qual é o IMT para um T3 em Lisboa"
+ * chegava aqui como verdadeiro (bastava a palavra "qual") e o consultor recebia
+ * 239 leads em vez de resposta à pergunta.
+ *
+ * Regra: ou há um verbo explícito de listagem, ou a mensagem fala mesmo de leads
+ * e contactos. Um interrogativo solto ("qual", "quais") já não chega. Quando não
+ * dispara, a pergunta segue para o modelo — que recebe as leads no contexto e
+ * responde na mesma; falhar para este lado é barato.
+ */
 function isLeadLookupRequest(message: string): boolean {
   const normalizedMessage = normalizeText(message);
 
-  return /(lista|listar|quais|qual|mostra|mostrar|diz|indica|procura|procuram|lead|leads|contactos|contatos|telefone|telefones|numero|numeros|email|emails)/.test(
+  const temVerboDeListagem = /(lista|listar|mostra|mostrar|indica|procura|procuram)/.test(
     normalizedMessage,
   );
+
+  const falaDeLeads = /(lead|leads|contactos|contatos|telefone|telefones|numero|numeros|email|emails|cliente|clientes|comprador|compradores|interessado|interessados)/.test(
+    normalizedMessage,
+  );
+
+  return temVerboDeListagem || falaDeLeads;
 }
 
 function isIdealistaRequest(message: string): boolean {
@@ -2362,13 +2382,15 @@ ${notes.length > 0 ? `Notas: ${notes.join("; ")}` : ""}
     // Excertos dos documentos do consultor e da agência relevantes para a
     // pergunta. Devolve "" quando não há nada — e nunca lança, porque um
     // extra não pode impedir a resposta ao consultor.
-    const knowledgeBlock = await getKnowledgeContext({
-      userId: user.id,
-      query: message,
-      supabase,
-    });
+    // O perfil é a identidade do consultor e entra sempre; a base de
+    // conhecimento só quando é relevante à pergunta. Em paralelo, para não
+    // somar as duas latências.
+    const [profileBlock, knowledgeBlock] = await Promise.all([
+      getProfileBlock({ userId: user.id, supabase }),
+      getKnowledgeContext({ userId: user.id, query: message, supabase }),
+    ]);
 
-    const extraBlocks = [queryResultBlock, knowledgeBlock].filter(Boolean).join("\n");
+    const extraBlocks = [queryResultBlock, profileBlock, knowledgeBlock].filter(Boolean).join("\n");
 
     const systemWithQuery: ChatMessage = extraBlocks
       ? { ...systemMessage, content: `${systemMessage.content}\n${extraBlocks}` }

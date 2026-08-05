@@ -42,13 +42,16 @@ export function LeadComposeEmailDialog({
   const [body, setBody] = useState("");
   const [hasDraft, setHasDraft] = useState(false);
   const [sending, setSending] = useState(false);
+  // Guarda o rascunho ORIGINAL da IA. A diferença entre este e o que for
+  // realmente enviado é o que ensina o Perfil da IA a escrever como ele.
+  const [aiDraft, setAiDraft] = useState<{ subject: string; body: string } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Reinicia a conversa sempre que abre.
   useEffect(() => {
     if (open) {
       setMessages([{ role: "assistant", content: `Sobre o que quer escrever a ${firstName}? Diga-me o tema (ex.: seguimento de visita, envio de documento, proposta) e eu trato do resto.` }]);
-      setInput(""); setSubject(""); setBody(""); setHasDraft(false);
+      setInput(""); setSubject(""); setBody(""); setHasDraft(false); setAiDraft(null);
     }
   }, [open, firstName]);
 
@@ -79,6 +82,7 @@ export function LeadComposeEmailDialog({
         setSubject(d.subject);
         setBody(d.html);
         setHasDraft(true);
+        setAiDraft({ subject: d.subject, body: d.html });
       }
     } catch (error: any) {
       toast({ title: "Erro", description: error.message, variant: "destructive" });
@@ -102,6 +106,23 @@ export function LeadComposeEmailDialog({
       });
       const d = await res.json();
       if (!res.ok || !d.success) throw new Error(d.message || d.error || "Falha no envio.");
+
+      // Amostra para o Perfil da IA aprender. Falha em silêncio de propósito:
+      // o email já foi enviado e isto não pode parecer um erro de envio.
+      if (aiDraft) {
+        fetch("/api/ai-profile/sample", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+          body: JSON.stringify({
+            leadId: lead.id,
+            draftSubject: aiDraft.subject,
+            draftBody: aiDraft.body,
+            sentSubject: subject,
+            sentBody: body,
+          }),
+        }).catch(() => undefined);
+      }
+
       toast({ title: "✅ Email enviado", description: `Enviado para ${lead.email} e registado na cronologia.` });
       onSent?.();
       onOpenChange(false);

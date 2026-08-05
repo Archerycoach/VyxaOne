@@ -45,6 +45,7 @@ import {
   Search,
   FileSpreadsheet,
   BookOpen,
+  Fingerprint,
 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
@@ -197,6 +198,7 @@ export function Navigation({ onClose }: { onClose?: () => void } = {}) {
         { icon: BrainCircuit, label: "Emails por Procura", path: "/ai-email-campaigns" },
         { icon: Brain, label: "Coach de Performance", path: "/ai-performance-coach" },
         { icon: BookOpen, label: "Base de Conhecimento", path: "/knowledge-base" },
+        { icon: Fingerprint, label: "Perfil da IA", path: "/ai-profile" },
       ]
     },
 
