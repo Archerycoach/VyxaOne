@@ -7,6 +7,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { SupabaseClient } from "@supabase/supabase-js";
 import { sendClientEmail } from "@/lib/server/sendClientEmail";
+import { normalizeStoredAttachments } from "@/lib/server/emailAttachments";
 import { logEmailInteractionServer } from "@/lib/emailInteractionLogger";
 import { buildLeadEventTitle } from "@/lib/leadEventTitle";
 import type { Database } from "@/integrations/supabase/database.types";
@@ -244,7 +245,7 @@ async function sendEmailAction(
   // disponíveis {data_visita}, {hora_visita} e {local_visita}.
   const subject = personalizeContent(config.subject || "Mensagem automática", lead, eventContext);
   const body = personalizeContent(config.body || "", lead, eventContext);
-  const attachments = formatWorkflowAttachments(config.attachments);
+  const attachments = normalizeStoredAttachments(config.attachments);
 
   let recipientEmail: string;
 
@@ -518,27 +519,4 @@ function personalizeContent(
   }
 
   return result;
-}
-
-/**
- * Format workflow attachments for nodemailer
- */
-function formatWorkflowAttachments(attachments: unknown) {
-  if (!Array.isArray(attachments)) {
-    return undefined;
-  }
-
-  const normalizedAttachments = attachments
-    .filter((attachment) => attachment && typeof attachment === "object")
-    .map((attachment: any) => {
-      if (attachment.url || attachment.path) {
-        return {
-          filename: attachment.filename || attachment.name || "Anexo",
-          path: attachment.url || attachment.path,
-        };
-      }
-      return attachment;
-    });
-
-  return normalizedAttachments.length > 0 ? normalizedAttachments : undefined;
 }

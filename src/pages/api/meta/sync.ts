@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { createClient } from "@supabase/supabase-js";
 import { runNewLeadPipeline } from "@/lib/server/leadPipeline";
+import { parseMetaTriStateAnswer } from "@/lib/server/metaAnswerParsing";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL || "",
@@ -159,12 +160,13 @@ export default async function handler(
           }
         }
         
-        // Clean boolean fields
+        // Clean boolean fields — o que não se reconhece com confiança fica
+        // null (por preencher), nunca false por omissão (mesma regra do
+        // webhook, ver src/lib/server/metaAnswerParsing.ts).
         const booleanFields = ['has_property_to_sell', 'needs_financing', 'is_development'];
         for (const field of booleanFields) {
            if (typeof leadData[field] === 'string') {
-             const lower = String(leadData[field]).toLowerCase();
-             leadData[field] = lower === 'true' || lower === 'sim' || lower === 'yes' || lower === '1';
+             leadData[field] = parseMetaTriStateAnswer(leadData[field]);
            }
         }
         

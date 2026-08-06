@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
+import { RichTextEditor } from "@/components/ui/RichTextEditor";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -24,7 +24,9 @@ import {
   Plus,
   Save,
   Wand2,
-  AlertCircle
+  AlertCircle,
+  Paperclip,
+  X
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -1299,18 +1301,86 @@ export function MetaFormsManagement({ integrationId, integrationName }: MetaForm
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="auto_reply_body">Corpo do Email</Label>
-                      <Textarea
-                        id="auto_reply_body"
-                        value={formConfig.auto_reply_body || ""}
-                        onChange={(e) =>
-                          setFormConfig({ ...formConfig, auto_reply_body: e.target.value })
-                        }
-                        placeholder="Olá {nome}, obrigado por preencher o nosso formulário..."
-                        rows={6}
-                      />
+                      <div className="overflow-hidden rounded-md border border-slate-200 bg-white shadow-sm">
+                        <RichTextEditor
+                          key={formConfig.id ?? "new-form-config"}
+                          value={formConfig.auto_reply_body || ""}
+                          onChange={(value) => setFormConfig({ ...formConfig, auto_reply_body: value })}
+                          placeholder="Olá {nome}, obrigado por preencher o nosso formulário..."
+                        />
+                      </div>
                       <p className="text-xs text-gray-500">
                         Variáveis disponíveis: <code className="bg-gray-100 px-1 rounded">{"{nome}"}</code>, <code className="bg-gray-100 px-1 rounded">{"{email}"}</code>, <code className="bg-gray-100 px-1 rounded">{"{telefone}"}</code>
                       </p>
+                    </div>
+
+                    <div className="space-y-2 pt-2 border-t">
+                      <div className="flex items-center justify-between">
+                        <Label>Anexos (PDFs, Documentos, Brochuras)</Label>
+                        <div>
+                          <input
+                            type="file"
+                            id="meta-auto-reply-attachment"
+                            className="hidden"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              try {
+                                toast({ title: "A anexar...", description: "A carregar documento para a nuvem." });
+                                const fileExt = file.name.split(".").pop();
+                                const fileName = `meta_reply_${Math.random().toString(36).substring(2)}.${fileExt}`;
+
+                                const { error } = await supabase.storage
+                                  .from("email_attachments")
+                                  .upload(fileName, file);
+
+                                if (error) throw error;
+
+                                const { data } = supabase.storage.from("email_attachments").getPublicUrl(fileName);
+
+                                setFormConfig((prev) => ({
+                                  ...prev,
+                                  auto_reply_attachments: [...(prev.auto_reply_attachments || []), { name: file.name, url: data.publicUrl }],
+                                }));
+                                toast({ title: "Anexado", description: "O documento foi adicionado à resposta automática." });
+                              } catch (err: any) {
+                                toast({ title: "Erro ao anexar", description: err.message, variant: "destructive" });
+                              }
+                              e.target.value = "";
+                            }}
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => document.getElementById("meta-auto-reply-attachment")?.click()}
+                          >
+                            <Paperclip className="h-4 w-4 mr-2" />
+                            Adicionar Anexo
+                          </Button>
+                        </div>
+                      </div>
+                      {(formConfig.auto_reply_attachments || []).length > 0 ? (
+                        <div className="flex flex-wrap gap-2 mt-2 p-2 bg-gray-50 rounded border">
+                          {(formConfig.auto_reply_attachments || []).map((att, i) => (
+                            <Badge key={i} variant="secondary" className="flex items-center gap-1 py-1 px-2">
+                              <Paperclip className="h-3 w-3" />
+                              {att.name}
+                              <X
+                                className="h-3 w-3 ml-1 cursor-pointer hover:text-red-500"
+                                onClick={() =>
+                                  setFormConfig((prev) => ({
+                                    ...prev,
+                                    auto_reply_attachments: (prev.auto_reply_attachments || []).filter((_, index) => index !== i),
+                                  }))
+                                }
+                              />
+                            </Badge>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-gray-500">Nenhum anexo definido para esta resposta automática.</p>
+                      )}
                     </div>
                   </div>
                 )}

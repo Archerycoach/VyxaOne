@@ -10,7 +10,9 @@ import { sendWhatsAppTemplate } from "@/services/whatsappService";
 import { calculateLeadScore } from "@/services/leadScoringService";
 import { runNewLeadPipeline } from "@/lib/server/leadPipeline";
 import { sendClientEmail } from "@/lib/server/sendClientEmail";
+import { normalizeStoredAttachments } from "@/lib/server/emailAttachments";
 import { sendLeadConversionEvent } from "@/lib/server/metaConversionsApi";
+import { parseMetaTriStateAnswer } from "@/lib/server/metaAnswerParsing";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -454,9 +456,9 @@ export default async function handler(
               } else if (fieldName.includes("property") || fieldName.includes("imovel") || fieldName === "tipo" || fieldName.includes("tipo de im")) {
                 mappedData.property_type = value;
               } else if (fieldName.includes("crédito") || fieldName.includes("credito") || fieldName.includes("financiamento")) {
-                mappedData.needs_financing = parseBooleanAnswer(value);
+                mappedData.needs_financing = parseMetaTriStateAnswer(value);
               } else if (fieldName.includes("vender") || fieldName.includes("retoma") || fieldName.includes("venda")) {
-                mappedData.has_property_to_sell = parseBooleanAnswer(value);
+                mappedData.has_property_to_sell = parseMetaTriStateAnswer(value);
               } else if (fieldName.includes("objetivo") || fieldName.includes("objectivo") || fieldName.includes("procura")) {
                 mappedData.buy_purpose = value;
               } else if (fieldName.includes("prazo") || fieldName.includes("quando") || fieldName.includes("timing") || fieldName.includes("compra")) {
@@ -508,16 +510,18 @@ export default async function handler(
             }
           }
 
-          // A limpeza acima só reconhece "sim"/"não"/"yes"/"no" — qualquer
-          // outra resposta (ex.: "Talvez", ou texto livre de um mapeamento
-          // personalizado) fica como string e falha ao gravar numa coluna
-          // booleana real da base de dados. Para os campos que sabemos que
-          // são booleanos, garantimos sempre um valor válido.
+          // Um mapeamento explícito (Definições > Meta) copia a resposta em
+          // bruto para o campo CRM sem qualquer conversão — se for um campo
+          // booleano real da base de dados, uma string como "Ainda estou a
+          // avaliar as hipóteses" falha a gravar. parseMetaTriStateAnswer
+          // reconhece "sim"/"não" e as frases mais comuns de perguntas de
+          // crédito/financiamento da Meta; o que não reconhece com confiança
+          // fica null (por preencher) — nunca inventa um "false" a partir de
+          // uma resposta de indecisão.
           const booleanFields = ['has_property_to_sell', 'needs_financing', 'is_development'];
           for (const field of booleanFields) {
             if (typeof mappedData[field] === 'string') {
-              const lower = mappedData[field].toLowerCase().trim();
-              mappedData[field] = lower === 'true' || lower === 'sim' || lower === 'yes' || lower === '1';
+              mappedData[field] = parseMetaTriStateAnswer(mappedData[field]);
             }
           }
 
@@ -778,7 +782,10 @@ export default async function handler(
                 .replace(/\{telefone\}/g, finalPhone || "");
 
               const subject = replaceVars((formConfig as any).auto_reply_subject);
-              const html = replaceVars((formConfig as any).auto_reply_body || "").replace(/\n/g, "<br>");
+              // O corpo vem do RichTextEditor (Definições > Meta > Formulários),
+              // já é HTML válido — ao contrário do antigo campo de texto simples,
+              // não precisa de converter novas linhas em <br>.
+              const html = replaceVars((formConfig as any).auto_reply_body || "");
 
               const emailResult = await sendClientEmail({
                 supabaseAdmin: supabase,
@@ -789,6 +796,7 @@ export default async function handler(
                 to: finalEmail,
                 subject,
                 html,
+                attachments: normalizeStoredAttachments((formConfig as any)?.auto_reply_attachments),
               });
 
               if (emailResult.success) {
@@ -949,17 +957,6 @@ export default async function handler(
  * em src/pages/api/gpt/leads/[id]/analyze-notes.ts). Não bloqueia nem falha
  * o processamento do webhook se der erro.
  */
-/**
- * Converte uma resposta de formulário da Meta (texto livre, ex.: "Sim",
- * "Não", "Yes") num boolean real, para os campos que são colunas booleanas
- * na base de dados (needs_financing, has_property_to_sell). Sem esta
- * conversão, gravar o texto tal como veio causa um erro de tipo na base de
- * dados e pode impedir a lead de ser criada.
- */
-function parseBooleanAnswer(value: string): boolean {
-  const normalized = String(value).trim().toLowerCase();
-  return ["sim", "s", "yes", "y", "true", "1"].includes(normalized);
-}
 
 function triggerAutoNotesAnalysis(appUrl: string, userId: string, leadId: string): void {
   fetch(`${appUrl}/api/gpt/leads/${leadId}/analyze-notes`, {

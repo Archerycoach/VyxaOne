@@ -1,0 +1,44 @@
+/**
+ * Interpreta a resposta de uma pergunta de escolha múltipla da Meta como um
+ * booleano de três estados (true | false | null — "não sei").
+ *
+ * A versão anterior só reconhecia "sim"/"não"/"yes"/"no"/"true"/"1" e tratava
+ * QUALQUER outra resposta como false — o que transformava respostas de
+ * indecisão ("Ainda estou a avaliar as hipóteses") num "não precisa de
+ * crédito" inventado. Aqui, o que não se reconhece com confiança fica null
+ * (por preencher), nunca false por omissão — a mesma regra já usada no resto
+ * da app para não gravar um facto que não foi realmente dito (ver a
+ * validação do orçamento em meta/webhook.ts).
+ */
+export function parseMetaTriStateAnswer(value: string): boolean | null {
+  const normalized = String(value)
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, ""); // remove acentos, para "não"/"nao" baterem certo
+
+  if (["sim", "s", "yes", "y", "true", "1"].includes(normalized)) return true;
+  if (["nao", "n", "no", "false", "0"].includes(normalized)) return false;
+
+  // Frases típicas de perguntas Meta sobre situação de crédito/financiamento
+  // — cobre "Crédito pré-aprovado" e "Vou tratar do crédito quando encontrar
+  // o imóvel certo" (ambas significam que vai recorrer a crédito, só muda se
+  // já está tratado).
+  if (
+    /pre[- ]?aprovad|aprovad|recorrer a credito|vou tratar do credito|com financiamento|com credito|precis[ao] de credito|precis[ao] de financiamento/.test(
+      normalized
+    )
+  ) {
+    return true;
+  }
+
+  // Sinais claros do contrário — compra a pronto pagamento.
+  if (/pronto pagamento|a pronto|\bcash\b|sem credito|sem financiamento|nao vou precisar/.test(normalized)) {
+    return false;
+  }
+
+  // Qualquer outra coisa — incluindo respostas de indecisão como "Ainda
+  // estou a avaliar as hipóteses" — fica por preencher. Não inventamos um
+  // "não precisa" a partir de "ainda não sei".
+  return null;
+}

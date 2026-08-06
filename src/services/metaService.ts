@@ -58,6 +58,8 @@ export interface MetaFormConfig {
   auto_reply_enabled: boolean;
   auto_reply_subject: string | null;
   auto_reply_body: string | null;
+  /** {name, url} — mesmo formato dos anexos das automações de workflow. */
+  auto_reply_attachments: { name: string; url: string }[];
   /** Valor investido nesta campanha/formulário, inserido manualmente (sem ligação à API de Insights da Meta). */
   total_ad_spend: number;
 }
@@ -208,6 +210,7 @@ export const getFormConfigs = async (integrationId?: string): Promise<MetaFormCo
     auto_reply_enabled: d.auto_reply_enabled || false,
     auto_reply_subject: d.auto_reply_subject || null,
     auto_reply_body: d.auto_reply_body || null,
+    auto_reply_attachments: d.auto_reply_attachments || [],
     total_ad_spend: d.total_ad_spend || 0,
   })).filter((c: MetaFormConfig) => !integrationId || c.integration_id === integrationId);
 };
@@ -234,6 +237,7 @@ export const createOrUpdateFormConfig = async (config: Partial<MetaFormConfig>) 
     auto_reply_enabled: config.auto_reply_enabled || false,
     auto_reply_subject: config.auto_reply_subject || null,
     auto_reply_body: config.auto_reply_body || null,
+    auto_reply_attachments: config.auto_reply_attachments || [],
     total_ad_spend: config.total_ad_spend ?? 0,
     custom_settings: {
       integration_id: config.integration_id,
