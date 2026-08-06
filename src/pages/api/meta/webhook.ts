@@ -10,6 +10,7 @@ import { sendWhatsAppTemplate } from "@/services/whatsappService";
 import { calculateLeadScore } from "@/services/leadScoringService";
 import { runNewLeadPipeline } from "@/lib/server/leadPipeline";
 import { sendClientEmail } from "@/lib/server/sendClientEmail";
+import { sendLeadConversionEvent } from "@/lib/server/metaConversionsApi";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -351,7 +352,7 @@ export default async function handler(
           // Find the user who owns this page
           const { data: integration } = await supabase
             .from("meta_integrations")
-            .select("user_id, page_access_token, page_name")
+            .select("user_id, page_access_token, page_name, capi_dataset_id, capi_access_token")
             .eq("page_id", pageId)
             .eq("is_active", true)
             .single();
@@ -710,9 +711,11 @@ export default async function handler(
               leadFields,
               isExistingLead: true,
             });
-            
+
+            const capiResult = await sendCapiEventBestEffort(integration, leadgenId, finalEmail, finalPhone);
+
             // Log successful webhook
-            await logWebhook(pageId, leadgenId, formId, adId, body, "success", null);
+            await logWebhook(pageId, leadgenId, formId, adId, body, "success", null, capiResult.status, capiResult.error);
             continue;
           }
 
@@ -916,8 +919,10 @@ export default async function handler(
             isExistingLead: false,
           });
 
+          const capiResult = await sendCapiEventBestEffort(integration, leadgenId, finalEmail, finalPhone);
+
           // Log successful webhook
-          await logWebhook(pageId, leadgenId, formId, adId, body, "success", null);
+          await logWebhook(pageId, leadgenId, formId, adId, body, "success", null, capiResult.status, capiResult.error);
         }
       }
 
@@ -974,7 +979,9 @@ async function logWebhook(
   adId: string | undefined,
   payload: any,
   status: string,
-  errorMessage: string | null
+  errorMessage: string | null,
+  capiStatus: string | null = null,
+  capiError: string | null = null
 ) {
   const { error } = await supabase
     .from("meta_webhook_logs")
@@ -986,10 +993,43 @@ async function logWebhook(
       webhook_payload: payload,
       status: status,
       error_message: errorMessage,
+      capi_status: capiStatus,
+      capi_error: capiError,
     });
-    
+
   if (error) {
     console.error("Failed to insert into meta_webhook_logs:", error);
+  }
+}
+
+/**
+ * Avisa a Meta (Conversions API) de que este lead foi recebido — feedback
+ * best-effort para a otimização de entrega dos anúncios, nunca bloqueante.
+ * Sem capi_dataset_id/capi_access_token configurados (a maioria dos
+ * consultores, por agora), devolve 'not_configured' sem tentar nada.
+ */
+async function sendCapiEventBestEffort(
+  integration: { capi_dataset_id?: string | null; capi_access_token?: string | null },
+  leadgenId: string,
+  email: string | null,
+  phone: string | null
+): Promise<{ status: string; error: string | null }> {
+  if (!integration.capi_dataset_id || !integration.capi_access_token) {
+    return { status: "not_configured", error: null };
+  }
+
+  try {
+    const result = await sendLeadConversionEvent({
+      datasetId: integration.capi_dataset_id,
+      accessToken: integration.capi_access_token,
+      leadgenId,
+      email,
+      phone,
+      eventTime: Math.floor(Date.now() / 1000),
+    });
+    return { status: result.ok ? "sent" : "failed", error: result.error || null };
+  } catch (error: any) {
+    return { status: "failed", error: String(error?.message || error) };
   }
 }
 

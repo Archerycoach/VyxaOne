@@ -26,6 +26,9 @@ export interface MetaIntegration {
   token_expires_at: string;
   is_active: boolean;
   webhook_subscribed: boolean;
+  // Conversions API para Lead Ads — feedback opcional à Meta, por consultor.
+  capi_dataset_id?: string | null;
+  capi_access_token?: string | null;
   created_at: string;
   updated_at: string;
 }

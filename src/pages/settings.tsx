@@ -15,6 +15,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { SMTPSettingsDialog } from "@/components/SMTPSettingsDialog";
 import { MetaAccountConnection } from "@/components/settings/MetaAccountConnection";
 import { MetaFormsManagement } from "@/components/settings/MetaFormsManagement";
+import { MetaCapiSettings } from "@/components/settings/MetaCapiSettings";
 import { GptApiSettings } from "@/components/settings/GptApiSettings";
 import { WorkflowsManagement } from "@/components/settings/WorkflowsManagement";
 import { MessageSnippetsManagement } from "@/components/settings/MessageSnippetsManagement";
@@ -991,11 +992,12 @@ export default function Settings() {
                 <MetaAccountConnection onSelectIntegration={(integration) => setSelectedMetaIntegration(integration)} />
                 
                 {selectedMetaIntegration && (
-                  <div className="mt-6 pt-6 border-t">
-                    <MetaFormsManagement 
+                  <div className="mt-6 pt-6 border-t space-y-6">
+                    <MetaFormsManagement
                       integrationId={selectedMetaIntegration.id}
                       integrationName={selectedMetaIntegration.name}
                     />
+                    <MetaCapiSettings integrationId={selectedMetaIntegration.id} />
                   </div>
                 )}
               </CardContent>
