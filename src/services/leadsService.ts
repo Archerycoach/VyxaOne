@@ -23,6 +23,10 @@ type InteractionInsert = Database["public"]["Tables"]["interactions"]["Insert"];
 // LeadWithDetails extends the full Lead type from database
 // and adds optional relational fields fetched via joins
 export interface LeadWithDetails extends Lead {
+  // Coluna recente (financing_status), ainda fora dos tipos gerados do
+  // Supabase — mesmo padrão de contact/assigned_user abaixo: extensão
+  // aditiva em vez de editar o ficheiro gerado.
+  financing_status?: string | null;
   contact?: {
     id: string;
     name: string;

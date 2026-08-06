@@ -42,3 +42,33 @@ export function parseMetaTriStateAnswer(value: string): boolean | null {
   // "não precisa" a partir de "ainda não sei".
   return null;
 }
+
+export type FinancingStatus = "pre_approved" | "will_arrange" | "evaluating";
+
+/**
+ * Reconhece as três opções típicas da pergunta Meta "Qual destas opções
+ * descreve melhor a sua situação?" sobre crédito, e devolve o valor canónico
+ * usado na ficha da lead (leads.financing_status). Só devolve um valor
+ * quando reconhece a frase com confiança — uma resposta de texto livre
+ * qualquer fica null (a UI mostra o texto em bruto nesse caso, não este
+ * campo canónico).
+ */
+export function parseFinancingStatus(value: string): FinancingStatus | null {
+  const normalized = String(value)
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "");
+
+  if (/pre[- ]?aprovad/.test(normalized)) return "pre_approved";
+
+  if (/vou tratar do credito|tratar do credito|recorrer a credito quando/.test(normalized)) {
+    return "will_arrange";
+  }
+
+  if (/ainda estou a avaliar|a avaliar as hipoteses|ainda a avaliar|ainda nao sei|ainda não sei/.test(normalized)) {
+    return "evaluating";
+  }
+
+  return null;
+}

@@ -1,7 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { createClient } from "@supabase/supabase-js";
 import { runNewLeadPipeline } from "@/lib/server/leadPipeline";
-import { parseMetaTriStateAnswer } from "@/lib/server/metaAnswerParsing";
+import { parseMetaTriStateAnswer, parseFinancingStatus } from "@/lib/server/metaAnswerParsing";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL || "",
@@ -168,6 +168,9 @@ export default async function handler(
            if (typeof leadData[field] === 'string') {
              leadData[field] = parseMetaTriStateAnswer(leadData[field]);
            }
+        }
+        if (typeof leadData.financing_status === 'string') {
+          leadData.financing_status = parseFinancingStatus(leadData.financing_status) || leadData.financing_status;
         }
         
         // Check if lead exists by email or phone

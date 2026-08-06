@@ -1540,6 +1540,7 @@ export function MetaFormsManagement({ integrationId, integrationName }: MetaForm
                             <SelectItem value="max_area">Área Máxima (m2)</SelectItem>
                             <SelectItem value="property_area">Área do Imóvel (m2)</SelectItem>
                             <SelectItem value="needs_financing">Precisa Financiamento (true/false)</SelectItem>
+                            <SelectItem value="financing_status">Situação de Crédito (pré-aprovado / vai tratar / a avaliar)</SelectItem>
                             <SelectItem value="has_property_to_sell">Tem imóvel p/ vender (true/false)</SelectItem>
                             <SelectItem value="whatsapp_optin">Consentimento WhatsApp (Sim/Não)</SelectItem>
                             <SelectItem value="development_name">Nome do Empreendimento</SelectItem>

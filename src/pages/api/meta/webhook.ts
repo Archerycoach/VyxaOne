@@ -12,7 +12,7 @@ import { runNewLeadPipeline } from "@/lib/server/leadPipeline";
 import { sendClientEmail } from "@/lib/server/sendClientEmail";
 import { normalizeStoredAttachments } from "@/lib/server/emailAttachments";
 import { sendLeadConversionEvent } from "@/lib/server/metaConversionsApi";
-import { parseMetaTriStateAnswer } from "@/lib/server/metaAnswerParsing";
+import { parseMetaTriStateAnswer, parseFinancingStatus } from "@/lib/server/metaAnswerParsing";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -456,7 +456,12 @@ export default async function handler(
               } else if (fieldName.includes("property") || fieldName.includes("imovel") || fieldName === "tipo" || fieldName.includes("tipo de im")) {
                 mappedData.property_type = value;
               } else if (fieldName.includes("crédito") || fieldName.includes("credito") || fieldName.includes("financiamento")) {
+                // Dois campos, da mesma resposta: needs_financing (sim/não,
+                // já usado em filtros/IA/exportações) e financing_status (a
+                // situação específica, mostrada na ficha da lead).
                 mappedData.needs_financing = parseMetaTriStateAnswer(value);
+                const status = parseFinancingStatus(value);
+                if (status) mappedData.financing_status = status;
               } else if (fieldName.includes("vender") || fieldName.includes("retoma") || fieldName.includes("venda")) {
                 mappedData.has_property_to_sell = parseMetaTriStateAnswer(value);
               } else if (fieldName.includes("objetivo") || fieldName.includes("objectivo") || fieldName.includes("procura")) {
@@ -523,6 +528,15 @@ export default async function handler(
             if (typeof mappedData[field] === 'string') {
               mappedData[field] = parseMetaTriStateAnswer(mappedData[field]);
             }
+          }
+
+          // Um mapeamento explícito para financing_status copia a resposta em
+          // bruto — canoniza quando reconhece uma das três opções típicas
+          // (para a Select da ficha da lead pré-selecionar corretamente);
+          // texto que não reconheça fica tal como veio, tal como já acontece
+          // com buy_purpose.
+          if (typeof mappedData.financing_status === 'string') {
+            mappedData.financing_status = parseFinancingStatus(mappedData.financing_status) || mappedData.financing_status;
           }
 
           // Sanitize integer fields (e.g., convert "T1" -> 1, "2 Casas" -> 2)

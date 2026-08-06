@@ -19,6 +19,7 @@ interface LeadFormBuyerFieldsProps {
     budget: string;
     location_preference: string;
     needs_financing: boolean;
+    financing_status?: string;
     has_property_to_sell?: boolean;
     is_development?: boolean;
     development_id?: string;
@@ -165,6 +166,20 @@ export function LeadFormBuyerFields({ formData, developments, onChange }: LeadFo
             Vai recorrer a crédito?
           </Label>
           <p className="text-xs text-gray-500">Marque se o comprador precisa de financiamento</p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="financing_status">Situação de crédito</Label>
+          <Select value={formData.financing_status || ""} onValueChange={(v) => onChange("financing_status", v)}>
+            <SelectTrigger id="financing_status">
+              <SelectValue placeholder="Sem informação" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="pre_approved">Crédito pré-aprovado</SelectItem>
+              <SelectItem value="will_arrange">Vai tratar do crédito quando encontrar o imóvel</SelectItem>
+              <SelectItem value="evaluating">Ainda a avaliar as hipóteses</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         <div className="space-y-2">

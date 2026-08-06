@@ -41,6 +41,7 @@ interface LeadLike {
   desired_price?: number | null;
   location_preference?: string | null;
   needs_financing?: boolean | null;
+  financing_status?: string | null;
   has_property_to_sell?: boolean | null;
   wants_garage?: boolean | null;
   wants_new_build?: boolean | null;
@@ -93,6 +94,16 @@ const BUY_PURPOSE_LABELS: Record<string, string> = {
   investment: "Investimento",
   secondary: "Habitação secundária",
 };
+
+const FINANCING_STATUS_OPTIONS = [
+  { value: "pre_approved", label: "Crédito pré-aprovado" },
+  { value: "will_arrange", label: "Vai tratar do crédito quando encontrar o imóvel" },
+  { value: "evaluating", label: "Ainda a avaliar as hipóteses" },
+];
+
+const FINANCING_STATUS_LABELS: Record<string, string> = Object.fromEntries(
+  FINANCING_STATUS_OPTIONS.map((o) => [o.value, o.label])
+);
 
 const TYPOLOGY_OPTIONS = [
   { value: "T0", label: "T0" },
@@ -247,6 +258,13 @@ function buildRows(lead: LeadLike): Row[] {
       lead.needs_financing ? "Sim" : "Não",
     );
     push(
+      "Situação de crédito",
+      hasText(lead.financing_status),
+      hasText(lead.financing_status)
+        ? FINANCING_STATUS_LABELS[lead.financing_status] || lead.financing_status
+        : "",
+    );
+    push(
       "Tem imóvel próprio para vender",
       lead.has_property_to_sell === true || lead.has_property_to_sell === false,
       lead.has_property_to_sell ? "Sim" : "Não",
@@ -273,6 +291,7 @@ interface EditValues {
   property_area: string;
   location_preference: string;
   needs_financing: boolean;
+  financing_status: string;
   has_property_to_sell: boolean;
   wants_garage: boolean;
   wants_new_build: boolean;
@@ -303,6 +322,7 @@ function buildEditValues(lead: LeadLike): EditValues {
     property_area: lead.property_area != null ? String(lead.property_area) : "",
     location_preference: lead.location_preference || "",
     needs_financing: lead.needs_financing === true,
+    financing_status: lead.financing_status || "",
     has_property_to_sell: lead.has_property_to_sell === true,
     wants_garage: lead.wants_garage === true,
     wants_new_build: lead.wants_new_build === true,
@@ -341,6 +361,7 @@ function buildUpdatePayload(values: EditValues): Record<string, unknown> {
     property_area: toNumberOrNull(values.property_area),
     location_preference: values.location_preference.trim() || null,
     needs_financing: values.needs_financing,
+    financing_status: values.financing_status || null,
     has_property_to_sell: values.has_property_to_sell,
     wants_garage: values.wants_garage,
     wants_new_build: values.wants_new_build,
@@ -794,6 +815,21 @@ export function LeadQualificationOverview({ lead, onSave }: Props) {
                 />
                 Vai recorrer a crédito?
               </Label>
+              <div className="space-y-2">
+                <Label>Situação de crédito</Label>
+                <Select value={values.financing_status} onValueChange={(v) => set("financing_status", v)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Sem informação" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {FINANCING_STATUS_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <Label className="flex items-center gap-2">
                 <input
                   type="checkbox"

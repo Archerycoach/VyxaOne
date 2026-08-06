@@ -147,6 +147,7 @@ export interface Lead {
   property_area?: number | null;
   desired_price?: number | null;
   needs_financing?: boolean | null;
+  financing_status?: string | null;
   budget_min?: number | null;
   budget_max?: number | null;
   buyer_status?: string | null;
