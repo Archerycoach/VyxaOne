@@ -327,7 +327,7 @@ export function LeadsListContainer({
   }, [sortedLeads]);
 
   // CRUD operations - destructure from useLeadMutations hook
-  const { convertLead, deleteLead, restore, permanentlyDelete, assign } = useLeadMutations(stableRefetch);
+  const { convertLead, deleteLead, restore, permanentlyDelete, deleteDirectly, assign } = useLeadMutations(stableRefetch);
   const { isProcessing } = useLeadMutations(stableRefetch);
 
   // Interactions
@@ -397,6 +397,10 @@ export function LeadsListContainer({
 
   const handlePermanentlyDelete = (lead: LeadWithContacts) => {
     permanentlyDelete(lead.id, lead.name);
+  };
+
+  const handleDeleteDirectly = (lead: LeadWithContacts) => {
+    deleteDirectly(lead.id, lead.name);
   };
 
   const handleEdit = (lead: LeadWithContacts) => {
@@ -1100,6 +1104,7 @@ export function LeadsListContainer({
               onEdit={handleEdit}
               onDelete={handleDelete}
               onPermanentlyDelete={handlePermanentlyDelete}
+              onDeleteDirectly={handleDeleteDirectly}
               onRestore={handleRestore}
               onConvert={handleConvert}
               onViewDetails={handleViewDetails}

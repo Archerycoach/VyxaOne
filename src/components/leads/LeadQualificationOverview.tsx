@@ -261,7 +261,7 @@ function buildRows(lead: LeadLike): Row[] {
       "Situação de crédito",
       hasText(lead.financing_status),
       hasText(lead.financing_status)
-        ? FINANCING_STATUS_LABELS[lead.financing_status] || lead.financing_status
+        ? FINANCING_STATUS_LABELS[lead.financing_status] || prettify(lead.financing_status)
         : "",
     );
     push(

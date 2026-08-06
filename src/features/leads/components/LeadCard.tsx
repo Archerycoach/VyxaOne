@@ -61,6 +61,8 @@ interface LeadCardProps {
   onEdit: (lead: LeadWithContacts) => void;
   onDelete: (lead: LeadWithContacts) => void;
   onPermanentlyDelete?: (lead: LeadWithContacts) => void;
+  /** Elimina permanentemente sem passar por Arquivadas primeiro — atalho a partir da lista normal. */
+  onDeleteDirectly?: (lead: LeadWithContacts) => void;
   onRestore: (lead: LeadWithContacts) => void;
   onConvert: (lead: LeadWithContacts) => void;
   onViewDetails: (lead: LeadWithContacts) => void;
@@ -82,6 +84,7 @@ export function LeadCard({
   onEdit,
   onDelete,
   onPermanentlyDelete,
+  onDeleteDirectly,
   onRestore,
   onConvert,
   onViewDetails,
@@ -432,6 +435,19 @@ export function LeadCard({
                     Arquivar
                   </DropdownMenuItem>
                 )}
+                {!showArchived && onDeleteDirectly && (
+                  <DropdownMenuItem
+                    onClick={() => handleMenuItemClick(() => {
+                      if (confirm(`⚠️ ATENÇÃO: Esta ação é irreversível!\n\nEliminar PERMANENTEMENTE "${lead.name}", sem passar por Arquivadas? A lead não poderá ser recuperada.`)) {
+                        onDeleteDirectly(lead);
+                      }
+                    })}
+                    className="text-red-600"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Eliminar
+                  </DropdownMenuItem>
+                )}
                 {showArchived && onPermanentlyDelete && (
                   <DropdownMenuItem
                     onClick={() => handleMenuItemClick(() => { if (confirm(`⚠️ ATENÇÃO: Esta ação é irreversível!\n\nEliminar PERMANENTEMENTE "${lead.name}"? A lead não poderá ser recuperada.`)) onPermanentlyDelete(lead); })}
@@ -742,6 +758,19 @@ export function LeadCard({
                 <DropdownMenuItem onClick={() => handleMenuItemClick(() => onDelete(lead))} className="text-red-600">
                   <Trash2 className="h-4 w-4 mr-2" />
                   Arquivar
+                </DropdownMenuItem>
+              )}
+              {!showArchived && onDeleteDirectly && (
+                <DropdownMenuItem
+                  onClick={() => handleMenuItemClick(() => {
+                    if (confirm(`⚠️ ATENÇÃO: Esta ação é irreversível!\n\nEliminar PERMANENTEMENTE "${lead.name}", sem passar por Arquivadas? A lead não poderá ser recuperada.`)) {
+                      onDeleteDirectly(lead);
+                    }
+                  })}
+                  className="text-red-600"
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Eliminar
                 </DropdownMenuItem>
               )}
               {showArchived && onPermanentlyDelete && (

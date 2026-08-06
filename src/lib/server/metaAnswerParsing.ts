@@ -1,4 +1,28 @@
 /**
+ * Normaliza uma resposta Meta para comparação: sem acentos, minúsculas, e —
+ * o que faltava — underscores/hífenes tratados como espaço.
+ *
+ * A Meta nem sempre devolve o texto legível da opção escolhida; para
+ * perguntas configuradas sem um "valor" próprio por opção, devolve o valor
+ * gerado automaticamente a partir da label (ex.: "Vou tratar do crédito
+ * quando encontrar o imóvel certo." chega como
+ * "vou_tratar_do_credito_quando_encontrar_o_imovel_certo"). Sem esta troca,
+ * as frases-alvo abaixo (escritas com espaços) nunca batiam certo contra um
+ * valor assim — foi apanhado com uma lead real que gravou o slug em bruto em
+ * vez do "Vai tratar do crédito" reconhecido.
+ */
+function normalizeMetaAnswer(value: string): string {
+  return String(value)
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "") // remove acentos
+    .replace(/[_-]+/g, " ") // slug da Meta -> frase
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
  * Interpreta a resposta de uma pergunta de escolha múltipla da Meta como um
  * booleano de três estados (true | false | null — "não sei").
  *
@@ -11,11 +35,7 @@
  * validação do orçamento em meta/webhook.ts).
  */
 export function parseMetaTriStateAnswer(value: string): boolean | null {
-  const normalized = String(value)
-    .trim()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, ""); // remove acentos, para "não"/"nao" baterem certo
+  const normalized = normalizeMetaAnswer(value);
 
   if (["sim", "s", "yes", "y", "true", "1"].includes(normalized)) return true;
   if (["nao", "n", "no", "false", "0"].includes(normalized)) return false;
@@ -54,13 +74,9 @@ export type FinancingStatus = "pre_approved" | "will_arrange" | "evaluating";
  * campo canónico).
  */
 export function parseFinancingStatus(value: string): FinancingStatus | null {
-  const normalized = String(value)
-    .trim()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "");
+  const normalized = normalizeMetaAnswer(value);
 
-  if (/pre[- ]?aprovad/.test(normalized)) return "pre_approved";
+  if (/pre ?aprovad/.test(normalized)) return "pre_approved";
 
   if (/vou tratar do credito|tratar do credito|recorrer a credito quando/.test(normalized)) {
     return "will_arrange";

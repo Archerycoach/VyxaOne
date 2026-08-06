@@ -13,6 +13,9 @@ interface LeadMutationsReturn {
   convertLead: (leadId: string) => Promise<void>;
   deleteLead: (leadId: string) => Promise<void>;
   permanentlyDelete: (leadId: string, leadName: string) => Promise<void>;
+  /** Arquiva e elimina permanentemente numa só operação — o mesmo destino de
+   * "Eliminar permanentemente" em Arquivadas, sem obrigar a passar lá primeiro. */
+  deleteDirectly: (leadId: string, leadName: string) => Promise<void>;
   restore: (leadId: string) => Promise<void>;
   assign: (leadId: string, userId: string) => Promise<void>;
   isProcessing: boolean;
@@ -119,6 +122,23 @@ export function useLeadMutations(onSuccess?: () => Promise<void>): LeadMutations
     });
   }, [executeOperation, toast]);
 
+  const deleteDirectly = useCallback(async (leadId: string, leadName: string): Promise<void> => {
+    await executeOperation("delete lead directly", async () => {
+      // permanentlyDeleteLead exige archived_at preenchido (proteção contra
+      // eliminar sem passar por Arquivadas por engano); arquivar primeiro
+      // satisfaz essa proteção sem a remover — só compõe as duas operações
+      // já existentes num único clique.
+      await archiveLead(leadId);
+      await permanentlyDeleteLead(leadId);
+
+      toast({
+        title: "Lead eliminada permanentemente!",
+        description: `${leadName} foi removida definitivamente do sistema.`,
+        variant: "destructive",
+      });
+    });
+  }, [executeOperation, toast]);
+
   const restore = useCallback(async (leadId: string): Promise<void> => {
     await executeOperation("restore lead", async () => {
       await restoreLead(leadId);
@@ -145,6 +165,7 @@ export function useLeadMutations(onSuccess?: () => Promise<void>): LeadMutations
     convertLead,
     deleteLead,
     permanentlyDelete,
+    deleteDirectly,
     restore,
     assign,
     isProcessing,
