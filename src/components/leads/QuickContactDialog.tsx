@@ -25,6 +25,9 @@ import { useToast } from "@/hooks/use-toast";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
 import { supabase } from "@/integrations/supabase/client";
 import { openWhatsAppWithMessage } from "@/lib/openWhatsApp";
+import { FollowUpPicker } from "@/components/leads/FollowUpPicker";
+import { scheduleLeadFollowUp } from "@/services/followUpService";
+import type { FollowUpChoice } from "@/lib/followUpSchedule";
 
 interface QuickContactDialogProps {
   leadId: string;
@@ -115,6 +118,8 @@ export function QuickContactDialog({
 }: QuickContactDialogProps) {
   const [selectedOutcome, setSelectedOutcome] = useState<string | null>(null);
   const [notes, setNotes] = useState("");
+  const [followUpChoice, setFollowUpChoice] = useState<FollowUpChoice>("none");
+  const [followUpCustomDate, setFollowUpCustomDate] = useState("");
   // Envio automático de WhatsApp nos desfechos falhados — opt-in por
   // registo, lembrado entre utilizações.
   const [sendFollowUp, setSendFollowUp] = useState<boolean>(() => {
@@ -224,16 +229,38 @@ export function QuickContactDialog({
       const outcomeValue = outcomeObj?.value || selectedOutcome;
 
       // 1. Create the interaction
+      const interactionDate = new Date().toISOString();
+      const interactionContent = notes || `Contacto rápido: ${outcomeValue}`;
       await createInteraction({
         lead_id: leadId,
         interaction_type: "call",
         outcome: outcomeValue,
-        content: notes || `Contacto rápido: ${outcomeValue}`,
-        interaction_date: new Date().toISOString(),
+        content: interactionContent,
+        interaction_date: interactionDate,
         contact_id: null,
         property_id: null,
         subject: `Tentativa de Contacto: ${outcomeValue}`
       });
+
+      // 1b. Follow-up agendado na agenda, se o consultor pediu um — nunca
+      // bloqueia o registo do contacto (esse já ficou gravado) se falhar.
+      if (followUpChoice !== "none") {
+        try {
+          await scheduleLeadFollowUp({
+            leadId,
+            leadName,
+            choice: followUpChoice,
+            customDate: followUpCustomDate,
+            justLogged: { interaction_type: "call", content: interactionContent, interaction_date: interactionDate },
+          });
+        } catch (followUpError: any) {
+          toast({
+            title: "Contacto registado, mas o follow-up falhou",
+            description: followUpError.message || "Podes agendá-lo à mão na agenda.",
+            variant: "destructive",
+          });
+        }
+      }
 
       // 2b. Seguimento por WhatsApp nos desfechos falhados — do NÚMERO DO
       // CONSULTOR: abre a aplicação do WhatsApp diretamente (sem separador
@@ -300,6 +327,8 @@ export function QuickContactDialog({
 
       setSelectedOutcome(null);
       setNotes("");
+      setFollowUpChoice("none");
+      setFollowUpCustomDate("");
       onSuccess();
       onOpenChange(false);
     } catch (error: any) {
@@ -434,13 +463,23 @@ export function QuickContactDialog({
               placeholder="Ex: O cliente pediu para ligar amanhã de manhã..."
             />
           </div>
+
+          <FollowUpPicker
+            choice={followUpChoice}
+            onChoiceChange={setFollowUpChoice}
+            customDate={followUpCustomDate}
+            onCustomDateChange={setFollowUpCustomDate}
+          />
         </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isLoading}>
             Cancelar
           </Button>
-          <Button onClick={handleSave} disabled={!selectedOutcome || isLoading}>
+          <Button
+            onClick={handleSave}
+            disabled={!selectedOutcome || isLoading || (followUpChoice === "custom" && !followUpCustomDate)}
+          >
             {isLoading ? "A gravar..." : "Gravar Contacto"}
           </Button>
         </DialogFooter>

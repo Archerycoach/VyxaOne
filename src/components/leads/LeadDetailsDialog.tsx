@@ -104,6 +104,9 @@ import { getMessageSnippets, personalizeSnippet, getSnippetSenderContext, type M
 import { getOrCreatePortalLink } from "@/services/portalService";
 import { LeadConversionProbabilityPanel } from "@/components/leads/LeadConversionProbabilityPanel";
 import { formatPhoneForWhatsApp } from "@/lib/phoneFormat";
+import { FollowUpPicker } from "@/components/leads/FollowUpPicker";
+import { scheduleLeadFollowUp } from "@/services/followUpService";
+import type { FollowUpChoice } from "@/lib/followUpSchedule";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -157,6 +160,8 @@ export function LeadDetailsDialog({
   const [newInteractionType, setNewInteractionType] = useState("call");
   const [newInteractionText, setNewInteractionText] = useState("");
   const [isSubmittingInteraction, setIsSubmittingInteraction] = useState(false);
+  const [followUpChoice, setFollowUpChoice] = useState<FollowUpChoice>("none");
+  const [followUpCustomDate, setFollowUpCustomDate] = useState("");
   const [isUpdatingTemperature, setIsUpdatingTemperature] = useState(false);
   const [sendCopyToSelf, setSendCopyToSelf] = useState(false);
   const [isRunningAutomations, setIsRunningAutomations] = useState(false);
@@ -677,14 +682,47 @@ export function LeadDetailsDialog({
     if (!newInteractionText.trim() || !leadId) return;
     setIsSubmittingInteraction(true);
     try {
+      const content = newInteractionText.trim();
+      const interactionDate = new Date().toISOString();
+
       await createInteraction({
         lead_id: leadId,
         interaction_type: newInteractionType,
-        content: newInteractionText.trim(),
-        interaction_date: new Date().toISOString(),
+        content,
+        interaction_date: interactionDate,
       });
-      toast({ title: "Interação adicionada com sucesso" });
+
+      // Agenda o follow-up, se o consultor pediu um — nunca bloqueia o registo
+      // da interação em si (essa já está gravada) se isto falhar.
+      if (followUpChoice !== "none" && lead) {
+        try {
+          await scheduleLeadFollowUp({
+            leadId,
+            leadName: lead.name,
+            choice: followUpChoice,
+            customDate: followUpCustomDate,
+            justLogged: { interaction_type: newInteractionType, content, interaction_date: interactionDate },
+            recentHistory: interactions.map((i) => ({
+              interaction_type: i.interaction_type,
+              content: i.content,
+              interaction_date: i.interaction_date,
+            })),
+          });
+          toast({ title: "Interação adicionada", description: "Follow-up agendado na agenda." });
+        } catch (followUpError: any) {
+          toast({
+            title: "Interação registada, mas o follow-up falhou",
+            description: followUpError.message || "Podes agendá-lo à mão na agenda.",
+            variant: "destructive",
+          });
+        }
+      } else {
+        toast({ title: "Interação adicionada com sucesso" });
+      }
+
       setNewInteractionText("");
+      setFollowUpChoice("none");
+      setFollowUpCustomDate("");
       const interData = await getInteractionsByLead(leadId);
       setInteractions(interData);
     } catch (e: any) {
@@ -1502,11 +1540,26 @@ export function LeadDetailsDialog({
                       className="min-h-[60px] bg-white flex-1"
                     />
                   </div>
+                  {/* Notas internas não são contacto com a lead — não faz
+                      sentido perguntar por follow-up nesse caso. */}
+                  {newInteractionType !== "note" && (
+                    <FollowUpPicker
+                      choice={followUpChoice}
+                      onChoiceChange={setFollowUpChoice}
+                      customDate={followUpCustomDate}
+                      onCustomDateChange={setFollowUpCustomDate}
+                    />
+                  )}
                   <div className="flex items-center justify-between gap-3">
                     <QuickReplyMenu lead={lead} onLogged={refreshInteractions} />
                     <Button
                       onClick={newInteractionType === "note" ? handleAddNoteFromInteractions : handleAddInteraction}
-                      disabled={isSubmittingInteraction || isSubmittingNote || !newInteractionText.trim()}
+                      disabled={
+                        isSubmittingInteraction ||
+                        isSubmittingNote ||
+                        !newInteractionText.trim() ||
+                        (followUpChoice === "custom" && !followUpCustomDate)
+                      }
                     >
                       {(isSubmittingInteraction || isSubmittingNote) && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                       Registar
