@@ -12,7 +12,10 @@ const SECRET_KEYS = [
   'meta_app_secret',
   'smtp_password',
   'bulk_esp_api_key',
-  'eupago_api_key',
+  'ifthenpay_mbway_key',
+  'ifthenpay_mb_key',
+  'ifthenpay_creditcard_key',
+  'ifthenpay_antiphishing_key',
   'notion_api_key',
   'geoapify_api_key',
 ];

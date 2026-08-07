@@ -202,8 +202,11 @@ NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_live_...
 STRIPE_SECRET_KEY=sk_live_...
 STRIPE_WEBHOOK_SECRET=whsec_...
 
-# Eupago (se usar para pagamentos PT)
-EUPAGO_API_KEY=sua_api_key_producao
+# ifthenpay (se usar para pagamentos PT) — uma chave por método, não uma só
+IFTHENPAY_MBWAY_KEY=sua_chave_mbway
+IFTHENPAY_MB_KEY=sua_chave_multibanco
+IFTHENPAY_CREDITCARD_KEY=sua_chave_cartao
+IFTHENPAY_ANTIPHISHING_KEY=defines_tu_no_backoffice
 
 # Google Calendar (se integração estiver ativa)
 GOOGLE_CLIENT_ID=seu_client_id
@@ -265,7 +268,7 @@ vercel --prod
 □ Calendário sincroniza com Google Calendar
 □ Notificações são enviadas corretamente
 □ Relatórios geram dados corretos
-□ Pagamentos funcionam (Stripe/Eupago)
+□ Pagamentos funcionam (Stripe/ifthenpay)
 □ Emails são enviados (confirmação, reset password)
 □ Performance está aceitável (<2s tempo de carregamento)
 ```

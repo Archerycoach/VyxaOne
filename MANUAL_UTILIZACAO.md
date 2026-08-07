@@ -2203,9 +2203,9 @@ Features:
 - Webhook URL
 - Modo (Test/Live)
 
-**Eupago:**
-- API Key
-- Métodos ativos (MB, MBWay)
+**ifthenpay:**
+- Uma chave por método (MB WAY, Multibanco, Cartão) + chave anti-phishing
+- Métodos ativos (MB WAY, Multibanco, Cartão)
 
 ### Logs de Atividade
 

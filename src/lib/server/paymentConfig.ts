@@ -10,8 +10,13 @@ export interface PaymentConfig {
   stripeEnabled: boolean;
   stripePublicKey: string;
   stripeSecretKey: string;
-  eupagoEnabled: boolean;
-  eupagoApiKey: string;
+  // ifthenpay: uma chave por método (ver src/lib/ifthenpay.ts) — não uma
+  // chave única como a EuPago tinha.
+  ifthenpayEnabled: boolean;
+  ifthenpayMbwayKey: string;
+  ifthenpayMbKey: string;
+  ifthenpayCreditCardKey: string;
+  ifthenpayAntiPhishingKey: string;
   mbwayEnabled: boolean;
   testMode: boolean;
 }
@@ -33,8 +38,11 @@ export async function getPaymentConfig(): Promise<PaymentConfig> {
     stripeEnabled: raw.stripe_enabled ?? false,
     stripePublicKey: raw.stripe_public_key || process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || "",
     stripeSecretKey: raw.stripe_secret_key || process.env.STRIPE_SECRET_KEY || "",
-    eupagoEnabled: raw.eupago_enabled ?? false,
-    eupagoApiKey: raw.eupago_api_key || process.env.EUPAGO_API_KEY || "",
+    ifthenpayEnabled: raw.ifthenpay_enabled ?? false,
+    ifthenpayMbwayKey: raw.ifthenpay_mbway_key || process.env.IFTHENPAY_MBWAY_KEY || "",
+    ifthenpayMbKey: raw.ifthenpay_mb_key || process.env.IFTHENPAY_MB_KEY || "",
+    ifthenpayCreditCardKey: raw.ifthenpay_creditcard_key || process.env.IFTHENPAY_CREDITCARD_KEY || "",
+    ifthenpayAntiPhishingKey: raw.ifthenpay_antiphishing_key || process.env.IFTHENPAY_ANTIPHISHING_KEY || "",
     mbwayEnabled: raw.mbway_enabled ?? false,
     testMode: raw.test_mode ?? true,
   };

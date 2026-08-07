@@ -17,8 +17,11 @@ interface PaymentConfig {
   stripe_enabled: boolean;
   stripe_public_key: string;
   stripe_secret_key: string;
-  eupago_enabled: boolean;
-  eupago_api_key: string;
+  ifthenpay_enabled: boolean;
+  ifthenpay_mbway_key: string;
+  ifthenpay_mb_key: string;
+  ifthenpay_creditcard_key: string;
+  ifthenpay_antiphishing_key: string;
   mbway_enabled: boolean;
   test_mode: boolean;
 }
@@ -29,14 +32,20 @@ export default function PaymentSettingsPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [showSecrets, setShowSecrets] = useState({
     stripe_secret: false,
-    eupago_key: false,
+    ifthenpay_mbway: false,
+    ifthenpay_mb: false,
+    ifthenpay_creditcard: false,
+    ifthenpay_antiphishing: false,
   });
   const [config, setConfig] = useState<PaymentConfig>({
     stripe_enabled: false,
     stripe_public_key: "",
     stripe_secret_key: "",
-    eupago_enabled: false,
-    eupago_api_key: "",
+    ifthenpay_enabled: false,
+    ifthenpay_mbway_key: "",
+    ifthenpay_mb_key: "",
+    ifthenpay_creditcard_key: "",
+    ifthenpay_antiphishing_key: "",
     mbway_enabled: false,
     test_mode: true,
   });
@@ -56,22 +65,22 @@ export default function PaymentSettingsPage() {
     });
   };
 
-  // Teste seguro da EuPago: gera uma referência Multibanco (não cobra nada).
-  const testEupago = async () => {
+  // Teste seguro da ifthenpay: gera uma referência Multibanco (não cobra nada).
+  const testIfthenpay = async () => {
     setIsTesting(true);
     setSaveMessage(null);
     try {
-      const res = await adminFetch("/api/eupago/test-connection", { method: "POST" });
+      const res = await adminFetch("/api/ifthenpay/test-connection", { method: "POST" });
       const body = await res.json();
       if (body.ok) {
         setSaveMessage({
           type: "success",
-          text: `${body.message} (ambiente: ${body.environment}${body.entity ? `; entidade ${body.entity}, ref ${body.reference}` : ""}).`,
+          text: `${body.message}${body.entity ? ` (entidade ${body.entity}, ref ${body.reference})` : ""}.`,
         });
       } else {
         setSaveMessage({
           type: "error",
-          text: `Falha (${body.environment || "?"}): ${body.error}`,
+          text: `Falha: ${body.error}`,
         });
       }
     } catch (error: any) {
@@ -131,8 +140,8 @@ export default function PaymentSettingsPage() {
         return;
       }
 
-      if (config.eupago_enabled && !config.eupago_api_key) {
-        setSaveMessage({ type: "error", text: "Por favor, preencha a chave da API Eupago" });
+      if (config.ifthenpay_enabled && !config.ifthenpay_mbway_key && !config.ifthenpay_mb_key && !config.ifthenpay_creditcard_key) {
+        setSaveMessage({ type: "error", text: "Preencha pelo menos uma chave da ifthenpay (MB WAY, Multibanco ou Cartão)" });
         return;
       }
 
@@ -216,8 +225,8 @@ export default function PaymentSettingsPage() {
               <TabsTrigger value="stripe">
                 <CreditCard className="h-4 w-4 mr-2" /> Stripe
               </TabsTrigger>
-              <TabsTrigger value="eupago">
-                <Smartphone className="h-4 w-4 mr-2" /> Eupago / MBWay
+              <TabsTrigger value="ifthenpay">
+                <Smartphone className="h-4 w-4 mr-2" /> ifthenpay / MB WAY
               </TabsTrigger>
               <TabsTrigger value="general">Geral</TabsTrigger>
             </TabsList>
@@ -283,36 +292,48 @@ export default function PaymentSettingsPage() {
               </Card>
             </TabsContent>
 
-            <TabsContent value="eupago">
+            <TabsContent value="ifthenpay">
               <Card>
                 <CardHeader>
                   <div className="flex items-center justify-between">
                     <div>
                       <CardTitle className="flex items-center gap-2">
-                        <Smartphone className="h-5 w-5" /> Eupago / MBWay
+                        <Smartphone className="h-5 w-5" /> ifthenpay
                       </CardTitle>
                       <CardDescription className="mt-2">
-                        Aceite pagamentos via MBWay e Multibanco
+                        Aceite pagamentos via MB WAY, Multibanco e Cartão
                       </CardDescription>
                     </div>
                     <Switch
-                      checked={config.eupago_enabled}
-                      onCheckedChange={(checked) => updateConfig("eupago_enabled", checked)}
+                      checked={config.ifthenpay_enabled}
+                      onCheckedChange={(checked) => updateConfig("ifthenpay_enabled", checked)}
                     />
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-6">
+                  <Alert className="bg-amber-50 border-amber-200">
+                    <AlertCircle className="h-4 w-4 text-amber-600" />
+                    <AlertDescription className="text-amber-800 text-sm">
+                      A ifthenpay tem <strong>uma chave por método</strong> (contrato à parte para cada um) e{" "}
+                      <strong>não tem ambiente de sandbox</strong> — o mesmo URL serve testes e produção. Antes de
+                      teres chaves próprias, testa com as chaves de demonstração públicas da ifthenpay. Depois de
+                      guardar, regista em <em>cada</em> chave, no backoffice da ifthenpay, o URL de callback:{" "}
+                      <code className="bg-amber-100 px-1 rounded text-xs">https://www.vyxa.pt/api/ifthenpay/webhook</code>
+                      {" "}(troca pelo domínio desta instância).
+                    </AlertDescription>
+                  </Alert>
+
                   <div className="space-y-4">
                     <div>
-                      <Label htmlFor="eupago_api_key">Chave de API Eupago</Label>
+                      <Label htmlFor="ifthenpay_mbway_key">Chave MB WAY (MbWayKey)</Label>
                       <div className="relative mt-2">
                         <Input
-                          id="eupago_api_key"
-                          type={showSecrets.eupago_key ? "text" : "password"}
+                          id="ifthenpay_mbway_key"
+                          type={showSecrets.ifthenpay_mbway ? "text" : "password"}
                           placeholder="••••••••••••"
-                          value={config.eupago_api_key}
-                          onChange={(e) => updateConfig("eupago_api_key", e.target.value)}
-                          disabled={!config.eupago_enabled}
+                          value={config.ifthenpay_mbway_key}
+                          onChange={(e) => updateConfig("ifthenpay_mbway_key", e.target.value)}
+                          disabled={!config.ifthenpay_enabled}
                           className="font-mono text-sm pr-10"
                         />
                         <Button
@@ -320,22 +341,98 @@ export default function PaymentSettingsPage() {
                           variant="ghost"
                           size="sm"
                           className="absolute right-2 top-1/2 -translate-y-1/2 h-7 w-7 p-0"
-                          onClick={() => setShowSecrets(prev => ({ ...prev, eupago_key: !prev.eupago_key }))}
+                          onClick={() => setShowSecrets(prev => ({ ...prev, ifthenpay_mbway: !prev.ifthenpay_mbway }))}
                         >
-                          {showSecrets.eupago_key ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                          {showSecrets.ifthenpay_mbway ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                         </Button>
                       </div>
                     </div>
 
+                    <div>
+                      <Label htmlFor="ifthenpay_mb_key">Chave Multibanco (MB Key)</Label>
+                      <div className="relative mt-2">
+                        <Input
+                          id="ifthenpay_mb_key"
+                          type={showSecrets.ifthenpay_mb ? "text" : "password"}
+                          placeholder="••••••••••••"
+                          value={config.ifthenpay_mb_key}
+                          onChange={(e) => updateConfig("ifthenpay_mb_key", e.target.value)}
+                          disabled={!config.ifthenpay_enabled}
+                          className="font-mono text-sm pr-10"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="absolute right-2 top-1/2 -translate-y-1/2 h-7 w-7 p-0"
+                          onClick={() => setShowSecrets(prev => ({ ...prev, ifthenpay_mb: !prev.ifthenpay_mb }))}
+                        >
+                          {showSecrets.ifthenpay_mb ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="ifthenpay_creditcard_key">Chave Cartão de Crédito (CCard Key)</Label>
+                      <div className="relative mt-2">
+                        <Input
+                          id="ifthenpay_creditcard_key"
+                          type={showSecrets.ifthenpay_creditcard ? "text" : "password"}
+                          placeholder="••••••••••••"
+                          value={config.ifthenpay_creditcard_key}
+                          onChange={(e) => updateConfig("ifthenpay_creditcard_key", e.target.value)}
+                          disabled={!config.ifthenpay_enabled}
+                          className="font-mono text-sm pr-10"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="absolute right-2 top-1/2 -translate-y-1/2 h-7 w-7 p-0"
+                          onClick={() => setShowSecrets(prev => ({ ...prev, ifthenpay_creditcard: !prev.ifthenpay_creditcard }))}
+                        >
+                          {showSecrets.ifthenpay_creditcard ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="ifthenpay_antiphishing_key">Chave anti-phishing</Label>
+                      <div className="relative mt-2">
+                        <Input
+                          id="ifthenpay_antiphishing_key"
+                          type={showSecrets.ifthenpay_antiphishing ? "text" : "password"}
+                          placeholder="••••••••••••"
+                          value={config.ifthenpay_antiphishing_key}
+                          onChange={(e) => updateConfig("ifthenpay_antiphishing_key", e.target.value)}
+                          disabled={!config.ifthenpay_enabled}
+                          className="font-mono text-sm pr-10"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="absolute right-2 top-1/2 -translate-y-1/2 h-7 w-7 p-0"
+                          onClick={() => setShowSecrets(prev => ({ ...prev, ifthenpay_antiphishing: !prev.ifthenpay_antiphishing }))}
+                        >
+                          {showSecrets.ifthenpay_antiphishing ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </Button>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Define-a tu (10-50 carateres) e usa a mesma ao ativar o callback no backoffice da ifthenpay —
+                        é o que confirma que uma chamada ao webhook vem mesmo de lá.
+                      </p>
+                    </div>
+
                     <div className="flex items-center justify-between bg-gray-50 p-4 rounded-lg">
                       <div>
-                        <Label htmlFor="mbway_enabled" className="text-base font-semibold">Ativar MBWay</Label>
+                        <Label htmlFor="mbway_enabled" className="text-base font-semibold">Ativar MB WAY</Label>
                       </div>
                       <Switch
                         id="mbway_enabled"
                         checked={config.mbway_enabled}
                         onCheckedChange={(checked) => updateConfig("mbway_enabled", checked)}
-                        disabled={!config.eupago_enabled}
+                        disabled={!config.ifthenpay_enabled}
                       />
                     </div>
 
@@ -347,7 +444,7 @@ export default function PaymentSettingsPage() {
                           Não cobra nada (guarde a config primeiro).
                         </p>
                       </div>
-                      <Button variant="outline" onClick={testEupago} disabled={isTesting || !config.eupago_enabled}>
+                      <Button variant="outline" onClick={testIfthenpay} disabled={isTesting || !config.ifthenpay_enabled}>
                         {isTesting ? "A testar..." : "Testar ligação"}
                       </Button>
                     </div>
@@ -365,7 +462,10 @@ export default function PaymentSettingsPage() {
                   <div className="flex items-center justify-between bg-gray-50 p-4 rounded-lg">
                     <div>
                       <Label htmlFor="test_mode" className="text-base font-semibold">Modo de Teste</Label>
-                      <p className="text-sm text-gray-600 mt-1">Usar chaves de teste</p>
+                      <p className="text-sm text-gray-600 mt-1">
+                        Aplica-se ao Stripe (troca de chaves pk_test/sk_test). A ifthenpay não tem sandbox — testa-se
+                        com as chaves de demonstração dela ou com as tuas próprias, no mesmo URL de produção.
+                      </p>
                     </div>
                     <Switch
                       id="test_mode"

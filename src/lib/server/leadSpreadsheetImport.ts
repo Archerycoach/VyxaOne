@@ -177,10 +177,24 @@ function text(value: unknown): string | null {
   return trimmed === "" || trimmed === "-" ? null : trimmed;
 }
 
+// Mesma regra que a constraint leads_phone_format_check da base de dados —
+// um "+" opcional só no início, depois dígitos/espaços/hífenes/parênteses,
+// 9 a 20 carateres. Um valor que não bata aqui NUNCA deve ser gravado: o
+// insert falha com um erro de constraint, apanhado e ignorado em silêncio
+// pelo endpoint de importação — a lead inteira desaparecia sem aviso.
+const DB_PHONE_FORMAT = /^\+?[0-9\s\-()]{9,20}$/;
+
 /**
  * Normaliza telefones portugueses. Números manifestamente inválidos são
  * descartados em vez de importados — é preferível um campo vazio a um
  * contacto errado que alguém vai tentar ligar.
+ *
+ * Apanhado com uma exportação real: a Meta/o formulário de origem por vezes
+ * cola DOIS indicativos ("+55 +351962904334" — Brasil + Portugal, quando o
+ * telefone real é só o de Portugal). Isto tem mais de um "+", por isso nem é
+ * um número PT de 9 dígitos nem passa no formato "estrangeiro" da BD — sem
+ * este filtro, era devolvido tal como veio, a lead entrava na pré-visualização
+ * como "nova", e o insert falhava silenciosamente por violar a constraint.
  */
 export function normalizePhone(value: unknown): string | null {
   const raw = text(value);
@@ -190,7 +204,11 @@ export function normalizePhone(value: unknown): string | null {
   if (digits.length < 9) return null;
 
   const national = digits.startsWith("351") ? digits.slice(3) : digits;
-  if (national.length !== 9) return raw; // estrangeiro: mantém como veio
+  if (national.length !== 9) {
+    // Estrangeiro: mantém como veio, mas só se for mesmo um formato que a BD
+    // aceita — nunca devolvemos um valor que sabemos que vai falhar a gravar.
+    return DB_PHONE_FORMAT.test(raw) ? raw : null;
+  }
   if (!/^[239]/.test(national)) return null; // não é fixo nem móvel PT
 
   return `+351${national}`;

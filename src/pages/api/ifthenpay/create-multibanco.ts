@@ -1,5 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { eupago } from "@/lib/eupago";
+import { ifthenpay } from "@/lib/ifthenpay";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export default async function handler(
@@ -25,30 +25,10 @@ export default async function handler(
     // O pagamento é sempre criado para o utilizador autenticado, nunca para
     // um userId indicado pelo chamador.
     const userId = user.id;
-    const { planId, phone } = req.body;
+    const { planId } = req.body;
 
-    if (!planId || !phone) {
-      return res.status(400).json({ error: "planId e phone são obrigatórios" });
-    }
-
-    // Validate Portuguese phone number
-    const phoneRegex = /^(\+351|00351|351)?9[1236]\d{7}$/;
-    const cleanPhone = phone.replace(/\s+/g, "");
-    
-    if (!phoneRegex.test(cleanPhone)) {
-      return res.status(400).json({ error: "Número de telefone inválido. Use formato: +351 9XX XXX XXX" });
-    }
-
-    // Format phone number for Eupago (must be +351XXXXXXXXX)
-    let formattedPhone = cleanPhone;
-    if (!formattedPhone.startsWith("+351")) {
-      if (formattedPhone.startsWith("00351")) {
-        formattedPhone = "+" + formattedPhone.slice(2);
-      } else if (formattedPhone.startsWith("351")) {
-        formattedPhone = "+" + formattedPhone;
-      } else {
-        formattedPhone = "+351" + formattedPhone;
-      }
+    if (!planId) {
+      return res.status(400).json({ error: "planId é obrigatório" });
     }
 
     // Get plan details
@@ -65,27 +45,26 @@ export default async function handler(
     // Generate unique reference
     const reference = `SUB-${Date.now()}-${userId.slice(0, 8)}`;
 
-    // Create MBWay payment
-    const payment = await eupago.createMBWayPayment({
+    // Create Multibanco reference
+    const payment = await ifthenpay.createMultibancoReference({
       amount: plan.price,
-      phone: formattedPhone,
       reference,
       description: `Subscrição ${plan.name} - Vyxa One CRM`,
     });
 
     // Create pending payment record
-    const { data, error } = await supabaseAdmin
+    const { error } = await supabaseAdmin
       .from("payment_history")
       .insert({
         user_id: userId,
         amount: plan.price,
         currency: "EUR",
         status: "pending",
-        payment_method: "mbway",
+        payment_method: "multibanco",
         payment_reference: payment.reference,
         metadata: {
           plan_id: planId,
-          phone,
+          entidade: payment.entity,
           ...payment
         }
       } as any)
@@ -99,12 +78,14 @@ export default async function handler(
 
     return res.status(200).json({
       success: true,
-      transactionId: payment.transactionId,
+      entity: payment.entity,
       reference: payment.reference,
-      message: "Pagamento MBWay iniciado. Por favor, confirme no seu telemóvel.",
+      amount: payment.amount,
+      expiryDate: payment.expiryDate,
+      message: "Referência Multibanco criada com sucesso",
     });
   } catch (error: any) {
-    console.error("Error creating MBWay payment:", error);
-    return res.status(500).json({ error: error.message || "Erro ao criar pagamento MBWay" });
+    console.error("Error creating Multibanco reference:", error);
+    return res.status(500).json({ error: error.message || "Erro ao criar referência Multibanco" });
   }
 }

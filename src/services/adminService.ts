@@ -382,7 +382,7 @@ export const getPaymentSettings = async () => {
   const { data, error } = await supabase
     .from("system_settings")
     .select("*")
-    .in("key", ["stripe_settings", "eupago_settings"])
+    .in("key", ["stripe_settings", "ifthenpay_settings"])
     .order("key");
 
   if (error) throw error;

@@ -114,7 +114,7 @@ export default function AdminDashboard() {
     },
     {
       title: "Métodos de Pagamento",
-      description: "Configurar Stripe, EuPago e outros",
+      description: "Configurar Stripe, ifthenpay e outros",
       icon: CreditCard,
       href: "/admin/payment-settings",
       color: "text-indigo-600",

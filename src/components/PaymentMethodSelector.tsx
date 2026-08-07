@@ -76,13 +76,13 @@ export function PaymentMethodSelector({
     return value;
   };
 
-  // Handle Credit Card payment (via EuPago — redireciona para o formulário de cartão)
+  // Handle Credit Card payment (via ifthenpay — redireciona para o formulário de cartão)
   const handleCardPayment = async () => {
     try {
       setIsLoading(true);
       setError(null);
 
-      const response = await fetch("/api/eupago/create-creditcard", {
+      const response = await fetch("/api/ifthenpay/create-creditcard", {
         method: "POST",
         headers: await getAuthHeaders(),
         body: JSON.stringify({ userId, planId }),
@@ -94,7 +94,7 @@ export function PaymentMethodSelector({
         throw new Error(data.error || "Erro ao iniciar pagamento por cartão");
       }
 
-      // Encaminha para o formulário de cartão seguro da EuPago.
+      // Encaminha para o formulário de cartão seguro da ifthenpay.
       window.location.href = data.url;
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Erro desconhecido");
@@ -114,7 +114,7 @@ export function PaymentMethodSelector({
 
       const formattedPhone = formatPhone(phone);
 
-      const response = await fetch("/api/eupago/create-mbway", {
+      const response = await fetch("/api/ifthenpay/create-mbway", {
         method: "POST",
         headers: await getAuthHeaders(),
         body: JSON.stringify({ userId, planId, phone: formattedPhone }),
@@ -146,7 +146,7 @@ export function PaymentMethodSelector({
       setIsLoading(true);
       setError(null);
 
-      const response = await fetch("/api/eupago/create-multibanco", {
+      const response = await fetch("/api/ifthenpay/create-multibanco", {
         method: "POST",
         headers: await getAuthHeaders(),
         body: JSON.stringify({ userId, planId }),
@@ -220,7 +220,7 @@ export function PaymentMethodSelector({
                 <div className="flex-1">
                   <h3 className="font-semibold">Cartão de Crédito/Débito</h3>
                   <p className="text-sm text-muted-foreground">
-                    Visa, Mastercard - Pagamento seguro via EuPago
+                    Visa, Mastercard - Pagamento seguro via ifthenpay
                   </p>
                 </div>
                 <div className="flex gap-2">
@@ -274,7 +274,7 @@ export function PaymentMethodSelector({
           </div>
         )}
 
-        {/* Card Payment (EuPago) */}
+        {/* Card Payment (ifthenpay) */}
         {selectedMethod === "card" && !isLoading && (
           <div className="space-y-4 py-4">
             <div className="rounded-lg border bg-blue-50 p-4">
@@ -283,7 +283,7 @@ export function PaymentMethodSelector({
                 <div className="flex-1">
                   <h4 className="font-medium text-blue-900">Pagamento Seguro por Cartão</h4>
                   <p className="text-sm text-blue-700 mt-1">
-                    Será redirecionado para o formulário de cartão seguro da EuPago.
+                    Será redirecionado para o formulário de cartão seguro da ifthenpay.
                     Os seus dados de pagamento são protegidos com encriptação de nível bancário.
                   </p>
                 </div>

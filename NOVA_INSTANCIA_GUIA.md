@@ -192,7 +192,7 @@ SUPABASE_ACCESS_TOKEN=sbp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 3. Nome: `vercel-deployment`
 4. Copie o token gerado
 
-#### **Variáveis de Pagamento (Se Usar Stripe/Eupago)**
+#### **Variáveis de Pagamento (Se Usar Stripe/ifthenpay)**
 
 **Stripe**:
 ```
@@ -201,10 +201,12 @@ STRIPE_SECRET_KEY=sk_live_xxxxxxxxxxxxxxxxxxxxx
 STRIPE_WEBHOOK_SECRET=whsec_xxxxxxxxxxxxxxxxxxxxx
 ```
 
-**Eupago**:
+**ifthenpay** (uma chave por método — sem sandbox, ver CLAUDE.md):
 ```
-EUPAGO_API_KEY=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-NEXT_PUBLIC_EUPAGO_MODE=production
+IFTHENPAY_MBWAY_KEY=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+IFTHENPAY_MB_KEY=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+IFTHENPAY_CREDITCARD_KEY=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+IFTHENPAY_ANTIPHISHING_KEY=defines-tu-no-backoffice
 ```
 
 #### **Variáveis do Google Calendar (Se Usar)**
@@ -320,8 +322,9 @@ Após o deploy, teste:
 
 ### Webhooks não funcionam
 **Solução**: 
-1. Verifique se a URL do webhook está correta no Stripe/Eupago
-2. URL deve ser: `https://seu-dominio.vercel.app/api/stripe/webhook` (ou `/api/eupago/webhook`)
+1. Verifique se a URL do webhook está correta no Stripe/ifthenpay
+2. URL deve ser: `https://seu-dominio.vercel.app/api/stripe/webhook` (ou `/api/ifthenpay/webhook`,
+   registado no backoffice da ifthenpay por cada chave/método)
 
 ### Build falha no Vercel
 **Soluções**:

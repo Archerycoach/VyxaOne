@@ -54,9 +54,11 @@ e mensagens de commit em **português de Portugal**.
 - **Email em massa**: sai **sempre pelo SMTP do consultor** (o Resend/ESP foi removido —
   não é possível enviar como `@remax.pt` sem domínio verificado). O ritmo (lotes, msg/s,
   cooldown) configura-se em Admin › Envio em Massa.
-- **EuPago**: MBWay e Cartão usam a API REST v1.02 (corpo **aninhado**, `payment.amount.value`);
-  o **Multibanco** usa a API **clássica** (`/clientes/rest_api`, corpo plano `chave/valor/id`).
-  Não são intermutáveis.
+- **ifthenpay** (substituiu a EuPago, 2026-08): **uma chave por método** (MB WAY, Multibanco,
+  Cartão — contrato à parte para cada), sem sandbox (mesmo URL para testes e produção). O
+  callback é **GET** com parâmetros na query string (`val`/`oid`/`tid`/`ref`/`apk`), não POST
+  com corpo — o oposto da EuPago. Regista o URL de callback no backoffice da ifthenpay, por
+  chave. Ver `src/lib/ifthenpay.ts`.
 - **IA**: `runAI()` (`src/lib/ai/provider`) regista custo em `ai_usage_logs`. A chave usada
   depende do plano (`subscription_plans.ai_included`): plano com IA → chave da agência;
   senão → chave própria do consultor, sem reserva.

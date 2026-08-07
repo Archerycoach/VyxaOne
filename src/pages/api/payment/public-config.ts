@@ -12,13 +12,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
   try {
     const cfg = await getPaymentConfig();
-    const eupagoReady = cfg.eupagoEnabled && !!cfg.eupagoApiKey;
+    // Consolidado num só gateway (ifthenpay), mas cada método tem a sua
+    // própria chave — só aparece disponível o que tiver chave configurada.
     return res.status(200).json({
-      // Consolidado num só gateway (EuPago): cartão, MBWay e Multibanco.
       methods: {
-        card: eupagoReady,
-        mbway: eupagoReady && cfg.mbwayEnabled,
-        multibanco: eupagoReady,
+        card: cfg.ifthenpayEnabled && !!cfg.ifthenpayCreditCardKey,
+        mbway: cfg.ifthenpayEnabled && cfg.mbwayEnabled && !!cfg.ifthenpayMbwayKey,
+        multibanco: cfg.ifthenpayEnabled && !!cfg.ifthenpayMbKey,
       },
       testMode: cfg.testMode,
     });

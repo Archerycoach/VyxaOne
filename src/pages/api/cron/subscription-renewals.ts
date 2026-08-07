@@ -7,12 +7,12 @@ import { sendPushToUser } from "@/lib/server/webPush";
  *
  * 1. LEMBRETE: subscrições ativas que expiram nos próximos REMINDER_DAYS e com
  *    renovação automática ligada — avisa o utilizador (notificação + push) com
- *    link para renovar. Ao pagar, o webhook do EuPago estende a subscrição.
+ *    link para renovar. Ao pagar, o webhook da ifthenpay estende a subscrição.
  * 2. EXPIRAÇÃO: subscrições ativas cujo período já terminou passam a "past_due"
  *    e o perfil a "expired" (o SubscriptionGuard bloqueia o acesso).
  *
  * NOTA: a cobrança automática de cartão (sem o cliente agir) exige tokenização
- * no EuPago — ponto de extensão futuro (coluna subscriptions.card_token).
+ * na ifthenpay — ponto de extensão futuro (coluna subscriptions.card_token).
  */
 
 const REMINDER_DAYS = 5;

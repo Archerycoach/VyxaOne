@@ -80,8 +80,11 @@ NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_live_xxx
 STRIPE_SECRET_KEY=sk_live_xxx
 STRIPE_WEBHOOK_SECRET=whsec_xxx
 
-# Eupago (Production)
-NEXT_PUBLIC_EUPAGO_API_KEY=your-production-eupago-key
+# ifthenpay (Production) — uma chave por método
+IFTHENPAY_MBWAY_KEY=your-mbway-key
+IFTHENPAY_MB_KEY=your-multibanco-key
+IFTHENPAY_CREDITCARD_KEY=your-creditcard-key
+IFTHENPAY_ANTIPHISHING_KEY=your-antiphishing-key
 
 # Google Calendar (Production)
 GOOGLE_CLIENT_ID=xxx.apps.googleusercontent.com
@@ -105,8 +108,12 @@ NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_test_xxx
 STRIPE_SECRET_KEY=sk_test_xxx
 STRIPE_WEBHOOK_SECRET=whsec_test_xxx
 
-# Eupago (Test)
-NEXT_PUBLIC_EUPAGO_API_KEY=your-testing-eupago-key
+# ifthenpay (a ifthenpay não tem sandbox — usa as tuas chaves de demonstração
+# ou as mesmas chaves de produção; ver CLAUDE.md)
+IFTHENPAY_MBWAY_KEY=your-mbway-key
+IFTHENPAY_MB_KEY=your-multibanco-key
+IFTHENPAY_CREDITCARD_KEY=your-creditcard-key
+IFTHENPAY_ANTIPHISHING_KEY=your-antiphishing-key
 
 # Google Calendar (Testing)
 GOOGLE_CLIENT_ID=xxx.apps.googleusercontent.com
@@ -199,12 +206,14 @@ https://*-your-team.vercel.app/**
    - Events: `customer.subscription.*`, `invoice.*`, `payment_intent.*`
 5. Copia **Webhook Secret**
 
-### **6.2 Eupago Setup**
+### **6.2 ifthenpay Setup**
 
-1. Cria conta em [eupago.pt](https://eupago.pt)
-2. Copia **API Key** do dashboard
-3. Configura Webhook:
-   - URL: `https://your-domain.com/api/eupago/webhook`
+1. Cria conta em [ifthenpay.com](https://ifthenpay.com) e contrata os métodos que precisares
+   (MB WAY, Multibanco, Cartão — cada um dá origem a uma chave própria)
+2. Copia as chaves de cada método para Admin › Definições de Pagamento (não há uma só API Key)
+3. Regista o Webhook no backoffice, **por método/chave**:
+   - URL: `https://your-domain.com/api/ifthenpay/webhook`
+   - Define uma chave anti-phishing e usa a mesma em Admin › Definições de Pagamento
 
 ---
 
@@ -386,7 +395,7 @@ Use esta checklist para garantir que tudo está configurado:
 ### **Payment Providers**
 - [ ] Stripe test keys configuradas
 - [ ] Stripe webhooks configurados
-- [ ] Eupago API key configurada
+- [ ] Chaves ifthenpay configuradas (MB WAY, Multibanco, Cartão, anti-phishing)
 
 ### **Testing**
 - [ ] Development server funciona

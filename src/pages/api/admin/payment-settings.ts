@@ -35,8 +35,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         stripe_enabled: false,
         stripe_public_key: "",
         stripe_secret_key: "",
-        eupago_enabled: false,
-        eupago_api_key: "",
+        ifthenpay_enabled: false,
+        ifthenpay_mbway_key: "",
+        ifthenpay_mb_key: "",
+        ifthenpay_creditcard_key: "",
+        ifthenpay_antiphishing_key: "",
         mbway_enabled: false,
         test_mode: true,
       };
@@ -45,8 +48,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (sanitizedConfig.stripe_secret_key) {
         sanitizedConfig.stripe_secret_key = censorSecret(sanitizedConfig.stripe_secret_key);
       }
-      if (sanitizedConfig.eupago_api_key) {
-        sanitizedConfig.eupago_api_key = censorSecret(sanitizedConfig.eupago_api_key);
+      for (const key of ["ifthenpay_mbway_key", "ifthenpay_mb_key", "ifthenpay_creditcard_key", "ifthenpay_antiphishing_key"]) {
+        if (sanitizedConfig[key]) {
+          sanitizedConfig[key] = censorSecret(sanitizedConfig[key]);
+        }
       }
 
       return res.status(200).json(sanitizedConfig);
@@ -67,8 +72,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (newConfig.stripe_secret_key && newConfig.stripe_secret_key.includes("...")) {
         newConfig.stripe_secret_key = existingConfig.stripe_secret_key;
       }
-      if (newConfig.eupago_api_key && newConfig.eupago_api_key.includes("...")) {
-        newConfig.eupago_api_key = existingConfig.eupago_api_key;
+      // Campo censurado (contém "...") de volta sem alteração => mantém o valor
+      // já guardado, em vez de gravar a versão censurada por cima da chave real.
+      for (const key of ["ifthenpay_mbway_key", "ifthenpay_mb_key", "ifthenpay_creditcard_key", "ifthenpay_antiphishing_key"]) {
+        if (newConfig[key] && String(newConfig[key]).includes("...")) {
+          newConfig[key] = existingConfig[key];
+        }
       }
 
       const { error } = await supabaseAdmin.from("system_settings").upsert({
