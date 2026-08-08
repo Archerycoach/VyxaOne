@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Save, Mail, Phone, MapPin, FileText } from "lucide-react";
+import { Save, Mail, Phone, MapPin, FileText, BarChart3 } from "lucide-react";
 import {
   getFrontendSettings,
   updateFrontendSettings,
@@ -186,6 +186,42 @@ export default function FrontendSettingsPage() {
                   value={settings.company_address || ""}
                   onChange={(e) => setField("company_address", e.target.value)}
                 />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <BarChart3 className="h-5 w-5" />
+                Tracking (Google &amp; Meta)
+              </CardTitle>
+              <CardDescription>
+                Mede o tráfego que chega ao site público a partir de campanhas — só é ativado nas
+                páginas de marketing e captação (landing, preços, páginas de lead por token, etc.),
+                nunca dentro da aplicação autenticada. Deixe em branco para não ativar.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="tracking_ga_measurement_id">Google Analytics 4 — Measurement ID</Label>
+                <Input
+                  id="tracking_ga_measurement_id"
+                  value={settings.tracking_ga_measurement_id || ""}
+                  onChange={(e) => setField("tracking_ga_measurement_id", e.target.value.trim())}
+                  placeholder="G-XXXXXXXXXX"
+                />
+                <p className="text-xs text-muted-foreground">Admin › Fluxos de dados, no Google Analytics.</p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="tracking_meta_pixel_id">Meta Pixel — ID do Pixel</Label>
+                <Input
+                  id="tracking_meta_pixel_id"
+                  value={settings.tracking_meta_pixel_id || ""}
+                  onChange={(e) => setField("tracking_meta_pixel_id", e.target.value.trim())}
+                  placeholder="000000000000000"
+                />
+                <p className="text-xs text-muted-foreground">Gestor de Eventos, no Meta Business Suite.</p>
               </div>
             </CardContent>
           </Card>
