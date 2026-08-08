@@ -1,3 +1,4 @@
+import { supabase } from "@/integrations/supabase/client";
 import { createEvent } from "@/services/calendarService";
 import { buildLeadEventTitle } from "@/lib/leadEventTitle";
 import { resolveFollowUpDate, type FollowUpChoice } from "@/lib/followUpSchedule";
@@ -67,6 +68,12 @@ export async function scheduleLeadFollowUp(params: {
     ...(historyLines.length > 0 ? ["", "Histórico recente:", ...historyLines] : []),
   ].join("\n");
 
+  // createEvent nunca define user_id sozinho — cabe sempre a quem chama
+  // (mesmo padrão de QuickEventDialog.tsx). Sem isto, a política de segurança
+  // da tabela recusa a linha (user_id ficaria por preencher).
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Sessão expirada. Volta a entrar.");
+
   await createEvent({
     title: buildLeadEventTitle("followup", leadName),
     description,
@@ -74,5 +81,6 @@ export async function scheduleLeadFollowUp(params: {
     event_type: "followup",
     start_time: startTime.toISOString(),
     end_time: endTime.toISOString(),
+    user_id: user.id,
   } as any);
 }

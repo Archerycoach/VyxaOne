@@ -122,6 +122,12 @@ interface LeadDetailsDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
+const MAX_ATTACHMENT_FILE_MB = 10;
+// Abaixo do limite típico dos servidores de email (Gmail/Outlook rondam 20-25MB
+// por mensagem); o SMTP do consultor pode aceitar mais, mas isto evita andar
+// a testar o limite exato de cada fornecedor.
+const MAX_ATTACHMENTS_TOTAL_MB = 20;
+
 export function LeadDetailsDialog({
   leadId,
   open,
@@ -153,7 +159,8 @@ export function LeadDetailsDialog({
   const [draftVariants, setDraftVariants] = useState<Array<{tone: string; text: string}> | null>(null);
   const [selectedVariantIndex, setSelectedVariantIndex] = useState<number>(0);
   const [emailSubject, setEmailSubject] = useState<string>("");
-  const [emailAttachments, setEmailAttachments] = useState<Array<{name: string, content: string, encoding: string}>>([]);
+  const [emailAttachments, setEmailAttachments] = useState<Array<{name: string, url: string, size: number}>>([]);
+  const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [newNoteText, setNewNoteText] = useState("");
   const [isSubmittingNote, setIsSubmittingNote] = useState(false);
@@ -2058,38 +2065,68 @@ export function LeadDetailsDialog({
                 </Label>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">Anexos</span>
+                <span className="text-sm font-medium">
+                  Anexos
+                  {emailAttachments.length > 0 && (
+                    <span className="text-xs text-gray-500 font-normal ml-1">
+                      ({(emailAttachments.reduce((sum, a) => sum + a.size, 0) / (1024 * 1024)).toFixed(1)}MB / {MAX_ATTACHMENTS_TOTAL_MB}MB)
+                    </span>
+                  )}
+                </span>
                 <div>
-                  <input 
-                    type="file" 
-                    id="email-attachment" 
-                    className="hidden" 
-                    onChange={(e) => {
+                  <input
+                    type="file"
+                    id="email-attachment"
+                    className="hidden"
+                    onChange={async (e) => {
                       const file = e.target.files?.[0];
                       if (!file) return;
-                      
-                      if (file.size > 10 * 1024 * 1024) {
-                        toast({ title: "Ficheiro demasiado grande", description: "O limite é de 10MB por ficheiro.", variant: "destructive" });
+                      e.target.value = '';
+
+                      if (file.size > MAX_ATTACHMENT_FILE_MB * 1024 * 1024) {
+                        toast({ title: "Ficheiro demasiado grande", description: `O limite é de ${MAX_ATTACHMENT_FILE_MB}MB por ficheiro.`, variant: "destructive" });
                         return;
                       }
-                      
-                      const reader = new FileReader();
-                      reader.onload = () => {
-                        const result = reader.result as string;
-                        const base64 = result.split(",")[1];
-                        setEmailAttachments(prev => [...prev, { name: file.name, content: base64, encoding: 'base64' }]);
-                      };
-                      reader.readAsDataURL(file);
-                      e.target.value = '';
+
+                      const currentTotal = emailAttachments.reduce((sum, a) => sum + a.size, 0);
+                      if (currentTotal + file.size > MAX_ATTACHMENTS_TOTAL_MB * 1024 * 1024) {
+                        toast({
+                          title: "Anexos excedem o limite",
+                          description: `Os anexos não podem ultrapassar ${MAX_ATTACHMENTS_TOTAL_MB}MB no total. Remova algum ficheiro antes de adicionar mais.`,
+                          variant: "destructive",
+                        });
+                        return;
+                      }
+
+                      // Carrega para a Storage e envia só o link — anexar o
+                      // conteúdo em base64 no corpo do pedido excede o limite
+                      // de payload da função serverless com poucos ficheiros.
+                      try {
+                        setIsUploadingAttachment(true);
+                        const fileExt = file.name.split('.').pop();
+                        const fileName = `lead_email_${Math.random().toString(36).substring(2)}.${fileExt}`;
+
+                        const { error } = await supabase.storage
+                          .from('email_attachments')
+                          .upload(fileName, file);
+                        if (error) throw error;
+
+                        const { data } = supabase.storage.from('email_attachments').getPublicUrl(fileName);
+                        setEmailAttachments(prev => [...prev, { name: file.name, url: data.publicUrl, size: file.size }]);
+                      } catch (err: any) {
+                        toast({ title: "Erro ao anexar", description: err.message, variant: "destructive" });
+                      } finally {
+                        setIsUploadingAttachment(false);
+                      }
                     }}
                   />
-                  <Button variant="outline" size="sm" onClick={() => document.getElementById('email-attachment')?.click()}>
-                    <Paperclip className="h-4 w-4 mr-2" />
+                  <Button variant="outline" size="sm" disabled={isUploadingAttachment} onClick={() => document.getElementById('email-attachment')?.click()}>
+                    {isUploadingAttachment ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Paperclip className="h-4 w-4 mr-2" />}
                     Adicionar Ficheiro
                   </Button>
                 </div>
               </div>
-              
+
               {emailAttachments.length > 0 && (
                 <div className="flex flex-wrap gap-2 mt-2">
                   {emailAttachments.map((att, i) => (
@@ -2139,7 +2176,7 @@ export function LeadDetailsDialog({
                     to: lead.email,
                     subject,
                     html: htmlBody,
-                    attachments: emailAttachments.map(att => ({ filename: att.name, content: att.content, encoding: att.encoding })),
+                    attachments: emailAttachments.map(att => ({ filename: att.name, url: att.url })),
                     sendCopyToSender: sendCopyToSelf,
                     leadId: leadId
                   })
