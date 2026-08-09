@@ -1,5 +1,6 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { toGoogleLisbonDateTime } from "@/lib/googleDateTime";
 import type { Database } from "@/integrations/supabase/types";
 
 interface GoogleCalendarEvent {
@@ -198,19 +199,35 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       );
       console.log("[sync] 📥 A importar de", sourceCalendars.length, "calendário(s):", sourceCalendars);
 
+      // Janela única, partilhada entre a importação e a limpeza de órfãos: a
+      // limpeza só pode julgar eventos que a importação realmente conseguiu ver.
+      const timeMin = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+      const timeMax = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
+
       const activeIds = new Set<string>();
+      let allCalendarsOk = true;
       for (const cal of sourceCalendars) {
-        const { synced, activeIds: calActiveIds } = await syncEventsFromGoogle(user.id, accessToken, cal);
+        const { synced, activeIds: calActiveIds, ok } = await syncEventsFromGoogle(user.id, accessToken, cal, timeMin, timeMax);
         syncedCount += synced;
+        if (!ok) allCalendarsOk = false;
         calActiveIds.forEach((id) => activeIds.add(id));
       }
 
       // Limpeza de órfãos: eventos locais sincronizados que já não existem em
       // NENHUM dos calendários selecionados. Feita aqui (não por calendário)
       // para não apagar eventos vindos de outro calendário ainda selecionado.
-      const orphansRemoved = await cleanupOrphanEvents(user.id, activeIds);
-      console.log("[sync] ✅ Importados/limpos", syncedCount, "eventos; órfãos removidos:", orphansRemoved);
-      syncedCount += orphansRemoved;
+      //
+      // NUNCA limpar se alguma leitura ao Google falhou: uma lista incompleta
+      // faria eventos perfeitamente válidos parecerem "apagados no Google" e
+      // eliminava-os da aplicação (foi exatamente este o bug que fazia
+      // desaparecer eventos acabados de criar).
+      if (allCalendarsOk) {
+        const orphansRemoved = await cleanupOrphanEvents(user.id, activeIds, timeMin, timeMax);
+        console.log("[sync] ✅ Importados/limpos", syncedCount, "eventos; órfãos removidos:", orphansRemoved);
+        syncedCount += orphansRemoved;
+      } else {
+        console.warn("[sync] ⚠️ Leitura de pelo menos um calendário falhou — limpeza de órfãos adiada para o próximo ciclo.");
+      }
     }
     
     // Sync from system to Google (export to Google)
@@ -317,13 +334,15 @@ async function syncEventsToGoogle(
           const googleEvent: GoogleCalendarEvent = {
             summary: event.title,
             description: event.description || "",
-            start: { 
-              dateTime: event.start_time, 
-              timeZone: "Europe/Lisbon" 
+            // Hora LOCAL de Lisboa (ver toGoogleLisbonDateTime) — o ISO com
+            // offset UTC junto de timeZone fazia o Google marcar 1h à frente.
+            start: {
+              dateTime: toGoogleLisbonDateTime(event.start_time),
+              timeZone: "Europe/Lisbon"
             },
-            end: { 
-              dateTime: event.end_time, 
-              timeZone: "Europe/Lisbon" 
+            end: {
+              dateTime: toGoogleLisbonDateTime(event.end_time),
+              timeZone: "Europe/Lisbon"
             },
           };
 
@@ -455,13 +474,14 @@ async function syncTasksToGoogle(
           const googleEvent: GoogleCalendarEvent = {
             summary: `[Tarefa] ${task.title}`,
             description: task.description || "",
-            start: { 
-              dateTime: dueDate.toISOString(), 
-              timeZone: "Europe/Lisbon" 
+            // Hora LOCAL de Lisboa — mesma razão dos eventos acima.
+            start: {
+              dateTime: toGoogleLisbonDateTime(dueDate.toISOString()),
+              timeZone: "Europe/Lisbon"
             },
-            end: { 
-              dateTime: endDate.toISOString(), 
-              timeZone: "Europe/Lisbon" 
+            end: {
+              dateTime: toGoogleLisbonDateTime(endDate.toISOString()),
+              timeZone: "Europe/Lisbon"
             },
           };
 
@@ -535,38 +555,47 @@ async function syncTasksToGoogle(
 async function syncEventsFromGoogle(
   userId: string,
   accessToken: string,
-  calendarId: string
-): Promise<{ synced: number; activeIds: Set<string> }> {
+  calendarId: string,
+  timeMin: string,
+  timeMax: string
+): Promise<{ synced: number; activeIds: Set<string>; ok: boolean }> {
   try {
     console.log("[syncEventsFromGoogle] Fetching events from Google Calendar...", calendarId);
-    
-    // Fetch events from the past 30 days to future 90 days
-    const timeMin = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-    const timeMax = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
-    
-    const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?` +
-      `timeMin=${encodeURIComponent(timeMin)}&` +
-      `timeMax=${encodeURIComponent(timeMax)}&` +
-      `singleEvents=true&` +
-      `orderBy=startTime&` +
-      `maxResults=250&` +
-      `showDeleted=true`; // Important: include deleted events
-    
-    console.log("[syncEventsFromGoogle] Fetching from URL:", url);
-    
-    const response = await fetch(url, { 
-      headers: { Authorization: `Bearer ${accessToken}` } 
-    });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("[syncEventsFromGoogle] ❌ Error fetching events:", errorText);
-      return { synced: 0, activeIds: new Set() };
-    }
+    // Paginação COMPLETA: o Google devolve no máximo 250 itens por página, e
+    // com singleEvents=true cada ocorrência de um evento recorrente conta como
+    // um item (dois blocos diários = ~240 itens só por si nesta janela).
+    // Ler só a primeira página deixava metade dos eventos "invisíveis" — e a
+    // limpeza de órfãos apagava-os da aplicação como se tivessem sido
+    // removidos no Google.
+    const googleEvents: any[] = [];
+    let pageToken: string | undefined;
+    do {
+      const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?` +
+        `timeMin=${encodeURIComponent(timeMin)}&` +
+        `timeMax=${encodeURIComponent(timeMax)}&` +
+        `singleEvents=true&` +
+        `orderBy=startTime&` +
+        `maxResults=250&` +
+        `showDeleted=true` + // Important: include deleted events
+        (pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : "");
 
-    const data = await response.json();
-    const googleEvents = data.items || [];
-    
+      const response = await fetch(url, {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("[syncEventsFromGoogle] ❌ Error fetching events:", errorText);
+        // ok:false — a lista está incompleta; o caller não pode limpar órfãos.
+        return { synced: 0, activeIds: new Set(), ok: false };
+      }
+
+      const data = await response.json();
+      googleEvents.push(...(data.items || []));
+      pageToken = data.nextPageToken;
+    } while (pageToken);
+
     console.log("[syncEventsFromGoogle] Fetched", googleEvents.length, "events from Google (including deleted)");
     
     // Get all local events that are synced with Google
@@ -790,10 +819,10 @@ async function syncEventsFromGoogle(
     // A limpeza de órfãos NÃO é feita aqui: com vários calendários de origem,
     // apagar por calendário eliminaria eventos vindos de outro calendário. É
     // feita uma vez no caller, contra a união dos IDs ativos de todos.
-    return { synced: syncedCount, activeIds: activeGoogleEventIds };
+    return { synced: syncedCount, activeIds: activeGoogleEventIds, ok: true };
   } catch (error) {
     console.error("[syncEventsFromGoogle] ❌ Fatal error:", error);
-    return { synced: 0, activeIds: new Set() };
+    return { synced: 0, activeIds: new Set(), ok: false };
   }
 }
 
@@ -801,13 +830,24 @@ async function syncEventsFromGoogle(
  * Apaga os eventos locais sincronizados (com google_event_id) que já não
  * existem em nenhum dos calendários Google selecionados — ou seja, cujo id não
  * está no conjunto de IDs ativos recolhido em todos os calendários deste ciclo.
+ *
+ * Só considera eventos DENTRO da janela lida ao Google (timeMin..timeMax):
+ * um evento local fora da janela nunca aparece na leitura, e sem este filtro
+ * era sempre julgado "apagado no Google" e eliminado por engano.
  */
-async function cleanupOrphanEvents(userId: string, activeGoogleEventIds: Set<string>): Promise<number> {
+async function cleanupOrphanEvents(
+  userId: string,
+  activeGoogleEventIds: Set<string>,
+  timeMin: string,
+  timeMax: string
+): Promise<number> {
   const { data: localSyncedEvents } = await supabaseAdmin
     .from("calendar_events")
     .select("id, google_event_id")
     .eq("user_id", userId)
-    .not("google_event_id", "is", null);
+    .not("google_event_id", "is", null)
+    .gte("start_time", timeMin)
+    .lte("start_time", timeMax);
 
   const orphans = (localSyncedEvents || []).filter(
     (e: any) => e.google_event_id && !activeGoogleEventIds.has(e.google_event_id)

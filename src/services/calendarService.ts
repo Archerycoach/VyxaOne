@@ -556,11 +556,17 @@ export const updateCalendarEvent = async (id: string, updates: CalendarEventUpda
     })
     .eq("id", id)
     .select()
-    .single();
+    .maybeSingle();
 
   if (error) {
     console.error("[calendarService] ❌ Error updating event:", error);
     throw error;
+  }
+
+  if (!data) {
+    // A linha já não existe (ex.: eliminada por uma sincronização entretanto).
+    // Sem esta guarda, o .single() dava um erro críptico de "0 rows".
+    throw new Error("Este evento já não existe — atualize a agenda e tente de novo.");
   }
 
   console.log("[calendarService] ✅ Event updated locally");

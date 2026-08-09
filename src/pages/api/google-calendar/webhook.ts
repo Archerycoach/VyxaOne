@@ -101,7 +101,12 @@ async function syncAllFromGoogle(
     console.log("[webhook:syncAll] ===== FULL SYNC START =====");
     console.log("[webhook:syncAll] User:", userId);
 
-    // Get all local events that are synced with Google
+    // Fetch events from Google Calendar (past 30 days to future 90 days)
+    const timeMin = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const timeMax = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
+
+    // Mapa COMPLETO (sem filtro de janela): serve as decisões criar/atualizar.
+    // O filtro de janela é aplicado só na eliminação de órfãos, mais abaixo.
     const { data: localEvents } = await supabaseAdmin
       .from("calendar_events")
       .select("id, google_event_id, title, start_time, end_time, description")
@@ -114,31 +119,39 @@ async function syncAllFromGoogle(
 
     console.log("[webhook:syncAll] Found", localEventsMap.size, "local synced events");
 
-    // Fetch events from Google Calendar (past 30 days to future 90 days)
-    const timeMin = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-    const timeMax = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
-    
-    const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?` +
-      `timeMin=${encodeURIComponent(timeMin)}&` +
-      `timeMax=${encodeURIComponent(timeMax)}&` +
-      `singleEvents=true&` +
-      `orderBy=startTime&` +
-      `maxResults=500&` +
-      `showDeleted=true`; // IMPORTANT: Include deleted events
-    
-    const response = await fetch(url, { 
-      headers: { Authorization: `Bearer ${accessToken}` } 
-    });
+    // Paginação COMPLETA: com singleEvents=true, ocorrências de eventos
+    // recorrentes contam uma a uma e ultrapassam facilmente o limite por
+    // página. Uma lista truncada fazia a limpeza de órfãos apagar eventos
+    // válidos da aplicação.
+    const googleEvents: any[] = [];
+    let pageToken: string | undefined;
+    do {
+      const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?` +
+        `timeMin=${encodeURIComponent(timeMin)}&` +
+        `timeMax=${encodeURIComponent(timeMax)}&` +
+        `singleEvents=true&` +
+        `orderBy=startTime&` +
+        `maxResults=250&` +
+        `showDeleted=true` + // IMPORTANT: Include deleted events
+        (pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : "");
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("[webhook:syncAll] ❌ Error fetching Google events:", errorText);
-      return 0;
-    }
+      const response = await fetch(url, {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
 
-    const data = await response.json();
-    const googleEvents = data.items || [];
-    
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("[webhook:syncAll] ❌ Error fetching Google events:", errorText);
+        // Lista incompleta — abortar sem limpar órfãos, senão apagávamos
+        // eventos válidos.
+        return 0;
+      }
+
+      const data = await response.json();
+      googleEvents.push(...(data.items || []));
+      pageToken = data.nextPageToken;
+    } while (pageToken);
+
     console.log("[webhook:syncAll] Fetched", googleEvents.length, "events from Google (including deleted)");
 
     let changesCount = 0;
@@ -240,11 +253,17 @@ async function syncAllFromGoogle(
 
     // Delete local events that no longer exist in Google
     console.log("[webhook:syncAll] 🔍 Checking for orphaned local events...");
-    
+
     for (const [googleEventId, localEvent] of localEventsMap) {
+      // Só eventos DENTRO da janela lida ao Google podem ser julgados órfãos:
+      // um evento local fora da janela nunca aparece na leitura, e sem este
+      // filtro era eliminado por engano como se tivesse sido apagado no Google.
+      const localStart = (localEvent as any).start_time;
+      if (!localStart || localStart < timeMin || localStart > timeMax) continue;
+
       if (!activeGoogleEventIds.has(googleEventId)) {
         console.log("[webhook:syncAll] 🗑️ Event no longer exists in Google:", googleEventId);
-        
+
         const { error: deleteError } = await supabaseAdmin
           .from("calendar_events")
           .delete()

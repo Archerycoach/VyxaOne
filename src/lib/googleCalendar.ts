@@ -5,6 +5,7 @@
  */
 
 import { supabase } from "@/integrations/supabase/client";
+import { toGoogleLisbonDateTime } from "@/lib/googleDateTime";
 
 /**
  * Retry configuration
@@ -232,13 +233,13 @@ export async function syncEventToGoogle(
     const googleEvent = {
       summary: eventData.title,
       description: eventData.description || "",
-      start: { 
-        dateTime: eventData.start_time, 
-        timeZone: "Europe/Lisbon" 
+      start: {
+        dateTime: toGoogleLisbonDateTime(eventData.start_time),
+        timeZone: "Europe/Lisbon"
       },
-      end: { 
-        dateTime: eventData.end_time, 
-        timeZone: "Europe/Lisbon" 
+      end: {
+        dateTime: toGoogleLisbonDateTime(eventData.end_time),
+        timeZone: "Europe/Lisbon"
       },
       location: eventData.location || "",
     };
@@ -395,10 +396,10 @@ export async function syncTaskToGoogle(
       summary: `${statusEmoji} [TAREFA] ${taskData.title}`,
       description: `${taskData.description || ""}\n\n[TASK_SYNC_ID]`, // Identifier to prevent reimport
       start: hasTimedRange
-        ? { dateTime: new Date(taskData.start_time!).toISOString(), timeZone: "Europe/Lisbon" }
+        ? { dateTime: toGoogleLisbonDateTime(taskData.start_time!), timeZone: "Europe/Lisbon" }
         : { date: dueDateString, timeZone: "Europe/Lisbon" },
       end: hasTimedRange
-        ? { dateTime: new Date(taskData.end_time!).toISOString(), timeZone: "Europe/Lisbon" }
+        ? { dateTime: toGoogleLisbonDateTime(taskData.end_time!), timeZone: "Europe/Lisbon" }
         : { date: dueDateString, timeZone: "Europe/Lisbon" },
       colorId: colorId,
     };
