@@ -58,7 +58,8 @@ const DEFAULT_COLUMNS: LeadColumnConfig[] = [
   { id: "default-5", column_key: "lead_type", column_label: "Tipo", column_width: "120px", column_order: 5, is_visible: true },
   { id: "default-6", column_key: "budget_min", column_label: "Orçamento Mín.", column_width: "130px", column_order: 6, is_visible: true },
   { id: "default-7", column_key: "budget_max", column_label: "Orçamento Máx.", column_width: "130px", column_order: 7, is_visible: true },
-  { id: "default-8", column_key: "assigned_to", column_label: "Atribuído a", column_width: "160px", column_order: 8, is_visible: true },
+  { id: "default-8", column_key: "created_at", column_label: "Data de Criação", column_width: "150px", column_order: 8, is_visible: true },
+  { id: "default-9", column_key: "assigned_to", column_label: "Atribuído a", column_width: "160px", column_order: 9, is_visible: true },
 ];
 
 interface LeadsListContainerProps {
