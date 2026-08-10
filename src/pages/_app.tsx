@@ -32,6 +32,7 @@ const PUBLIC_TRACKED_PAGES = new Set([
   "/privacy-policy",
   "/terms-of-service",
   "/data-deletion",
+  "/informacao-legal",
   "/l/[token]",
   "/optin/[token]",
   "/consultor/[token]",

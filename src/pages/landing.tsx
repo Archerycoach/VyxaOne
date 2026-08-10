@@ -294,6 +294,8 @@ export default function LandingPage() {
                   <li><Link href="/contact" className="hover:text-white transition-colors">Contacto</Link></li>
                   <li><a href={PRIVACY_POLICY_URL} target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">Política de Privacidade</a></li>
                   <li><Link href="/terms-of-service" className="hover:text-white transition-colors">Termos de Serviço</Link></li>
+                  <li><Link href="/informacao-legal" className="hover:text-white transition-colors">Informação Legal</Link></li>
+                  <li><a href="https://www.livroreclamacoes.pt" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">Livro de Reclamações</a></li>
                 </ul>
               </div>
               

@@ -34,6 +34,7 @@ const STATIC_PAGES: Array<{ slug: string; label: string; path: string; hasIntro?
   { slug: "privacy_policy", label: "Política de Privacidade", path: "/privacy-policy" },
   { slug: "terms_of_service", label: "Termos de Serviço", path: "/terms-of-service" },
   { slug: "data_deletion", label: "Eliminação de Dados", path: "/data-deletion" },
+  { slug: "informacao_legal", label: "Informação Legal", path: "/informacao-legal" },
 ];
 
 export default function FrontendSettingsPage() {
@@ -185,6 +186,46 @@ export default function FrontendSettingsPage() {
                   id="company_address"
                   value={settings.company_address || ""}
                   onChange={(e) => setField("company_address", e.target.value)}
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Identificação Legal do Vendedor</CardTitle>
+              <CardDescription>
+                Mostrados na página pública "Informação Legal" (/informacao-legal) — obrigatórios para venda
+                online: denominação fiscal, NIF e entidade de resolução de litígios. A morada, telefone e email
+                usados são os dos Contactos acima.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="legal_company_name">Denominação Fiscal</Label>
+                <Input
+                  id="legal_company_name"
+                  value={settings.legal_company_name || ""}
+                  onChange={(e) => setField("legal_company_name", e.target.value)}
+                  placeholder="Ex: Vyxa, Unipessoal Lda."
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="legal_nif">NIF</Label>
+                <Input
+                  id="legal_nif"
+                  value={settings.legal_nif || ""}
+                  onChange={(e) => setField("legal_nif", e.target.value)}
+                  placeholder="Ex: 500 000 000"
+                />
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label htmlFor="legal_arbitration_center">Centro de Arbitragem / Entidade RAL competente</Label>
+                <Input
+                  id="legal_arbitration_center"
+                  value={settings.legal_arbitration_center || ""}
+                  onChange={(e) => setField("legal_arbitration_center", e.target.value)}
+                  placeholder="Ex: CACCL — Centro de Arbitragem de Conflitos de Consumo de Lisboa — www.centroarbitragemlisboa.pt"
                 />
               </div>
             </CardContent>
