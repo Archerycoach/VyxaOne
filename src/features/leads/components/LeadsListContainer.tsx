@@ -1126,29 +1126,25 @@ export function LeadsListContainer({
         </div>
       ) : (
         <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-          {/* Altura limitada: a tabela scrolla dentro desta área (vertical e
-              horizontal), por isso a barra de scroll horizontal fica sempre
-              visível no fundo do contentor — não é preciso descer até ao fim
-              de todas as leads para lá chegar. */}
+          {/* Altura limitada: a tabela scrolla na vertical dentro desta área. */}
           <div className="overflow-auto max-h-[calc(100vh-18rem)]">
-            {/* min-w-max: sem isto o "w-full" esmaga as colunas para caber no
-                ecrã (texto a partir letra a letra) em vez de ativar o scroll
-                horizontal do contentor. */}
-            <table className="w-full min-w-max">
+            {/* A tabela encaixa na largura do ecrã: as larguras da config são
+                preferenciais (width), não mínimas — com muitas colunas, o
+                browser aperta-as e o texto quebra linha em vez de aparecer
+                scroll horizontal com a coluna de Ações fixa por cima. */}
+            <table className="w-full">
               <thead className="bg-gray-800 text-white text-sm sticky top-0 z-20">
                 <tr>
                   {columnsConfig.map((column) => (
                     <th
                       key={column.column_key}
-                      className="px-4 py-3 text-left font-medium whitespace-nowrap"
-                      style={{ width: column.column_width, minWidth: column.column_width }}
+                      className="px-2 py-3 text-left font-medium whitespace-nowrap"
+                      style={{ width: column.column_width }}
                     >
                       {column.column_label}
                     </th>
                   ))}
-                  {/* Coluna de Ações fixada à direita: os 3 pontos ficam
-                      sempre visíveis mesmo com a tabela mais larga que o ecrã. */}
-                  <th className="px-4 py-3 text-left font-medium w-32 sticky right-0 bg-gray-800 z-30 shadow-[-8px_0_8px_-6px_rgba(0,0,0,0.25)]">Ações</th>
+                  <th className="px-2 py-3 text-left font-medium w-24">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
@@ -1177,7 +1173,7 @@ export function LeadsListContainer({
                       {columnsConfig.map((column, columnIndex) => {
                         if (columnIndex !== 0) {
                           return (
-                            <td key={column.column_key} className="px-4 py-3 text-sm text-gray-700">
+                            <td key={column.column_key} className="px-2 py-3 text-sm text-gray-700">
                               {getCellValue(lead, column.column_key)}
                             </td>
                           );
@@ -1189,7 +1185,7 @@ export function LeadsListContainer({
                         const showLastInteraction = Boolean((lead as any).last_contact_type);
 
                         return (
-                          <td key={column.column_key} className="px-4 py-3 text-sm text-gray-700">
+                          <td key={column.column_key} className="px-2 py-3 text-sm text-gray-700">
                             {showHighlightBadge || showQualificationBadge || showLastInteraction ? (
                               <div className="space-y-1">
                                 <div>{getCellValue(lead, column.column_key)}</div>
@@ -1226,7 +1222,7 @@ export function LeadsListContainer({
                         );
                       })}
                       <td
-                        className={`px-4 py-3 sticky right-0 z-10 ${bgClass} shadow-[-8px_0_8px_-6px_rgba(0,0,0,0.12)]`}
+                        className={`px-2 py-3 ${bgClass}`}
                         onClick={(e) => e.stopPropagation()}
                       >
                         <div className="flex gap-1">
