@@ -59,7 +59,8 @@ const DEFAULT_COLUMNS: LeadColumnConfig[] = [
   { id: "default-6", column_key: "budget_min", column_label: "Orçamento Mín.", column_width: "130px", column_order: 6, is_visible: true },
   { id: "default-7", column_key: "budget_max", column_label: "Orçamento Máx.", column_width: "130px", column_order: 7, is_visible: true },
   { id: "default-8", column_key: "created_at", column_label: "Data de Criação", column_width: "150px", column_order: 8, is_visible: true },
-  { id: "default-9", column_key: "assigned_to", column_label: "Atribuído a", column_width: "160px", column_order: 9, is_visible: true },
+  { id: "default-9", column_key: "last_contact_date", column_label: "Último Contacto", column_width: "150px", column_order: 9, is_visible: true },
+  { id: "default-10", column_key: "assigned_to", column_label: "Atribuído a", column_width: "160px", column_order: 10, is_visible: true },
 ];
 
 interface LeadsListContainerProps {
@@ -802,6 +803,8 @@ export function LeadsListContainer({
         return lead.has_property_to_sell ? "Sim" : "Não";
       case "created_at":
         return formatDate(lead.created_at);
+      case "last_contact_date":
+        return formatDate(lead.last_contact_date);
       case "assigned_to":
         return lead.assigned_user?.full_name || "-";
       default:
