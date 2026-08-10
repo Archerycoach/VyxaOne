@@ -1,9 +1,13 @@
 -- Backfill do last_contact_date das leads a partir do histórico de interações.
 --
 -- O campo só começou a ser preenchido a partir de certa altura: leads com
--- interações antigas ficaram com NULL e apareceriam sem data na nova coluna
--- "Último Contacto" da lista de leads (na instância principal: 615 leads com
--- interações mas sem data, a 10/08/2026).
+-- interações antigas ficaram com NULL e apareceriam sem data na coluna
+-- "Último Contacto" da lista de leads.
+--
+-- SÓ CONTA CONTACTO MANUAL: interações automáticas (resposta automática de
+-- formulários, property matcher, reativação, etc.) são excluídas — "último
+-- contacto" significa contacto registado pelo consultor. O predicado espelha
+-- AUTOMATED_OUTCOME_MARKERS de src/lib/leadInteractionHighlight.ts.
 --
 -- Idempotente: só toca em leads com last_contact_date NULL — na segunda
 -- execução não há linhas a atualizar. O outcome só é preenchido se também
@@ -18,6 +22,10 @@ from (
     outcome as last_outcome
   from interactions
   where lead_id is not null
+    and not (lower(coalesce(outcome, '')) like any (array[
+      '%resposta autom%', '%property matcher%', '%automátic%', '%automatic%',
+      '%auto-reply%', '%reativa%'
+    ]))
   order by lead_id, coalesce(interaction_date, created_at) desc
 ) i
 where l.id = i.lead_id
