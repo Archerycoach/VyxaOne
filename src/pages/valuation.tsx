@@ -32,6 +32,7 @@ import {
   addLocationMap, addPointsOfInterest, addNarrative, addAskingVsSoldBlock,
   buildConsultantIdentity, type ConsultantIdentity,
 } from "@/lib/pdfDocument";
+import { InvestmentAnalysisCard } from "@/components/valuation/InvestmentAnalysisCard";
 
 // Os 18 concelhos da AML — fora daqui o rácio oficial de 3,3–3,8× VPT não se
 // aplica (mesma lista do servidor, src/pages/api/gpt/valuation.ts).
@@ -1476,6 +1477,15 @@ export default function ValuationPage() {
                   </CardContent>
                 </Card>
               )}
+
+              {/* Análise de investimento — motor local (src/lib/underwriting),
+                  alimentado pelo valor central da avaliação e pela renda
+                  mediana do INE que o CMA já devolve. */}
+              <InvestmentAnalysisCard
+                suggestedPrice={result.suggestedCentral ?? null}
+                area={Number(form.area) || null}
+                ineRentPerSqm={result.ineRentPerSqm ?? null}
+              />
 
               <Card>
                 <CardHeader><CardTitle className="text-base">Imóveis Comparáveis ({result.comparables.length})</CardTitle></CardHeader>
