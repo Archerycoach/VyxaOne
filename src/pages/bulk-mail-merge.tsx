@@ -73,7 +73,10 @@ export default function BulkMailMerge() {
   // Mensagem.
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
-  const [attachments, setAttachments] = useState<{ name: string; size: number; base64: string }[]>([]);
+  // Anexos por LINK da Storage — ver emailAttachmentUpload.ts (base64 no
+  // pedido excedia o limite de payload da plataforma). base64 só sobrevive
+  // em campanhas antigas reutilizadas.
+  const [attachments, setAttachments] = useState<{ name: string; size: number; url?: string; base64?: string }[]>([]);
   const [sendCopyToSelf, setSendCopyToSelf] = useState(false);
   const copyEmail = user?.email || "";
 
@@ -89,7 +92,7 @@ export default function BulkMailMerge() {
   const [aiAudience, setAiAudience] = useState("");
   const [aiComposing, setAiComposing] = useState(false);
   const [aiSourceUrl, setAiSourceUrl] = useState("");
-  const [aiSourceFile, setAiSourceFile] = useState<{ name: string; base64: string; size: number } | null>(null);
+  const [aiSourceFile, setAiSourceFile] = useState<{ name: string; url: string; size: number } | null>(null);
   // Escolher incluir no email: o link de reserva de conversa e/ou o link/brochura.
   const [aiIncludeBooking, setAiIncludeBooking] = useState(false);
   const [aiIncludeSource, setAiIncludeSource] = useState(false);
@@ -214,22 +217,23 @@ export default function BulkMailMerge() {
   const deselectAll = () => setSelectedRecipients(new Set());
 
   // ── Anexos ─────────────────────────────────────────────────────────────────
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
+    e.target.value = "";
     const maxSize = 10 * 1024 * 1024;
-    files.forEach((file) => {
+    for (const file of files) {
       if (file.size > maxSize) {
         toast({ title: "Ficheiro demasiado grande", description: `${file.name} excede 10MB.`, variant: "destructive" });
-        return;
+        continue;
       }
-      const reader = new FileReader();
-      reader.onload = () => {
-        const base64 = (reader.result as string).split(",")[1];
-        setAttachments((prev) => [...prev, { name: file.name, size: file.size, base64 }]);
-      };
-      reader.readAsDataURL(file);
-    });
-    e.target.value = "";
+      try {
+        const { uploadEmailAttachment } = await import("@/services/emailAttachmentUpload");
+        const uploaded = await uploadEmailAttachment(file);
+        setAttachments((prev) => [...prev, uploaded]);
+      } catch (err: any) {
+        toast({ title: "Erro ao anexar", description: err.message, variant: "destructive" });
+      }
+    }
   };
 
   const removeAttachment = (index: number) => setAttachments((prev) => prev.filter((_, i) => i !== index));
@@ -246,17 +250,20 @@ export default function BulkMailMerge() {
   };
 
   // ── Escrita por IA ──────────────────────────────────────────────────────────
-  const handleAiSourceFile = (file: File) => {
+  const handleAiSourceFile = async (file: File) => {
     if (file.size > 20 * 1024 * 1024) {
       toast({ title: "Ficheiro demasiado grande", description: "A brochura deve ter até 20 MB.", variant: "destructive" });
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const base64 = (reader.result as string).split(",")[1];
-      setAiSourceFile({ name: file.name, base64, size: file.size });
-    };
-    reader.readAsDataURL(file);
+    // Carrega já para a Storage — o endpoint de extração recebe o link, não o
+    // conteúdo (base64 no corpo excedia o limite de payload da plataforma).
+    try {
+      const { uploadEmailAttachment } = await import("@/services/emailAttachmentUpload");
+      const uploaded = await uploadEmailAttachment(file);
+      setAiSourceFile(uploaded);
+    } catch (err: any) {
+      toast({ title: "Erro ao carregar a brochura", description: err.message, variant: "destructive" });
+    }
   };
 
   const handleAiCompose = async () => {
@@ -276,7 +283,7 @@ export default function BulkMailMerge() {
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
           body: JSON.stringify(
             aiSourceFile
-              ? { documentBase64: aiSourceFile.base64, documentName: aiSourceFile.name }
+              ? { documentUrl: aiSourceFile.url, documentName: aiSourceFile.name }
               : { sourceUrl: aiSourceUrl.trim() },
           ),
         });
@@ -314,12 +321,12 @@ export default function BulkMailMerge() {
       setSubject(data.subject);
       setMessage(data.html || "");
 
-      // Brochura escolhida para incluir no email → segue como anexo.
+      // Brochura escolhida para incluir no email → segue como anexo (por link).
       if (aiIncludeSource && aiSourceFile) {
         setAttachments((prev) =>
           prev.some((a) => a.name === aiSourceFile.name)
             ? prev
-            : [...prev, { name: aiSourceFile.name, size: aiSourceFile.size, base64: aiSourceFile.base64 }],
+            : [...prev, { name: aiSourceFile.name, size: aiSourceFile.size, url: aiSourceFile.url }],
         );
       }
 
@@ -344,10 +351,16 @@ export default function BulkMailMerge() {
     setSubject(campaign.subject || "");
     if (campaign.body_html) setMessage(campaign.body_html);
     const atts = Array.isArray(campaign.attachments) ? campaign.attachments : [];
+    // Tolerante aos dois formatos: {path/url} (novo, Storage) e {content} (antigo).
     setAttachments(
       atts
-        .map((a) => ({ name: a.filename || a.name || "Anexo", size: 0, base64: a.content || a.base64 || "" }))
-        .filter((a) => a.base64),
+        .map((a: any) => ({
+          name: a.filename || a.name || "Anexo",
+          size: 0,
+          url: a.path || a.url || undefined,
+          base64: a.content || a.base64 || undefined,
+        }))
+        .filter((a) => a.url || a.base64),
     );
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
     toast({
@@ -387,7 +400,13 @@ export default function BulkMailMerge() {
         accessToken: session.access_token,
         subject,
         html: message,
-        attachments: attachments.map((att) => ({ filename: att.name, content: att.base64, encoding: "base64" })),
+        // Por link quando existe (formato novo); base64 só para campanhas
+        // antigas reutilizadas.
+        attachments: attachments.map((att) =>
+          att.url
+            ? { filename: att.name, url: att.url }
+            : { filename: att.name, content: att.base64, encoding: "base64" },
+        ),
         sendCopyToSender: sendCopyToSelf && Boolean(copyEmail),
         audienceSource: "sheet_merge",
         criteria: { file: sheetFileName, rows: sheetRows.length },

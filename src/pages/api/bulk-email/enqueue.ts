@@ -42,7 +42,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     } = req.body as {
       subject?: string;
       html?: string;
-      attachments?: Array<{ filename?: string; name?: string; content?: string; base64?: string; encoding?: string }>;
+      attachments?: Array<{ filename?: string; name?: string; content?: string; base64?: string; encoding?: string; url?: string; path?: string }>;
       sendCopyToSender?: boolean;
       audienceSource?: string;
       criteria?: Record<string, any>;
@@ -78,14 +78,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(400).json({ error: "Nenhum destinatário com email." });
     }
 
-    // Anexos no formato do nodemailer (filename + content base64).
+    // Anexos no formato do nodemailer. Preferência: por LINK ({filename, path}
+    // — o nodemailer descarrega no envio), que é como o cliente envia agora
+    // (ficheiro na Storage, só a referência no pedido). Base64 mantém-se
+    // aceite para templates/campanhas antigos guardados nesse formato.
     const normalizedAttachments = (attachments || [])
-      .map((a) => ({
-        filename: a.filename || a.name || "Anexo",
-        content: a.content || a.base64 || "",
-        encoding: a.encoding || "base64",
-      }))
-      .filter((a) => a.content);
+      .map((a) => {
+        const filename = a.filename || a.name || "Anexo";
+        const path = a.url || a.path;
+        if (path) return { filename, path };
+        return {
+          filename,
+          content: a.content || a.base64 || "",
+          encoding: a.encoding || "base64",
+        };
+      })
+      .filter((a) => ("path" in a && a.path) || ("content" in a && a.content));
 
     // 1. Campanha com o modelo do email e o estado inicial.
     const { data: campaign, error: campaignError } = await admin

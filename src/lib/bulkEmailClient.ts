@@ -17,8 +17,11 @@ export interface BulkRecipientInput {
 
 export interface BulkEmailAttachmentInput {
   filename: string;
-  content: string;
-  encoding: string;
+  /** Link do ficheiro na Storage (formato novo — o worker descarrega no envio). */
+  url?: string;
+  /** Conteúdo base64 (formato antigo, mantido para templates/campanhas guardados). */
+  content?: string;
+  encoding?: string;
 }
 
 /** Lê a resposta como JSON de forma tolerante — se vier uma página de erro

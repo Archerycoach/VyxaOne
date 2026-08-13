@@ -289,7 +289,9 @@ export default function BulkMessages() {
   // Message
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
-  const [attachments, setAttachments] = useState<{name: string, size: number, base64: string}[]>([]);
+  // Anexos por LINK da Storage (url) — base64 só sobrevive em templates e
+  // campanhas antigos guardados nesse formato (ver emailAttachmentUpload.ts).
+  const [attachments, setAttachments] = useState<{name: string, size: number, url?: string, base64?: string}[]>([]);
   const [sendCopyToSelf, setSendCopyToSelf] = useState(false);
 
   // Escrever o email por IA (com público-alvo/idioma e um link/brochura como base).
@@ -298,7 +300,7 @@ export default function BulkMessages() {
   const [aiAudience, setAiAudience] = useState("");
   const [aiComposing, setAiComposing] = useState(false);
   const [aiSourceUrl, setAiSourceUrl] = useState("");
-  const [aiSourceFile, setAiSourceFile] = useState<{ name: string; base64: string; size: number } | null>(null);
+  const [aiSourceFile, setAiSourceFile] = useState<{ name: string; url: string; size: number } | null>(null);
   // Escolher incluir no email: o link de reserva de conversa e/ou o link/brochura.
   const [aiIncludeBooking, setAiIncludeBooking] = useState(false);
   const [aiIncludeSource, setAiIncludeSource] = useState(false);
@@ -569,7 +571,17 @@ export default function BulkMessages() {
       if (emailConfig.subject) setSubject(emailConfig.subject);
       if (emailConfig.body) setMessage(emailConfig.body);
       if (Array.isArray(emailConfig.attachments) && emailConfig.attachments.length > 0) {
-        setAttachments(emailConfig.attachments);
+        // Tolerante aos dois formatos: {url} (novo, Storage) e {base64} (antigo).
+        setAttachments(
+          emailConfig.attachments
+            .map((a: any) => ({
+              name: a.name || a.filename || "Anexo",
+              size: a.size || 0,
+              url: a.url || a.path || undefined,
+              base64: a.base64 || a.content || undefined,
+            }))
+            .filter((a: any) => a.url || a.base64),
+        );
       }
       
       toast({
@@ -840,34 +852,31 @@ export default function BulkMessages() {
     setManualName("");
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    const maxSize = 10 * 1024 * 1024; // 10MB total per file
+    e.target.value = '';
+    const maxSize = 10 * 1024 * 1024; // 10MB per file
 
-    files.forEach((file) => {
+    for (const file of files) {
       if (file.size > maxSize) {
         toast({
           title: "Ficheiro demasiado grande",
           description: `O ficheiro ${file.name} excede o limite de 10MB.`,
           variant: "destructive",
         });
-        return;
+        continue;
       }
 
-      const reader = new FileReader();
-      reader.onload = () => {
-        const result = reader.result as string;
-        const base64 = result.split(",")[1];
-        setAttachments((prev) => [
-          ...prev,
-          { name: file.name, size: file.size, base64 },
-        ]);
-      };
-      reader.readAsDataURL(file);
-    });
-    
-    // reset input
-    e.target.value = '';
+      // Carrega para a Storage e guarda só o link — base64 no pedido de envio
+      // excedia o limite de payload da plataforma.
+      try {
+        const { uploadEmailAttachment } = await import("@/services/emailAttachmentUpload");
+        const uploaded = await uploadEmailAttachment(file);
+        setAttachments((prev) => [...prev, uploaded]);
+      } catch (err: any) {
+        toast({ title: "Erro ao anexar", description: err.message, variant: "destructive" });
+      }
+    }
   };
 
   const removeAttachment = (index: number) => {
@@ -880,17 +889,21 @@ export default function BulkMessages() {
   // briefing, no público-alvo/idioma e, opcionalmente, num link ou brochura.
   const CRM_EMAIL_VARS = ["nome", "email", "telefone", "empreendimento"];
 
-  const handleAiSourceFile = (file: File) => {
+  const handleAiSourceFile = async (file: File) => {
     if (file.size > 20 * 1024 * 1024) {
       toast({ title: "Ficheiro demasiado grande", description: "A brochura deve ter até 20 MB.", variant: "destructive" });
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const base64 = (reader.result as string).split(",")[1];
-      setAiSourceFile({ name: file.name, base64, size: file.size });
-    };
-    reader.readAsDataURL(file);
+    // Carrega já para a Storage — o endpoint de extração recebe o link, não o
+    // conteúdo (base64 no corpo excedia o limite de payload da plataforma e a
+    // resposta de erro nem era JSON: "JSON.parse: unexpected character").
+    try {
+      const { uploadEmailAttachment } = await import("@/services/emailAttachmentUpload");
+      const uploaded = await uploadEmailAttachment(file);
+      setAiSourceFile(uploaded);
+    } catch (err: any) {
+      toast({ title: "Erro ao carregar a brochura", description: err.message, variant: "destructive" });
+    }
   };
 
   const handleAiCompose = async () => {
@@ -910,7 +923,7 @@ export default function BulkMessages() {
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
           body: JSON.stringify(
             aiSourceFile
-              ? { documentBase64: aiSourceFile.base64, documentName: aiSourceFile.name }
+              ? { documentUrl: aiSourceFile.url, documentName: aiSourceFile.name }
               : { sourceUrl: aiSourceUrl.trim() },
           ),
         });
@@ -942,12 +955,12 @@ export default function BulkMessages() {
       setSubject(data.subject);
       setMessage(data.html || "");
 
-      // Brochura escolhida para incluir no email → segue como anexo.
+      // Brochura escolhida para incluir no email → segue como anexo (por link).
       if (aiIncludeSource && aiSourceFile) {
         setAttachments((prev) =>
           prev.some((a) => a.name === aiSourceFile.name)
             ? prev
-            : [...prev, { name: aiSourceFile.name, size: aiSourceFile.size, base64: aiSourceFile.base64 }],
+            : [...prev, { name: aiSourceFile.name, size: aiSourceFile.size, url: aiSourceFile.url }],
         );
       }
 
@@ -990,10 +1003,16 @@ export default function BulkMessages() {
     setSubject(campaign.subject || "");
     if (campaign.body_html) setMessage(campaign.body_html);
     const atts = Array.isArray(campaign.attachments) ? campaign.attachments : [];
+    // Tolerante aos dois formatos: {path/url} (novo, Storage) e {content} (antigo).
     setAttachments(
       atts
-        .map((a) => ({ name: a.filename || a.name || "Anexo", size: 0, base64: a.content || a.base64 || "" }))
-        .filter((a) => a.base64),
+        .map((a: any) => ({
+          name: a.filename || a.name || "Anexo",
+          size: 0,
+          url: a.path || a.url || undefined,
+          base64: a.content || a.base64 || undefined,
+        }))
+        .filter((a) => a.url || a.base64),
     );
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
     toast({
@@ -1061,7 +1080,13 @@ export default function BulkMessages() {
           accessToken: session.access_token,
           subject,
           html: message,
-          attachments: attachments.map((att) => ({ filename: att.name, content: att.base64, encoding: "base64" })),
+          // Por link quando existe (formato novo); base64 só para anexos
+          // vindos de templates/campanhas antigos.
+          attachments: attachments.map((att) =>
+            att.url
+              ? { filename: att.name, url: att.url }
+              : { filename: att.name, content: att.base64, encoding: "base64" },
+          ),
           sendCopyToSender: sendCopyToSelf && Boolean(copyEmail),
           audienceSource: router.query.aiDraft === "1" ? "ai_search" : "manual",
           criteria: {

@@ -28,11 +28,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(401).json({ error: "Não autorizado" });
     }
 
-    const { documentBase64, documentName, sourceUrl } = req.body as {
+    const { documentBase64, documentName, documentUrl, sourceUrl } = req.body as {
       documentBase64?: string;
       documentName?: string;
+      /** Link da brochura já carregada na Storage — preferível ao base64
+       *  (que excede o limite de payload da plataforma com ficheiros grandes). */
+      documentUrl?: string;
       sourceUrl?: string;
     };
+
+    if (documentUrl) {
+      const buffer = await downloadDocument(documentUrl);
+      const text = await extractFromBuffer(buffer, documentName || "");
+      return res.status(200).json({ success: true, text: truncate(text) });
+    }
 
     if (documentBase64) {
       const text = await extractFromDocument(documentBase64, documentName || "");
@@ -59,6 +68,34 @@ function truncate(text: string): string {
 async function extractFromDocument(documentBase64: string, documentName: string): Promise<string> {
   const base64Data = documentBase64.includes(",") ? documentBase64.split(",")[1] : documentBase64;
   const buffer = Buffer.from(base64Data, "base64");
+  return extractFromBuffer(buffer, documentName);
+}
+
+/** Descarrega a brochura do link (Storage) — com limites de tempo e tamanho. */
+async function downloadDocument(documentUrl: string): Promise<Buffer> {
+  let parsed: URL;
+  try {
+    parsed = new URL(documentUrl);
+  } catch {
+    throw new Error("Link da brochura inválido.");
+  }
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+    throw new Error("Link da brochura inválido.");
+  }
+
+  const response = await fetch(documentUrl, { signal: AbortSignal.timeout(20000) });
+  if (!response.ok) {
+    throw new Error(`Não foi possível descarregar a brochura (HTTP ${response.status}).`);
+  }
+
+  const buffer = Buffer.from(await response.arrayBuffer());
+  if (buffer.length > 30 * 1024 * 1024) {
+    throw new Error("A brochura excede o tamanho máximo de 30 MB.");
+  }
+  return buffer;
+}
+
+async function extractFromBuffer(buffer: Buffer, documentName: string): Promise<string> {
   const lowerName = documentName.toLowerCase();
 
   if (lowerName.endsWith(".docx")) {
