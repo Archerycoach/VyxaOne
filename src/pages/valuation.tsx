@@ -81,6 +81,8 @@ interface ValuationResult {
   } | null;
   zoneSampleSize?: number | null;
   suggestedMax: number | null;
+  suggestedCentral?: number | null;
+  ineRentPerSqm?: number | null;
   narrative: string;
   scenarios?: Array<{
     key: string;
@@ -719,9 +721,14 @@ export default function ValuationPage() {
         propertyType: fields.property_type || prev.propertyType,
         city: prev.city || fields.city || "",
         address: prev.address || fields.address || "",
+        // Área bruta dependente da caderneta → campo "Arrecadação": entra no
+        // valor pela via conservadora (250-1000 €/m², não o €/m² da área
+        // principal). A caderneta não distingue arrecadação de garagem — se
+        // parte for estacionamento, o consultor reclassifica no formulário.
+        storageSqm: prev.storageSqm || (fields.dependent_area ? String(fields.dependent_area) : ""),
       }));
 
-      const filled = ["area", "land_area", "bedrooms", "taxable_value", "year_built", "energy_rating"]
+      const filled = ["area", "dependent_area", "land_area", "bedrooms", "taxable_value", "year_built", "energy_rating"]
         .filter((key) => fields[key] != null).length;
 
       toast({
@@ -1108,7 +1115,7 @@ export default function ValuationPage() {
                       onChange={(e) => setForm({ ...form, storageSqm: e.target.value })}
                       placeholder="Ex: 8"
                     />
-                    <p className="text-[11px] text-muted-foreground">Valorizada a 250–1000 €/m².</p>
+                    <p className="text-[11px] text-muted-foreground">Valorizada a 250–1000 €/m². A leitura da caderneta preenche aqui a área bruta dependente — se parte for garagem, ajusta e usa o campo de estacionamento.</p>
                   </div>
 
                   <div className="space-y-1.5">

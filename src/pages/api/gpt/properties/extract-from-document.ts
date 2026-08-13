@@ -108,6 +108,7 @@ Devolve EXATAMENTE esta estrutura:
     "property_type": "apartment | house | commercial | land | office | warehouse | other, ou null",
     "typology": "T0/T1/T2/T3... ou null",
     "area": número da área bruta privativa em m2, ou null,
+    "dependent_area": número da ÁREA BRUTA DEPENDENTE em m2 (arrecadações, garagens, anexos — na caderneta aparece como "Área bruta dependente"), ou null,
     "land_area": número da área total do terreno em m2 (moradias/terrenos), ou null,
     "bedrooms": número de quartos ou null,
     "bathrooms": número de casas de banho ou null,
