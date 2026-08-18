@@ -5,6 +5,7 @@ import { CalendarGrid } from "./CalendarGrid";
 import { CalendarTimeGrid } from "./CalendarTimeGrid";
 import { CalendarDialogs } from "./CalendarDialogs";
 import { GoogleSyncStatusDialog } from "./GoogleSyncStatusDialog";
+import { ClientBookingsDialog } from "./ClientBookingsDialog";
 import {
   useCalendarEvents,
   useCalendarTasks,
@@ -101,6 +102,8 @@ export function CalendarContainer() {
 
   // Diálogo com o registo de que eventos/tarefas estão sincronizados com o Google.
   const [syncStatusOpen, setSyncStatusOpen] = useState(false);
+  // Reservas feitas por clientes (link de agendamento) — lista dedicada.
+  const [clientBookingsOpen, setClientBookingsOpen] = useState(false);
 
   // Escolha de âmbito ao editar/eliminar uma ocorrência de uma série recorrente.
   const [seriesPrompt, setSeriesPrompt] = useState<{
@@ -960,6 +963,7 @@ export function CalendarContainer() {
         onViewModeChange={setViewMode}
         onNewEvent={handleCreateEvent}
         onCopyBookingLink={handleCopyBookingLink}
+        onShowClientBookings={() => setClientBookingsOpen(true)}
         googleConnected={isConnected}
         googleConfigured={isConfigured}
         isSyncing={isSyncing}
@@ -1021,6 +1025,16 @@ export function CalendarContainer() {
           await refetchTasks();
         }}
         isSyncing={isSyncing}
+      />
+
+      <ClientBookingsDialog
+        open={clientBookingsOpen}
+        onOpenChange={setClientBookingsOpen}
+        onGoToDate={(date) => {
+          setCurrentDate(date);
+          setViewMode("day");
+        }}
+        onChanged={() => refetchEvents()}
       />
 
       {viewMode === "month" ? (

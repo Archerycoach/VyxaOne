@@ -143,6 +143,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         event_type: "call",
         lead_id: leadId,
         attendees: [{ name: name.trim(), email: email.trim(), phone: phone?.trim() || null }],
+        booked_by_client: true, // alimenta a lista "Reservas de clientes" no calendário
       })
       .eq("id", eventId)
       .eq("is_bookable", true); // reconfirma o estado exatamente no momento da escrita

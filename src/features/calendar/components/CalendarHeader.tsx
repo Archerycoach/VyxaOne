@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { ChevronLeft, ChevronRight, Plus, Calendar as CalendarIcon, ListChecks, RefreshCw, ChevronDown } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, Calendar as CalendarIcon, ListChecks, RefreshCw, ChevronDown, Users } from "lucide-react";
 import { BookingLinkButton } from "@/components/BookingLinkButton";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -20,6 +20,8 @@ interface CalendarHeaderProps {
   onViewModeChange: (mode: "day" | "week" | "month") => void;
   onNewEvent: () => void;
   onCopyBookingLink?: () => void;
+  /** Abre a lista de reservas feitas por clientes (link de agendamento). */
+  onShowClientBookings?: () => void;
   googleConnected: boolean;
   googleConfigured: boolean;
   isSyncing: boolean;
@@ -43,6 +45,7 @@ export function CalendarHeader({
   onViewModeChange,
   onNewEvent,
   onCopyBookingLink,
+  onShowClientBookings,
   googleConnected,
   googleConfigured,
   isSyncing,
@@ -114,6 +117,13 @@ export function CalendarHeader({
         </Button>
 
         {onCopyBookingLink && <BookingLinkButton />}
+
+        {onShowClientBookings && (
+          <Button variant="outline" onClick={onShowClientBookings}>
+            <Users className="mr-2 h-4 w-4" />
+            Reservas
+          </Button>
+        )}
 
         {googleConfigured && (
           googleConnected ? (

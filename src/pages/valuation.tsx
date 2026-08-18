@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Home, Sparkles, Loader2, Download, Send, TrendingUp, MapPin, ExternalLink, FileText } from "lucide-react";
+import { Home, Sparkles, Loader2, Download, Send, TrendingUp, MapPin, ExternalLink, FileText, Pencil } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
@@ -297,6 +297,7 @@ export default function ValuationPage() {
     }
     setLoading(true);
     setResult(null);
+    setEditingValues(false); // avaliação nova → o acerto manual anterior deixa de fazer sentido
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch("/api/gpt/valuation", {
@@ -657,6 +658,11 @@ export default function ValuationPage() {
   // Caderneta predial: lê o PDF e pré-preenche os campos. Reutiliza o
   // extrator dos documentos do imóvel — mesma IA, mesmo formato de resposta.
   const [extractingDoc, setExtractingDoc] = useState(false);
+  // Acerto manual do intervalo recomendado antes de exportar/enviar: escreve
+  // diretamente no result, por isso UI, PDF e email ficam todos coerentes.
+  const [editingValues, setEditingValues] = useState(false);
+  const [editMin, setEditMin] = useState("");
+  const [editMax, setEditMax] = useState("");
   const cadernetaInputRef = useRef<HTMLInputElement>(null);
   // O VPT vem da caderneta por omissão (não é editável à mão) — só desbloqueia
   // escrita manual quando uma caderneta foi lida e a IA não conseguiu extrair
@@ -1389,20 +1395,114 @@ export default function ValuationPage() {
             <>
               {result.suggestedMin && result.suggestedMax ? (
                 <Card className="border-emerald-200 bg-emerald-50/50">
-                  <CardContent className="pt-6 flex items-center gap-4">
-                    <TrendingUp className="h-8 w-8 text-emerald-600 shrink-0" />
-                    <div>
-                      <p className="text-sm text-emerald-700 font-medium">Valor Recomendado</p>
-                      <p className="text-2xl font-bold text-emerald-900">
-                        {formatCurrency(result.suggestedMin)} — {formatCurrency(result.suggestedMax)}
-                      </p>
+                  <CardContent className="pt-6">
+                    <div className="flex items-start gap-4">
+                      <TrendingUp className="h-8 w-8 text-emerald-600 shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-emerald-700 font-medium">Valor Recomendado</p>
+                        {editingValues ? (
+                          <div className="flex flex-wrap items-center gap-2 mt-1">
+                            <Input
+                              type="number"
+                              className="w-40 bg-white"
+                              value={editMin}
+                              onChange={(e) => setEditMin(e.target.value)}
+                              placeholder="Mínimo (€)"
+                            />
+                            <span className="text-emerald-900 font-bold">—</span>
+                            <Input
+                              type="number"
+                              className="w-40 bg-white"
+                              value={editMax}
+                              onChange={(e) => setEditMax(e.target.value)}
+                              placeholder="Máximo (€)"
+                            />
+                            <Button
+                              size="sm"
+                              onClick={() => {
+                                const min = Number(editMin);
+                                const max = Number(editMax);
+                                if (!min || !max || min <= 0 || max < min) {
+                                  toast({ title: "Valores inválidos", description: "Indique mínimo e máximo positivos, com o máximo ≥ mínimo.", variant: "destructive" });
+                                  return;
+                                }
+                                setResult((prev) => (prev ? { ...prev, suggestedMin: min, suggestedMax: max } : prev));
+                                setEditingValues(false);
+                                toast({ title: "Valores acertados", description: "O PDF e o email passam a usar este intervalo." });
+                              }}
+                            >
+                              Aplicar
+                            </Button>
+                            <Button size="sm" variant="ghost" onClick={() => setEditingValues(false)}>
+                              Cancelar
+                            </Button>
+                          </div>
+                        ) : (
+                          <p className="text-2xl font-bold text-emerald-900">
+                            {formatCurrency(result.suggestedMin)} — {formatCurrency(result.suggestedMax)}
+                          </p>
+                        )}
+                      </div>
+                      {!editingValues && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="shrink-0 text-emerald-700 hover:text-emerald-900"
+                          title="Acertar manualmente o intervalo antes de exportar"
+                          onClick={() => {
+                            setEditMin(String(result.suggestedMin ?? ""));
+                            setEditMax(String(result.suggestedMax ?? ""));
+                            setEditingValues(true);
+                          }}
+                        >
+                          <Pencil className="h-4 w-4 mr-1" /> Acertar
+                        </Button>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
               ) : (
                 <Card className="border-amber-200 bg-amber-50/50">
-                  <CardContent className="pt-6 text-sm text-amber-800">
-                    Não há comparáveis suficientes na zona para sugerir um valor com confiança — reveja a análise abaixo manualmente.
+                  <CardContent className="pt-6 text-sm text-amber-800 flex flex-wrap items-center justify-between gap-3">
+                    <span>
+                      Não há comparáveis suficientes na zona para sugerir um valor com confiança — reveja a análise abaixo manualmente.
+                    </span>
+                    {editingValues ? (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Input type="number" className="w-36 bg-white" value={editMin} onChange={(e) => setEditMin(e.target.value)} placeholder="Mínimo (€)" />
+                        <span>—</span>
+                        <Input type="number" className="w-36 bg-white" value={editMax} onChange={(e) => setEditMax(e.target.value)} placeholder="Máximo (€)" />
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            const min = Number(editMin);
+                            const max = Number(editMax);
+                            if (!min || !max || min <= 0 || max < min) {
+                              toast({ title: "Valores inválidos", description: "Indique mínimo e máximo positivos, com o máximo ≥ mínimo.", variant: "destructive" });
+                              return;
+                            }
+                            setResult((prev) => (prev ? { ...prev, suggestedMin: min, suggestedMax: max } : prev));
+                            setEditingValues(false);
+                            toast({ title: "Valores definidos", description: "O PDF e o email passam a usar este intervalo." });
+                          }}
+                        >
+                          Aplicar
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => setEditingValues(false)}>Cancelar</Button>
+                      </div>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setEditMin("");
+                          setEditMax("");
+                          setEditingValues(true);
+                        }}
+                      >
+                        <Pencil className="h-4 w-4 mr-1" /> Definir valores manualmente
+                      </Button>
+                    )}
                   </CardContent>
                 </Card>
               )}
