@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { createClient } from "@supabase/supabase-js";
 import { processBulkEmailBatch } from "@/lib/server/bulkEmailWorker";
 import { deriveAppUrl } from "@/lib/server/appUrl";
+import { kickBulkEmailProcess } from "@/lib/server/bulkEmailKick";
 
 export const config = {
   api: { bodyParser: { sizeLimit: "1mb" } },
@@ -47,15 +48,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // não por falta de linhas): continua noutra invocação. Se parámos porque
     // não havia nada reivindicável (outro worker ativo), deixa o cron tratar —
     // evita duas invocações a chamarem-se uma à outra sem fim.
+    //
+    // O elo é ESPERADO (com teto curto) — um fire-and-forget morria congelado
+    // quando esta invocação devolvia a resposta, a corrente partia-se e as
+    // listas grandes só avançavam ao ritmo do cron; ver bulkEmailKick.ts.
     if (remaining > 0 && lastProcessed > 0) {
-      const appUrl = deriveAppUrl(req);
-      void fetch(`${appUrl}/api/bulk-email/process`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.CRON_SECRET}` },
-        body: JSON.stringify({ campaignId }),
-      }).catch(() => {
-        // O cron de recuperação garante que a fila acaba por ser processada.
-      });
+      await kickBulkEmailProcess(deriveAppUrl(req), campaignId);
     }
 
     return res.status(200).json({ success: true, processed: totalProcessed, remaining });

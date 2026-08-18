@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { createClient } from "@supabase/supabase-js";
 import { deriveAppUrl } from "@/lib/server/appUrl";
+import { kickBulkEmailProcess } from "@/lib/server/bulkEmailKick";
 
 export const config = {
   api: {
@@ -82,15 +83,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
     }
 
-    // Último bloco: arranca o processamento (fire-and-forget). Se falhar, o
-    // cron de recuperação apanha a fila na mesma.
+    // Último bloco: arranca o processamento — esperado (com teto curto) para
+    // o pedido sair mesmo antes de a invocação congelar; ver bulkEmailKick.ts.
     if (start) {
-      const appUrl = deriveAppUrl(req);
-      void fetch(`${appUrl}/api/bulk-email/process`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.CRON_SECRET}` },
-        body: JSON.stringify({ campaignId }),
-      }).catch(() => {});
+      await kickBulkEmailProcess(deriveAppUrl(req), campaignId);
     }
 
     return res.status(200).json({ success: true, inserted: clean.length });
