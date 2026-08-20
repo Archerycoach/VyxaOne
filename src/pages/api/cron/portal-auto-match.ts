@@ -138,12 +138,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                   : "Novos imóveis selecionados para si",
               html: `
                 <p>Olá ${lead.name || ""},</p>
-                <p>Encontrámos ${addedTitles.length === 1 ? "um novo imóvel" : "novos imóveis"} que ${
+                <p>Encontrei ${addedTitles.length === 1 ? "um novo imóvel" : "novos imóveis"} que ${
                 addedTitles.length === 1 ? "corresponde" : "correspondem"
-              } ao que procura e ${addedTitles.length === 1 ? "adicionámo-lo" : "adicionámo-los"} à sua seleção:</p>
+              } ao que procura e ${addedTitles.length === 1 ? "adicionei-o" : "adicionei-os"} à sua seleção:</p>
                 <ul>${list}</ul>
                 <p><a href="${portalUrl}" style="display:inline-block;background:#1d4ed8;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none">Ver os meus imóveis</a></p>
-                <p style="color:#64748b;font-size:13px">Neste portal encontra sempre os imóveis que selecionámos para si.</p>`,
+                <p style="color:#64748b;font-size:13px">Neste portal encontra sempre os imóveis que selecionei para si.</p>`,
             });
           } catch (emailErr) {
             console.error("[portal-auto-match] Falha no email (não bloqueante):", emailErr);

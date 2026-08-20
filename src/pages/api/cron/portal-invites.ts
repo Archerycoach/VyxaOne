@@ -56,9 +56,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         subject: "O seu espaço pessoal de imóveis",
         html: `
           <p>Olá ${lead.name || ""},</p>
-          <p>Preparámos um espaço só para si, onde poderá encontrar os imóveis que selecionámos com base no que procura.</p>
+          <p>Preparei um espaço só para si, onde poderá encontrar os imóveis que selecionei com base no que procura.</p>
           <p><a href="${portalUrl}" style="display:inline-block;background:#1d4ed8;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none">Aceder ao meu portal</a></p>
-          <p style="color:#64748b;font-size:13px">Volte sempre que quiser — vamos adicionando novas opções para si.</p>`,
+          <p style="color:#64748b;font-size:13px">Volte sempre que quiser — vou adicionando novas opções para si.</p>`,
       });
 
       // Marca como enviado mesmo que o email falhe (evita reenvios em loop);

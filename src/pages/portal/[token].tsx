@@ -133,7 +133,7 @@ export default function ClientPortalPage() {
                 Olá, {data.leadName.split(" ")[0]}
               </h1>
               <p style={{ color: "#5B6B74", fontSize: 16, marginTop: 10, maxWidth: 560 }}>
-                Aqui encontra os imóveis que selecionámos para si, as próximas visitas, e os documentos partilhados pelo seu consultor.
+                Aqui encontra os imóveis que selecionei para si, as próximas visitas, e os documentos que partilhei consigo.
               </p>
             </header>
 

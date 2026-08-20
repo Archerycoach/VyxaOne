@@ -212,7 +212,7 @@ export default function BookingPage() {
                   <strong>{formatDayLabel(selectedSlot!.start_time)}</strong>, às {formatTimeLabel(selectedSlot!.start_time)}
                 </p>
                 <p style={{ color: "#5B6B74", fontSize: 14 }}>
-                  Enviámos um email de confirmação para {email}.
+                  Foi enviado um email de confirmação para {email}.
                 </p>
               </div>
             ) : !selectedSlot ? (
