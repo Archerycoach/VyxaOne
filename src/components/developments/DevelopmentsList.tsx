@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
-import { Building2, CalendarDays, Edit, Euro, MapPin, Search, Trash2, Users } from "lucide-react";
+import { Building2, CalendarDays, Edit, Euro, MapPin, Search, Trash2, TrendingUp, Users } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { OffPlanProjectionCard } from "@/components/valuation/OffPlanProjectionCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -114,6 +116,9 @@ export function DevelopmentsList({ developments, onEdit, onRefresh }: Developmen
   // Quantas leads estão associadas a cada empreendimento — permite saltar
   // daqui para a lista já filtrada, sem ter de procurar à mão.
   const [leadCounts, setLeadCounts] = useState<Record<string, number>>({});
+  // Projeção de valorização até à entrega — num diálogo, para não disparar
+  // uma consulta ao INE por cada empreendimento da lista.
+  const [projectionFor, setProjectionFor] = useState<Development | null>(null);
 
   // Uma query só para as tipologias de todos os empreendimentos (chips nos cards)
   useEffect(() => {
@@ -293,6 +298,17 @@ export function DevelopmentsList({ developments, onEdit, onRefresh }: Developmen
                       {leadCounts[development.id]} lead{leadCounts[development.id] === 1 ? "" : "s"}
                     </Button>
                   )}
+                  {development.delivery_date && development.price_from != null && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setProjectionFor(development)}
+                      title="Valorização estimada até à conclusão da obra"
+                    >
+                      <TrendingUp className="mr-1 h-4 w-4" />
+                      Valorização
+                    </Button>
+                  )}
                   <Button variant="outline" size="sm" onClick={() => onEdit(development)}>
                     <Edit className="mr-1 h-4 w-4" />
                     Editar
@@ -306,6 +322,21 @@ export function DevelopmentsList({ developments, onEdit, onRefresh }: Developmen
           ))}
         </div>
       )}
+
+      <Dialog open={Boolean(projectionFor)} onOpenChange={(open) => !open && setProjectionFor(null)}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{projectionFor?.name}</DialogTitle>
+          </DialogHeader>
+          {projectionFor && (
+            <OffPlanProjectionCard
+              currentPrice={projectionFor.price_from ?? null}
+              deliveryDate={projectionFor.delivery_date}
+              municipality={projectionFor.city ?? null}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

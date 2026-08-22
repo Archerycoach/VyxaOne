@@ -33,6 +33,7 @@ import {
   buildConsultantIdentity, type ConsultantIdentity,
 } from "@/lib/pdfDocument";
 import { InvestmentAnalysisCard } from "@/components/valuation/InvestmentAnalysisCard";
+import { OffPlanProjectionCard } from "@/components/valuation/OffPlanProjectionCard";
 
 // Os 18 concelhos da AML — fora daqui o rácio oficial de 3,3–3,8× VPT não se
 // aplica (mesma lista do servidor, src/pages/api/gpt/valuation.ts).
@@ -169,6 +170,9 @@ export default function ValuationPage() {
     bedrooms: "",
     bathrooms: "",
     condition: "",
+    // Imóvel comprado em planta: ativa a projeção de valorização até à entrega.
+    isOffPlan: false,
+    offPlanDeliveryDate: "",
     // Características com impacto no valor. Dois T2 iguais em área podem
     // diferir 15-20% consoante tenham elevador, garagem ou varanda.
     floor: "",
@@ -960,6 +964,34 @@ export default function ValuationPage() {
                 <Label>Estado de Conservação</Label>
                 <Input value={form.condition} onChange={(e) => setForm({ ...form, condition: e.target.value })} placeholder="Ex: Renovado em 2022" />
               </div>
+              {/* Imóvel em planta: acrescenta ao resultado a projeção de
+                  valorização até à conclusão (INE, alojamentos novos). */}
+              <div className="space-y-2 sm:col-span-2">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4"
+                    checked={form.isOffPlan}
+                    onChange={(e) => setForm({ ...form, isOffPlan: e.target.checked })}
+                  />
+                  <span className="text-sm font-medium">Imóvel de empreendimento em planta</span>
+                </label>
+                {form.isOffPlan && (
+                  <div className="pl-6 space-y-1">
+                    <Label className="text-sm">Data prevista de conclusão da obra</Label>
+                    <Input
+                      type="date"
+                      className="w-56"
+                      value={form.offPlanDeliveryDate}
+                      onChange={(e) => setForm({ ...form, offPlanDeliveryDate: e.target.value })}
+                    />
+                    <p className="text-[11px] text-muted-foreground">
+                      A avaliação passa a incluir a valorização estimada até à entrega, com base no índice do
+                      INE para alojamentos novos.
+                    </p>
+                  </div>
+                )}
+              </div>
               <div className="space-y-2">
                 <Label>Andar</Label>
                 <Input type="number" value={form.floor} onChange={(e) => setForm({ ...form, floor: e.target.value })} placeholder="Ex: 3 (0 = r/c)" />
@@ -1593,6 +1625,17 @@ export default function ValuationPage() {
                 area={Number(form.area) || null}
                 ineRentPerSqm={result.ineRentPerSqm ?? null}
               />
+
+              {/* Só para imóveis em planta — parte do valor central da
+                  avaliação e projeta-o até à data de conclusão da obra. */}
+              {form.isOffPlan && form.offPlanDeliveryDate && (
+                <OffPlanProjectionCard
+                  currentPrice={result.suggestedCentral ?? null}
+                  deliveryDate={form.offPlanDeliveryDate}
+                  municipality={form.county || form.city || null}
+                  freguesia={form.freguesia || null}
+                />
+              )}
 
               <Card>
                 <CardHeader><CardTitle className="text-base">Imóveis Comparáveis ({result.comparables.length})</CardTitle></CardHeader>
